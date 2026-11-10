@@ -7,7 +7,7 @@ from libs.db.models.auth import MAIL_PURPOSES, TOKEN_PURPOSES, AuthToken, MailSe
 from libs.db.models.built import BuiltDocument
 from libs.db.models.contact import ContactMessage
 from libs.db.models.corpus import WORKPLACES, CorpusJob, CountryCount, SweptPlace, Word
-from libs.db.models.document import DOCUMENT_KINDS, UserDocument
+from libs.db.models.document import DOCUMENT_KINDS, UploadedFile, UserDocument
 from libs.db.models.notification import PushSubscription, UserNotification
 from libs.db.models.profile_file import PROFILE_FILE_KINDS, UserProfileFile
 from libs.db.models.queue import (
@@ -35,7 +35,7 @@ MODELS = (User, UserConfig, UserSecret, UserSession, AuthToken, MailSend, Corpus
           UserJobState, SetupConversation, SetupMessage, UserNotification, PushSubscription,
           UserDocument, UserProfileFile, PlatformSetting, AiRequest, AtsToken, AtsEtag,
           BuiltDocument, LanePause, Lock, ContactMessage, Word, SweptPlace,
-          CountryCount, CompanyLookup)
+          CountryCount, CompanyLookup, UploadedFile)
 
 __all__ = [
     "CLAIM_TIMEOUT_MIN", "DEFAULT_TITLE", "DOCUMENT_KINDS", "JOB_STATES", "LANES", "MAIL_PURPOSES",
@@ -45,6 +45,7 @@ __all__ = [
     "CorpusJob", "CountryCount",
     "LanePause", "Lock",
     "MailSend", "PlatformSetting", "PushSubscription", "QueueJob",
-    "SetupConversation", "SetupMessage", "SweptPlace", "User", "UserConfig", "UserDocument", "UserJobState",
+    "SetupConversation", "SetupMessage", "SweptPlace", "UploadedFile", "User", "UserConfig", "UserDocument",
+    "UserJobState",
     "UserNotification", "UserProfileFile", "UserSecret", "UserSession", "Word",
 ]

@@ -465,6 +465,131 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Accounts
+         * @description Their AI accounts, newest first.
+         */
+        get: operations["list_accounts_ai_accounts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-accounts/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Key
+         * @description Link an API key, once the provider has said it works. It goes in use at once.
+         */
+        post: operations["add_key_ai_accounts_keys_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-accounts/signin/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Signin
+         * @description Back out. Cheap, and it ends the tool rather than leaving it to the TTL. Declared before
+         *     `/signin/{kind}`, which would otherwise take "cancel" for a kind.
+         */
+        post: operations["cancel_signin_ai_accounts_signin_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-accounts/signin/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Signin
+         * @description Begin a sign-in to their own account, and hand back the page to open.
+         */
+        post: operations["start_signin_ai_accounts_signin__kind__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-accounts/signin/{kind}/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish Signin
+         * @description Finish a sign-in, and seal the account it leaves. It goes in use at once.
+         */
+        post: operations["finish_signin_ai_accounts_signin__kind__finish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-accounts/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Switch
+         * @description Put an account in use, which takes every other one out of it, or take it out of use.
+         */
+        put: operations["switch_ai_accounts__account_id__put"];
+        post?: never;
+        /**
+         * Unlink
+         * @description Forget an account and its secret.
+         */
+        delete: operations["unlink_ai_accounts__account_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applied": {
         parameters: {
             query?: never;
@@ -690,110 +815,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/credentials": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Credentials
-         * @description What the account page shows: which credentials exist, never what they are.
-         */
-        get: operations["list_credentials_credentials_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/credentials/claude/oauth/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Claude Oauth Cancel
-         * @description Back out. Cheap, and it frees the process instead of leaving it to the TTL.
-         */
-        post: operations["claude_oauth_cancel_credentials_claude_oauth_cancel_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/credentials/claude/oauth/finish": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Claude Oauth Finish
-         * @description Exchange the code for a token, and store it only if it works.
-         */
-        post: operations["claude_oauth_finish_credentials_claude_oauth_finish_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/credentials/claude/oauth/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Claude Oauth Start
-         * @description Begin a sign-in and hand back the URL to open.
-         */
-        post: operations["claude_oauth_start_credentials_claude_oauth_start_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/credentials/{kind}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Put Credential
-         * @description Store or replace one credential.
-         */
-        put: operations["put_credential_credentials__kind__put"];
-        post?: never;
-        /**
-         * Delete Credential
-         * @description Revoke one credential. A Telegram bot is not one of these: it is under `/telegram/bot`.
-         */
-        delete: operations["delete_credential_credentials__kind__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/dashboard": {
         parameters: {
             query?: never;
@@ -830,7 +851,7 @@ export interface paths {
         put?: never;
         /**
          * Upload
-         * @description Extract and store one document's text.
+         * @description Store one document: the text read out of it, and the file to download again.
          */
         post: operations["upload_documents_post"];
         delete?: never;
@@ -924,6 +945,28 @@ export interface paths {
          * @description Switch one document on or off: off, it is kept but nothing is made or suggested from it.
          */
         patch: operations["use_document_documents__document_id__patch"];
+        trace?: never;
+    };
+    "/documents/{document_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Document File
+         * @description A file they uploaded, in the format they uploaded it (owner, 2026-11-10): the file itself, or, one
+         *     from before files were kept, a file of its type written from the text read out of it
+         *     (`libs.documents.remake`). Scoped to the caller.
+         */
+        get: operations["document_file_documents__document_id__file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/feed": {
@@ -1747,20 +1790,31 @@ export interface components {
             /** Workplaces */
             workplaces: string[];
         };
-        /**
-         * AiWriting
-         * @description Whether an AI can write this person a document now, and on whose key — `libs.llm.resolve`'s
-         *     answer, so the buttons offer exactly what a build would be allowed to do.
-         */
-        AiWriting: {
-            /** Left */
-            left: number;
-            /** Payer */
-            payer: ("own" | "platform") | null;
-            /** Per Day */
-            per_day: number;
-            /** Profile */
-            profile: boolean;
+        /** AiAccount */
+        AiAccount: {
+            /** Id */
+            id: string;
+            /** In Use */
+            in_use: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "claude_login" | "codex_login" | "gemini_login" | "claude_api" | "openai_api" | "gemini_api";
+            /** Label */
+            label: string;
+            /**
+             * Linked At
+             * Format: date-time
+             */
+            linked_at: string;
+            /** Model */
+            model: string | null;
+        };
+        /** AiAccounts */
+        AiAccounts: {
+            /** Accounts */
+            accounts: components["schemas"]["AiAccount"][];
         };
         /** AppliedJob */
         AppliedJob: {
@@ -1946,21 +2000,6 @@ export interface components {
             name: string;
             /** Total */
             total: number;
-        };
-        /** CredentialBody */
-        CredentialBody: {
-            /**
-             * Allow Unvalidated
-             * @default false
-             */
-            allow_unvalidated: boolean;
-            /** Value */
-            value: string;
-        };
-        /** CredentialList */
-        CredentialList: {
-            /** Credentials */
-            credentials: components["schemas"]["StoredCredential"][];
         };
         /**
          * Currency
@@ -2240,6 +2279,11 @@ export interface components {
             /** Links */
             links?: components["schemas"]["ProfileLink"][];
         };
+        /** InUse */
+        InUse: {
+            /** In Use */
+            in_use: boolean;
+        };
         /** JobDescription */
         JobDescription: {
             /** Text */
@@ -2334,6 +2378,21 @@ export interface components {
             /** Job Id */
             job_id: number;
         };
+        /** KeyBody */
+        KeyBody: {
+            /**
+             * Allow Unvalidated
+             * @default false
+             */
+            allow_unvalidated: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "claude_api" | "openai_api" | "gemini_api";
+            /** Value */
+            value: string;
+        };
         /**
          * Language
          * @description ISO 639-1 codes the platform offers. Also a controlled list, for the same reason.
@@ -2423,25 +2482,6 @@ export interface components {
             title: string;
             /** Url */
             url: string | null;
-        };
-        /** OAuthCancelBody */
-        OAuthCancelBody: {
-            /** Session Id */
-            session_id: string;
-        };
-        /** OAuthFinishBody */
-        OAuthFinishBody: {
-            /** Code */
-            code: string;
-            /** Session Id */
-            session_id: string;
-        };
-        /** OAuthStarted */
-        OAuthStarted: {
-            /** Session Id */
-            session_id: string;
-            /** Url */
-            url: string;
         };
         /** OnboardingDashboard */
         OnboardingDashboard: {
@@ -2565,7 +2605,6 @@ export interface components {
          *     load — /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it.
          */
         ReadyDashboard: {
-            ai: components["schemas"]["AiWriting"];
             /** Applied */
             applied: number;
             /** Banners */
@@ -2578,11 +2617,6 @@ export interface components {
              * @constant
              */
             stage: "ready";
-        };
-        /** Removed */
-        Removed: {
-            /** Status */
-            status: string;
         };
         /** ResendRequest */
         ResendRequest: {
@@ -2614,15 +2648,6 @@ export interface components {
         SaveResult: {
             /** Status */
             status: string;
-        };
-        /** Saved */
-        Saved: {
-            /** Detail */
-            detail: string;
-            /** Status */
-            status: string;
-            /** Validated */
-            validated: boolean;
         };
         /** SavedDocument */
         SavedDocument: {
@@ -2703,6 +2728,36 @@ export interface components {
                 [key: string]: unknown;
             } | unknown[] | number | string;
         };
+        /** SignInCancel */
+        SignInCancel: {
+            /** Session Id */
+            session_id: string;
+        };
+        /** SignInFinish */
+        SignInFinish: {
+            /** Code */
+            code?: string | null;
+            /** Session Id */
+            session_id: string;
+        };
+        /** SignInResult */
+        SignInResult: {
+            accounts?: components["schemas"]["AiAccounts"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "done" | "waiting";
+        };
+        /** SignInStarted */
+        SignInStarted: {
+            /** Code */
+            code?: string | null;
+            /** Session Id */
+            session_id: string;
+            /** Url */
+            url: string;
+        };
         /** SignupRequest */
         SignupRequest: {
             /**
@@ -2736,17 +2791,6 @@ export interface components {
              * @enum {string}
              */
             stage: "interview" | "offer" | "hired" | "rejected";
-        };
-        /** StoredCredential */
-        StoredCredential: {
-            /** Kind */
-            kind: string;
-            /** Last 4 */
-            last_4: string | null;
-            /** Updated At */
-            updated_at: string | null;
-            /** Validated */
-            validated: boolean;
         };
         /** StoredDocument */
         StoredDocument: {
@@ -3763,6 +3807,226 @@ export interface operations {
             };
         };
     };
+    list_accounts_ai_accounts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiAccounts"];
+                };
+            };
+        };
+    };
+    add_key_ai_accounts_keys_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiAccounts"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_signin_ai_accounts_signin_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignInCancel"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_signin_ai_accounts_signin__kind__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "claude_login" | "codex_login" | "gemini_login";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finish_signin_ai_accounts_signin__kind__finish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "claude_login" | "codex_login" | "gemini_login";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignInFinish"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    switch_ai_accounts__account_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InUse"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiAccounts"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlink_ai_accounts__account_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiAccounts"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     applied_applied_get: {
         parameters: {
             query?: never;
@@ -4106,182 +4370,6 @@ export interface operations {
             };
         };
     };
-    list_credentials_credentials_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CredentialList"];
-                };
-            };
-        };
-    };
-    claude_oauth_cancel_credentials_claude_oauth_cancel_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OAuthCancelBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    claude_oauth_finish_credentials_claude_oauth_finish_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OAuthFinishBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    claude_oauth_start_credentials_claude_oauth_start_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OAuthStarted"];
-                };
-            };
-        };
-    };
-    put_credential_credentials__kind__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                kind: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CredentialBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Saved"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_credential_credentials__kind__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                kind: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Removed"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     dashboard_dashboard_get: {
         parameters: {
             query?: never;
@@ -4505,6 +4593,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentRow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_file_documents__document_id__file_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
                 };
             };
             /** @description Validation Error */

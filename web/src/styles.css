@@ -572,10 +572,10 @@ button.danger {
    **A new kind of plain button goes on this list**, or it borrows the purple's light at rest. */
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
-    .look-card),
+    .look-card, .toast-close),
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
-    .look-card):hover:not([disabled]) {
+    .look-card, .toast-close):hover:not([disabled]) {
   box-shadow: none;
 }
 
@@ -1735,9 +1735,11 @@ button.making::after {
   stroke-linejoin: round;
 }
 
+/* Never narrower than a name can be read at: on a phone, the switch and the pictures go to a line of
+   their own rather than squeeze it to a word a line. */
 .file-text {
   display: grid;
-  flex: 1;
+  flex: 1 1 12rem;
   min-width: 0;
 }
 
@@ -1765,6 +1767,29 @@ button.making::after {
   cursor: pointer;
 }
 
+/* Download and remove, as pictures: a thumb's width each, and the bin red when it is pointed at. */
+.file-acts {
+  display: flex;
+  flex: none;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.icon-btn.file-act {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.icon-btn.file-act svg {
+  width: 18px;
+  height: 18px;
+}
+
+.icon-btn.file-act.remove:hover:not([disabled]) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 /* Kept but not used: no green edge, no tick. */
 .files .file.off { border-left-color: var(--faint); }
 .file.off .file-status { color: var(--muted); }
@@ -1777,18 +1802,30 @@ button.making::after {
   font-size: 0.85rem;
 }
 
-/* What a save found, said where it cannot be scrolled past. */
-.toast {
+/* Pop-up notices (`toast.tsx`, owner 2026-11-10): at the foot of the screen, above the tab bar on a phone,
+   and in the top layer, so the open job's dialog does not cover them. The popover's own box is undone:
+   this is a stack of cards, each with the time it has left running down its foot. */
+.toasts {
   position: fixed;
   z-index: 40;
-  left: 50%;
-  bottom: 1.5rem;
-  /* `translate`, not `transform`: the rise it arrives with is a transform of its own. */
+  inset: auto auto 1.5rem 50%;
   translate: -50% 0;
-  width: max-content;
-  max-width: calc(100vw - 2rem);
+  display: grid;
+  gap: 0.5rem;
+  width: min(26rem, calc(100vw - 2rem));
+  height: auto;
   margin: 0;
-  padding: 0.8rem 1.15rem;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  background: none;
+  color: var(--ink);
+}
+
+.toast {
+  position: relative;
+  overflow: hidden;
+  padding: 0.85rem 2.75rem 1rem 1.1rem;
   border: 1px solid var(--glass-line);
   border-radius: var(--radius);
   background: var(--glass);
@@ -1797,6 +1834,56 @@ button.making::after {
   box-shadow: 0 30px 60px -30px rgb(0 0 0 / 60%);
   font-size: 0.9375rem;
   animation: page-in 0.5s var(--out) both;
+}
+
+.toast p {
+  margin: 0;
+}
+
+.toast .row {
+  margin-top: 0.75rem;
+}
+
+button.toast-close {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 1.25rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
+button.toast-close:hover:not([disabled]) {
+  color: var(--ink);
+  background: rgba(var(--ink-rgb), 0.08);
+}
+
+.toast-time {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--accent);
+  transform-origin: left;
+  animation: toast-time linear forwards;
+}
+
+.toast.held .toast-time {
+  animation-play-state: paused;
+}
+
+@keyframes toast-time {
+  to {
+    transform: scaleX(0);
+  }
 }
 
 /* Telegram, this browser, the pause: one row each, saying where it stands. */
@@ -1828,15 +1915,6 @@ button.making::after {
   margin-top: 3rem;
   padding-top: 1.5rem;
   border-top: 1px solid var(--hairline);
-}
-
-.saved-key {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: var(--muted);
 }
 
 /* "Add more", "Change your password", "Advanced": there when wanted, out of the way when not. */
@@ -1989,7 +2067,7 @@ button.making::after {
     height: 22px;
   }
 
-  .toast {
+  .toasts {
     bottom: calc(5.75rem + env(safe-area-inset-bottom));
   }
 }
@@ -2209,6 +2287,193 @@ button.making::after {
 
 .switch input {
   margin: 0;
+}
+
+/* ── Your AI accounts (Settings) ──────────────────────────────────────────────────────────────
+
+   What it is for, the ones linked, then the three ways to link one, each by its provider's mark. A
+   switch takes its time on purpose (owner, 2026-11-10: "we cannot properly see if they switch at all"):
+   the knob glides, and the row's bar grows from its middle after it. */
+
+.ai-lead {
+  margin-bottom: 1rem;
+}
+
+.ai-accounts {
+  list-style: none;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ai-accounts li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem 0.9rem;
+  padding: 0.75rem 0.9rem 0.75rem 1.15rem;
+  border: 1px solid var(--faint);
+  border-radius: var(--radius);
+  background: var(--bg);
+  overflow: hidden;
+  transition: border-color 0.6s var(--glide), background-color 0.6s var(--glide);
+}
+
+/* The bar down the edge of the one in use. */
+.ai-accounts li::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--accent);
+  transform: scaleY(0);
+  transition: transform 0.6s var(--glide);
+}
+
+.ai-accounts li.in-use {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.07);
+}
+
+.ai-accounts li.in-use::before {
+  transform: scaleY(1);
+}
+
+/* Twice the glide of every other switch, so the move itself can be watched. */
+.ai-accounts input[type="checkbox"],
+.ai-accounts input[type="checkbox"]::before {
+  transition-duration: 0.6s;
+}
+
+.ai-account-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-right: auto;
+  overflow-wrap: anywhere;
+}
+
+.ai-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+}
+
+/* At the end of its line, wherever the row wraps. */
+.ai-accounts li > .linklike {
+  margin-left: auto;
+}
+
+/* As wide as its longest word, so "Turning off…" moves nothing beside it. */
+.ai-switch-word {
+  min-width: 6.2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  transition: color 0.6s var(--glide);
+}
+
+.in-use .ai-switch-word,
+.ai-switch-word.moving {
+  color: var(--accent-text);
+}
+
+.ai-heading {
+  margin: 1.5rem 0 0.6rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.ai-providers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+  gap: 0.6rem;
+  margin: 0 0 0.9rem;
+}
+
+button.ai-provider {
+  justify-content: flex-start;
+  gap: 0.9rem;
+  padding: 0.9rem 1rem;
+  text-align: left;
+  font-weight: 400;
+}
+
+/* The provider's own mark, on a tile of its own, left of its name. */
+.ai-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: rgba(var(--ink-rgb), 0.04);
+}
+
+.ai-mark svg {
+  width: 1.6rem;
+  height: 1.6rem;
+}
+
+/* Smaller beside a linked account's name than on a sign-in. */
+.ai-accounts .ai-mark {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
+.ai-accounts .ai-mark svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.ai-provider-text {
+  display: grid;
+  justify-items: start;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.ai-provider strong {
+  font-size: 1rem;
+}
+
+.ai-provider-go {
+  margin-top: 0.45rem;
+  color: var(--accent-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* A sign-in, a step at a time. */
+.ai-steps {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+  line-height: 1.6;
+}
+
+.ai-steps li {
+  margin-bottom: 0.65rem;
+}
+
+.ai-steps .field {
+  margin: 0.35rem 0 0;
+}
+
+.ai-linked {
+  color: var(--score);
+  font-weight: 600;
+}
+
+/* The code OpenAI's page asks for, large enough to copy by eye. */
+.device-code {
+  margin: 0.3rem 0;
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  letter-spacing: 0.12em;
 }
 
 /* Deleting an account is the one irreversible thing in this panel, so it gets the only red button

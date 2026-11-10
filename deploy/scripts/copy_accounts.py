@@ -93,7 +93,8 @@ def converted(model: type, row: dict) -> dict | None:
         row["limits"] = {key: value for key, value in (row["limits"] or {}).items() if key in BY_KEY}
     if model is UserSecret and (row["kind"] not in SECRET_KINDS or row["kind"] == "telegram_bot"):
         # An old personal bot's token, with no bot name and a chat Phase 8 reset: re-added in Settings
-        # in a minute (the Telegram steps there), rather than half-carried over.
+        # in a minute (the Telegram steps there), rather than half-carried over. A Claude token from
+        # `claude setup-token` is no kind any more (2026-11-09): its owner signs in again.
         return None
     if model is PlatformSetting and row["id"] not in DEFAULTS:
         return None  # a setting for something that no longer exists

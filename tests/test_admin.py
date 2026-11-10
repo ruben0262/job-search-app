@@ -136,17 +136,17 @@ def test_signed_out_is_refused(api):
 
 
 def test_the_user_list_carries_no_credential_material(api):
-    """Not even `last_4`."""
+    """Not an AI account's label even, nor anything sealed."""
     from libs.db.models import UserSecret
 
     http, db, operator, ordinary, sign_in = api
     insert(db, UserSecret(user_id=ordinary.id, kind="claude_api", ciphertext=b"x", nonce=b"n",
-                          last_4="9999"))
+                          label="Claude API key", active=True))
     sign_in(http, operator)
 
     body = http.get("/admin/users").text
-    assert "9999" not in body
-    assert "ciphertext" not in body and "last_4" not in body
+    assert "Claude API key" not in body
+    assert "ciphertext" not in body and "nonce" not in body
 
 
 def test_the_user_list_shows_what_an_operator_actually_needs(api):

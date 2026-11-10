@@ -18,16 +18,6 @@ MAX_RETRIES = 2
 # included: left to its SDK's ten minutes, one Claude call could outlive the claim it ran under.
 TIMEOUT_SEC = CLAIM_TIMEOUT_MIN["docgen"] * 60 * 2 / 5
 
-# The identity block a subscription OAuth token is entitled to.
-CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude."
-
-# An OAuth token authenticates on `Authorization: Bearer` and needs this header; an API key does not.
-CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
-
-
-# Either satisfies the Claude requirement (D2).
-CLAUDE_KINDS = ("claude_api", "claude_oauth")
-
 
 class LlmError(RuntimeError):
     """A call did not produce usable output. Callers decide whether that is fatal."""
@@ -46,26 +36,13 @@ class LlmClient(Protocol):
 
 
 class AnthropicClient:
-    """`LlmClient` over the real SDK, built from the user's own credential."""
+    """`LlmClient` over the real SDK, built from the person's own API key. A Claude subscription signs in
+    through Claude Code instead (`libs.llm.cli`)."""
 
-    def __init__(self, value: str, kind: str = "claude_api"):
+    def __init__(self, value: str):
         import anthropic  # noqa: PLC0415 - keeps the SDK off the import path of everything else
 
-        # Eight retries, not the SDK's two.
-        self._oauth = kind == "claude_oauth"
-        if self._oauth:
-            self._client = anthropic.Anthropic(
-                auth_token=value, max_retries=MAX_RETRIES, timeout=TIMEOUT_SEC,
-                default_headers={"anthropic-beta": CLAUDE_OAUTH_BETA})
-        else:
-            self._client = anthropic.Anthropic(api_key=value, max_retries=MAX_RETRIES, timeout=TIMEOUT_SEC)
-
-    def _system(self, system: str) -> str | list[dict]:
-        """The system prompt, with the identity block an OAuth token requires in front of it."""
-        if not self._oauth:
-            return system
-        return [{"type": "text", "text": CLAUDE_CODE_IDENTITY},
-                {"type": "text", "text": system}]
+        self._client = anthropic.Anthropic(api_key=value, max_retries=MAX_RETRIES, timeout=TIMEOUT_SEC)
 
     def complete_json(self, *, model: str, system: str, messages: list[dict],
                       schema: dict, max_tokens: int,
@@ -73,7 +50,7 @@ class AnthropicClient:
         """One call, constrained to the schema, returned as a dict."""
         with self._client.messages.stream(
                 model=model,
-                system=self._system(system),
+                system=system,
                 messages=messages,
                 max_tokens=max_tokens,
                 **_thinking(thinking_tokens),
@@ -94,7 +71,7 @@ class AnthropicClient:
         # Streamed like the JSON path: a whole HTML document at a high ceiling would meet a timeout.
         with self._client.messages.stream(
                 model=model,
-                system=self._system(system),
+                system=system,
                 messages=messages,
                 max_tokens=max_tokens,
                 **_thinking(thinking_tokens)) as stream:
@@ -109,7 +86,7 @@ class AnthropicClient:
         blocks: list[dict] = []
         with self._client.messages.stream(
                 model=model,
-                system=self._system(system),
+                system=system,
                 messages=messages,
                 tools=tools,
                 max_tokens=max_tokens) as stream:

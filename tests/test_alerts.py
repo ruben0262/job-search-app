@@ -495,8 +495,7 @@ def test_telegram_connects_with_the_bots_token_and_one_press_of_start(api, teleg
     assert (account.telegram_status, account.telegram_chat_id) == ("connected", "4242")
     [(bot, chat, text)] = telegram.sent
     assert (bot, chat) == (token, "4242") and "Connected" in text, "a welcome, through their own bot"
-    assert [row["kind"] for row in http.get("/credentials").json()["credentials"]] == [], (
-        "a bot token is not one of the AI keys or proxies the credentials form lists")
+    assert http.get("/ai-accounts").json()["accounts"] == [], "a bot token is not one of the AI accounts"
 
 
 @needs_db
@@ -549,11 +548,11 @@ def test_disconnecting_forgets_the_bot_and_its_chat(api, telegram):
 
 
 @needs_db
-def test_the_credentials_form_cannot_store_a_bot_token(api, telegram):
+def test_the_ai_accounts_cannot_store_a_bot_token(api, telegram):
     """One way in for a bot token: the Telegram steps, which also find the chat."""
     http, _, _ = api
-    assert http.put("/credentials/telegram_bot", json={"value": telegram.make_bot(),
-                                                       "allow_unvalidated": True}).status_code == 400
+    assert http.post("/ai-accounts/keys", json={"kind": "telegram_bot", "value": telegram.make_bot(),
+                                                "allow_unvalidated": True}).status_code == 422
 
 
 @needs_db

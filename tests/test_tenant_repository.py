@@ -58,22 +58,6 @@ def test_only_active_users_configs_reach_the_harvest_fold(db, t):
     assert suspended.id not in configs
 
 
-def test_secret_metadata_never_exposes_the_value(db, t):
-    """Secrets are write-only through the API (`TENANT_SAFETY.md` §2)."""
-    u = _user(db)
-    insert(db, UserSecret(user_id=u.id, kind="claude_api", ciphertext=b"SECRET-CIPHERTEXT",
-                          nonce=b"nonce", last_4="ab12"))
-
-    (meta,) = t.secret_metadata(u.id)
-    assert meta.kind == "claude_api"
-    assert meta.last_4 == "ab12"
-
-    rendered = repr(meta) + str(meta)
-    assert "SECRET-CIPHERTEXT" not in rendered
-    assert not hasattr(meta, "ciphertext")
-    assert not hasattr(meta, "nonce")
-
-
 # ── T1: tenant isolation. Release blocker. ────────────────────────────────────────────────────
 
 def test_one_users_config_is_never_readable_by_another(db, t):
@@ -86,16 +70,18 @@ def test_one_users_config_is_never_readable_by_another(db, t):
     assert t.get_config(bob.id) == {"keywords": ["bob-term"]}
 
 
-def test_one_users_secrets_are_never_listed_for_another(db, t):
-    """T1: secrets read path. These are strangers' live credentials."""
-    alice, bob = _user(db), _user(db)
-    for owner, kind, last_4 in ((alice, "claude_api", "aaaa"), (bob, "claude_api", "bbbb"),
-                                (bob, "gemini_api", "cccc")):
-        insert(db, UserSecret(user_id=owner.id, kind=kind, ciphertext=last_4.encode(), nonce=b"n",
-                              last_4=last_4))
+def test_one_users_ai_accounts_are_never_listed_for_another(db, t):
+    """T1: secrets read path. These are strangers' live credentials (`libs.llm.accounts`)."""
+    from libs.llm import accounts
 
-    assert [m.last_4 for m in t.secret_metadata(alice.id)] == ["aaaa"]
-    assert sorted(m.last_4 for m in t.secret_metadata(bob.id)) == ["bbbb", "cccc"]
+    alice, bob = _user(db), _user(db)
+    for owner, kind, label in ((alice, "claude_api", "alice's"), (bob, "claude_api", "bob's"),
+                               (bob, "gemini_api", "bob's other")):
+        insert(db, UserSecret(user_id=owner.id, kind=kind, ciphertext=label.encode(), nonce=b"n",
+                              label=label))
+
+    assert [each.label for each in accounts.listing(db, alice.id)] == ["alice's"]
+    assert sorted(each.label for each in accounts.listing(db, bob.id)) == ["bob's", "bob's other"]
 
 
 # ── account lifecycle: reported, never automatic (ROADMAP 6c) ─────────────────────────────────

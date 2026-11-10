@@ -14,6 +14,126 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-10 — Claude's sign-in takes the code; the AI accounts card says what it is; uploaded files download again; the Make buttons for everyone
+
+The owner: ChatGPT's and Google's sign-ins worked, Claude's turned down every code, "even the latest";
+the Settings card did not say what it was for; a switch changed at once, so nobody could see it switch;
+and a person who uploaded a CV or cover letter could not download it again. Then: each provider's own
+mark on its tile and on each account linked, no "Writing with" box, the Make buttons for everyone, saying
+what is missing in a toast that leaves by itself and in the bell, and a download beside every upload.
+
+- **Claude's sign-in** (`libs.signin`). The code was sent as a bracketed paste, and `claude auth login`
+  reads it as a plain line (`readline.createInterface({input})`, no terminal), so the paste markers became
+  part of it. The same call in Node, given both: bracketed came back as `code "\x1b[200~abc123"`, `state
+  "st456\x1b[201~"`; plain as `"abc123"`, `"st456"`. Every code reached Claude broken, and Claude answered
+  "That code wasn't accepted". It is now typed in as text, as `project-planner` does, then Enter on its
+  own. Claude Code also exits once it refuses a code, so a refusal ends the sign-in (the page offers a new
+  link, on a 410 from the broker) instead of waiting on a dead one. The tools get `BROWSER=/bin/true`:
+  the person opens the link, and nothing opens one where the tool runs. Checked against Claude Code
+  2.1.319: the link's `redirect_uri` is the manual one, and a made-up code is refused and the session ended.
+  A real code was not tried here; that is the owner's own sign-in.
+- **The card** (`web/src/aiaccounts.tsx`): what it is for in one sentence; the linked ones, each with its
+  provider's mark; then Claude, ChatGPT and Google Gemini as three tiles, each with its mark and who it is for;
+  the API key form folded under "Use an API key instead". A sign-in is three numbered steps. The marks
+  are inline shapes: Claude's and OpenAI's from Simple Icons, Claude's in its orange and OpenAI's in the
+  text colour (OpenAI's guidelines: black or white); Gemini's sparkle and gradient from Google's own file
+  on gstatic. A "Writing with …" box above the list was tried and taken out (owner): the switch says it.
+- **Switching is seen.** The list put the account in use first, so every switch answered with the same
+  top row "In use", as if nothing had changed. The rows now stay in the order linked, newest first
+  (`libs.llm.accounts.listing`); the switch says "Turning on…" for at least 0.9 s while the server answers,
+  its knob glides in 0.6 s (twice the site's other switches), and the row's bar changes after it.
+- **Uploaded files are kept, to download again** (`uploaded_files`, `GET /documents/{id}/file`). Until now
+  only the text read out of a file was stored, deliberately ("keeping strangers' records on disk would be
+  a liability"); the owner asked for the download, so the file is kept now, in a collection of its own so
+  that nothing reading documents loads it, deleted with its document and with the account. It downloads as
+  uploaded, always as an attachment (`nosniff`), under one "Download" beside every CV and cover letter.
+  Files uploaded before today kept only their text, so theirs is written again in the format it was
+  uploaded in (owner: "download in the same format as the uploaded file"): a PDF, a Word file or text,
+  with its words and lines, not the original's layout, which was never stored (`libs.documents.remake`).
+  The PDF needs a writer and a font with more than Western European letters: `fpdf2` (2.8.9, capped below
+  2.9, which was 12 days old) in the API's requirements, and `fonts-dejavu-core` in the API image; tested
+  by reading each format back, "Łukasz Żółć" included. The privacy page already said "the files you
+  uploaded never leave this server", which stays true.
+- **The Make buttons are for everyone** (owner). Pressed without what a document needs, the server says
+  what is missing: an AI account in use, and their own CV for a CV, their own cover letter for a cover
+  letter (`libs.documents.needs`, asked by the build route and again by the worker before any text
+  leaves). The page says it in a toast with the way to each ("Open Settings", "Open My documents"), and
+  the server puts it in the bell (`notify.NEEDS_AI_ACCOUNT`, `NEEDS_UPLOAD`; one unread of each, brought
+  up to date however often it is pressed). The bell is told at once (`notificationsChanged`), as it is
+  when a document fails or is not kept: it looked once a minute, so the note showed only after a reload. Asked before consent: nothing is sent until both are settled,
+  and the account is the longer step. `dashboard.ai`, which only hid the buttons, is removed with them;
+  so is the Jobs page's "link your AI account" line.
+- **One model a provider, chosen by us and shown** (owner, on the recommendation: prompts are tuned per
+  model, Claude's first, then GPT's and Gemini's). Nobody picks a model: each provider writes with the one
+  set in Admin (`settings.document_model`), and each linked account now says which ("Writes with
+  claude-haiku-4-5"), read from that same setting, so the page cannot name another.
+- **An upload's download and remove are pictures** (owner): an arrow into a tray and a bin, each named
+  for a screen reader and titled for a pointer, the bin red when pointed at. The bin was drawn twice
+  (the bell, Admin); it is drawn once now, in `ui.tsx`, beside the download arrow. A file's name keeps
+  its width on a phone: the switch and the pictures go to a line of their own.
+- **Toasts** (`web/src/toast.tsx`): one way for the whole site to say something briefly. A toast stays 8 s
+  with the time it has left running down its foot, held while pointed at or focused, and closes on its ×.
+  It is put in the browser's top layer inside whichever dialog is open: the open job is a modal dialog,
+  and a notice outside it sat behind it with its links dead. My documents' "Saved" / "We found N new
+  words", which had a toast and a timer of its own, says it through this one.
+- `scripts/dev.sh` runs the sign-in broker under `uvicorn --reload` like the API: the broker that had been
+  running was the code from before the fix, and would have been after it too.
+
+Gates, 2026-11-10: import contracts 2 kept; ruff clean; schema on an empty local database (run twice,
+`uploaded_files` with its index); contract current (80 paths); site built; pytest 1,400 passed, 3 skipped
+(a Postgres source, the reference instance, an empty template set: the same three as before).
+
+## 2026-11-09 — Your own AI accounts: sign in to Claude, ChatGPT or Gemini, or add an API key; documents only with one in use
+
+The owner: CVs and cover letters are made only with the person's own AI account, linked in Settings: a
+sign-in to their subscription (Claude as `project-planner` connects it; ChatGPT through Codex; Google
+through Gemini CLI) or an API key (Claude, OpenAI, Gemini). Several may be linked, one is in use, each
+switched on and off; nothing of a key or a sign-in is ever shown; the Make buttons appear as soon as one is
+in use. The owner was shown, the same day, Anthropic's, Google's and OpenAI's own terms on a hosted app using
+people's subscriptions, and decided to go ahead: an agreement is on the way.
+
+- **The accounts** are rows of `user_secrets`, sealed as every credential (`libs.secrets`), several per
+  kind, one `active` (a unique index refuses a second). `libs.llm.accounts` lists, links, switches and
+  removes them; `SecretStore.add`, `reveal_account` and `reseal` are the AI accounts' path, and `put` /
+  `reveal` by kind are left to the one Telegram bot token. `last_4` is retired (owner: not displayed), and
+  so is `mark_validated`, which only a test called.
+- **Signing in** (`libs.signin`, replacing `libs.claudeauth`): the broker runs the provider's own tool in a
+  terminal and a folder of its own, `claude auth login --claudeai`, `codex login --device-auth` or Gemini
+  CLI's Google sign-in. The person opens the link; Claude and Google show a code to paste back here, Codex
+  shows one here to enter on OpenAI's page, and the page waits. Signed in is the tool writing its login
+  files: those are the secret, sealed by the API; the folder is deleted. Checked against the real tools
+  (Claude Code 2.1.319, Codex 0.167.0, Gemini CLI 0.67.0, pinned once in `deploy/docker/ai-tools.txt` for
+  both images): each printed the link, and Codex its code, as read.
+- **Writing with a sign-in** (`libs.llm.cli`): the login unpacked into a private folder for one call, the
+  tool run with nothing inherited (`claude -p` with no tools, `codex exec` read-only, `gemini -p` in plan
+  mode), the answer read, the folder deleted, and a login the tool renewed sealed again. Only the files a
+  login is made of are ever unpacked. One docgen worker makes the calls; a second would need a lock per
+  account first (a renewed login can retire another call's).
+- **Documents**: `own()` is the account in use or nothing; the platform's key and allowance are now the help
+  chat's alone, and the chat runs on an API key in use (a sign-in's tool offers no tool calls). A failure on
+  the person's account (an expired sign-in, a plan used up) is said to them as the build's reason, not paged
+  as a dead letter. The Make buttons are back, behind `dashboard.ai.account`; without one in use, the Jobs
+  page says once to link one.
+- **Removed**, replaced here: the `claude setup-token` connection (`libs/claudeauth`, the `/credentials`
+  routes, `ClaudeConnect`, the `claude_oauth` kind and the Anthropic client's OAuth path); the deploy's
+  first schema step deletes the tokens it stored (`accounts.settle`, run before the new rules: the prune
+  could not change a row of a kind they refuse, and stopped the deploy in a test). Keys linked before are
+  labelled and one goes in use. `TenantRepository.secret_metadata` went with its routes, `.saved-key` with
+  its form, and `PLATFORM_AI_*` from the docgen service, which no longer reads them.
+- **Locally**, `scripts/dev.sh` installs the three tools into its data folder and starts the broker.
+
+Tests: the routes (`test_ai_accounts.py`), the sign-ins against stand-in tools (`test_signin.py`), the calls
+(`test_cli.py`), the settle, the store's two shapes, the chat and document payers, and in the browser,
+linking a key in Settings putting the Make buttons under every job and switching it off removing them.
+
+Not changed, for the owner: the help chat's prompt (`libs/prompts/support.md`) still says the instant
+version is free; `users.profile` has neither a writer nor a reader (`test_columns_have_producers`).
+
+Gates: lint-imports 2 kept; ruff clean; schema on an empty db, and on old-style secrets twice (settled,
+then nothing to do); contract current (79 paths); build; pytest 1390 passed, 3 skipped (the same three).
+
+---
+
 ## 2026-11-08 — Making CVs and cover letters paused; the instant documents, built by code, removed
 
 The owner: every CV and cover letter will be written by AI, from the CVs a person uploaded and switched

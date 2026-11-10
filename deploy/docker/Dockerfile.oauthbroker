@@ -20,12 +20,14 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
  && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
  && node --version && npm --version
 
-# **Pinned, and the pin is load-bearing.** This service scrapes two things out of the CLI's output:
-# the authorization URL it prints, and the prompt it blocks on. Both are prose a release is free to
-# reword, so `latest` means a routine rebuild can break sign-in for every new user with nothing in
-# this repository having changed. Raise it deliberately and re-run tests/test_claude_oauth.py.
-ARG CLAUDE_CODE_VERSION=2.1.220
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+# The three providers' own tools, at the versions in `ai-tools.txt`, which the docgen image installs too:
+# a login one version writes is what the other reads. **Pinned, and the pin is load-bearing.** This
+# service reads two things out of each tool's output: the link it prints, and the prompt it waits on.
+# Both are prose a release is free to reword, so `latest` means a routine rebuild can break sign-in for
+# every new person with nothing in this repository having changed. Raise one deliberately, and re-run
+# tests/test_signin.py against it.
+COPY deploy/docker/ai-tools.txt /tmp/ai-tools.txt
+RUN npm install -g $(cat /tmp/ai-tools.txt) && claude --version && codex --version && gemini --version
 
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH="/opt/venv/bin:$PATH"

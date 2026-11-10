@@ -80,9 +80,9 @@ LIMITS: tuple[Limit, ...] = (
     # 2026-10-28), spent only when a platform key is configured (`libs.llm.providers`).
     Limit("ai_platform_requests_per_day", "AI requests on the platform's key per day", 20,
           "requests",
-          "AI-written documents and support-chat replies for an account with no key of its own, "
-          "on the platform's paid key. An account with its own Claude, Gemini or OpenAI key is "
-          "not counted. 0 turns it off.",
+          "Help-chat replies for an account with no API key of its own in use, on the platform's "
+          "paid key. CVs and cover letters are written only with the person's own AI account. "
+          "0 turns it off.",
           allow_unlimited=False, minimum=0, choices=(0, 5, 10, 20, 50)),
 )
 

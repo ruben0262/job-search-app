@@ -63,9 +63,26 @@ if ! (exec 3<>/dev/tcp/127.0.0.1/27017) 2>/dev/null; then
             --logpath "$DATA/mongod.log" >/dev/null
 fi
 
+# The providers' own tools, which sign a person in to their AI account and write with it (`libs.signin`,
+# `libs.llm.cli`): the versions the server's images install, kept in a folder of their own and installed
+# again only when that list changes.
+TOOLS="$DATA/ai-tools"
+if ! cmp -s deploy/docker/ai-tools.txt "$TOOLS/versions.txt"; then
+  echo "installing the AI tools: $(tr '\n' ' ' < deploy/docker/ai-tools.txt)"
+  # Word-split on purpose: one package a line.
+  # shellcheck disable=SC2046
+  npm install --prefix "$TOOLS" --no-audit --no-fund --loglevel=error $(cat deploy/docker/ai-tools.txt)
+  cp deploy/docker/ai-tools.txt "$TOOLS/versions.txt"
+fi
+export CLAUDE_CLI="$TOOLS/node_modules/.bin/claude" CODEX_CLI="$TOOLS/node_modules/.bin/codex" \
+       GEMINI_CLI="$TOOLS/node_modules/.bin/gemini" OAUTH_BROKER_URL=http://127.0.0.1:8100
+
 # Whichever stops first stops the rest, so a crash is never a half-running site.
 trap 'kill 0' EXIT
 .venv/bin/uvicorn services.api.app:app --port 8000 --reload --reload-dir libs --reload-dir services &
+# The sign-ins to AI accounts: their own process, as on the server, and reloaded on a change like the
+# API, or a fix to a sign-in is not the code that runs it.
+.venv/bin/uvicorn services.oauthbroker.__main__:app --port 8100 --reload --reload-dir libs --reload-dir services &
 .venv/bin/python -m services.docgen &
 (while true; do sleep 60; .venv/bin/python -m services.harvester || true; sleep 840; done) &
 npm --prefix web run dev -- --host 127.0.0.1 --port "$PORT" --strictPort &

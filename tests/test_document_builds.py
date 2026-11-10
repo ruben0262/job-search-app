@@ -2,8 +2,9 @@
 deleted. The real app and the real worker step share one test database; only Chrome and the AI
 providers are stand-ins, and the providers are reached through their real adapters.
 
-Every document is written by AI since the instant one, built by code, was removed (2026-11-08). The
-`ready` fixture is an account that can have one: a writing profile, consent, and the platform's key.
+Every document is written by AI since the instant one, built by code, was removed (2026-11-08), and only
+with the person's own AI account in use (2026-11-09). The `ready` fixture is an account that can have one:
+a writing profile, consent, and its own Gemini key in use.
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ import httpx
 
 PLATFORM_KEY = "AIzaPlatformKey-" + "p" * 24
 OWN_KEY = "sk-proj-OwnKey-" + "o" * 30
+OWN_GEMINI = "AIzaOwn-" + "g" * 30
 
 CV_TEXT = """Alice Example
 alice@example.com | Berlin, Germany
@@ -34,6 +36,8 @@ Backend Engineer, Northwind    2021 - Present
 EDUCATION
 BSc Computer Science, TU Berlin    2017
 """
+
+COVER_TEXT = "Dear hiring team, I build billing systems that do not page anyone at night. Alice Example"
 
 WRITTEN = """<!DOCTYPE html><html lang="en"><head><title>Alice Example CV</title></head><body>
 <div class="cv-name">Alice Example</div><p class="profile">Backend engineer.</p>
@@ -61,9 +65,10 @@ def api(db, monkeypatch):
 
     user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
                            full_name="Alice Example"))
-    insert(db, UserDocument(user_id=user.id, kind="cv", filename="cv.txt", text=CV_TEXT,
-                            text_sha256=hashlib.sha256(CV_TEXT.encode()).hexdigest(),
-                            chars=len(CV_TEXT)))
+    # Their CV and a cover letter of theirs: what each is written from (`libs.documents.needs`).
+    for kind, text in (("cv", CV_TEXT), ("cover_letter", COVER_TEXT)):
+        insert(db, UserDocument(user_id=user.id, kind=kind, filename=f"{kind}.txt", text=text,
+                                text_sha256=hashlib.sha256(text.encode()).hexdigest(), chars=len(text)))
     job = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
                                title="Backend Engineer", company="Northwind",
                                description="Backend engineer. Python, Postgres, on-call."))
@@ -123,6 +128,15 @@ def _platform(monkeypatch):
     monkeypatch.setenv("PLATFORM_AI_KEY", PLATFORM_KEY)
 
 
+def _own(api, kind="gemini_api", value=OWN_GEMINI) -> str:
+    """Their own AI account, linked and in use, as Settings links one."""
+    from libs.llm import accounts
+
+    account = api.store.add(api.user.id, kind, value, label=accounts.KIND_NAMES[kind], validated=True)
+    accounts.use(api.db, api.user.id, str(account))
+    return str(account)
+
+
 def _providers(monkeypatch) -> list[httpx.Request]:
     """Gemini and OpenAI as the real adapters over a mock transport: every request they make."""
     from libs.llm import providers
@@ -146,9 +160,9 @@ def _providers(monkeypatch) -> list[httpx.Request]:
 
 @pytest.fixture()
 def ready(api, monkeypatch):
-    """An account that can have an AI document: a writing profile, consent, the platform's key, and
+    """An account that can have an AI document: a writing profile, consent, its own Gemini key in use, and
     the providers answering with `WRITTEN`. What every request reached them with is `ready.sent`."""
-    _platform(monkeypatch)
+    _own(api)
     _personalise(api)
     _consent(api)
     api.sent = _providers(monkeypatch)
@@ -429,7 +443,9 @@ def test_a_written_backup_holds_no_built_document(ready, tmp_path):
 # ── the AI one ────────────────────────────────────────────────────────────────────────────────
 
 def test_an_ai_document_asks_for_consent_first(api, monkeypatch):
+    """Before anything is sent; once their account and documents are there, which are asked first."""
     _platform(monkeypatch)
+    _own(api)
     _personalise(api)
 
     refused = _ask(api, mode="ai")
@@ -440,7 +456,7 @@ def test_an_ai_document_asks_for_consent_first(api, monkeypatch):
 
 def test_withdrawn_consent_stops_a_queued_ai_document_before_any_text_leaves(api, monkeypatch):
     """The guarantee sits where text leaves the server, whatever was decided when it was queued."""
-    _platform(monkeypatch)
+    _own(api)
     _personalise(api)
     _consent(api)
     sent = _providers(monkeypatch)
@@ -454,12 +470,14 @@ def test_withdrawn_consent_stops_a_queued_ai_document_before_any_text_leaves(api
     assert sent == [], "the profile was sent to a provider without consent"
 
 
-def test_an_ai_document_on_the_platform_key_writes_with_the_operators_model(api, monkeypatch):
-    """Allowance, platform key, the model chosen in the panel, the provider asked, a PDF back."""
+def test_an_ai_document_on_their_own_account_writes_with_the_operators_model(api, monkeypatch):
+    """Their account in use, the model chosen in the panel, the provider asked, a PDF back; and the
+    platform's key, configured and with its allowance left, neither asked nor counted."""
     from libs import settings
     from libs.llm import ai_requests_today
 
     _platform(monkeypatch)
+    _own(api)
     _personalise(api)
     _consent(api)
     settings.put(api.db, "document_models", {"gemini": "gemini-chosen-in-the-panel"})
@@ -470,9 +488,9 @@ def test_an_ai_document_on_the_platform_key_writes_with_the_operators_model(api,
 
     assert _status(api, build_id)["state"] == "ready"
     assert "models/gemini-chosen-in-the-panel:generateContent" in str(sent[0].url)
-    assert sent[0].headers["x-goog-api-key"] == PLATFORM_KEY
-    assert PLATFORM_KEY not in str(sent[0].url), "a key in the URL ends up in every error message"
-    assert ai_requests_today(api.db, api.user.id) == 1
+    assert sent[0].headers["x-goog-api-key"] == OWN_GEMINI
+    assert OWN_GEMINI not in str(sent[0].url), "a key in the URL ends up in every error message"
+    assert ai_requests_today(api.db, api.user.id) == 0, "the help chat's allowance, not a document's"
 
 
 def test_their_own_key_pays_and_is_never_counted_against_the_allowance(api, monkeypatch):
@@ -481,7 +499,7 @@ def test_their_own_key_pays_and_is_never_counted_against_the_allowance(api, monk
     _platform(monkeypatch)
     _personalise(api)
     _consent(api)
-    api.store.put(api.user.id, "openai_api", OWN_KEY, validated=True)
+    _own(api, "openai_api", OWN_KEY)
     sent = _providers(monkeypatch)
 
     build_id = _ask(api, mode="ai").json()["id"]
@@ -492,37 +510,104 @@ def test_their_own_key_pays_and_is_never_counted_against_the_allowance(api, monk
     assert ai_requests_today(api.db, api.user.id) == 0
 
 
-def test_without_any_key_ai_says_so_and_nothing_is_made(api):
-    """No key of their own and no platform key configured: they are told so, and nothing is queued
-    (owner, 2026-11-08: no document by other means)."""
+def test_without_an_account_of_their_own_they_are_told_so_and_nothing_is_made(api, monkeypatch):
+    """However much of the platform's allowance is left: it is the help chat's (owner, 2026-11-09). And
+    no document by other means (2026-11-08). The page is told what is missing, to say where to add it."""
+    _platform(monkeypatch)
     _personalise(api)
     _consent(api)
 
     refused = _ask(api, mode="ai")
 
     assert refused.status_code == 409
-    assert "own Claude, Gemini or OpenAI key" in refused.json()["detail"]
-    assert "instant" not in refused.json()["detail"]
+    assert refused.json()["detail"] == {"missing": ["account"],
+                                        "message": "To make your CV, first link your AI account in Settings."}
     assert _ask(api, mode="instant").status_code == 422, "there is no other way to make one"
 
 
-def test_the_allowance_is_one_count_that_the_chat_spends_too(api, monkeypatch):
-    """A reply in the support chat and a document come out of the same daily allowance."""
+def test_a_cv_is_made_from_their_cv_and_a_cover_letter_from_a_cover_letter_of_theirs(api):
+    """Each from the upload it is written from (owner, 2026-11-10). Without it the page is told which to
+    add and where, with anything else missing, in one answer."""
+    from libs.db.models import UserDocument
+
+    _personalise(api)
+    _consent(api)
+    api.db[UserDocument.COLLECTION].delete_many({"user_id": api.user.id, "kind": "cover_letter"})
+
+    both = _ask(api, kind="cover").json()["detail"]
+    _own(api)
+    cover = _ask(api, kind="cover")
+
+    assert both == {"missing": ["account", "cover_letter"],
+                    "message": "To make your cover letter, first link your AI account in Settings and "
+                               "upload a cover letter in My documents."}
+    assert cover.status_code == 409 and cover.json()["detail"]["missing"] == ["cover_letter"]
+    assert _ask(api, kind="cv").status_code == 202, "their CV is there"
+
+
+def test_what_is_missing_reaches_the_bell_too_once_however_often_it_is_pressed(api):
+    """The page's notice leaves after a few seconds; the bell keeps it, pointing at the first step
+    (owner, 2026-11-10)."""
+    from libs.db.models import UserDocument, UserNotification
+
+    _ask(api)
+    _ask(api)
+    _own(api)
+    api.db[UserDocument.COLLECTION].delete_many({"user_id": api.user.id, "kind": "cover_letter"})
+    _ask(api, kind="cover")
+
+    bell = {row["event"]: row for row in api.db[UserNotification.COLLECTION].find({"user_id": api.user.id})}
+    assert len(bell) == 2
+    assert (bell["document.needs_ai_account"]["url"], bell["document.needs_ai_account"]["body"]) == (
+        "#/settings", "To make your CV, first link your AI account in Settings.")
+    assert (bell["document.needs_upload"]["url"], bell["document.needs_upload"]["body"]) == (
+        "#/documents", "To make your cover letter, first upload a cover letter in My documents.")
+
+
+def test_a_cv_switched_off_is_said_as_one_to_switch_on(api):
+    from libs.db.models import UserDocument
+
+    _own(api)
+    _personalise(api)
+    _consent(api)
+    api.db[UserDocument.COLLECTION].update_many({"user_id": api.user.id, "kind": "cv"},
+                                                {"$set": {"in_use": False}})
+
+    refused = _ask(api)
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["message"] == "To make your CV, first switch your CV on in My documents."
+
+
+def test_a_cv_removed_after_it_was_asked_for_stops_the_build_before_any_text_leaves(ready):
+    """The worker asks again where text leaves the server, as it does for consent."""
+    from libs.db.models import UserDocument
+
+    build_id = _ask(ready).json()["id"]
+    ready.db[UserDocument.COLLECTION].delete_many({"user_id": ready.user.id, "kind": "cv"})
+    _work(ready)
+
+    status = _status(ready, build_id)
+    assert status["state"] == "failed" and "upload your CV in My documents" in status["detail"]
+    assert ready.sent == [], "nothing went to the provider"
+
+
+def test_a_document_never_spends_the_help_chats_allowance(api, monkeypatch):
+    """The platform's allowance is the chat's alone: a document used up in it is still made, on their own
+    account, and leaves the count where it was."""
     from libs.limits import set_limit
     from libs.llm import ai_requests_today, record_ai_request
 
     _platform(monkeypatch)
+    _own(api)
     _personalise(api)
     _consent(api)
-    set_limit(api.db, api.user.id, "ai_platform_requests_per_day", 2)
-    record_ai_request(api.db, api.user.id)          # what the chat does for one reply
+    set_limit(api.db, api.user.id, "ai_platform_requests_per_day", 1)
+    record_ai_request(api.db, api.user.id)          # what the chat does for one reply: the allowance gone
 
     assert _ask(api, kind="cv", mode="ai").status_code == 202
-    assert _ask(api, kind="cv", mode="ai").status_code == 202, "asking twice is one request"
-    over = _ask(api, kind="cover", mode="ai")
-
-    assert over.status_code == 409
-    assert ai_requests_today(api.db, api.user.id) == 2
+    assert _ask(api, kind="cover", mode="ai").status_code == 202
+    assert ai_requests_today(api.db, api.user.id) == 1
 
 
 def test_the_daily_ceiling_counts_every_document_where_they_are_asked_for(api):
@@ -534,7 +619,7 @@ def test_the_daily_ceiling_counts_every_document_where_they_are_asked_for(api):
 
     _personalise(api)
     _consent(api)
-    api.store.put(api.user.id, "gemini_api", "AIzaOwn-" + "g" * 30, validated=True)
+    _own(api)
     set_limit(api.db, api.user.id, "cv_builds_per_day", 2)
     other = insert(api.db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
                                      title="Data Engineer", company="Contoso", description="Python."))
@@ -547,9 +632,9 @@ def test_the_daily_ceiling_counts_every_document_where_they_are_asked_for(api):
     assert BY_KEY["cv_builds_per_day"].default == 50
 
 
-def test_an_account_without_a_writing_profile_is_told_so(api, monkeypatch):
+def test_an_account_without_a_writing_profile_is_told_so(api):
     """AI documents for everyone else wait for the shared prompts (ROADMAP Phase 8, step 7)."""
-    _platform(monkeypatch)
+    _own(api)
     _consent(api)
 
     refused = _ask(api, mode="ai")

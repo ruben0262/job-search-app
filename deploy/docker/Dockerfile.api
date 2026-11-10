@@ -20,6 +20,11 @@ RUN npm run build
 
 FROM python:3.12-slim
 
+# The font an older upload's PDF is written in (`libs.documents.remake.FONT`): letters beyond Western
+# Europe's, which the PDF's own fonts do not have.
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY services/api/requirements.txt /app/services/api/requirements.txt

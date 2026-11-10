@@ -254,6 +254,9 @@ DEFAULT_DOCUMENT_MODELS: dict[str, str] = {
     "anthropic": CV_MODEL,
     "gemini": "gemini-3.8-flash",
     "openai": "gpt-6-luna",
+    # A ChatGPT sign-in, through Codex (`libs.llm.cli`): empty is Codex's own choice, which knows the
+    # models the person's plan includes; an API model name may not be one of them.
+    "codex": "",
 }
 
 # How long a built document waits to be downloaded before the docgen worker deletes it (D9:

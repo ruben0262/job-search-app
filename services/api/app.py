@@ -18,9 +18,9 @@ from libs.obs import configure
 from libs.secrets import install
 from services.api.account_routes import router as account_router
 from services.api.admin_routes import router as admin_router
+from services.api.ai_account_routes import router as ai_account_router
 from services.api.auth_routes import router as auth_router
 from services.api.contact_routes import router as contact_router
-from services.api.credential_routes import router as credential_router
 from services.api.dashboard_routes import router as dashboard_router
 from services.api.document_routes import router as document_router
 from services.api.link_routes import router as link_router
@@ -52,7 +52,7 @@ app.include_router(auth_router)
 app.include_router(contact_router)
 app.include_router(account_router)
 app.include_router(admin_router)
-app.include_router(credential_router)
+app.include_router(ai_account_router)
 app.include_router(document_router)
 app.include_router(onboarding_router)
 app.include_router(push_router)

@@ -292,44 +292,74 @@
         "title": "AdminUsage",
         "type": "object"
       },
-      "AiWriting": {
-        "description": "Whether an AI can write this person a document now, and on whose key \u2014 `libs.llm.resolve`'s\nanswer, so the buttons offer exactly what a build would be allowed to do.",
+      "AiAccount": {
         "properties": {
-          "left": {
-            "title": "Left",
-            "type": "integer"
+          "id": {
+            "title": "Id",
+            "type": "string"
           },
-          "payer": {
+          "in_use": {
+            "title": "In Use",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "claude_login",
+              "codex_login",
+              "gemini_login",
+              "claude_api",
+              "openai_api",
+              "gemini_api"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "linked_at": {
+            "format": "date-time",
+            "title": "Linked At",
+            "type": "string"
+          },
+          "model": {
             "anyOf": [
               {
-                "enum": [
-                  "own",
-                  "platform"
-                ],
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Payer"
-          },
-          "per_day": {
-            "title": "Per Day",
-            "type": "integer"
-          },
-          "profile": {
-            "title": "Profile",
-            "type": "boolean"
+            "title": "Model"
           }
         },
         "required": [
-          "payer",
-          "per_day",
-          "left",
-          "profile"
+          "id",
+          "kind",
+          "label",
+          "in_use",
+          "linked_at",
+          "model"
         ],
-        "title": "AiWriting",
+        "title": "AiAccount",
+        "type": "object"
+      },
+      "AiAccounts": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/AiAccount"
+            },
+            "title": "Accounts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "accounts"
+        ],
+        "title": "AiAccounts",
         "type": "object"
       },
       "AppliedJob": {
@@ -875,42 +905,6 @@
           "counts"
         ],
         "title": "CountrySeries",
-        "type": "object"
-      },
-      "CredentialBody": {
-        "properties": {
-          "allow_unvalidated": {
-            "default": false,
-            "title": "Allow Unvalidated",
-            "type": "boolean"
-          },
-          "value": {
-            "maxLength": 4096,
-            "minLength": 8,
-            "title": "Value",
-            "type": "string"
-          }
-        },
-        "required": [
-          "value"
-        ],
-        "title": "CredentialBody",
-        "type": "object"
-      },
-      "CredentialList": {
-        "properties": {
-          "credentials": {
-            "items": {
-              "$ref": "#/components/schemas/StoredCredential"
-            },
-            "title": "Credentials",
-            "type": "array"
-          }
-        },
-        "required": [
-          "credentials"
-        ],
-        "title": "CredentialList",
         "type": "object"
       },
       "Currency": {
@@ -1756,6 +1750,19 @@
         "title": "IdentitySchema",
         "type": "object"
       },
+      "InUse": {
+        "properties": {
+          "in_use": {
+            "title": "In Use",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "in_use"
+        ],
+        "title": "InUse",
+        "type": "object"
+      },
       "JobDescription": {
         "properties": {
           "text": {
@@ -1924,6 +1931,36 @@
           "hidden"
         ],
         "title": "JobMarks",
+        "type": "object"
+      },
+      "KeyBody": {
+        "properties": {
+          "allow_unvalidated": {
+            "default": false,
+            "title": "Allow Unvalidated",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "claude_api",
+              "openai_api",
+              "gemini_api"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 4096,
+            "minLength": 8,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "title": "KeyBody",
         "type": "object"
       },
       "Language": {
@@ -2224,61 +2261,6 @@
           "read"
         ],
         "title": "NotificationRow",
-        "type": "object"
-      },
-      "OAuthCancelBody": {
-        "properties": {
-          "session_id": {
-            "maxLength": 128,
-            "minLength": 8,
-            "title": "Session Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session_id"
-        ],
-        "title": "OAuthCancelBody",
-        "type": "object"
-      },
-      "OAuthFinishBody": {
-        "properties": {
-          "code": {
-            "maxLength": 512,
-            "minLength": 4,
-            "title": "Code",
-            "type": "string"
-          },
-          "session_id": {
-            "maxLength": 128,
-            "minLength": 8,
-            "title": "Session Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session_id",
-          "code"
-        ],
-        "title": "OAuthFinishBody",
-        "type": "object"
-      },
-      "OAuthStarted": {
-        "properties": {
-          "session_id": {
-            "title": "Session Id",
-            "type": "string"
-          },
-          "url": {
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session_id",
-          "url"
-        ],
-        "title": "OAuthStarted",
         "type": "object"
       },
       "OnboardingDashboard": {
@@ -2595,9 +2577,6 @@
       "ReadyDashboard": {
         "description": "What every signed-in page needs before it draws. No count of matches: the jobs page is the\nfront page and counts its own list, and asking here as well was a second full match run on every\nload \u2014 /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it.",
         "properties": {
-          "ai": {
-            "$ref": "#/components/schemas/AiWriting"
-          },
           "applied": {
             "title": "Applied",
             "type": "integer"
@@ -2627,23 +2606,9 @@
           "is_admin",
           "applied",
           "banners",
-          "ai",
           "job_filters"
         ],
         "title": "ReadyDashboard",
-        "type": "object"
-      },
-      "Removed": {
-        "properties": {
-          "status": {
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "title": "Removed",
         "type": "object"
       },
       "ResendRequest": {
@@ -2723,29 +2688,6 @@
           "status"
         ],
         "title": "SaveResult",
-        "type": "object"
-      },
-      "Saved": {
-        "properties": {
-          "detail": {
-            "title": "Detail",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "validated": {
-            "title": "Validated",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "status",
-          "validated",
-          "detail"
-        ],
-        "title": "Saved",
         "type": "object"
       },
       "SavedDocument": {
@@ -2978,6 +2920,105 @@
         "title": "SettingPatch",
         "type": "object"
       },
+      "SignInCancel": {
+        "properties": {
+          "session_id": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "SignInCancel",
+        "type": "object"
+      },
+      "SignInFinish": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 4,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "session_id": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "SignInFinish",
+        "type": "object"
+      },
+      "SignInResult": {
+        "properties": {
+          "accounts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiAccounts"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "done",
+              "waiting"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "SignInResult",
+        "type": "object"
+      },
+      "SignInStarted": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "url"
+        ],
+        "title": "SignInStarted",
+        "type": "object"
+      },
       "SignupRequest": {
         "properties": {
           "email": {
@@ -3042,48 +3083,6 @@
           "stage"
         ],
         "title": "StepRequest",
-        "type": "object"
-      },
-      "StoredCredential": {
-        "properties": {
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "last_4": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last 4"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          },
-          "validated": {
-            "title": "Validated",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "kind",
-          "last_4",
-          "validated",
-          "updated_at"
-        ],
-        "title": "StoredCredential",
         "type": "object"
       },
       "StoredDocument": {
@@ -4869,6 +4868,314 @@
         ]
       }
     },
+    "/ai-accounts": {
+      "get": {
+        "description": "Their AI accounts, newest first.",
+        "operationId": "list_accounts_ai_accounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiAccounts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Accounts",
+        "tags": [
+          "ai accounts"
+        ]
+      }
+    },
+    "/ai-accounts/keys": {
+      "post": {
+        "description": "Link an API key, once the provider has said it works. It goes in use at once.",
+        "operationId": "add_key_ai_accounts_keys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiAccounts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Key",
+        "tags": [
+          "ai accounts"
+        ]
+      }
+    },
+    "/ai-accounts/signin/cancel": {
+      "post": {
+        "description": "Back out. Cheap, and it ends the tool rather than leaving it to the TTL. Declared before\n`/signin/{kind}`, which would otherwise take \"cancel\" for a kind.",
+        "operationId": "cancel_signin_ai_accounts_signin_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignInCancel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cancel Signin Ai Accounts Signin Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Signin",
+        "tags": [
+          "ai accounts"
+        ]
+      }
+    },
+    "/ai-accounts/signin/{kind}": {
+      "post": {
+        "description": "Begin a sign-in to their own account, and hand back the page to open.",
+        "operationId": "start_signin_ai_accounts_signin__kind__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "claude_login",
+                "codex_login",
+                "gemini_login"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Signin",
+        "tags": [
+          "ai accounts"
+        ]
+      }
+    },
+    "/ai-accounts/signin/{kind}/finish": {
+      "post": {
+        "description": "Finish a sign-in, and seal the account it leaves. It goes in use at once.",
+        "operationId": "finish_signin_ai_accounts_signin__kind__finish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "claude_login",
+                "codex_login",
+                "gemini_login"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignInFinish"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finish Signin",
+        "tags": [
+          "ai accounts"
+        ]
+      }
+    },
+    "/ai-accounts/{account_id}": {
+      "delete": {
+        "description": "Forget an account and its secret.",
+        "operationId": "unlink_ai_accounts__account_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiAccounts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unlink",
+        "tags": [
+          "ai accounts"
+        ]
+      },
+      "put": {
+        "description": "Put an account in use, which takes every other one out of it, or take it out of use.",
+        "operationId": "switch_ai_accounts__account_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InUse"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiAccounts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch",
+        "tags": [
+          "ai accounts"
+        ]
+      }
+    },
     "/applied": {
       "get": {
         "description": "Every job this person said they applied to, the latest first, whether or not it still matches\ntheir words. Retention keeps these postings (`libs.corpus.archive.ACTED_ON`).",
@@ -5285,232 +5592,6 @@
         ]
       }
     },
-    "/credentials": {
-      "get": {
-        "description": "What the account page shows: which credentials exist, never what they are.",
-        "operationId": "list_credentials_credentials_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CredentialList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Credentials",
-        "tags": [
-          "credentials"
-        ]
-      }
-    },
-    "/credentials/claude/oauth/cancel": {
-      "post": {
-        "description": "Back out. Cheap, and it frees the process instead of leaving it to the TTL.",
-        "operationId": "claude_oauth_cancel_credentials_claude_oauth_cancel_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OAuthCancelBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Claude Oauth Cancel Credentials Claude Oauth Cancel Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Claude Oauth Cancel",
-        "tags": [
-          "credentials"
-        ]
-      }
-    },
-    "/credentials/claude/oauth/finish": {
-      "post": {
-        "description": "Exchange the code for a token, and store it only if it works.",
-        "operationId": "claude_oauth_finish_credentials_claude_oauth_finish_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OAuthFinishBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Claude Oauth Finish Credentials Claude Oauth Finish Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Claude Oauth Finish",
-        "tags": [
-          "credentials"
-        ]
-      }
-    },
-    "/credentials/claude/oauth/start": {
-      "post": {
-        "description": "Begin a sign-in and hand back the URL to open.",
-        "operationId": "claude_oauth_start_credentials_claude_oauth_start_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OAuthStarted"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Claude Oauth Start",
-        "tags": [
-          "credentials"
-        ]
-      }
-    },
-    "/credentials/{kind}": {
-      "delete": {
-        "description": "Revoke one credential. A Telegram bot is not one of these: it is under `/telegram/bot`.",
-        "operationId": "delete_credential_credentials__kind__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "kind",
-            "required": true,
-            "schema": {
-              "title": "Kind",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Removed"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Delete Credential",
-        "tags": [
-          "credentials"
-        ]
-      },
-      "put": {
-        "description": "Store or replace one credential.",
-        "operationId": "put_credential_credentials__kind__put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "kind",
-            "required": true,
-            "schema": {
-              "title": "Kind",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CredentialBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Saved"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Put Credential",
-        "tags": [
-          "credentials"
-        ]
-      }
-    },
     "/dashboard": {
       "get": {
         "description": "Everything the front page shows, in one call. Opening the site is being online: the time is\nkept to the minute, for the admin's account page.",
@@ -5563,7 +5644,7 @@
         ]
       },
       "post": {
-        "description": "Extract and store one document's text.",
+        "description": "Store one document: the text read out of it, and the file to download again.",
         "operationId": "upload_documents_post",
         "requestBody": {
           "content": {
@@ -5818,6 +5899,45 @@
           }
         },
         "summary": "Use Document",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/{document_id}/file": {
+      "get": {
+        "description": "A file they uploaded, in the format they uploaded it (owner, 2026-11-10): the file itself, or, one\nfrom before files were kept, a file of its type written from the text read out of it\n(`libs.documents.remake`). Scoped to the caller.",
+        "operationId": "document_file_documents__document_id__file_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {}
+            },
+            "description": "The file."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Document File",
         "tags": [
           "documents"
         ]

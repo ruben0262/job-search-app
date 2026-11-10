@@ -3270,9 +3270,14 @@ work, or opening and closing sessions faster, would help):
     `tailor_cv` and `tailor_cover` write each document from it, the letter with some research on the
     company. One prompt for every model. Each account has its own free allowance on the platform's
     key and can add its own Claude, Gemini or OpenAI key beyond it; with neither, it is told so.
-    Agreement to sending their documents to an AI is a required tickbox at sign-up. First: which
-    service gives a good, fast model free for ~100 accounts at 20-30 documents a day each, on one key
-    or a key per account; then the old prompts measured on it and on Claude, Gemini and GPT.
+    Agreement to sending their documents to an AI is a required tickbox at sign-up.
+    **2026-11-09, decided and built: each person's own AI account.** No platform-paid writing: a CV or
+    letter is made only with an account they linked in Settings, a sign-in to Claude, ChatGPT or Gemini
+    or an API key, one in use (`libs.llm.accounts`). 2026-11-10: the Make buttons show for everyone, and
+    a CV needs their own CV uploaded, a cover letter their own cover letter (`libs.documents.needs`). Still
+    to do: the organise prompt and the base it
+    writes; `tailor_cv` and `tailor_cover` on it, one prompt for every model; the sign-up tickbox; the
+    prompts measured on each provider's default model, through linked accounts.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

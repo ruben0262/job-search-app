@@ -6,10 +6,10 @@ import { useEffect, useState } from "react";
 
 import { api, type Schema } from "../api";
 import { useKept } from "../kept";
-import { PAUSED } from "../documents";
 import { TemplatePicks } from "../templates";
 import { ago, useNow } from "../time";
-import { Card, Error, Field, Prompt, UploadButton, useAction } from "../ui";
+import { toast } from "../toast";
+import { BinIcon, Card, DownloadIcon, Error, Field, Prompt, UploadButton, useAction } from "../ui";
 import { IdentityFields } from "./WordsPage";
 
 type DocumentList = Schema<"DocumentList">;
@@ -26,9 +26,6 @@ export function useDocuments() {
   return { list, reload };
 }
 
-/** How long what a save found stays on screen. */
-const SAID_MS = 8000;
-
 /** What is suggested right now, so a save can say how many words it found. */
 async function suggested(): Promise<Set<string>> {
   const body = await api.get<Schema<"WordSuggestions">>("/suggestions");
@@ -38,22 +35,18 @@ async function suggested(): Promise<Set<string>> {
 export function DocumentsPage() {
   const { list, reload } = useDocuments();
   const [before, setBefore] = useState<Set<string> | null>(null);
-  const [found, setFound] = useState<number | null>(null);
 
   useEffect(() => {
     void suggested().then(setBefore).catch(() => undefined);
   }, []);
-  useEffect(() => {
-    if (found === null) return;
-    const timer = window.setTimeout(() => setFound(null), SAID_MS);
-    return () => window.clearTimeout(timer);
-  }, [found]);
 
   // Every save is read by rules on the spot, so the new suggestions are already there to count.
   const saved = async () => {
     await reload();
     const after = await suggested().catch(() => before ?? new Set<string>());
-    setFound([...after].filter((term) => !before?.has(term)).length);
+    const found = [...after].filter((term) => !before?.has(term)).length;
+    toast(found ? { text: `We found ${found} new word${found === 1 ? "" : "s"} for you.`,
+                    links: [{ href: "#/words", label: "See them in My search" }] } : { text: "Saved." });
     setBefore(after);
   };
 
@@ -83,18 +76,6 @@ export function DocumentsPage() {
       <Card title="Cover letters and other files">
         <Files kind="cover_letter" list={list} onChanged={saved} />
       </Card>
-
-      {found !== null ? (
-        <p className="toast" role="status">
-          {found ? (
-            <>
-              We found {found} new word{found === 1 ? "" : "s"} for you. <a href="#/words">See them in My search</a>
-            </>
-          ) : (
-            "Saved."
-          )}
-        </p>
-      ) : null}
     </>
   );
 }
@@ -149,7 +130,7 @@ function Made() {
         </div>
       ) : null}
       {kept.documents.length === 0 ? (
-        <p className="muted">None yet. {PAUSED}</p>
+        <p className="muted">None yet. Tap “Make my CV” under a job, and it is kept here.</p>
       ) : (
         <details className="fold-plain made">
           <summary>
@@ -268,12 +249,22 @@ export function Files({ kind, list, onChanged }: {
                        onChange={(event) => void use.run(document.id, event.target.checked)} />
                 <span className="file-status">{document.in_use ? "In use" : "Not used"}</span>
               </label>
-              <button type="button" className="secondary small" disabled={remove.busy}
-                      onClick={() => {
-                        if (window.confirm(`Remove ${document.filename}?`)) void remove.run(document.id);
-                      }}>
-                Remove
-              </button>
+              {/* Pictures, not words (owner, 2026-11-10), each named for whoever cannot see it. The
+                  download is in the format they uploaded it: the file, or one from before files were
+                  kept written again from its text. */}
+              <span className="file-acts">
+                <a className="icon-btn file-act" href={`/documents/${document.id}/file`} download
+                   aria-label={`Download ${document.filename}`} title="Download">
+                  <DownloadIcon />
+                </a>
+                <button type="button" className="icon-btn file-act remove" disabled={remove.busy}
+                        aria-label={`Remove ${document.filename}`} title="Remove"
+                        onClick={() => {
+                          if (window.confirm(`Remove ${document.filename}?`)) void remove.run(document.id);
+                        }}>
+                  <BinIcon />
+                </button>
+              </span>
             </li>
           ))}
         </ul>

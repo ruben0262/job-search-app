@@ -1,27 +1,16 @@
 /** Settings: alerts, AI writing and your account. Help moved to the "?" beside the bell. */
 import { useState } from "react";
 
+import { AiAccounts } from "../aiaccounts";
 import { Alerts } from "../alerts";
 import { api, type Ready, type Schema } from "../api";
-import { ClaudeConnect } from "../components/ClaudeConnect";
 import { useKept } from "../kept";
 import { Card, Error, Field, Prompt, useAction } from "../ui";
 
 type Account = Schema<"AccountOut">;
-type Stored = Schema<"StoredCredential">;
 
 /** What Settings reads, as `kept.ts` keeps it: shown at once on every visit. */
 export const ACCOUNT = "/account";
-export const CREDENTIALS = "/credentials";
-
-/** Your own key for AI-written documents: what each box is called and where the key comes from. */
-const KEYS = {
-  claude_api: ["Claude key", "From console.anthropic.com, with credit on it.", "sk-ant-…"],
-  claude_oauth: ["Claude subscription", "Connect with the button, or paste a token from claude setup-token.",
-                 "sk-ant-oat…"],
-  gemini_api: ["Gemini key", "From aistudio.google.com, on a project with billing turned on.", "AIza…"],
-  openai_api: ["OpenAI key", "From platform.openai.com.", "sk-…"],
-} as const;
 
 export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
   dashboard: Ready;
@@ -29,15 +18,11 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
   onSignedOut: () => void;
 }) {
   const { data: account, reload: reloadAccount } = useKept<Account>(ACCOUNT);
-  const { data: credentials, reload: reloadCredentials } = useKept<Schema<"CredentialList">>(CREDENTIALS);
-  const stored: Stored[] = credentials?.credentials ?? [];
-  const [provider, setProvider] = useState<keyof typeof KEYS>("claude_api");
 
   const reload = () => {
     void reloadAccount();
-    void reloadCredentials();
   };
-  // A key changes who pays for AI and a pause changes the jobs page's banner: both are the dashboard's.
+  // A pause changes the jobs page's banner, which is the dashboard's.
   const dashboardChanged = () => {
     reload();
     onChanged();
@@ -57,8 +42,6 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
   });
 
   if (!account) return <p className="muted">Loading your settings…</p>;
-  const [label, hint, placeholder] = KEYS[provider];
-  const { ai } = dashboard;
 
   return (
     <>
@@ -85,26 +68,8 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
         <Error>{pause.error}</Error>
       </Card>
 
-      <Card title="AI writing">
-        <p className="small muted">Instant CVs and cover letters are free and made right here.</p>
-        <p>
-          {!ai.profile ? "AI-written CVs and cover letters are not ready for new accounts yet."
-            : ai.payer === "own" ? "Your own key is saved: AI writing is unlimited."
-              : ai.payer === "platform" ? `AI requests left today: ${ai.left} of ${ai.per_day}`
-                : ai.per_day > 0 && ai.left === 0
-                  ? `You have used today's ${ai.per_day} AI requests. More tomorrow, or use your own key.`
-                  : "Save your own key below to have AI write them."}
-        </p>
-        <Field label="Use your own key — unlimited">
-          <select value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)}>
-            {Object.entries(KEYS).map(([kind, [name]]) => (
-              <option key={kind} value={kind}>{name}</option>
-            ))}
-          </select>
-        </Field>
-        {provider === "claude_oauth" ? <ClaudeConnect onConnected={dashboardChanged} /> : null}
-        <Credential key={provider} kind={provider} label={label} hint={hint} placeholder={placeholder}
-                    stored={stored} onChanged={dashboardChanged} />
+      <Card title="Your AI accounts">
+        <AiAccounts />
         {account.consent_version ? (
           <p className="small muted">
             You agreed that AI-written documents may use your profile.{" "}
@@ -133,69 +98,6 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
         {dashboard.is_admin ? <> · <a href="#/admin">Platform</a></> : null}
       </p>
     </>
-  );
-}
-
-/** One credential: a box to save it, and what is saved, which can be removed. */
-function Credential({ kind, label, hint, placeholder, stored, onChanged }: {
-  kind: string;
-  label: string;
-  hint: string;
-  placeholder: string;
-  stored: Stored[];
-  onChanged: () => void;
-}) {
-  const [value, setValue] = useState("");
-  const [unchecked, setUnchecked] = useState<string | null>(null);
-  const save = useAction(async (anyway: boolean) => {
-    const result = await api.put<Schema<"Saved">>(`/credentials/${kind}`, { value, allow_unvalidated: anyway });
-    setValue("");
-    // Stored but unchecked: the provider could not be reached to try it.
-    setUnchecked(result.validated ? null : result.detail);
-    onChanged();
-  });
-  const remove = useAction(async () => {
-    await api.del(`/credentials/${kind}`);
-    onChanged();
-  });
-  const saved = stored.find((each) => each.kind === kind);
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        void save.run(false);
-      }}
-    >
-      <Field label={label} hint={hint}>
-        <input type="password" value={value} placeholder={placeholder} autoComplete="off"
-               onChange={(event) => setValue(event.target.value)} />
-      </Field>
-      <Error>{save.error}</Error>
-      {save.error ? (
-        <button type="button" className="secondary small" onClick={() => void save.run(true)}>
-          Save it anyway, I know it is right
-        </button>
-      ) : null}
-      {unchecked ? <p className="small muted">Saved, but we could not check it: {unchecked}</p> : null}
-      <div className="row">
-        <button type="submit" className="secondary" disabled={save.busy || !value}>
-          {save.busy ? "Checking…" : "Save"}
-        </button>
-        {saved ? (
-          <span className="saved-key">
-            Saved: ••••{saved.last_4 ?? ""}
-            <button type="button" className="linklike" disabled={remove.busy}
-                    onClick={() => {
-                      if (window.confirm(`Remove your ${label.toLowerCase()}?`)) void remove.run();
-                    }}>
-              Remove
-            </button>
-          </span>
-        ) : null}
-      </div>
-      <Error>{remove.error}</Error>
-    </form>
   );
 }
 

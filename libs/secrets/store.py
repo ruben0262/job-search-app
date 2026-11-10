@@ -4,13 +4,13 @@ from __future__ import annotations
 import uuid as _uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
 
+from bson import ObjectId
 from pymongo.database import Database
 
 from libs.db import now
 from libs.db.models import User, UserSecret
-from libs.db.models.user import SECRET_KINDS
+from libs.db.models.user import AI_KINDS, SECRET_KINDS
 from libs.secrets.keyring import (
     KeyRing,
     SecretsError,
@@ -25,7 +25,12 @@ class UnknownSecretKind(SecretsError):
 
 
 class SecretStore:
-    """Envelope-encrypted credential storage."""
+    """Envelope-encrypted credential storage.
+
+    Two shapes. One per kind, put and read by kind: the person's Telegram bot token. And the AI accounts,
+    several per person (`libs.llm.accounts`), added and read by their id. Nothing here returns any part
+    of a secret to be shown: the plaintext only ever goes to the call that uses it.
+    """
 
     def __init__(self, db: Database, keyring: KeyRing | None = None):
         # Loaded from the environment when not supplied, so a missing KEK fails at construction.
@@ -37,43 +42,49 @@ class SecretStore:
 
     def put(self, user_id: _uuid.UUID, kind: str, value: str, *,
             validated: bool = False) -> None:
-        """Store or replace one credential."""
-        self._check_kind(kind)
-        value = value.strip()
-        if not value:
-            # An empty credential stores successfully and then fails at 3 a.m.
-            raise ValueError(f"refusing to store an empty {kind} credential")
-
-        dek = self._dek(user_id, create=True)
-        ciphertext, nonce = seal(dek, value, user_id=user_id, kind=kind)
-
+        """Store or replace the one credential of a kind a person has one of."""
+        self._check_single(kind)
+        ciphertext, nonce = self._seal(user_id, kind, value)
         self._secrets.update_one(
             {"user_id": user_id, "kind": kind},
-            {"$set": {"ciphertext": ciphertext, "nonce": nonce, "last_4": value[-4:],
-                      "validated_at": now() if validated else None, "updated_at": now()}},
+            {"$set": {"ciphertext": ciphertext, "nonce": nonce,
+                      "validated_at": now() if validated else None, "updated_at": now()},
+             "$setOnInsert": {"_id": ObjectId(), "active": False, "created_at": now()}},
             upsert=True)
 
-    def mark_validated(self, user_id: _uuid.UUID, kind: str,
-                       at: datetime | None = None) -> bool:
-        """Record that this credential was proven to work. Returns False if there is no such row."""
-        self._check_kind(kind)
-        return bool(self._secrets.update_one({"user_id": user_id, "kind": kind},
-                                             {"$set": {"validated_at": at or now()}}).matched_count)
+    def add(self, user_id: _uuid.UUID, kind: str, value: str, *, label: str,
+            validated: bool = False) -> ObjectId:
+        """Store one more AI account, not yet in use. Returns its id."""
+        if kind not in AI_KINDS:
+            raise UnknownSecretKind(f"{kind!r} is not an AI account kind ({AI_KINDS})")
+        ciphertext, nonce = self._seal(user_id, kind, value)
+        row = UserSecret(user_id=user_id, kind=kind, ciphertext=ciphertext, nonce=nonce, label=label,
+                         validated_at=now() if validated else None)
+        self._secrets.insert_one(row.to_doc())
+        return row.id
+
+    def reseal(self, user_id: _uuid.UUID, account_id: ObjectId, value: str) -> bool:
+        """Replace an AI account's secret with a newer one: what its own tool wrote when it renewed the
+        sign-in during a call (`libs.llm.cli`). Returns False if the account has gone meanwhile."""
+        row = self._secrets.find_one({"_id": account_id, "user_id": user_id}, {"kind": 1})
+        if row is None:
+            return False
+        ciphertext, nonce = self._seal(user_id, row["kind"], value)
+        return bool(self._secrets.update_one(
+            {"_id": account_id, "user_id": user_id},
+            {"$set": {"ciphertext": ciphertext, "nonce": nonce, "updated_at": now()}}).matched_count)
 
     # ── reading ──────────────────────────────────────────────────────────────────────────────
 
     def reveal(self, user_id: _uuid.UUID, kind: str) -> Secret | None:
-        """Decrypt one credential."""
-        self._check_kind(kind)
-        row = self._secrets.find_one({"user_id": user_id, "kind": kind})
-        if row is None:
-            return None
-        dek = self._dek(user_id, create=False)
-        if dek is None:
-            # A secret row whose DEK is gone.
-            raise SecretsError(f"user {user_id} has a {kind} secret but no wrapped DEK")
-        return Secret(
-            open_sealed(dek, row["ciphertext"], row["nonce"], user_id=user_id, kind=kind), kind=kind)
+        """Decrypt the one credential of a kind a person has one of."""
+        self._check_single(kind)
+        return self._open(user_id, self._secrets.find_one({"user_id": user_id, "kind": kind}))
+
+    def reveal_account(self, user_id: _uuid.UUID, account_id: ObjectId) -> Secret | None:
+        """Decrypt one AI account's secret, or None if it is not theirs or has gone."""
+        return self._open(user_id, self._secrets.find_one(
+            {"_id": account_id, "user_id": user_id, "kind": {"$in": list(AI_KINDS)}}))
 
     @contextmanager
     def use(self, user_id: _uuid.UUID, kind: str) -> Iterator[Secret | None]:
@@ -91,8 +102,8 @@ class SecretStore:
     # ── deletion ─────────────────────────────────────────────────────────────────────────────
 
     def delete(self, user_id: _uuid.UUID, kind: str) -> bool:
-        """Revoke one credential. Returns whether a row was removed."""
-        self._check_kind(kind)
+        """Revoke the one credential of a kind a person has one of. Returns whether a row was removed."""
+        self._check_single(kind)
         return bool(self._secrets.delete_one({"user_id": user_id, "kind": kind}).deleted_count)
 
     def purge(self, user_id: _uuid.UUID) -> int:
@@ -121,6 +132,23 @@ class SecretStore:
 
     # ── internals ────────────────────────────────────────────────────────────────────────────
 
+    def _seal(self, user_id: _uuid.UUID, kind: str, value: str) -> tuple[bytes, bytes]:
+        value = value.strip()
+        if not value:
+            # An empty credential stores successfully and then fails at 3 a.m.
+            raise ValueError(f"refusing to store an empty {kind} credential")
+        return seal(self._dek(user_id, create=True), value, user_id=user_id, kind=kind)
+
+    def _open(self, user_id: _uuid.UUID, row: dict | None) -> Secret | None:
+        if row is None:
+            return None
+        dek = self._dek(user_id, create=False)
+        if dek is None:
+            # A secret row whose DEK is gone.
+            raise SecretsError(f"user {user_id} has a {row['kind']} secret but no wrapped DEK")
+        return Secret(open_sealed(dek, row["ciphertext"], row["nonce"], user_id=user_id, kind=row["kind"]),
+                      kind=row["kind"])
+
     def _wrapped(self, user_id: _uuid.UUID) -> bytes | None:
         user = self._users.find_one({"_id": user_id}, {"wrapped_dek": 1})
         if user is None:
@@ -140,8 +168,9 @@ class SecretStore:
         return self._ring.unwrap_dek(wrapped, user_id=user_id)
 
     @staticmethod
-    def _check_kind(kind: str) -> None:
-        if kind not in SECRET_KINDS:
+    def _check_single(kind: str) -> None:
+        """A kind a person has exactly one of. The AI accounts are several, added and read by id."""
+        if kind not in SECRET_KINDS or kind in AI_KINDS:
             raise UnknownSecretKind(
-                f"{kind!r} is not one of {SECRET_KINDS} — adding a kind means adding it there, "
-                f"where the collection's rule reads it from")
+                f"{kind!r} is not one of the single kinds in {SECRET_KINDS} — AI accounts are added "
+                f"with `add` and read with `reveal_account`")

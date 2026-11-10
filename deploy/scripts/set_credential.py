@@ -1,4 +1,6 @@
-"""Store one credential for an account, from the box, without the API running."""
+"""Link one AI API key to an account, from the box, without the API running. It goes in use, as one
+linked in Settings does (`libs.llm.accounts`). Sign-ins to a Claude, ChatGPT or Google account are made in
+Settings only: they run the provider's own tool."""
 from __future__ import annotations
 
 import argparse
@@ -11,7 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from libs.credentials import validate_credential
 from libs.db import database, find_one
 from libs.db.models import User
-from libs.db.models.user import CREDENTIAL_KINDS
+from libs.db.models.user import KEY_KINDS
+from libs.llm import accounts
 from libs.obs import configure
 from libs.secrets import SecretStore, install, redacting
 
@@ -19,7 +22,7 @@ from libs.secrets import SecretStore, install, redacting
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--email", required=True)
-    parser.add_argument("--kind", required=True, choices=CREDENTIAL_KINDS)
+    parser.add_argument("--kind", required=True, choices=KEY_KINDS)
     parser.add_argument("--stdin", action="store_true",
                         help="read the value from stdin instead of prompting")
     parser.add_argument("--no-validate", action="store_true",
@@ -52,9 +55,11 @@ def main(argv: list[str] | None = None) -> int:
                       "provider is simply unreachable.", file=sys.stderr)
                 return 3
 
-        SecretStore(db).put(user.id, args.kind, value, validated=validated)
+        account = SecretStore(db).add(user.id, args.kind, value, label=accounts.KIND_NAMES[args.kind],
+                                      validated=validated)
+        accounts.use(db, user.id, str(account))
 
-    print(f"stored {args.kind} for {args.email}")
+    print(f"linked {args.kind} for {args.email}, in use")
     return 0
 
 

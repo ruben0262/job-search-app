@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import os
 import uuid
+from urllib.parse import quote
 
 import pytest
 
@@ -152,9 +153,10 @@ def _upload(http, name="cv.txt", body=b"Alice Example\nBackend Engineer at Acme"
 
 
 @needs_db
-def test_an_upload_stores_the_text_and_not_the_file(api):
-    """Nothing downstream reads a PDF, and keeping strangers' records on disk would be a liability with."""
-    from libs.db.models import UserDocument
+def test_an_upload_keeps_its_text_to_read_and_its_file_apart_to_download(api):
+    """Everything made from documents reads their text; the file itself is only for its owner to
+    download again (owner, 2026-11-10), so reading someone's documents never loads their files."""
+    from libs.db.models import UploadedFile, UserDocument
 
     http, db, users = api
     response = _upload(http)
@@ -163,8 +165,70 @@ def test_an_upload_stores_the_text_and_not_the_file(api):
     (stored,) = db[UserDocument.COLLECTION].find({"user_id": users[0].id})
     assert "Backend Engineer at Acme" in stored["text"]
     assert not [key for key, value in stored.items() if isinstance(value, bytes)], \
-        "no field may hold the original bytes"
-    assert "content" not in UserDocument.__dataclass_fields__
+        "no field of the document may hold the file"
+    assert db[UploadedFile.COLLECTION].find_one({"_id": stored["_id"]})["content"] == \
+        b"Alice Example\nBackend Engineer at Acme"
+
+
+@needs_db
+def test_an_uploaded_file_downloads_again_exactly_as_it_was_uploaded(api):
+    """Byte for byte, under the name they gave it, and always as a download: never opened as a page of
+    the site, whatever is in it."""
+    http, _, _ = api
+    body = _docx_bytes(["Alice Example", "Backend Engineer at Acme"])
+    http.post("/documents", data={"kind": "cv"},
+              files={"file": ("Mé CV.docx", body, "application/octet-stream")})
+
+    (listed,) = http.get("/documents").json()["documents"]
+    response = http.get(f"/documents/{listed['id']}/file")
+
+    assert response.status_code == 200 and response.content == body
+    assert response.headers["content-disposition"] == "attachment; filename*=UTF-8''M%C3%A9%20CV.docx"
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+@needs_db
+@pytest.mark.parametrize(("filename", "media"), [
+    ("Łukasz CV.pdf", "application/pdf"),
+    ("Łukasz CV.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    ("Łukasz CV.txt", "text/plain; charset=utf-8")])
+def test_a_file_uploaded_before_files_were_kept_downloads_in_its_own_format(api, filename, media):
+    """The same format as uploaded (owner, 2026-11-10): a file of its type, written from the text read out
+    of it, which reads back as that text, every letter of it; not the original's layout, never stored."""
+    from libs.db import insert
+    from libs.db.models import UserDocument
+
+    http, db, users = api
+    text = "Łukasz Żółć\nBackend engineer, Kraków\n\nPython, Postgres, on call one week in six."
+    older = insert(db, UserDocument(user_id=users[0].id, kind="cv", filename=filename, text=text,
+                                    text_sha256="b" * 64, chars=len(text)))
+
+    response = http.get(f"/documents/{older.id}/file")
+
+    assert response.status_code == 200 and response.headers["content-type"] == media
+    assert response.headers["content-disposition"] == f"attachment; filename*=UTF-8''{quote(filename)}"
+    read = extract_text(filename, response.content).text
+    for line in ("Łukasz Żółć", "Backend engineer, Kraków", "on call one week in six"):
+        assert line in read, (filename, read)
+
+
+@needs_db
+def test_one_user_cannot_download_anothers_file_and_a_removed_document_takes_its_file(api):
+    from libs.auth.access import issue_access_token
+    from libs.db.models import UploadedFile
+
+    http, db, users = api
+    document_id = _upload(http).json()["id"]
+    theirs = http.cookies.get("access_token")
+
+    http.cookies.set("access_token", issue_access_token(users[1].id, uuid.uuid4()), path="/")
+    assert http.get(f"/documents/{document_id}/file").status_code == 404
+    http.cookies.set("access_token", theirs, path="/")
+    assert http.delete(f"/documents/{document_id}").status_code == 200
+
+    assert db[UploadedFile.COLLECTION].count_documents({"_id": document_id}) == 0
 
 
 @needs_db

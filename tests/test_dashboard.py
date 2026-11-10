@@ -114,31 +114,6 @@ def test_a_paused_account_is_told_it_is_paused(api):
     assert keys == {"paused"}
 
 
-def test_the_front_page_says_whether_ai_can_write_for_them_and_on_whose_key(api, monkeypatch):
-    """The AI buttons and "AI requests left today" are `libs.llm.resolve`'s own answer, not a guess."""
-    from libs.db.models import AiRequest
-    from libs.secrets import KeyRing, SecretStore, generate_key
-
-    http, db, user, _ = api
-    monkeypatch.delenv("PLATFORM_AI_PROVIDER", raising=False)
-    monkeypatch.delenv("PLATFORM_AI_KEY", raising=False)
-    ai = http.get("/dashboard").json()["ai"]
-    assert (ai["payer"], ai["left"], ai["per_day"]) == (None, 20, 20), "no key anywhere: no AI"
-    assert ai["profile"] is False, "a new account has no writing profile, so only instant documents"
-
-    monkeypatch.setenv("PLATFORM_AI_PROVIDER", "gemini")
-    monkeypatch.setenv("PLATFORM_AI_KEY", "AIza" + "k" * 30)
-    for _ in range(3):
-        insert(db, AiRequest(user_id=user.id))
-    ai = http.get("/dashboard").json()["ai"]
-    assert (ai["payer"], ai["left"]) == ("platform", 17)
-
-    kek = f"k1:{generate_key()}"
-    SecretStore(db, KeyRing.from_env({"SECRETS_KEK": kek})).put(
-        user.id, "openai_api", "sk-proj-" + "o" * 30, validated=True)
-    assert http.get("/dashboard").json()["ai"]["payer"] == "own", "their own key first, unlimited"
-
-
 def test_the_dashboard_requires_signing_in(api):
     http, _, _, _ = api
     http.cookies.clear()

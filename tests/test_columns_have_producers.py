@@ -26,6 +26,10 @@ WRITTEN_ELSEWHERE = {
 KNOWN_UNWRITTEN = {
     # Deliberate, and documented at the reader.
     # A second source of truth that disagrees with the first.
+    # The old profile schema (`libs/profiles/repository.py`, "the `user.profile` half of that question is
+    # now gone"): nothing reads it either. Its "producer" until 2026-11-09 was a keyword argument of the
+    # same name on the dashboard. Retiring it deletes what every account holds, so it waits for the owner.
+    "profile",
 }
 
 

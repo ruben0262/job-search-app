@@ -46,8 +46,10 @@ Software Engineer, Contoso    2018 - 2021
 LANGUAGES
 English (native), German (B2)
 """
-# What the site says where it offered to make a CV or a cover letter (owner, 2026-11-08).
-PAUSED = "Making CVs and cover letters is paused while we rebuild it."
+# What a Make button answers, pressed with no AI account in use (2026-11-10): the CV is up, from onboarding.
+NO_ACCOUNT = "To make your CV, first link your AI account in Settings."
+# How long a toast stays (`web/src/toast.tsx`).
+TOAST_MS = 8000
 IPHONE = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 "
           "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1")
 
@@ -108,9 +110,10 @@ def test_a_new_person_goes_from_sign_up_to_their_jobs(site, capsys):
             expect(card.locator(".why")).to_have_text("Why: backend engineer")
         expect(page.get_by_text(TITLES[2])).to_have_count(0)
 
-        # Making a CV or a cover letter is paused: no job offers one, and the page says so, once.
-        expect(page.get_by_role("button", name=re.compile("^Make my"))).to_have_count(0)
-        expect(page.get_by_text(PAUSED)).to_have_count(1)
+        # No AI account of their own yet: the buttons are there all the same, and a toast says what is
+        # missing, with the way to each (owner, 2026-11-10).
+        expect(page.get_by_role("button", name="Make my CV")).to_have_count(2)
+        _what_is_missing(page, cards.first)
 
         _marks(page)
         _alert_links(page, base, ids)
@@ -579,7 +582,7 @@ def test_every_tab_is_drawn_whole_the_moment_it_is_opened(site, capsys):
             time.sleep(0.4)
             route.continue_()
 
-        page.route(re.compile(r"/(applied|jobs/added|onboarding/\w+|documents|saved|templates|account|credentials|feed)"),
+        page.route(re.compile(r"/(applied|jobs/added|onboarding/\w+|documents|saved|templates|account|ai-accounts|feed)"),
                    slow)
         for tab, drawn in (("Applied", "You applied to 0 jobs"), ("My search", "The jobs you want"),
                            ("My documents", "Each one you make is kept here"), ("Settings", email),
@@ -837,6 +840,105 @@ def _the_sheet_opens_drawn(page, templates) -> None:
     assert asked == [], f"opening the sheet asked the server for {asked}"
 
 
+def test_an_ai_account_linked_in_settings_is_what_the_make_buttons_were_missing(site, capsys, monkeypatch):
+    """CVs and cover letters are written with the person's own AI account (owner, 2026-11-09). Linked in
+    Settings, each way in by its provider's mark, in use at once, named and never shown back. A switch
+    is seen to move, and the rows stay where they are (owner, 2026-11-10). Once linked, a Make button
+    no longer asks for one. The provider's check of the key is a stand-in."""
+    from libs.credentials import ValidationResult
+    from libs.secrets import generate_key
+
+    monkeypatch.setenv("SECRETS_KEK", f"k1:{generate_key()}")
+    monkeypatch.setattr("services.api.ai_account_routes.validate_credential",
+                        lambda kind, value, **kw: ValidationResult(True))
+    key = "sk-ant-api03-" + "Zx9" * 20
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        cards = page.locator("article.job-card")
+        toasts = page.locator(".toast")
+        cards.first.get_by_role("button", name="Make my CV").click()
+        expect(toasts.get_by_text(NO_ACCOUNT)).to_be_visible()
+        toasts.get_by_role("link", name="Open Settings").click()
+
+        accounts = page.locator("section.card").filter(
+            has=page.get_by_role("heading", name="Your AI accounts"))
+        for provider in ("Claude", "ChatGPT", "Google Gemini"):
+            tile = accounts.get_by_role("button", name=f"Sign in with {provider}")
+            expect(tile).to_be_visible()
+            expect(tile.locator(".ai-mark svg path")).to_have_count(1)
+        rows = accounts.locator(".ai-accounts li")
+        _add_key(accounts, "Claude API key", key)
+        expect(rows).to_have_text([re.compile("^Claude API key")])
+        expect(rows.first.locator(".ai-mark svg path")).to_have_count(1)
+        expect(rows.first).to_contain_text("Writes with claude-haiku-4-5")  # the model Admin picked for it
+        expect(accounts.get_by_role("switch", name="Use Claude API key")).to_be_checked()
+        assert key not in page.content() and key[-4:] not in accounts.inner_text(), "never shown back"
+        assert page.evaluate(FAULTS) == {"off": [], "over": []}, "Settings at 390px"
+
+        # A second goes in use at once. Switching back is seen moving, and moves no row.
+        _add_key(accounts, "Gemini API key", "AIza" + "Qw7" * 12)
+        expect(rows).to_have_text([re.compile("^Gemini API key.*In use"), re.compile("^Claude API key.*Off")])
+        accounts.get_by_role("switch", name="Use Claude API key").click()
+        expect(accounts.get_by_text("Turning on…")).to_be_visible()
+        expect(rows).to_have_text([re.compile("^Gemini API key.*Off"), re.compile("^Claude API key.*In use")])
+
+        # Their account is no longer what is missing: the next step is agreeing to what is sent; and a cover
+        # letter still needs one of theirs, said with the one way to it.
+        page.goto(f"{base}/#/")
+        cards.first.get_by_role("button", name="Make my CV").click()
+        expect(cards.first.get_by_text("needs your agreement first")).to_be_visible()
+        expect(toasts).to_have_count(0)
+        cards.first.get_by_role("button", name="Make my cover letter").click()
+        expect(toasts).to_have_text([re.compile(
+            "^To make your cover letter, first upload a cover letter in My documents.")])
+        expect(toasts.get_by_role("link", name="Open Settings")).to_have_count(0)
+        expect(toasts.get_by_role("link", name="Open My documents")).to_be_visible()
+
+        page.goto(f"{base}/#/settings")
+        accounts.get_by_role("switch", name="Use Claude API key").uncheck()
+        expect(accounts.get_by_text("Turning off…")).to_be_visible()
+        expect(rows).to_have_text([re.compile("^Gemini API key.*Off"), re.compile("^Claude API key.*Off")])
+        browser.close()
+
+
+def _said_over_the_open_job(view) -> None:
+    """The open job offers the documents too, and what one is missing is said over it, not behind it: in
+    the dialog's own layer, so its toast takes a click."""
+    view.get_by_role("button", name="Make my CV").click()
+    said = view.locator(".toast")
+    expect(said).to_have_text([re.compile(f"^{re.escape(NO_ACCOUNT)}")])
+    said.get_by_role("button", name="Close").click()
+    expect(said).to_have_count(0)
+
+
+def _what_is_missing(page, card) -> None:
+    """Without an AI account and without a cover letter, each button says what it lacks in a toast, with a
+    way to each; closed, it goes, and left alone, it goes by itself (owner, 2026-11-10)."""
+    toasts = page.locator(".toast")
+    card.get_by_role("button", name="Make my cover letter").click()
+    expect(toasts).to_have_text([re.compile(
+        "^To make your cover letter, first link your AI account in Settings and upload a cover letter in "
+        "My documents.")])
+    expect(toasts.get_by_role("link", name="Open Settings")).to_have_attribute("href", "#/settings")
+    expect(toasts.get_by_role("link", name="Open My documents")).to_have_attribute("href", "#/documents")
+    toasts.get_by_role("button", name="Close").click()
+    expect(toasts).to_have_count(0)
+    # In the bell at once too, not at its next look a minute on: opening it reloads nothing, so it is
+    # there only if the page told the bell (owner, 2026-11-10).
+    page.locator(".bell-wrap > button.bell").click()
+    expect(page.get_by_role("dialog", name="Notifications")).to_contain_text(
+        "Link your AI account to make documents")
+    page.locator(".bell-wrap > button.bell").click()
+
+    card.get_by_role("button", name="Make my CV").click()
+    expect(toasts).to_have_text([re.compile(f"^{re.escape(NO_ACCOUNT)}")])
+    expect(toasts.get_by_role("link", name="Open My documents")).to_have_count(0)
+    expect(toasts).to_have_count(0, timeout=TOAST_MS + 3000)
+
 def test_the_jobs_filters_narrow_the_list_stay_as_they_were_left_and_clear_back(site, capsys):
     """The page opens on "Last 24 hours", and the filters stay as they were left, a reload or another
     device later (owner, 2026-11-07): reloaded the moment the last one changed, before its save would
@@ -902,9 +1004,8 @@ def test_a_job_opens_whole_and_skipping_survives_a_lost_connection_and_new_jobs_
         expect(view).to_have_count(0)
 
         card(TITLES[0]).get_by_role("button", name=TITLES[0]).click()
-        # Making documents is paused (owner, 2026-11-08): the open job offers none.
         expect(view).to_be_visible()
-        expect(view.get_by_role("button", name=re.compile("^Make my"))).to_have_count(0)
+        _said_over_the_open_job(view)
         view.get_by_role("button", name="Close").click()
         _closes_for_good(page, card(TITLES[0]), view)
 
@@ -997,6 +1098,15 @@ def test_my_search_asks_before_leaving_unsaved_and_applied_opens_the_whole_job(s
         browser.close()
 
 
+def _add_key(accounts, name: str, key: str) -> None:
+    """An API key, through the fold-out beneath the sign-ins."""
+    accounts.get_by_text("Use an API key instead").click()
+    accounts.get_by_label("Which key").select_option(label=name)
+    accounts.get_by_role("textbox", name=re.compile(f"^{name}")).fill(key)
+    accounts.get_by_role("button", name="Add this key").click()
+    expect(accounts.get_by_role("switch", name=f"Use {name}")).to_be_checked()
+
+
 def _switched_off_and_on(page, user_id) -> None:
     """An uploaded CV is in use; switched off it stays listed and says it is not used, in the
     database too; switched on again, it is in use."""
@@ -1010,6 +1120,11 @@ def _switched_off_and_on(page, user_id) -> None:
     assert database().user_documents.find_one({"user_id": user_id})["in_use"] is False
     uploaded.get_by_role("switch", name="Use cv.txt").click()
     expect(uploaded.get_by_text("In use")).to_be_visible()
+    # And downloaded again, as it was uploaded (owner, 2026-11-10).
+    with page.expect_download() as downloaded:
+        uploaded.get_by_role("link", name="Download cv.txt").click()
+    assert downloaded.value.suggested_filename == "cv.txt"
+    assert pathlib.Path(downloaded.value.path()).read_bytes() == CV.encode()
 
 
 def _where_and_when(page, card) -> None:
@@ -1266,8 +1381,9 @@ def _alert_links(page, base: str, ids: dict[str, int]) -> None:
     expect(cards.first.get_by_role("button", name=TITLES[1], exact=True)).to_be_visible()
     expect(cards.first).to_have_class(re.compile(r"\bfocus\b"))
     page.goto(f"{base}/#/feed?job={ids[TITLES[2]]}")
-    expect(page.get_by_text("This job is not in your list any more")).to_be_visible()
-    expect(page.get_by_role("button", name=re.compile("^Make my"))).to_have_count(0)
+    gone = page.locator("article.job-card.focus")
+    expect(gone).to_contain_text("This job is not in your list any more")
+    expect(gone.get_by_role("button", name="Make my CV")).to_be_visible()
 
     for event in vars(notify).values():
         if isinstance(event, notify.Event) and event.url:

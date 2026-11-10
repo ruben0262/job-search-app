@@ -14,5 +14,6 @@ httpx>=0.28              # libs/credentials: the API validates a credential by c
 python-multipart>=0.0.20  # multipart uploads; FastAPI needs it for File()/Form()
 pypdf>=5.1                # extracting text from an uploaded CV
 python-docx>=1.1          # same, for .docx
+fpdf2>=2.8.9,<2.9         # libs/documents/remake: an older upload's PDF, written again from its text
 beautifulsoup4>=4.12     # libs/corpus/postings: a pasted job's page, its JSON-LD and its text
 langdetect>=1.0.9        # libs/corpus/langfilter: a kept job's language, read where its text is stored

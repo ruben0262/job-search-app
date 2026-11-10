@@ -13,6 +13,7 @@ from libs.corpus.postings import PAGE_HEADERS
 from libs.db import database, ensure_schema
 from libs.db.models import QueueJob
 from libs.db.models.tenant import record_state
+from libs.documents import needs
 from libs.documents.saved import keep, purge_unsaved
 from libs.legal import has_consented
 from libs.llm import LlmError, paying_client
@@ -65,6 +66,10 @@ def _with_ai(db, job: QueueJob, *, job_id: int, kind: str, payer: str | None):
     if not has_consented(db, job.user_id):
         raise NotBuildable("agree to how AI-written documents use your profile first — it is on "
                            "the privacy page")
+    # Their CV, or cover letter, removed or switched off since they asked.
+    lacking = needs.missing(db, job.user_id, kind, account=True)
+    if lacking is not None:
+        raise NotBuildable(lacking["message"])
     store = SecretStore(db)
     with paying_client(store, job.user_id, payer or "") as paid, \
             _http_for() as http:
@@ -76,10 +81,10 @@ def _with_ai(db, job: QueueJob, *, job_id: int, kind: str, payer: str | None):
             return run.run_ai(db, job.user_id, job_id, client=client, kind=kind, http=http,
                               model=settings.document_model(db, provider))
         except LlmError as exc:
-            # Their key, and the operator should see a run of these.
-            notifylib.notify(db, job.user_id, notifylib.DOCUMENT_NOT_READY,
-                             "The AI key could not write this document.")
-            raise Terminal(str(exc)) from exc
+            # Their own account: a sign-in that expired or a plan used up for now is theirs to fix, not an
+            # operator's, so it is said to them as a refusal rather than paged as a dead letter.
+            logger.warning("docgen: %s's AI account could not write job %s: %s", job.user_id, job_id, exc)
+            raise NotBuildable(str(exc)) from exc
 
 
 @contextmanager

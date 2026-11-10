@@ -2,23 +2,12 @@
 from __future__ import annotations
 
 import uuid as _uuid
-from dataclasses import dataclass
 
 from pymongo.database import Database
 
 from libs.contracts.config import CONFIG_SCHEMA_VERSION
 from libs.db import now
-from libs.db.models import User, UserConfig, UserSecret
-
-
-@dataclass(frozen=True)
-class SecretMetadata:
-    """What a user may see about their own credential. Deliberately no value field."""
-
-    kind: str
-    last_4: str | None
-    validated_at: object
-    updated_at: object
+from libs.db.models import User, UserConfig
 
 
 class TenantRepository:
@@ -48,12 +37,4 @@ class TenantRepository:
         return {row["user_id"]: row["config"] for row in self._db[UserConfig.COLLECTION].find(
             {"user_id": {"$in": active}}, {"user_id": 1, "config": 1})}
 
-    # ── secrets: metadata only, never values ─────────────────────────────────────────────────
 
-    def secret_metadata(self, user_id: _uuid.UUID) -> list[SecretMetadata]:
-        """What the UI may show about this user's credentials."""
-        rows = self._db[UserSecret.COLLECTION].find(
-            {"user_id": user_id}, {"kind": 1, "last_4": 1, "validated_at": 1, "updated_at": 1},
-            sort=[("kind", 1)])
-        return [SecretMetadata(row["kind"], row.get("last_4"), row.get("validated_at"),
-                               row.get("updated_at")) for row in rows]

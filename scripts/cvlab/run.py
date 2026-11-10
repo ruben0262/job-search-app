@@ -11,7 +11,8 @@ measured, never edited, and a variant becomes the live prompt only when the owne
     # the comparison this exists for: three samples of each prompt over every posting
     python scripts/cvlab/run.py --variants live,d-both --samples 3 --judge --out scripts/cvlab/out/ab
 
-Credential, in order: `--key-file`, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`.
+Credential: `--key-file` or `ANTHROPIC_API_KEY`, an Anthropic API key. (A Claude subscription token ran it
+until 2026-11-09; a subscription now signs in through Claude Code, and measuring on one is still to come.)
 
 **Why samples and pairing.** One generation is not a result: the model varies run to run, so a
 single CV per cell cannot tell a better prompt from a luckier one. Every cell is run `--samples`
@@ -148,24 +149,13 @@ def load_variant(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-_OAUTH_PREFIX = "sk-ant-oat"
-
-
 def credential(key_file: str | None) -> tuple[str, str]:
-    """The credential and which kind it is. The value is never logged."""
-    if key_file:
-        value = pathlib.Path(key_file).read_text(encoding="utf-8").strip()
-        return value, kind_of(value)
-    for variable in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
-        value = os.environ.get(variable)
-        if value:
-            return value.strip(), kind_of(value.strip())
-    raise SystemExit("no credential: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN, "
-                     "or pass --key-file")
-
-
-def kind_of(value: str) -> str:
-    return "claude_oauth" if value.startswith(_OAUTH_PREFIX) else "claude_api"
+    """The API key and its kind. The value is never logged."""
+    value = (pathlib.Path(key_file).read_text(encoding="utf-8") if key_file
+             else os.environ.get("ANTHROPIC_API_KEY", "")).strip()
+    if not value:
+        raise SystemExit("no credential: set ANTHROPIC_API_KEY or pass --key-file")
+    return value, "claude_api"
 
 
 # ── one cell of the grid ──────────────────────────────────────────────────────────────────────

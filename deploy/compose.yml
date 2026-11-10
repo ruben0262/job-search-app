@@ -121,13 +121,12 @@ services:
     environment:
       MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
       MONGODB_DB: ${MONGODB_DB:-mahoraga}
-      SECRETS_KEK: ${SECRETS_KEK:?docgen decrypts the key that pays for an AI-written document}
+      SECRETS_KEK: ${SECRETS_KEK:?docgen decrypts the AI account an AI-written document is written with}
       # The freshness check before a build goes through the site proxy when there is one.
       HARVEST_PROXY: ${HARVEST_PROXY:-}
-      # The platform's own paid key: each account's `ai_platform_requests_per_day` (default 20).
-      PLATFORM_AI_PROVIDER: ${PLATFORM_AI_PROVIDER:-}
-      PLATFORM_AI_KEY: ${PLATFORM_AI_KEY:-}
       LOG_DIR: /var/log/jobsearch
+      # One worker, deliberately: a signed-in account's tool renews its login during a call, and two
+      # calls renewing one account at once could retire each other's (`libs.llm.cli`).
       WORKER_NAME: docgen-1
     volumes:
       - ../logs:/var/log/jobsearch
@@ -192,7 +191,7 @@ services:
       MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
       MONGODB_DB: ${MONGODB_DB:-mahoraga}
       SECRETS_KEK: ${SECRETS_KEK:?the API writes the credential store}
-      # Read where an AI document is requested, to decide who pays (`libs.llm.resolve`).
+      # The help chat's own allowance, for an account with no API key of its own (`libs.llm.resolve`).
       PLATFORM_AI_PROVIDER: ${PLATFORM_AI_PROVIDER:-}
       PLATFORM_AI_KEY: ${PLATFORM_AI_KEY:-}
       # Same rule: the API refuses to start without it, loudly, from its own code.

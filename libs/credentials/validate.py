@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 import httpx
 
-from libs.llm.client import CLAUDE_OAUTH_BETA
 from libs.secrets import redact
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/models"
@@ -30,7 +29,6 @@ def validate_credential(kind: str, value: str, *,
     """Dispatch to the right validator. `client` is injectable so tests need no network."""
     validators = {
         "claude_api": _validate_claude_api,
-        "claude_oauth": _validate_claude_oauth,
         "gemini_api": _validate_gemini,
         "openai_api": _validate_openai,
     }
@@ -72,15 +70,6 @@ def _validate_claude_api(value: str, http: httpx.Client) -> ValidationResult:
     return _key_result(http.get(
         ANTHROPIC_URL,
         headers={"x-api-key": value, "anthropic-version": "2023-06-01"}), "Anthropic")
-
-
-def _validate_claude_oauth(value: str, http: httpx.Client) -> ValidationResult:
-    """The same call on the other auth channel."""
-    return _key_result(http.get(
-        ANTHROPIC_URL,
-        headers={"Authorization": f"Bearer {value}",
-                 "anthropic-version": "2023-06-01",
-                 "anthropic-beta": CLAUDE_OAUTH_BETA}), "Anthropic")
 
 
 def _validate_gemini(value: str, http: httpx.Client) -> ValidationResult:

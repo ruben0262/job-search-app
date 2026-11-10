@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, ValidationError
 from pymongo.database import Database
 
-from libs import limits
 from libs.corpus import salary
 from libs.corpus.boards import apply_on, board_name
 from libs.corpus.freshness import platform_windows, shelf_life
@@ -21,12 +20,10 @@ from libs.db import get, now
 from libs.db.models import AtsToken, BuiltDocument, CorpusJob, CountryCount, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
-from libs.llm import PLATFORM, ai_requests_today, resolve
 from libs.matching import Match, marks, norm, scan_for, their_jobs
 from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
-from libs.profiles.repository import ProfileFiles
 from libs.settings import HARVEST_SOURCES, PLATFORM_TICK_MIN
 from libs.tenant import applications
 from services.api.admin_routes import admin_emails
@@ -54,18 +51,6 @@ class OnboardingDashboard(BaseModel):
     # `onboarding_state(...).as_dict()`, in onboarding's own model: its pages are onboarding's to define.
     onboarding: OnboardingSteps
     is_admin: bool
-
-
-class AiWriting(BaseModel):
-    """Whether an AI can write this person a document now, and on whose key — `libs.llm.resolve`'s
-    answer, so the buttons offer exactly what a build would be allowed to do."""
-    # "own": their own key, unlimited. "platform": the daily allowance. None: nobody can pay now.
-    payer: Literal["own", "platform"] | None
-    # The platform's daily allowance, and what is left of it today.
-    per_day: int
-    left: int
-    # The writing profile an AI document is written from. Without it, none.
-    profile: bool
 
 
 class JobFilters(BaseModel):
@@ -96,7 +81,6 @@ class ReadyDashboard(BaseModel):
     # How many jobs they said they applied to — moved only by "Mark as applied".
     applied: int
     banners: list[DashboardBanner]
-    ai: AiWriting
     # What the Jobs page opens with: theirs as they left it, or the defaults.
     job_filters: JobFilters
 
@@ -210,7 +194,7 @@ def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curr
 
     _, applied = marks(db, user_id)
     return ReadyDashboard(stage="ready", is_admin=_is_admin(user), applied=len(applied),
-                          banners=_banners(db, user), ai=_ai(db, user), job_filters=_job_filters(user))
+                          banners=_banners(db, user), job_filters=_job_filters(user))
 
 
 def _job_filters(user: User) -> JobFilters:
@@ -256,15 +240,6 @@ def stats(db: Database = Depends(get_db)) -> Reach:
                  jobs_week=next(week, {}).get("jobs", 0))
 
 
-def _ai(db: Database, user: User) -> AiWriting:
-    payer = resolve(db, user)
-    allowance = limits.resolve(user, "ai_platform_requests_per_day")
-    # Never Unlimited (`allow_unlimited=False`): a `None` written by hand is no allowance, as
-    # `libs.llm.resolve` reads it too.
-    per_day = 0 if allowance is None else allowance
-    return AiWriting(payer=None if payer is None else "platform" if payer.kind == PLATFORM else "own",
-                     per_day=per_day, left=max(per_day - ai_requests_today(db, user.id), 0),
-                     profile=ProfileFiles(db, user.id).build_blocker() is None)
 
 
 def _banners(db: Database, user: User) -> list[DashboardBanner]:

@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import uuid as _uuid
 from dataclasses import replace
 from typing import Literal
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -20,9 +22,9 @@ from fastapi import (
 from pydantic import BaseModel
 from pymongo.database import Database
 
-from libs import limits, suggestions
+from libs import limits, notify, suggestions
 from libs.db import find, find_one, get, insert, now
-from libs.db.models import BuiltDocument, CorpusJob, QueueJob, User, UserDocument
+from libs.db.models import BuiltDocument, CorpusJob, QueueJob, UploadedFile, User, UserDocument
 from libs.db.models.document import DOCUMENT_KINDS
 from libs.documents import (
     MAX_FILE_BYTES,
@@ -30,9 +32,11 @@ from libs.documents import (
     SUPPORTED,
     UnsupportedDocument,
     extract_text,
+    needs,
+    remake,
 )
 from libs.legal import has_consented
-from libs.llm import PLATFORM, record_ai_request, resolve
+from libs.llm import own
 from libs.obs import audit
 from libs.profiles.repository import ProfileFiles
 from libs.queue import enqueue
@@ -87,6 +91,12 @@ def _stored(status_word: str, document_id: int, extracted) -> dict:
             "truncated": extracted.truncated, "note": note}
 
 
+def _keep_file(db: Database, document_id: int, user_id: _uuid.UUID, data: bytes) -> None:
+    """The file as it was uploaded, to download again. Uploading a document again replaces its file."""
+    kept = UploadedFile(id=document_id, user_id=user_id, content=data)
+    db[UploadedFile.COLLECTION].replace_one({"_id": document_id}, kept.to_doc(), upsert=True)
+
+
 def _documents_changed(db: Database, user_id: _uuid.UUID) -> None:
     """Mark the document set as changed, and work their suggested words out again from it."""
     db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {"documents_changed_at": now()}})
@@ -97,7 +107,7 @@ def _documents_changed(db: Database, user_id: _uuid.UUID) -> None:
 async def upload(request: Request, kind: str = Form(...), file: UploadFile = File(...),
                  db: Database = Depends(get_db),
                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Extract and store one document's text."""
+    """Store one document: the text read out of it, and the file to download again."""
     if kind not in DOCUMENT_KINDS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail=f"unknown document kind {kind!r}")
@@ -109,9 +119,6 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
     except UnsupportedDocument as exc:
         # 422: the request was well-formed, the file was not.
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    finally:
-        # The bytes never reach disk and do not outlive the request.
-        del data
 
     documents = db[UserDocument.COLLECTION]
     stored = find_one(db, UserDocument, {"user_id": user_id, "text_sha256": extracted.sha256})
@@ -119,6 +126,7 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
         # Uploading it again is wanting it, so a copy switched off is switched back on.
         documents.update_one({"_id": stored.id}, {"$set": {"kind": kind, "in_use": True,
                                                            "filename": file.filename or stored.filename}})
+        _keep_file(db, stored.id, user_id, data)
         _documents_changed(db, user_id)
         audit(logger, "document.replaced", user=user_id, kind=kind, chars=extracted.chars,
               truncated=extracted.truncated)
@@ -131,6 +139,7 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
             documents.update_one({"_id": existing.id}, {"$set": {
                 "filename": file.filename or existing.filename, "text": extracted.text,
                 "text_sha256": extracted.sha256, "chars": extracted.chars}})
+            _keep_file(db, existing.id, user_id, data)
             _documents_changed(db, user_id)
             audit(logger, "document.replaced", user=user_id, kind=kind, chars=extracted.chars,
                   truncated=extracted.truncated)
@@ -148,6 +157,7 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
     document = insert(db, UserDocument(user_id=user_id, kind=kind, filename=file.filename or "upload",
                                        text=extracted.text, text_sha256=extracted.sha256,
                                        chars=extracted.chars))
+    _keep_file(db, document.id, user_id, data)
     _documents_changed(db, user_id)
     audit(logger, "document.uploaded", user=user_id, kind=kind, chars=extracted.chars,
           truncated=extracted.truncated)
@@ -181,6 +191,25 @@ def _row(row: UserDocument) -> dict:
             "uploaded_at": row.uploaded_at.isoformat() if row.uploaded_at else None}
 
 
+@router.get("/{document_id}/file", response_class=Response,
+            responses={200: {"content": {"application/octet-stream": {}}, "description": "The file."}})
+def document_file(document_id: int, db: Database = Depends(get_db),
+                  user_id: _uuid.UUID = Depends(current_user)) -> Response:
+    """A file they uploaded, in the format they uploaded it (owner, 2026-11-10): the file itself, or, one
+    from before files were kept, a file of its type written from the text read out of it
+    (`libs.documents.remake`). Scoped to the caller."""
+    document = find_one(db, UserDocument, {"_id": document_id, "user_id": user_id})
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such document")
+    kept = find_one(db, UploadedFile, {"_id": document_id, "user_id": user_id})
+    content = kept.content if kept is not None else remake.as_file(document.filename, document.text)
+    media = mimetypes.guess_type(document.filename)[0] or "application/octet-stream"
+    # Always a download, never opened in the site's own pages; the name as they gave it, encoded.
+    return Response(content, media_type=media, headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(document.filename)}",
+        "X-Content-Type-Options": "nosniff"})
+
+
 @router.delete("/{document_id}")
 def delete_document(document_id: int, db: Database = Depends(get_db),
                     user_id: _uuid.UUID = Depends(current_user)) -> dict:
@@ -189,6 +218,7 @@ def delete_document(document_id: int, db: Database = Depends(get_db),
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such document")
     db[UserDocument.COLLECTION].delete_one({"_id": document.id})
+    db[UploadedFile.COLLECTION].delete_one({"_id": document.id})
     _documents_changed(db, user_id)
     audit(logger, "document.deleted", user=user_id, kind=document.kind)
     return {"status": "deleted"}
@@ -241,10 +271,8 @@ def build_document(body: BuildRequest, db: Database = Depends(get_db),
                                        "count starts again at midnight")
         payload = {"job_id": body.job_id, "kind": body.kind, "mode": body.mode}
         if body.mode == "ai":
-            payload["payer"] = _ai_payer(db, user)
+            payload["payer"] = _ai_payer(db, user, body.kind)
         queued = enqueue(db, "docgen", user_id, payload=payload, dedup_key=key)
-        if queued is not None and payload.get("payer") == PLATFORM:
-            record_ai_request(db, user_id)
         # `None` from `enqueue` is a twin request that won the race, or an operator's pause.
         build_id = queued or _waiting(db, user_id, key)
         if build_id is None:
@@ -292,12 +320,21 @@ def _waiting(db: Database, user_id: _uuid.UUID, key: str) -> int | None:
     return found["_id"] if found else None
 
 
-def _ai_payer(db: Database, user: User) -> str:
-    """Who pays for an AI-written document, once this person may have one at all.
+def _ai_payer(db: Database, user: User, kind: str) -> str:
+    """The AI account a document is written with: the one they have in use (owner, 2026-11-09).
 
     Refused here rather than queued and refused there: the worker asks again before any text leaves
-    the server, but the person should not wait for a queue to hear "no".
+    the server, but the person should not wait for a queue to hear "no". What is missing comes back as
+    a list with its words (`libs.documents.needs`), so the page can say where each is added; asked before
+    consent, as nothing is sent until both are settled, and an AI account is the step that takes longer.
     """
+    payer = own(db, user)
+    lacking = needs.missing(db, user.id, kind, account=payer is not None)
+    if payer is None or lacking is not None:
+        # In the bell too (owner, 2026-11-10), where the page's notice has gone by the time they look.
+        event = notify.NEEDS_AI_ACCOUNT if payer is None else notify.NEEDS_UPLOAD
+        notify.notify(db, user.id, event, lacking["message"] if lacking else "")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=lacking)
     if not has_consented(db, user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail="agree to how AI-written documents use your profile first — "
@@ -306,11 +343,6 @@ def _ai_payer(db: Database, user: User) -> str:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             detail="AI-written documents need a writing profile this account does "
                                    "not have yet")
-    payer = resolve(db, user)
-    if payer is None:
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            detail="AI writing needs your own Claude, Gemini or OpenAI key — add "
-                                   "one in settings")
     return payer.kind
 
 

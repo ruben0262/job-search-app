@@ -193,7 +193,10 @@ def test_a_platform_paid_answer_uses_one_request_and_an_own_key_none(api, monkey
                                                     "left": 19, "per_day": 20}
     assert model.seen[0]["model"] == "claude-haiku-4-5", "the operator's model for that provider"
 
-    SecretStore(api.db).put(api.user.id, "openai_api", "sk-proj-" + "o" * 40)
+    from libs.llm import accounts
+
+    linked = SecretStore(api.db).add(api.user.id, "openai_api", "sk-proj-" + "o" * 40, label="OpenAI API key")
+    accounts.use(api.db, api.user.id, str(linked))
     _ask(api)
     assert ai_requests_today(api.db, api.user.id) == 1, "their own key is not the allowance"
     assert api.http.get("/support").json()["ai"] == {"payer": "own", "provider": "OpenAI",

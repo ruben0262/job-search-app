@@ -3,12 +3,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, type Schema } from "./api";
 import { ago, useNow } from "./time";
+import { BinIcon } from "./ui";
 
 type Feed = Schema<"NotificationList">;
 type Notification = Feed["notifications"][number];
 
 /** How often a page asks the server what is new: the bell, and the jobs page's count of new jobs. */
 export const POLL_MS = 60_000;
+
+/** Every bell on the page, by how it reloads. */
+const bells = new Set<() => void>();
+
+/** Something here just put a notification in the bell (a refused Make button, a document that could not
+ * be made): shown now, not at the bell's next look a minute on (owner, 2026-11-10). */
+export function notificationsChanged(): void {
+  bells.forEach((reload) => reload());
+}
 
 export function NotificationBell() {
   const [feed, setFeed] = useState<Feed>({ unread: 0, notifications: [] });
@@ -27,8 +37,12 @@ export function NotificationBell() {
 
   useEffect(() => {
     load();
+    bells.add(load);
     const timer = window.setInterval(load, POLL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      bells.delete(load);
+      window.clearInterval(timer);
+    };
   }, [load]);
 
   // Clicking anywhere else closes the panel — the behaviour every dropdown is judged against.
@@ -150,26 +164,6 @@ function EyeIcon() {
         strokeLinejoin="round"
       />
       <circle cx="12" cy="12" r="2.6" stroke="currentColor" strokeWidth="1.7" />
-    </svg>
-  );
-}
-
-function BinIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M4 7h16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <path
-        d="M9 7V5.5A1.5 1.5 0 0110.5 4h3A1.5 1.5 0 0115 5.5V7"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M6 7l.8 11.2A2 2 0 008.8 20h6.4a2 2 0 002-1.8L18 7"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
     </svg>
   );
 }

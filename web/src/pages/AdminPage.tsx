@@ -3,7 +3,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 
 import { api, type Schema } from "../api";
 import { keep, peek, readAhead, useKept } from "../kept";
-import { Error, Prompt, useAction } from "../ui";
+import { BinIcon, Error, Prompt, useAction } from "../ui";
 import { JobsByCountry } from "./AdminCountries";
 
 type Alert = {
@@ -240,18 +240,6 @@ type CorpusPage = {
   sources: { source: string; count: number }[];
   jobs: CorpusJob[];
 };
-
-function BinIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M4 7h16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <path d="M9 7V5.5A1.5 1.5 0 0110.5 4h3A1.5 1.5 0 0115 5.5V7"
-            stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-      <path d="M6 7l.8 11.2A2 2 0 008.8 20h6.4a2 2 0 002-1.8L18 7"
-            stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 /**
  * How long since an account did anything, in the unit an operator judges on.
@@ -719,11 +707,11 @@ export function AdminPage() {
 
           <p className="label" style={{ marginTop: "1.5rem" }}>AI document models</p>
           <span className="hint">
-            The model each provider writes AI documents with. The CV prompts were measured on
-            Claude Haiku; the others run them unmeasured. A name the provider does not know fails
-            every AI document on it.
+            The model each provider writes AI documents with, on an API key or a sign-in. The CV prompts
+            were measured on Claude Haiku; the others run them unmeasured. A name the provider does not
+            know fails every AI document on it. Codex left empty picks its own, from the person's plan.
           </span>
-          {["anthropic", "gemini", "openai"].map((provider) => (
+          {["anthropic", "gemini", "openai", "codex"].map((provider) => (
             <label key={provider} className="small" style={{ display: "block", marginTop: "0.5rem" }}>
               {provider}{" "}
               <input

@@ -263,3 +263,26 @@ export function UploadButton({ label, busy, accept, quiet = false, onFile }: {
     </label>
   );
 }
+
+/** A bin: delete. Drawn once, for every button that deletes (the bell, Admin, My documents). */
+export function BinIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 7h16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M9 7V5.5A1.5 1.5 0 0110.5 4h3A1.5 1.5 0 0115 5.5V7"
+            stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M6 7l.8 11.2A2 2 0 008.8 20h6.4a2 2 0 002-1.8L18 7"
+            stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** An arrow into a tray: download. */
+export function DownloadIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 4v11M7 10l5 5 5-5M5 20h14" stroke="currentColor" strokeWidth="1.7"
+            strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

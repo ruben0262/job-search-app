@@ -5,6 +5,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from bson import ObjectId
 from pymongo import IndexModel
 
 from libs.db import Document, now
@@ -84,26 +85,41 @@ class UserConfig(Document):
     updated_at: datetime = field(default_factory=now)
 
 
-# What the Settings credentials form stores: an AI key or subscription. (A person's own proxy went
-# on 2026-11-01: the site has one proxy for everyone, `libs.proxy`.)
-CREDENTIAL_KINDS = ("claude_api", "claude_oauth", "gemini_api", "openai_api")
+# The AI accounts a person links in Settings (owner, 2026-11-09): a sign-in to their own Claude,
+# ChatGPT (Codex) or Google (Gemini) account, kept as the files that account's own command-line tool
+# writes, or an API key. Several of each, one in use (`libs.llm.accounts`).
+LOGIN_KINDS = ("claude_login", "codex_login", "gemini_login")
+KEY_KINDS = ("claude_api", "openai_api", "gemini_api")
+AI_KINDS = (*LOGIN_KINDS, *KEY_KINDS)
 # Everything encrypted here: those, and the token of the person's own Telegram bot, which only the
-# Telegram setup (`services/api/telegram_routes.py`) stores.
-SECRET_KINDS = (*CREDENTIAL_KINDS, "telegram_bot")
+# Telegram setup (`services/api/telegram_routes.py`) stores, one per person.
+SECRET_KINDS = (*AI_KINDS, "telegram_bot")
 
 
 @dataclass(kw_only=True)
 class UserSecret(Document):
-    """One encrypted credential. Write-only from the site: it is never shown back."""
+    """One encrypted credential. Write-only from the site: it is never shown back, not even in part."""
 
     COLLECTION = "user_secrets"
     CHOICES = {"kind": SECRET_KINDS}  # noqa: RUF012
-    INDEXES = (IndexModel([("user_id", 1), ("kind", 1)], unique=True, name="one_per_kind"),)
+    # The last four characters were shown back until 2026-11-09 (owner: nothing of a secret is shown).
+    RETIRED = ("last_4",)
+    INDEXES = (
+        IndexModel([("user_id", 1), ("kind", 1)], unique=True, name="one_bot",
+                   partialFilterExpression={"kind": "telegram_bot"}),
+        # The one AI account their documents are written with.
+        IndexModel([("user_id", 1)], unique=True, name="one_in_use",
+                   partialFilterExpression={"active": True}),
+    )
 
+    id: ObjectId = field(default_factory=ObjectId)
     user_id: uuid.UUID
     kind: str
     ciphertext: bytes
     nonce: bytes
-    last_4: str | None = None
+    # What Settings calls an AI account: "Claude Max · name@example.com", "OpenAI key".
+    label: str | None = None
+    active: bool = False
     validated_at: datetime | None = None
+    created_at: datetime = field(default_factory=now)
     updated_at: datetime = field(default_factory=now)

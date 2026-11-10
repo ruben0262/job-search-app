@@ -116,6 +116,7 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
         QueueJob,
         SetupConversation,
         SetupMessage,
+        UploadedFile,
         User,
         UserConfig,
         UserDocument,
@@ -151,7 +152,8 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
             BuiltDocument(id=build.id, user_id=user.id, job_id=job.id, kind="cv", mode="instant",
                           filename="cv.pdf", content=b"%PDF", size=4, saved=True),
             ContactMessage(user_id=user.id, email=user.email, subject="Hello",
-                           message="A question for you.")):
+                           message="A question for you."),
+            UploadedFile(id=build.id, user_id=user.id, content=b"the CV as uploaded")):
         insert(db, document)
 
     owned = [model for model in MODELS if model.OWNER]

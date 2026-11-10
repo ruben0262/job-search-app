@@ -44,6 +44,13 @@ DOCUMENT_NOT_READY = Event("document.not_ready", "warning", "A document could no
                            "#/documents")
 # A document was made but not kept: their storage allowance (`document_storage_mb`) is full.
 STORAGE_FULL = Event("documents.storage_full", "warning", "Your document storage is full", "#/documents")
+# A Make button pressed without what it needs (`libs.documents.needs`, owner 2026-11-10): where the first
+# step is, their AI account in Settings, else the CV or cover letter in My documents.
+NEEDS_AI_ACCOUNT = Event("document.needs_ai_account", "warning", "Link your AI account to make documents",
+                         "#/settings")
+NEEDS_UPLOAD = Event("document.needs_upload", "warning", "Upload what your documents are made from",
+                     "#/documents")
+
 def notify(db: Database, user_id: _uuid.UUID, event: Event, body: str = "") -> None:
     """Record one. An unread one of the same kind is brought up to date rather than repeated."""
     try:

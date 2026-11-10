@@ -3,6 +3,7 @@
 # ~400MB of browser and a spiky memory profile on a box where a memory crunch has already caused
 # one incident. Keeping it in one image is why the other seven stay small and quick to rebuild, and
 # why a CV build cannot take the API down with it — compose bounds this one's memory on its own.
+FROM node:22-slim AS node
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -29,6 +30,14 @@ RUN apt-get update \
     && fc-list | grep -qi "caladea"
 
 ENV CHROME_BIN=/usr/bin/chromium
+
+# Node and the three providers' own tools, which write a document with a signed-in AI account
+# (`libs.llm.cli`): the same versions the sign-in broker installs, from the one list.
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY deploy/docker/ai-tools.txt /tmp/ai-tools.txt
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && npm install -g $(cat /tmp/ai-tools.txt) && claude --version && codex --version && gemini --version
 
 # Dependencies first, so a code change does not re-resolve them.
 COPY services/docgen/requirements.txt /app/services/docgen/requirements.txt
