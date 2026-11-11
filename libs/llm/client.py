@@ -1,7 +1,6 @@
 """The Anthropic adapter, and the shape every provider's adapter shares (`LlmClient`)."""
 from __future__ import annotations
 
-import json
 import logging
 import re
 from typing import Protocol
@@ -25,12 +24,8 @@ class LlmError(RuntimeError):
 
 
 class LlmClient(Protocol):
-    def complete_json(self, *, model: str, system: str, messages: list[dict],
-                      schema: dict, max_tokens: int,
-                      thinking_tokens: int | None = None) -> dict: ...
-
     def complete_text(self, *, model: str, system: str, messages: list[dict],
-                      max_tokens: int, thinking_tokens: int | None = None) -> str: ...
+                      max_tokens: int, effort: str | None = None) -> str: ...
 
     def complete_tools(self, *, model: str, system: str, messages: list[dict], tools: list[dict],
                        max_tokens: int, on_text=None) -> dict: ...
@@ -45,37 +40,16 @@ class AnthropicClient:
 
         self._client = anthropic.Anthropic(api_key=value, max_retries=MAX_RETRIES, timeout=TIMEOUT_SEC)
 
-    def complete_json(self, *, model: str, system: str, messages: list[dict],
-                      schema: dict, max_tokens: int,
-                      thinking_tokens: int | None = None) -> dict:
-        """One call, constrained to the schema, returned as a dict."""
-        with self._client.messages.stream(
-                model=model,
-                system=system,
-                messages=messages,
-                max_tokens=max_tokens,
-                **_thinking(model, thinking_tokens),
-                output_config={"format": {"type": "json_schema", "schema": schema}}) as stream:
-            message = stream.get_final_message()
-
-        text = _text_of(message)
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as exc:
-            # Never log `text`: it derives from the user's own documents or from a job posting.
-            logger.error("a response of %d chars did not parse as JSON", len(text))
-            raise LlmError("the model's response was not usable JSON") from exc
-
     def complete_text(self, *, model: str, system: str, messages: list[dict],
-                      max_tokens: int, thinking_tokens: int | None = None) -> str:
+                      max_tokens: int, effort: str | None = None) -> str:
         """One call, returned as plain text."""
-        # Streamed like the JSON path: a whole HTML document at a high ceiling would meet a timeout.
+        # Streamed: a whole document at a high ceiling would meet a timeout.
         with self._client.messages.stream(
                 model=model,
                 system=system,
                 messages=messages,
                 max_tokens=max_tokens,
-                **_thinking(model, thinking_tokens)) as stream:
+                **_thinking(model, effort)) as stream:
             message = stream.get_final_message()
         warn_if_truncated(getattr(message, "stop_reason", None) == "max_tokens", model, max_tokens)
         return _text_of(message)
@@ -120,16 +94,22 @@ class AnthropicClient:
 _VERSION = re.compile(r"^claude-(?:opus|sonnet|haiku)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$")
 
 
-def _thinking(model: str, budget: int | None) -> dict:
-    """The thinking block for a call, or nothing at all. Claude 4.5 and before think within a token
-    budget; from 4.6 the depth is the model's own, and Haiku 5.5 answers a budget with a 400 (Anthropic's
-    Haiku 5.5 migration guide, 2026-11-10). A name that says no version is taken as a newer model."""
-    if not budget:
+# Claude 4.5 and before take a budget, not an effort: 4,096 measured better on writing quality than
+# their thinking off (2026-07-20).
+OLD_MODEL_THINKING_TOKENS = 4_096
+
+
+def _thinking(model: str, effort: str | None) -> dict:
+    """How hard a call thinks, in the form the model takes, or nothing at all. From 4.6 Claude thinks
+    adaptively, as deep as `effort` asks, and Haiku 5.5 answers a token budget with a 400 (Anthropic's
+    Haiku 5.5 migration guide, 2026-11-10); 4.5 and before think within a budget. A name that says no
+    version is taken as a newer model."""
+    if not effort:
         return {}
     version = _VERSION.match(model)
     if version and (int(version.group(1)), int(version.group(2) or 0)) <= (4, 5):
-        return {"thinking": {"type": "enabled", "budget_tokens": budget}}
-    return {"thinking": {"type": "adaptive"}}
+        return {"thinking": {"type": "enabled", "budget_tokens": OLD_MODEL_THINKING_TOKENS}}
+    return {"thinking": {"type": "adaptive"}, "output_config": {"effort": effort}}
 
 
 def warn_if_truncated(cut: bool, model: str, max_tokens: int) -> None:

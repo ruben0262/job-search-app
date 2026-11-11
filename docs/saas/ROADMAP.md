@@ -3274,10 +3274,20 @@ work, or opening and closing sessions faster, would help):
     **2026-11-09, decided and built: each person's own AI account.** No platform-paid writing: a CV or
     letter is made only with an account they linked in Settings, a sign-in to Claude, ChatGPT or Gemini
     or an API key, one in use (`libs.llm.accounts`). 2026-11-10: the Make buttons show for everyone, and
-    a CV needs their own CV uploaded, a cover letter their own cover letter (`libs.documents.needs`). Still
-    to do: the organise prompt and the base it
-    writes; `tailor_cv` and `tailor_cover` on it, one prompt for every model; the sign-up tickbox; the
-    prompts measured on each provider's default model, through linked accounts.
+    a CV needs their own CV uploaded, a cover letter their own cover letter (`libs.documents.needs`).
+    **2026-11-10, decided (owner): two routes, one prompt each**, in place of an organise prompt feeding
+    the old tailoring ones. 2026-11-11, built: `libs/prompts/write_cv.md` and `write_cover.md` each carry
+    the job and everything the person switched on, then what to do, then a final check
+    (`services/docgen/build.py`); code writes the header and the letter's company block, cleans the answer
+    to the markup, and says back once a document over its pages or with a number not in their documents.
+    The setup agents' profile files are no longer read. Same day, after the owner's review: the wording
+    reworked for Haiku 5.5 from Anthropic's guidance and the owner's old rule files (kept, not deleted),
+    judged in the chat; what a reviewer would send back checked by code (`services/docgen/checks.py`);
+    one effort, `medium`, for an API key and a Claude sign-in alike; the ATS check reads the CV's own
+    headings in any language. The owner approved both prompts' wording the same day, with the
+    measurements (CHANGELOG 2026-11-11). Still to do: a CV takes ~42 s against the 20 s target (letters
+    ~20 s); the same prompts measured on the GPT and Gemini models; a judge prompt for cover letters; the
+    sign-up tickbox.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

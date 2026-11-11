@@ -252,10 +252,10 @@ def test_deleting_takes_the_account_and_everything_belonging_to_it(api):
         UserProfileFile,
         UserSecret,
     )
-    from libs.profiles.repository import ProfileFiles
 
     http, db, operator, ordinary, sign_in = api
-    ProfileFiles(db, ordinary.id).seed()
+    # Profile files the setup agents wrote for an account before 2026-11-10: kept, so deleted with it.
+    insert(db, UserProfileFile(user_id=ordinary.id, name="context.md", content="# Ordinary", kind="context"))
     job = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer"))
     insert(db, UserJobState(user_id=ordinary.id, job_id=job.id, applied_at=now()))
     insert(db, UserConfig(user_id=ordinary.id, config={"sections": []}))

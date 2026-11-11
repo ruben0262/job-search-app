@@ -1,4 +1,6 @@
-"""One person's profile files: markdown and HTML the documents are written from (CLAUDE.md §3a)."""
+"""One person's profile files: the markdown and HTML the setup agents wrote, which their documents were
+written from until 2026-11-10. Their uploads replaced them (owner); they are kept as that person's work
+(CLAUDE.md §3a), deleted with their account, and neither written nor read."""
 from __future__ import annotations
 
 import uuid
@@ -24,5 +26,4 @@ class UserProfileFile(Document):
     kind: str
     filled: bool = False
     created_at: datetime = field(default_factory=now)
-    # Read by `stale_setup`: a file written before the person last changed their details is stale.
     updated_at: datetime = field(default_factory=now)

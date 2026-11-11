@@ -54,6 +54,8 @@ class PdfReport:
     pages: int | None
     chars: int
     issues: list[str] = field(default_factory=list)
+    # What the last page holds: a second page with a few lines on it is a CV that spilled over.
+    last_page_chars: int | None = None
 
     @property
     def ats_ok(self) -> bool:
@@ -89,15 +91,16 @@ class Chrome:
         to_chrome, self._send = os.pipe()
         self._receive, from_chrome = os.pipe()
 
-        def wire() -> None:
-            os.dup2(to_chrome, 3)
-            os.dup2(from_chrome, 4)
-
+        # Chrome reads on descriptor 3 and writes on 4, and a shell puts the pipes there after the fork. A
+        # Python `preexec_fn` did until 2026-11-11, and it runs after the fork's hooks: pymongo's closes its
+        # sockets in the child, so whenever they held 3 and 4 every launch failed with EBADF (found by the
+        # CV bench, which connects first; a worker relaunching a dead Chrome is in the same place). bash,
+        # because dash reads only single-digit descriptors and a busy worker's pipes are past 9.
+        closes = "".join(f" {fd}<&-" for fd in (to_chrome, from_chrome) if fd not in (3, 4))
         self.process = subprocess.Popen(  # noqa: S603 - the binary is ours, the arguments literals
-            [chrome_binary(), *CHROME_FLAGS, "--remote-debugging-pipe", "about:blank"],
-            # Safe here: the docgen worker has one thread, and `wire` only moves two descriptors.
-            pass_fds=(3, 4), preexec_fn=wire,  # noqa: PLW1509
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ["/bin/bash", "-c", f'exec "$0" "$@" 3<&{to_chrome} 4>&{from_chrome}{closes}', chrome_binary(),
+             *CHROME_FLAGS, "--remote-debugging-pipe", "about:blank"],
+            pass_fds=(to_chrome, from_chrome), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         os.close(to_chrome)
         os.close(from_chrome)
         self._buffer, self._last = b"", 0
@@ -188,8 +191,9 @@ def _discard() -> None:
         _chrome = None
 
 
-def inspect_pdf(pdf: bytes, *, kind: str = "cv") -> PdfReport:
-    """Page count and the ATS readability check, from one read of the document."""
+def inspect_pdf(pdf: bytes, *, kind: str = "cv", headings: tuple[str, ...] = ()) -> PdfReport:
+    """Page count and the ATS readability check, from one read of the document. `headings` are the CV's
+    own section titles, in the order it gives them."""
     try:
         from pypdf import PdfReader  # noqa: PLC0415 - only this path needs it
     except ImportError:
@@ -201,11 +205,12 @@ def inspect_pdf(pdf: bytes, *, kind: str = "cv") -> PdfReport:
     except Exception as exc:  # noqa: BLE001 - any parse failure is one outcome: unreadable
         return PdfReport(pages=None, chars=0, issues=[f"text extraction failed: {type(exc).__name__}"])
 
-    report = inspect_pdf_text("\n".join(texts), kind=kind)
-    return PdfReport(pages=len(texts), chars=report.chars, issues=report.issues)
+    report = inspect_pdf_text("\n".join(texts), kind=kind, headings=headings)
+    return PdfReport(pages=len(texts), chars=report.chars, issues=report.issues,
+                     last_page_chars=len(texts[-1].strip()) if texts else None)
 
 
-def inspect_pdf_text(text: str, *, kind: str = "cv") -> PdfReport:
+def inspect_pdf_text(text: str, *, kind: str = "cv", headings: tuple[str, ...] = ()) -> PdfReport:
     """The readability checks, over already-extracted text."""
     issues: list[str] = []
     chars = len(text.strip())
@@ -221,10 +226,15 @@ def inspect_pdf_text(text: str, *, kind: str = "cv") -> PdfReport:
                           f"column-scrambled, which is what an ATS would receive")
 
     if kind == "cv":
-        lowered = text.casefold()
-        for section in ("experience", "education"):
-            if section not in lowered:
-                issues.append(f"section {section!r} not found in the extracted text")
+        # Each of the CV's own headings, where it belongs. Not two English words, as until 2026-11-11: a CV
+        # is written in the posting's language and headed in it, and a German one has no "experience".
+        flat, at = " ".join(text.split()).casefold(), 0
+        for heading in headings:
+            found = flat.find(" ".join(heading.split()).casefold(), at)
+            if found < 0:
+                issues.append(f"heading {heading!r} not found where it belongs in the extracted text")
+            else:
+                at = found + 1
 
         if not EMAIL.search(text):
             # Not fatal and not always wrong: a profile with no email link renders a header without one.

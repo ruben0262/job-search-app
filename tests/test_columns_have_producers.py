@@ -30,6 +30,10 @@ KNOWN_UNWRITTEN = {
     # now gone"): nothing reads it either. Its "producer" until 2026-11-09 was a keyword argument of the
     # same name on the dashboard. Retiring it deletes what every account holds, so it waits for the owner.
     "profile",
+    # The profile files the setup agents wrote (`user_profile_files`): kept as those people's work when their
+    # uploads replaced them (owner, 2026-11-10), and since then neither written nor read. Deleting them is
+    # the owner's call.
+    "filled",
 }
 
 
@@ -114,7 +118,6 @@ def test_the_check_can_tell_a_written_column_from_an_unwritten_one(bodies):
 KNOWN_COLLISIONS = {
     # Per-call model ceilings.
     "MAX_TOKENS": "per-call: agents 32k, capture 16k, docgen 32k",
-    "THINKING_TOKENS": "per-call, same reason as MAX_TOKENS",
     # Per-adapter HTTP timeouts, tuned to what each board tolerates.
     "TIMEOUT": "per-adapter",
     "_TIMEOUT": "per-adapter",

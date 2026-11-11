@@ -3,8 +3,8 @@ deleted. The real app and the real worker step share one test database; only Chr
 providers are stand-ins, and the providers are reached through their real adapters.
 
 Every document is written by AI since the instant one, built by code, was removed (2026-11-08), and only
-with the person's own AI account in use (2026-11-09). The `ready` fixture is an account that can have one:
-a writing profile, consent, and its own Gemini key in use.
+with the person's own AI account in use (2026-11-09), from what they uploaded (2026-11-10). The `ready`
+fixture is an account that can have one: its uploads, consent, and its own Gemini key in use.
 """
 from __future__ import annotations
 
@@ -39,10 +39,11 @@ BSc Computer Science, TU Berlin    2017
 
 COVER_TEXT = "Dear hiring team, I build billing systems that do not page anyone at night. Alice Example"
 
-WRITTEN = """<!DOCTYPE html><html lang="en"><head><title>Alice Example CV</title></head><body>
-<div class="cv-name">Alice Example</div><p class="profile">Backend engineer.</p>
-<div class="section"><div class="section-title">Experience</div><ul><li>Built billing</li></ul></div>
-</body></html>"""
+# What the providers answer, a CV and a letter in their tags: each build keeps the one it asked for.
+WRITTEN = """<cv><p class="profile">Backend engineer.</p>
+<div class="section"><div class="section-title">Experience</div><ul><li>Built billing</li></ul></div></cv>
+<letter><p class="letter-subject">Application for Backend Engineer</p>
+<div class="letter"><p>Dear Hiring Manager,</p><p>I build billing systems.</p></div></letter>"""
 
 
 @pytest.fixture()
@@ -78,7 +79,7 @@ def api(db, monkeypatch):
     monkeypatch.setattr("services.docgen.run.pdf.render",
                         lambda html: rendered.append(html) or b"%PDF-1.4 test")
     monkeypatch.setattr("services.docgen.run.pdf.inspect_pdf",
-                        lambda document, kind="cv": pdf.PdfReport(pages=1, chars=900, issues=[]))
+                        lambda document, kind="cv", headings=(): pdf.PdfReport(pages=1, chars=900, issues=[]))
     # The posting's freshness check fetches the posting; nothing here may touch the network.
     monkeypatch.setattr("services.docgen.run.refresh_before_build", lambda *a, **k: {})
 
@@ -107,20 +108,6 @@ def _status(api, build_id: int) -> dict:
 def _consent(api):
     version = api.http.get("/account/consent").json()["current_version"]
     assert api.http.post("/account/consent", json={"version": version}).status_code == 200
-
-
-def _personalise(api):
-    """What the setup chat left a legacy account with: the files the tailoring prompts need."""
-    from libs.profiles.repository import ProfileFiles
-
-    files = ProfileFiles(api.db, api.user.id)
-    files.write("context.md", "# Alice Example\nBackend engineer in Berlin. Python, Postgres.",
-                kind="context")
-    files.write("base_cv.html", WRITTEN, kind="template")
-    files.write("tailor_cv.md", "Tailor Alice Example's CV.\n<JOB_CONTEXT>\n<BASE_TEMPLATE>",
-                kind="prompt")
-    files.write("tailor_cover.md", "Write Alice Example a letter.\n<HEAD_BLOCK>\n<JOB_CONTEXT>",
-                kind="prompt")
 
 
 def _platform(monkeypatch):
@@ -160,10 +147,9 @@ def _providers(monkeypatch) -> list[httpx.Request]:
 
 @pytest.fixture()
 def ready(api, monkeypatch):
-    """An account that can have an AI document: a writing profile, consent, its own Gemini key in use, and
+    """An account that can have an AI document: its uploads, consent, its own Gemini key in use, and
     the providers answering with `WRITTEN`. What every request reached them with is `ready.sent`."""
     _own(api)
-    _personalise(api)
     _consent(api)
     api.sent = _providers(monkeypatch)
     return api
@@ -216,14 +202,17 @@ def test_making_a_document_is_not_applying(ready):
 
 
 def test_the_document_built_is_the_kind_asked_for(ready):
-    """A cover letter asked for must not come back as a CV: it is written from the letter's prompt."""
+    """A cover letter asked for must not come back as a CV: it is written from the letter's prompt, with
+    their own letter in it."""
     api = ready
     build_id = _ask(api, kind="cover").json()["id"]
     _work(api)
 
     download = api.http.get(f"/documents/build/{build_id}/file")
     assert 'filename="Alice_Example_Cover.pdf"' in download.headers["content-disposition"]
-    assert "Write Alice Example a letter." in api.sent[0].content.decode()
+    sent = api.sent[0].content.decode()
+    assert "You are writing a cover letter" in sent and "do not page anyone at night" in sent
+    assert "Application for Backend Engineer" in api.rendered[-1]
 
 
 def test_asking_twice_while_it_waits_is_the_same_build(ready):
@@ -247,18 +236,18 @@ def test_a_build_is_its_owners_alone(ready):
 
 
 def test_a_refusal_says_what_to_do_and_is_not_a_dead_letter(ready):
-    """A dead letter pages the operator; a person whose account has no base CV is not an incident."""
+    """A dead letter pages the operator; a posting whose text is gone is not an incident."""
     from libs.db import get
-    from libs.db.models import QueueJob, UserProfileFile
+    from libs.db.models import CorpusJob, QueueJob
 
     api = ready
-    api.db[UserProfileFile.COLLECTION].delete_many({"user_id": api.user.id, "name": "base_cv.html"})
     build_id = _ask(api).json()["id"]
+    api.db[CorpusJob.COLLECTION].update_one({"_id": api.job.id}, {"$set": {"description": ""}})
     _work(api)
 
     status = _status(api, build_id)
     assert status["state"] == "failed"
-    assert "no base CV" in status["detail"]
+    assert "no description" in status["detail"]
     assert get(api.db, QueueJob, build_id).state == "done"
 
 
@@ -446,7 +435,6 @@ def test_an_ai_document_asks_for_consent_first(api, monkeypatch):
     """Before anything is sent; once their account and documents are there, which are asked first."""
     _platform(monkeypatch)
     _own(api)
-    _personalise(api)
 
     refused = _ask(api, mode="ai")
 
@@ -457,7 +445,6 @@ def test_an_ai_document_asks_for_consent_first(api, monkeypatch):
 def test_withdrawn_consent_stops_a_queued_ai_document_before_any_text_leaves(api, monkeypatch):
     """The guarantee sits where text leaves the server, whatever was decided when it was queued."""
     _own(api)
-    _personalise(api)
     _consent(api)
     sent = _providers(monkeypatch)
     build_id = _ask(api, mode="ai").json()["id"]
@@ -478,7 +465,6 @@ def test_an_ai_document_on_their_own_account_writes_with_the_operators_model(api
 
     _platform(monkeypatch)
     _own(api)
-    _personalise(api)
     _consent(api)
     settings.put(api.db, "document_models", {"gemini": "gemini-chosen-in-the-panel"})
     sent = _providers(monkeypatch)
@@ -497,7 +483,6 @@ def test_their_own_key_pays_and_is_never_counted_against_the_allowance(api, monk
     from libs.llm import ai_requests_today
 
     _platform(monkeypatch)
-    _personalise(api)
     _consent(api)
     _own(api, "openai_api", OWN_KEY)
     sent = _providers(monkeypatch)
@@ -514,7 +499,6 @@ def test_without_an_account_of_their_own_they_are_told_so_and_nothing_is_made(ap
     """However much of the platform's allowance is left: it is the help chat's (owner, 2026-11-09). And
     no document by other means (2026-11-08). The page is told what is missing, to say where to add it."""
     _platform(monkeypatch)
-    _personalise(api)
     _consent(api)
 
     refused = _ask(api, mode="ai")
@@ -530,7 +514,6 @@ def test_a_cv_is_made_from_their_cv_and_a_cover_letter_from_a_cover_letter_of_th
     add and where, with anything else missing, in one answer."""
     from libs.db.models import UserDocument
 
-    _personalise(api)
     _consent(api)
     api.db[UserDocument.COLLECTION].delete_many({"user_id": api.user.id, "kind": "cover_letter"})
 
@@ -568,7 +551,6 @@ def test_a_cv_switched_off_is_said_as_one_to_switch_on(api):
     from libs.db.models import UserDocument
 
     _own(api)
-    _personalise(api)
     _consent(api)
     api.db[UserDocument.COLLECTION].update_many({"user_id": api.user.id, "kind": "cv"},
                                                 {"$set": {"in_use": False}})
@@ -600,7 +582,6 @@ def test_a_document_never_spends_the_help_chats_allowance(api, monkeypatch):
 
     _platform(monkeypatch)
     _own(api)
-    _personalise(api)
     _consent(api)
     set_limit(api.db, api.user.id, "ai_platform_requests_per_day", 1)
     record_ai_request(api.db, api.user.id)          # what the chat does for one reply: the allowance gone
@@ -617,7 +598,6 @@ def test_the_daily_ceiling_counts_every_document_where_they_are_asked_for(api):
     from libs.db.models import CorpusJob
     from libs.limits import BY_KEY, set_limit
 
-    _personalise(api)
     _consent(api)
     _own(api)
     set_limit(api.db, api.user.id, "cv_builds_per_day", 2)
@@ -632,12 +612,18 @@ def test_the_daily_ceiling_counts_every_document_where_they_are_asked_for(api):
     assert BY_KEY["cv_builds_per_day"].default == 50
 
 
-def test_an_account_without_a_writing_profile_is_told_so(api):
-    """AI documents for everyone else wait for the shared prompts (ROADMAP Phase 8, step 7)."""
+def test_an_account_with_only_its_uploads_has_its_cv_written_from_them(api, monkeypatch):
+    """No setup, no writing profile (owner, 2026-11-10): their CV, the posting and the prompt are the call.
+    Until this day such an account was refused, and every account made on the site was one."""
     _own(api)
     _consent(api)
+    sent = _providers(monkeypatch)
 
-    refused = _ask(api, mode="ai")
+    build_id = _ask(api).json()["id"]
+    _work(api)
 
-    assert refused.status_code == 409
-    assert "writing profile" in refused.json()["detail"]
+    assert _status(api, build_id)["state"] == "ready"
+    prompt = sent[0].content.decode()
+    assert "You are writing a CV" in prompt
+    assert "Built the billing service in Python and Postgres" in prompt
+    assert "Backend engineer. Python, Postgres, on-call." in prompt

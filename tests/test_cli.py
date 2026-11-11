@@ -96,6 +96,17 @@ def test_claude_runs_with_no_tools_and_gemini_trusted_and_read_only(tools):
     assert "--skip-trust" in gemini and gemini[gemini.index("--approval-mode") + 1] == "plan"
 
 
+def test_a_claude_sign_in_thinks_as_hard_as_an_api_key_does(tools):
+    """The docgen worker asks for one effort; left out, Claude Code thought at its own default, which
+    nobody had chosen and an API key never ran at (2026-11-11)."""
+    client = cli.CliClient("claude_login", _blob("claude_login"), [].append)
+    said = json.loads(client.complete_text(model="m", system="s", max_tokens=1, effort="medium",
+                                           messages=[{"role": "user", "content": "p"}]))
+
+    assert said["args"][said["args"].index("--effort") + 1] == "medium"
+    assert "--effort" not in _write("claude_login", _blob("claude_login"))["args"], "only when asked"
+
+
 def test_codex_picks_its_own_model_when_none_is_set(tools):
     """A ChatGPT plan's models are Codex's to know; an API model's name may not be one of them."""
     assert _write("codex_login", _blob("codex_login"), model="")["model"] is None

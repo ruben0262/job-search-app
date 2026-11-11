@@ -71,39 +71,29 @@ def test_a_surviving_placeholder_dominates_the_violation_score():
 
 
 def test_the_bench_reads_the_prompt_that_is_actually_deployed():
-    """`live` must be the seeded file itself, or the baseline drifts from what users get."""
+    """`live` must be the file every CV is written with, or the baseline drifts from what users get."""
     from scripts.cvlab.run import LIVE_PROMPT, load_variant
+    from services.docgen.build import PROMPTS
 
-    assert pathlib.Path("libs/scaffolds/tailor_cv.md").resolve() == LIVE_PROMPT
+    assert (pathlib.Path("libs/prompts") / PROMPTS["cv"]).resolve() == LIVE_PROMPT
     assert load_variant("live") == LIVE_PROMPT.read_text(encoding="utf-8")
+    assert load_variant("uploaded") is None, "their own CV is measured without a prompt"
 
 
-def test_every_variant_keeps_the_placeholders_python_substitutes():
-    """Breaking one breaks the build, and the bench would measure a prompt nothing could run."""
-    from scripts.cvlab.run import HERE, load_variant
+def test_every_variant_fills_and_asks_for_its_answer_where_it_is_read():
+    """A variant with a place nothing fills, or that asks for the CV anywhere but `<cv>`, measures a prompt
+    production could not run."""
+    from scripts.cvlab.run import HERE, Candidate, Posting, load_variant, request_for
 
+    candidate = Candidate.__new__(Candidate)
+    candidate.user = type("U", (), {"full_name": "Alice Example", "links": []})()
+    candidate.documents, candidate.languages = {"cv": ["Alice Example\nEXPERIENCE\nEngineer"]}, ()
+    posting = Posting({"slug": "s", "group": "g", "candidate": "c", "title": "Engineer",
+                       "description": "Build things."})
     for path in sorted((HERE / "variants").glob("*.md")):
         text = load_variant(path.stem)
-        assert "<JOB_CONTEXT>" in text, f"{path.name} lost <JOB_CONTEXT>"
-        assert "<BASE_TEMPLATE>" in text, f"{path.name} lost <BASE_TEMPLATE>"
-        assert "<<ROLE_ANGLES>>" in text, f"{path.name} lost <<ROLE_ANGLES>>"
-
-
-def test_the_variants_differ_from_live_only_by_the_drafted_wording():
-    """A variant that also drags in an unrelated edit measures two changes and attributes one."""
-    from scripts.cvlab.run import LIVE_PROMPT, load_variant
-
-    live = load_variant("live")
-    person, fallback = load_variant("d-person"), load_variant("d-fallback")
-
-    assert LIVE_PROMPT.exists()
-    # Each draft adds text and removes only the line it replaces.
-    assert len(person) > len(live) and len(fallback) > len(live)
-    assert "no \"I\" or \"my\"" in person and "no \"I\" or \"my\"" not in live
-    assert "WHEN THERE IS NOT ENOUGH DIRECTLY RELEVANT EXPERIENCE" in fallback
-    assert "WHEN THERE IS NOT ENOUGH DIRECTLY RELEVANT EXPERIENCE" not in live
-    # And the live prompt is untouched by all of it (§3a).
-    assert "WHEN THERE IS NOT ENOUGH DIRECTLY RELEVANT EXPERIENCE" not in live
+        assert "between <cv> and </cv>" in text, f"{path.name} does not ask for <cv>"
+        assert "{{" not in request_for(candidate, posting, text).prompt
 
 
 def test_the_judge_dimensions_reach_the_comparison():

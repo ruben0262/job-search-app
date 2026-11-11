@@ -34,7 +34,6 @@ def load(path: Path | str) -> str:
 
 
 STYLE = re.compile(r"(?is)<style\b.*?</style>")
-_HEAD = re.compile(r"(?is)<head\b.*?</head>")
 _PAGE_MARGIN = re.compile(r"(?is)@page\s*{[^}]*?\bmargin\s*:\s*([^;}]+)")
 
 
@@ -94,12 +93,6 @@ class Template:
         block = split_style(load(self.path))[1]
         css, end, _ = block.rpartition("</style>")
         return f"{css}{EVERY_LOOK}{end}" if end else block
-
-    @property
-    def head(self) -> str:
-        """Its `<head>`: what an AI cover letter is handed as `<HEAD_BLOCK>`."""
-        match = _HEAD.search(re.sub(r"(?s)<!--.*?-->", "", load(self.path)))
-        return match.group(0) if match else f"<head>\n{self.style}\n</head>"
 
     @property
     def page_margin(self) -> str:

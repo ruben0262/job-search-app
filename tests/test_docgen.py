@@ -1,71 +1,56 @@
-"""The CV builder: what reaches the model, what comes back, and what is never delivered."""
+"""The document writer: what reaches the model, what is kept of its answer, and what is never delivered."""
 from __future__ import annotations
 
 import io
+import os
 import pathlib
 import shutil
+import subprocess
+import sys
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
 from libs import templates
-from libs.templates import SCAFFOLD_CV, load
-from services.docgen import build, pdf, run
+from services.docgen import build, checks, pdf, run
 
-
-def base_document() -> str:
-    """The document handed to the tailoring call.
-
-    The scaffold a new account is seeded with, which is what every user's own `base_cv.html`
-    descends from — and since 2026-08-14 the only base CV in the repo.
-    """
-    return load(SCAFFOLD_CV)
-
-
-# The look a CV is laid out in when nobody picked one: the scaffold's own.
-MERIDIAN = templates.find("cv", "meridian").style
-# And a cover letter's: what `<HEAD_BLOCK>` is filled with.
-COVER = templates.find("cover", "meridian")
+MERIDIAN = templates.find("cv", "meridian")
+KESTREL = templates.find("cv", "kestrel")
+LETTER = templates.find("cover", "meridian")
 
 # The invisible character these tests are about, named and escaped.
 ZERO_WIDTH = "\u200b"
 
-TAILORED = """<!DOCTYPE html>
-<html lang="en"><head><title>Alice Example CV</title></head>
-<body>
-<div class="cv-header"><div class="cv-name">Alice Example</div></div>
-<p class="profile">Senior backend engineer &mdash; payments and APIs.</p>
+# An uploaded CV as text, the way `libs.documents.extract` leaves one.
+CV_TEXT = """Alice Example
+alice@example.com | +49 151 2345 6789 | Berlin, Germany
+
+EXPERIENCE
+Backend Engineer, Northwind    2021 - Present
+- Built the billing service in Python and Postgres
+- Cut checkout latency to 40ms at p99 for 1,200 shops
+
+EDUCATION
+BSc Computer Science, TU Berlin    2017
+"""
+SECOND_CV = "Alice Example\nData engineer CV\nEXPERIENCE\nAnalyst, Contoso 2018 - 2021\n- Ran the warehouse"
+LETTER_TEXT = "Dear team, I build billing systems that do not page anyone at night. Alice Example"
+
+# What the model answers: the middle of a CV, in the markup, inside its tags.
+CV_BODY = """<p class="profile">Backend engineer who cut checkout latency to 40ms.</p>
 <div class="section"><div class="section-title">Experience</div>
   <div class="entry"><div class="entry-head">
-    <span class="entry-title">Backend Engineer &mdash; Northwind</span></div>
-    <ul><li>Shipped the billing service &mdash; 40ms p99</li></ul></div>
+    <span class="entry-title">Backend Engineer · Northwind · Berlin</span>
+    <span class="entry-date">2021 - Present</span></div>
+    <ul><li>Built the billing service in Python and Postgres</li></ul></div>
 </div>
-</body></html>"""
-
-
-# The per-user writing prompt as `setup-prompts` leaves it: the person's real details in the file.
-# Every build needs one now. `_require_personalised` refuses a scaffold rather than substituting into
-# it, because the substitution read the wrong copy of the candidate — one account's three typed links
-# were a single link in its profile, and another's name lost its accent. Tests that relied on the
-# scaffold fallback pass this instead, which is what a real account has.
-TAILOR_PROMPT = """You are tailoring Alice Example's CV for ONE specific job.
-Contact: alice@example.com | https://github.com/alice
-Write in British English. Alice may work in the UK and the EU.
-
-<<ROLE_ANGLES>>
-
-<JOB_CONTEXT>
-
-<BASE_TEMPLATE>
-"""
-
-COVER_PROMPT = """Write a one-page cover letter for Alice Example, based in Berlin, Germany.
-
-<HEAD_BLOCK>
-
-<JOB_CONTEXT>
-"""
-
+<div class="section"><div class="section-title">Education</div></div>"""
+ANSWER = f"<cv>\n{CV_BODY}\n</cv>"
+LETTER_BODY = """<p class="letter-subject">Application for Backend Engineer</p>
+<div class="letter"><p>Dear Hiring Manager,</p><p>I cut checkout latency to 40ms at Northwind.</p>
+<p class="closing">Kind regards,</p><p class="signature">Alice Example</p></div>"""
+LETTER_ANSWER = f"<letter>{LETTER_BODY}</letter>"
 
 # Whatever the payer resolved to; the fake client answers the same either way.
 MODEL = "test-model"
@@ -82,177 +67,346 @@ class FakeJob:
         self.location = "Berlin"
         self.source = "linkedin"
         self.description = description
-        self.posted_at = None
-        self.applicants = 25
-        self.workplace = "remote"
-        self.application_url = None
+        self.workplace = "hybrid"
+        self.language = "de"
+
+
+def _user(**fields):
+    values = {"id": uuid.uuid4(), "full_name": "Alice Example", "links": [], "cv_template": None,
+              "cover_template": None, **fields}
+    return type("U", (), values)()
+
+
+DOCUMENTS = {"cv": [CV_TEXT, SECOND_CV], "cover_letter": [LETTER_TEXT],
+             "history": ["I want to move into platform work."], "reference": ["Alice is reliable. Bob, CTO"]}
+
+
+def _request(kind="cv", *, documents=None, job=None, user=None, look=None, **kwargs):
+    return build.prepare(kind, user=user or _user(), job=job or FakeJob(),
+                         documents=DOCUMENTS if documents is None else documents,
+                         look=look or (MERIDIAN if kind == "cv" else LETTER), **kwargs)
 
 
 class FakeClient:
     """Records what it was asked, answers with whatever the test queued."""
 
     def __init__(self, *replies):
-        self.replies = list(replies) or [TAILORED]
+        self.replies = list(replies) or [ANSWER]
         self.calls: list[dict] = []
 
     def complete_text(self, **kwargs):
         self.calls.append(kwargs)
         return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
 
-    def complete_json(self, **kwargs):  # pragma: no cover - docgen never takes this path
-        raise AssertionError("docgen must ask for text, not JSON")
-
 
 # ── what reaches the model ────────────────────────────────────────────────────────────────────
 
-def test_the_call_is_grounded_on_the_user_s_own_facts():
-    """The reference instance measured what happens without grounding."""
-    client = FakeClient()
-    build.tailor(client, base_document(),
-                 build.job_context(FakeJob()), facts_md="# Facts about Alice Example",
-                 template=TAILOR_PROMPT, model=MODEL, style=MERIDIAN)
+def test_the_prompt_carries_the_job_and_everything_they_switched_on():
+    """The owner's plan (2026-11-10): one prompt with all of it. Each CV apart, their About you, their
+    other files, the whole posting, and the day it is."""
+    prompt = _request(today=datetime(2026, 11, 11, tzinfo=UTC)).prompt
 
-    assert client.calls[0]["system"].startswith("# Facts about Alice Example")
-
-
-def test_a_profile_with_no_facts_block_still_gets_a_grounding_instruction():
-    """Nobody should reach this — a confirmed profile always renders one."""
-    client = FakeClient()
-    build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT,
-                 model=MODEL, style=MERIDIAN)
-
-    assert "Never invent" in client.calls[0]["system"]
+    for text in (CV_TEXT.strip(), SECOND_CV, "I want to move into platform work.", "Alice is reliable",
+                 "We need a backend engineer. Python, Postgres, on-call.", "11 November 2026"):
+        assert text in prompt, text
+    assert "=== CV 1 of 2 ===" in prompt and "=== CV 2 of 2 ===" in prompt
+    assert "Location: Berlin, Hybrid" in prompt and "The posting is written in: German" in prompt
+    assert "{{" not in prompt
 
 
-def test_the_prompt_carries_the_candidate_the_posting_and_the_base_document():
-    prompt = build.build_prompt(base_document(),
-                                build.job_context(FakeJob()), template=TAILOR_PROMPT)
+def test_a_cv_is_written_from_their_cvs_and_a_letter_from_their_letters_too():
+    """A letter needs their record and their voice; a CV needs only the record."""
+    cv, letter = _request("cv").prompt, _request("cover").prompt
 
-    assert "Alice Example" in prompt              # filled by render_cv_prompt
-    assert "Northwind" in prompt                  # the base document
-    assert "on-call" in prompt                    # the posting
-    assert "<JOB_CONTEXT>" not in prompt and "<BASE_TEMPLATE>" not in prompt
+    assert LETTER_TEXT not in cv
+    assert LETTER_TEXT in letter and CV_TEXT.strip() in letter
+    assert "Their name is Alice Example." in letter
 
 
-def test_the_model_never_sees_the_stylesheet():
-    """It is told CSS is managed externally."""
-    client = FakeClient()
-    build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT,
-                 model=MODEL, style=MERIDIAN)
+def test_their_languages_are_what_their_cv_says_and_what_their_search_accepts():
+    prompt = _request(languages=("en", "de")).prompt
 
-    assert "@page" not in client.calls[0]["messages"][0]["content"]
+    assert "The jobs they are looking for are in: English, German." in prompt
 
 
 def test_a_long_posting_is_capped_not_dropped():
-    context = build.job_context(FakeJob(description="x" * (build.JD_MAX_CHARS + 5_000)))
+    prompt = _request(job=FakeJob(description="x" * (build.POSTING_MAX_CHARS + 5_000))).prompt
 
-    assert "truncated" in context
-    assert len(context) < build.JD_MAX_CHARS + 500
-
-
-def test_a_posting_with_no_description_still_produces_a_context():
-    """A build refuses earlier when the description is missing."""
-    assert "no description" in build.job_context(FakeJob(description=None))
+    assert "x" * build.POSTING_MAX_CHARS in prompt
+    assert "x" * (build.POSTING_MAX_CHARS + 1) not in prompt
+    assert f"cut at {build.POSTING_MAX_CHARS} characters" in prompt
 
 
-# ── what comes back ───────────────────────────────────────────────────────────────────────────
+def test_their_own_text_is_never_read_as_a_place_to_fill():
+    """One pass over the prompt: a CV that says "{{name}}" says it, and is not filled in."""
+    prompt = _request(documents={"cv": ["Alice Example\nTemplating with {{name}} and {{job}}"]}).prompt
 
-def test_the_layout_is_restored_from_the_template_whatever_came_back():
-    """The one guarantee that makes 'the model only changes text' true rather than requested."""
-    client = FakeClient(TAILORED.replace("<head>", "<head><style>body{font-size:4pt}</style>"))
-    html = build.tailor(client, base_document(),
-                        build.job_context(FakeJob()), template=TAILOR_PROMPT, model=MODEL, style=MERIDIAN)
-
-    assert "@page" in html and "size: A4" in html
-    assert "font-size:4pt" not in html
+    assert "Templating with {{name}} and {{job}}" in prompt
 
 
-def test_commentary_around_the_document_is_discarded():
-    client = FakeClient(f"Here is the tailored CV:\n\n{TAILORED}\n\nLet me know if…")
-    html = build.tailor(client, base_document(),
-                        build.job_context(FakeJob()), template=TAILOR_PROMPT, model=MODEL, style=MERIDIAN)
-
-    assert html.lstrip().startswith("<!DOCTYPE html")
-    assert "Let me know" not in html
+def test_a_prompt_with_a_place_nothing_fills_fails_before_anything_is_sent():
+    """The silent failure here would be a model asked to invent whatever the slot was for."""
+    with pytest.raises(KeyError):
+        _request(template="Write it for {{nobody}}.")
 
 
-def test_a_reply_with_no_document_is_a_build_failure():
-    client = FakeClient("I cannot help with that.")
+def test_a_variant_prompt_is_filled_the_same_way():
+    """The CV bench measures other wordings through the same fill."""
+    prompt = _request(template="Job:\n{{job}}\nCV:\n{{cvs}}").prompt
 
+    assert prompt.startswith("Job:\nJob title: Backend Engineer")
+
+
+# ── what is kept of the answer ────────────────────────────────────────────────────────────────
+
+def test_only_the_markup_survives():
+    """No style, script, comment, invisible character or class of its own reaches the page: nothing
+    that could hide text from the reader and show it to an ATS."""
+    dirty = ('<p class="profile glow" style="color:#fff" onclick="x()">Backend <!-- note -->engineer'
+             f'{ZERO_WIDTH}</p><script>alert(1)</script><style>p{{display:none}}</style>'
+             '<div class="section"><span style="font-size:0">python python</span>'
+             '<a href="javascript:alert(1)">bad</a><a href="https://example.com">good</a><table><tr><td>'
+             'cell</td></tr></table></div>')
+
+    kept = build.clean(dirty)
+
+    assert kept == ('<p class="profile">Backend engineer</p><div class="section"><span>python python</span>'
+                    '<a>bad</a><a href="https://example.com">good</a>cell</div>')
+
+
+def test_the_answer_is_the_last_complete_one_and_nothing_around_it():
+    """A model that works aloud may write the tag in its working before its answer."""
+    reply = (f'Plan: the <cv> should lead with billing.\n<cv><p class="profile">Draft</p></cv>\n'
+             f"Then:\n{ANSWER}\nDone.")
+
+    assert build.answer(reply, "cv").startswith('<p class="profile">Backend engineer')
+
+
+@pytest.mark.parametrize("reply", ["", "Here is the CV.", "<cv><p>cut off", "<cv>   </cv>"])
+def test_a_reply_with_no_complete_answer_is_a_build_failure(reply):
     with pytest.raises(build.BuildFailed):
-        build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT,
-                     model=MODEL, style=MERIDIAN)
+        build.draft(FakeClient(reply), _request(), model=MODEL)
 
 
-def test_em_dashes_are_stripped_from_prose_and_kept_in_entry_titles():
-    """The prompt bans them in bullets and allows them in a title header."""
-    html = build.sanitise(TAILORED)
+def test_em_dashes_leave_a_cvs_sentences_and_stay_in_its_titles():
+    body = build.answer('<cv><p class="profile">Engineer — payments</p><span class="entry-title">Lead — '
+                        'Northwind</span><ul><li>Shipped billing — 40ms</li></ul></cv>', "cv")
 
-    assert "Shipped the billing service, 40ms p99" in html
-    assert "Backend Engineer &mdash; Northwind" in html
-
-
-def test_hidden_content_is_stripped_and_then_verified():
-    dirty = TAILORED.replace("<li>", '<li style="display:none">').replace(
-        "Northwind", "North\u200bwind")
-
-    cleaned = build.sanitise(dirty)
-
-    assert build.scan_hidden(cleaned) == []
-    assert "display:none" not in cleaned
-    assert "\u200b" not in cleaned
+    assert "Engineer, payments" in body and "Shipped billing, 40ms" in body
+    assert "Lead — Northwind" in body
 
 
-def test_the_scan_reports_what_it_found():
-    issues = build.scan_hidden('<p>a\u200bb</p><span style="opacity:0">keywords</span>')
+def test_a_letter_has_no_em_dash_and_no_day_it_was_made():
+    """No document carries the day it was made (owner, 2026-11-08). A line that is only a date goes; a
+    date inside a sentence stays."""
+    body = build.answer('<letter><div class="letter"><p>8 November 2026</p><p>Lisbon, 8 November 2026</p>'
+                        "<p>Since 8 November 2021 I have run the desk — alone.</p></div></letter>", "cover")
 
-    assert any("invisible" in issue for issue in issues)
-    assert any("hiding style" in issue for issue in issues)
-
-
-def test_the_stylesheet_is_not_scanned_as_hidden_content():
-    """`hidden-scrollbars` style rules and print CSS are the platform's own and legitimate."""
-    assert build.scan_hidden(base_document()) == []
+    assert "Since 8 November 2021 I have run the desk, alone." in body
+    assert "2026" not in body
 
 
-def test_a_base_cv_that_kept_the_scaffold_comment_reaches_the_model_whole_and_comes_back_clean():
-    """The scaffold's comment says "Keep the <style> block intact", before the real `<head>`.
+# ── the page around it ────────────────────────────────────────────────────────────────────────
 
-    The stylesheet was lifted with a search that started at those words, so it took the end of the
-    comment, `<head>` and `<title>[YOUR NAME] – CV</title>` along with the CSS. The model was sent a
-    base CV with no `<body>`, and the CV it wrote came back with the placeholder title restored into
-    it — which the placeholder check refuses to deliver, for every account that kept the comment.
-    """
-    client = FakeClient()
-    html = build.tailor(client, base_document(), build.job_context(FakeJob()),
-                        template=TAILOR_PROMPT, model=MODEL, style=MERIDIAN)
+def test_the_page_has_their_header_and_the_look_they_picked():
+    """Code writes the header: the name and links they typed, the email and phone their CV has."""
+    user = _user(links=[{"url": "https://github.com/alice"}, {"url": "alice.dev"}])
 
-    assert "<body" in client.calls[0]["messages"][0]["content"], "the model never saw the body"
-    assert "[YOUR NAME]" not in html
-    assert html.count("<title>") == 1
+    page = build.assemble(_request(user=user, look=KESTREL), build.answer(ANSWER, "cv"))
 
-
-# ── the length rule ───────────────────────────────────────────────────────────────────────────
-
-@pytest.mark.parametrize(("pages", "wanted"), [(1, False), (2, False), (3, True), (None, False)])
-def test_only_a_cv_over_two_pages_asks_for_a_revision(pages, wanted):
-    """One page is the goal, two is the ceiling."""
-    assert (build.page_feedback(pages) is not None) is wanted
+    assert KESTREL.style in page and MERIDIAN.style not in page
+    assert '<div class="cv-name">Alice Example</div>' in page
+    assert '<a href="mailto:alice@example.com">alice@example.com</a>' in page
+    assert "+49 151 2345 6789" in page
+    assert '<a href="https://github.com/alice">github.com/alice</a>' in page
+    assert '<a href="https://alice.dev">alice.dev</a>' in page
+    assert page.index("cv-header") < page.index('class="profile"')
 
 
-def test_the_revision_says_cut_never_shrink():
+def test_a_letter_names_the_company_and_its_place_above_the_subject():
+    body = build.assemble(_request("cover"), build.answer(LETTER_ANSWER, "cover")).split("<body>", 1)[1]
+
+    assert '<p class="letter-to">Northwind<br>Berlin</p>' in body
+    assert body.index("letter-to") < body.index("letter-subject") < body.index('class="letter"')
+
+
+def test_a_letter_for_a_job_with_no_company_or_place_has_no_block_for_them():
+    job = FakeJob()
+    job.company, job.location = None, None
+
+    page = build.assemble(_request("cover", job=job), build.answer(LETTER_ANSWER, "cover"))
+
+    assert "letter-meta" not in page.split("<body>", 1)[1]
+
+
+# ── the checks ────────────────────────────────────────────────────────────────────────────────
+
+def test_a_number_found_nowhere_in_their_documents_or_the_posting_is_named():
+    sources = "Cut latency to 40ms for 1,200 shops in 2021. The posting wants 5 years."
+
+    assert build.numbers_not_in("40ms, 1200 shops, 2021, 5 years", sources) == ()
+    assert build.numbers_not_in("Grew revenue 35% across 1,200 shops, 35% again", sources) == ("35",)
+
+
+def test_the_checks_count_pages_over_and_numbers_not_theirs():
+    request = _request()
+
+    assert build.problems(request, build.answer(ANSWER, "cv"), 2).ok
+    over = build.problems(request, '<li>Grew revenue 35%</li>', 3)
+    assert over.pages_over == 1 and over.invented == ("35",)
+    assert build.problems(_request("cover"), build.answer(LETTER_ANSWER, "cover"), 2).pages_over == 1
+
+
+def test_what_is_said_back_is_only_what_was_found_and_says_cut_never_shrink():
     """A model told a document is too long will otherwise reduce the font."""
-    feedback = build.page_feedback(3)
+    said = build.feedback(_request(), build.Check(pages_over=1, invented=("35",)), 3)
 
-    assert "Cut" in feedback
-    assert "Do not shrink" in feedback
+    assert "3 pages" in said and "fit on 2" in said and "Do not shrink" in said
+    assert "These numbers are not in their documents or the posting: 35." in said
+    assert said.rstrip().endswith("between <cv> and </cv>.")
+    assert "numbers" not in build.feedback(_request(), build.Check(pages_over=1, invented=()), 3)
 
 
-# ── the PDF checks ────────────────────────────────────────────────────────────────────────────
+# ── one build, end to end ─────────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def fake_chrome(monkeypatch):
+    """Chrome, as a function: what it was handed, how often, and the pages the PDF claims, in order."""
+    state = {"pages": [1], "calls": 0, "html": []}
+
+    def render(html: str) -> bytes:
+        state["calls"] += 1
+        state["html"].append(html)
+        return f"%PDF-1.4 fake {state['calls']}".encode()
+
+    def inspect_pdf(document: bytes, *, kind="cv", headings=()):
+        pages = state["pages"]
+        return pdf.PdfReport(pages=pages.pop(0) if len(pages) > 1 else pages[0], chars=1_200, issues=[])
+
+    monkeypatch.setattr(run.pdf, "render", render)
+    monkeypatch.setattr(run.pdf, "inspect_pdf", inspect_pdf)
+    return state
+
+
+def _session(monkeypatch, *, description="Backend role. Python.", documents=None, user=None):
+    """The build's reads (the account, the posting, their documents, their languages) with no database."""
+    user = user or _user()
+    job = FakeJob(description=description)
+    monkeypatch.setattr(run, "_load", lambda _db, _user_id, _job_id: (user, job))
+    uploaded = DOCUMENTS if documents is None else documents
+    monkeypatch.setattr(run, "documents_of", lambda _db, _user_id: uploaded)
+    monkeypatch.setattr(run, "_languages", lambda _db, _user_id: ("en",))
+    return object(), user
+
+
+def _ai(session, user, client=None, **kwargs):
+    return run.run_ai(session, user.id, 7, client=client or FakeClient(), model=MODEL,
+                      kind=kwargs.pop("kind", "cv"), **kwargs)
+
+
+def test_a_cv_comes_back_as_a_pdf_named_for_the_person_in_one_call(monkeypatch, fake_chrome):
+    session, user = _session(monkeypatch)
+    client = FakeClient()
+
+    result = _ai(session, user, client)
+
+    assert result.pdf.startswith(b"%PDF") and result.filename == "Alice_Example_CV.pdf"
+    assert result.pages == 1 and result.calls == 1 and not result.revised
+    assert fake_chrome["calls"] == 1
+    assert client.calls[0]["model"] == MODEL and client.calls[0]["system"] == build.SYSTEM
+    assert "Built the billing service" in fake_chrome["html"][0]
+
+
+def test_a_number_they_never_gave_is_said_back_once_and_the_answer_without_it_kept(monkeypatch,
+                                                                                     fake_chrome):
+    session, user = _session(monkeypatch)
+    invented = ANSWER.replace("Built the billing service", "Grew revenue 35% with the billing service")
+    client = FakeClient(invented, ANSWER)
+
+    result = _ai(session, user, client)
+
+    assert result.calls == 2 and result.revised
+    second = client.calls[1]["messages"]
+    assert [message["role"] for message in second] == ["user", "assistant", "user"]
+    assert second[1]["content"] == invented
+    assert "35" in second[2]["content"] and "pages" not in second[2]["content"]
+    assert "35%" not in fake_chrome["html"][-1]
+    assert result.pdf == b"%PDF-1.4 fake 2"
+
+
+def test_a_three_page_cv_is_said_back_once_and_the_one_that_fits_kept(monkeypatch, fake_chrome):
+    session, user = _session(monkeypatch)
+    fake_chrome["pages"] = [3, 2]
+
+    result = _ai(session, user)
+
+    assert result.calls == 2 and result.pages == 2 and fake_chrome["calls"] == 2
+
+
+def test_a_second_answer_that_is_worse_is_not_kept(monkeypatch, fake_chrome):
+    session, user = _session(monkeypatch)
+    fake_chrome["pages"] = [3, 4]
+
+    result = _ai(session, user)
+
+    assert result.calls == 2 and result.pages == 3 and result.pdf == b"%PDF-1.4 fake 1"
+
+
+def test_a_second_answer_that_never_came_whole_leaves_the_first(monkeypatch, fake_chrome):
+    """The first was a CV; a second call that went wrong must not cost the person it."""
+    session, user = _session(monkeypatch)
+    fake_chrome["pages"] = [3]
+
+    result = _ai(session, user, FakeClient(ANSWER, "<cv><p>cut off"))
+
+    assert result.calls == 2 and result.pdf == b"%PDF-1.4 fake 1" and fake_chrome["calls"] == 1
+
+
+def test_a_cv_that_passes_is_never_asked_for_twice(monkeypatch, fake_chrome):
+    session, user = _session(monkeypatch)
+    fake_chrome["pages"] = [2]
+
+    assert _ai(session, user).calls == 1
+
+
+def test_a_posting_with_no_description_is_refused_before_anything_is_sent(monkeypatch, fake_chrome):
+    session, user = _session(monkeypatch, description="   ")
+    client = FakeClient()
+
+    with pytest.raises(run.NotBuildable, match="no description"):
+        _ai(session, user, client)
+    assert client.calls == [] and fake_chrome["calls"] == 0
+
+
+def test_a_cover_letter_is_written_in_its_own_look_with_the_company_above_it(monkeypatch, fake_chrome):
+    session, user = _session(monkeypatch, user=_user(cover_template="tabula"))
+
+    result = _ai(session, user, FakeClient(LETTER_ANSWER), kind="cover")
+
+    page = fake_chrome["html"][0]
+    assert result.filename == "Alice_Example_Cover.pdf"
+    assert templates.find("cover", "tabula").style in page
+    assert '<p class="letter-to">Northwind<br>Berlin</p>' in page
+    assert "Application for Backend Engineer" in page
+
+
+# ── the PDF ───────────────────────────────────────────────────────────────────────────────────
 
 needs_chrome = pytest.mark.skipif(
     not pathlib.Path(pdf.chrome_binary()).exists() and shutil.which(pdf.chrome_binary()) is None,
     reason="no Chrome on this machine (set CHROME_BIN to run it)")
+
+# A whole CV, long enough for the ATS check's floor of 300 characters read.
+PAGE = build.assemble(_request(), build.answer(ANSWER.replace(
+    "<ul><li>Built the billing service in Python and Postgres</li></ul>",
+    "<ul><li>Built the billing service in Python and Postgres, which every shop pays through</li>"
+    "<li>Cut checkout latency to 40ms at p99 for 1,200 shops</li>"
+    "<li>Took the on-call rota from weekly pages to none in a quarter</li></ul>").replace(
+    '<div class="section"><div class="section-title">Education</div></div>',
+    '<div class="section"><div class="section-title">Education</div>'
+    '<div class="entry"><div class="entry-head">'
+    '<span class="entry-title">BSc Computer Science · TU Berlin</span><span class="entry-date">2017</span>'
+    "</div></div></div>"), "cv"))
 
 
 def test_a_browser_that_cannot_start_is_a_compile_failure_not_a_silent_empty_file(monkeypatch):
@@ -260,20 +414,16 @@ def test_a_browser_that_cannot_start_is_a_compile_failure_not_a_silent_empty_fil
     monkeypatch.setattr(pdf, "chrome_binary", lambda: "definitely-not-a-browser")
 
     with pytest.raises(pdf.CompileFailed):
-        pdf.render(TAILORED)
+        pdf.render(PAGE)
 
 
 @needs_chrome
-def test_a_real_chrome_turns_the_rendered_cv_into_a_readable_pdf():
+def test_a_real_chrome_turns_a_written_cv_into_a_pdf_an_ats_reads():
     """The one test that exercises the actual browser, over the pipe a worker keeps it on."""
-    html = build.tailor(FakeClient(), base_document(), build.job_context(FakeJob()),
-                        template=TAILOR_PROMPT, model=MODEL, style=MERIDIAN)
-
-    report = pdf.inspect_pdf(pdf.render(html))
+    report = pdf.inspect_pdf(pdf.render(PAGE))
 
     assert report.pages == 1
-    # Extractable text is the whole question: a PDF Chrome rasterised without fonts.
-    assert report.chars > 100, f"no extractable text: {report.issues}"
+    assert report.ats_ok, report.issues
 
 
 @needs_chrome
@@ -281,7 +431,7 @@ def test_the_pdf_carries_no_browser_header_or_footer():
     """Chrome stamps the date, the address and "1/1" on every page unless told not to."""
     from pypdf import PdfReader
 
-    pages = PdfReader(io.BytesIO(pdf.render(TAILORED))).pages
+    pages = PdfReader(io.BytesIO(pdf.render(PAGE))).pages
     text = "".join(page.extract_text() for page in pages)
 
     assert "Alice Example" in text
@@ -294,16 +444,41 @@ def test_one_browser_serves_every_document_and_a_dead_one_is_replaced(monkeypatc
     """A browser launched per document was the cost this removes. One that died must not cost the
     next person their document."""
     monkeypatch.setattr(pdf, "_chrome", None)
-    pdf.render(TAILORED)
+    pdf.render(PAGE)
     first = pdf.browser().process.pid
-    pdf.render(TAILORED)
+    pdf.render(PAGE)
     assert pdf.browser().process.pid == first, "the second document launched a second browser"
 
     pdf.browser().process.kill()
     pdf.browser().process.wait()
 
-    assert pdf.render(TAILORED).startswith(b"%PDF")
+    assert pdf.render(PAGE).startswith(b"%PDF")
     assert pdf.browser().process.pid != first
+
+
+@needs_chrome
+def test_chrome_starts_while_the_database_holds_the_descriptors_it_reads_and_writes_on():
+    """pymongo closes its sockets in a forked child. When they held 3 and 4, where Chrome reads and writes,
+    every launch failed with EBADF (2026-11-11). In a process of its own, so the database connects first
+    and its sockets take the lowest descriptors, as in a worker starting up."""
+    if not os.environ.get("MONGODB_URI"):
+        pytest.skip("needs MONGODB_URI, a local mongod")
+    script = ("import os, time, pymongo\n"
+              "client = pymongo.MongoClient(os.environ['MONGODB_URI'], serverSelectionTimeoutMS=5000)\n"
+              "client.admin.command('ping'); client.test.probe.find_one()\n"
+              "held = lambda: [os.readlink(f'/proc/self/fd/{n}')[:7] for n in (3, 4)\n"
+              "                if os.path.exists(f'/proc/self/fd/{n}')]\n"
+              "deadline = time.monotonic() + 5\n"
+              "while held() != ['socket:', 'socket:'] and time.monotonic() < deadline: time.sleep(0.05)\n"
+              "print(held())\n"
+              "from services.docgen import pdf\n"
+              "print(pdf.render('<html><body>hi</body></html>')[:5])\n")
+
+    done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=120,  # noqa: S603
+                          cwd=pathlib.Path(__file__).resolve().parents[1], check=False)
+
+    assert done.stdout.startswith("['socket:', 'socket:']"), f"the premise: {done.stdout}{done.stderr[-500:]}"
+    assert "b'%PDF-'" in done.stdout, done.stderr[-2000:]
 
 
 def test_an_unparseable_pdf_reports_no_page_count_rather_than_raising():
@@ -314,381 +489,166 @@ def test_an_unparseable_pdf_reports_no_page_count_rather_than_raising():
     assert not report.ats_ok
 
 
-# ── one build, end to end ─────────────────────────────────────────────────────────────────────
-
-@pytest.fixture
-def fake_chrome(monkeypatch):
-    """Chrome, as a function: what it was handed, how often, and the pages the PDF claims."""
-    state = {"pages": 1, "calls": 0, "html": ""}
-
-    def render(html: str) -> bytes:
-        state["calls"] += 1
-        state["html"] = html
-        return b"%PDF-1.4 fake"
-
-    def inspect_pdf(document: bytes, *, kind="cv"):
-        return pdf.PdfReport(pages=state["pages"], chars=1_200, issues=[])
-
-    monkeypatch.setattr(run.pdf, "render", render)
-    monkeypatch.setattr(run.pdf, "inspect_pdf", inspect_pdf)
-    return state
-
-
-# A finished account: grounding, a base CV, **and both writing prompts personalised**. The last two
-# were absent, so every build in these tests fell through to the shipped scaffold and had five markers
-# substituted from the schema. That path is gone — a scaffold is now refused — so the fixture carries
-# what a real account carries after `setup-prompts` has run.
-DEFAULT_FILES = {"grounding": "# Facts about Alice Example", "base_cv.html": TAILORED,
-                 "tailor_cv.md": TAILOR_PROMPT, "tailor_cover.md": COVER_PROMPT}
-
-# An uploaded CV as text, the way `libs.documents.extract` leaves one.
-CV_TEXT = """Alice Example
-alice@example.com | Berlin, Germany
-
-EXPERIENCE
-Backend Engineer, Northwind    2021 - Present
-- Built the billing service in Python and Postgres
-- Cut checkout latency to 40ms at p99
-
-EDUCATION
-BSc Computer Science, TU Berlin    2017
-"""
-
-
-def _session(monkeypatch, *, description="Backend role. Python.",
-             profile_files=DEFAULT_FILES, cv_template=None, cover_template=None):
-    """The build's two reads — the account and the posting — and its config read, with no database."""
-    # `full_name` is where the document's filename comes from — the name the user typed at signup.
-    # The profile schema was a second copy of the same fact; nothing reads it, and it is retired.
-    user = type("U", (), {"id": uuid.uuid4(), "full_name": "Alice Example", "links": [],
-                          "cv_template": cv_template, "cover_template": cover_template,
-                          "facts_md": "# Facts about Alice Example"})()
-    job = FakeJob(description=description)
-    state = type("S", (), {"applied_at": None})()
-    monkeypatch.setattr(run, "_load", lambda _db, _user_id, _job_id: (user, job))
-    monkeypatch.setattr(run, "_salary_bands", lambda _db, _user_id: None)
-
-    # The profile is files now (`libs/profiles`), not a schema render.
-    class Files:
-        def __init__(self, *_args):
-            pass
-
-        def grounding(self):
-            if profile_files is None:
-                raise run.ProfileIncomplete("no completed profile")
-            return profile_files["grounding"]
-
-        def read(self, name):
-            return (profile_files or {}).get(name)
-
-    monkeypatch.setattr(run, "ProfileFiles", Files)
-    return object(), user, job, state
-
-
-def _ai(session, user, client=None, **kwargs):
-    return run.run_ai(session, user.id, 7, client=client or FakeClient(), model=MODEL,
-                      kind=kwargs.pop("kind", "cv"), **kwargs)
-
-
-def test_an_ai_cv_comes_back_as_a_pdf_named_for_the_person(monkeypatch, fake_chrome):
-    session, user, _job, _state = _session(monkeypatch)
-
-    result = _ai(session, user)
-
-    assert result.pdf.startswith(b"%PDF")
-    assert result.filename == "Alice_Example_CV.pdf"
-    assert result.pages == 1 and result.calls == 1
-
-
-def test_the_model_writes_on_the_model_its_payer_resolved_to(monkeypatch, fake_chrome):
-    """A Gemini key must not be sent a Claude model's name, nor the other way round."""
-    session, user, _job, _state = _session(monkeypatch)
-    client = FakeClient()
-
-    run.run_ai(session, user.id, 7, client=client, model="gemini-3.8-flash", kind="cover")
-
-    assert [call["model"] for call in client.calls] == ["gemini-3.8-flash"]
-
-
-def test_a_three_page_cv_is_revised_once(monkeypatch, fake_chrome):
-    session, user, _job, _state = _session(monkeypatch)
-    fake_chrome["pages"] = 3
-    client = FakeClient(TAILORED, TAILORED)
-
-    result = _ai(session, user, client)
-
-    assert result.calls == 2
-    assert "REVISION NEEDED" in client.calls[1]["messages"][0]["content"]
-
-
-def test_a_cv_that_already_fits_is_not_revised(monkeypatch, fake_chrome):
-    """A second call is the user's money."""
-    session, user, _job, _state = _session(monkeypatch)
-    client = FakeClient()
-
-    result = _ai(session, user, client)
-
-    assert result.calls == 1 and len(client.calls) == 1
-
-
-def test_a_cv_with_hidden_content_is_never_delivered(monkeypatch, fake_chrome):
-    """Fail closed."""
-    session, user, _job, state = _session(monkeypatch)
-    # Zero-width characters inside a *tag name* survive the sanitiser's attribute-level cleanup.
-    sneaky = TAILORED.replace('<p class="profile">',
-                              f'<p class="profile" data-x="{ZERO_WIDTH}">')
-    monkeypatch.setattr(build, "strip_hidden", lambda html: html)
-
-    with pytest.raises(run.NotBuildable):
-        _ai(session, user, FakeClient(sneaky))
-
-    assert fake_chrome["calls"] == 0
-    assert state.applied_at is None
-
-
-def test_an_account_with_no_completed_profile_refuses_before_spending_a_call(monkeypatch,
-                                                                            fake_chrome):
-    """Setup was never finished."""
-    session, user, _job, _state = _session(monkeypatch, profile_files=None)
-    client = FakeClient()
-
-    with pytest.raises(run.NotBuildable):
-        _ai(session, user, client)
-
-    assert client.calls == [], "a call was spent on an account that could never receive a CV"
-
-
-def test_an_account_with_no_base_cv_refuses(monkeypatch, fake_chrome):
-    """The base CV is the document the tailoring prompt edits."""
-    session, user, _job, _state = _session(
-        monkeypatch, profile_files={"grounding": "# Facts", "base_cv.html": ""})
-
-    with pytest.raises(run.NotBuildable):
-        _ai(session, user)
-
-
-def test_a_posting_with_no_description_is_refused(monkeypatch, fake_chrome):
-    """A CV tailored to a job title is the generic CV the user already has."""
-    session, user, _job, _state = _session(monkeypatch, description="")
-
-    with pytest.raises(run.NotBuildable):
-        _ai(session, user)
-
-
-# ── what the model is told about the posting ──────────────────────────────────────────────────
-
-def test_the_context_carries_the_scoring_time_assessment():
-    """Trimming this made the CVs worse."""
-    context = build.job_context(FakeJob(), score=86,
-                                fit_notes="Python API role, matches her backend work.")
-
-    assert "What we understand" in context
-    assert "matches her backend work" in context
-
-
-def test_the_context_carries_the_money_and_the_competition():
-    """Both salary lines answer different questions — what the role pays."""
-    job = FakeJob(description="Salary 60,000 - 80,000 EUR per annum. Python.")
-    context = build.job_context(job, score=86)
-
-    # The en dash is the formatter's own, lifted with lib/salary.py.
-    assert f"Posted salary: 60k{chr(0x2013)}80k EUR/yr" in context
-    assert "Target ask band:" in context
-    assert "Applicants: 25" in context
-    assert "Workplace: remote" in context
-
-
-def test_a_posting_with_no_salary_says_nothing_rather_than_guessing():
-    context = build.job_context(FakeJob(description="Python role. No pay stated."), score=70)
-
-    assert "Posted salary" not in context
-    # The ask band is the user's own and stands whether or not the posting states one.
-    assert "Target ask band:" in context
-
-
-def test_the_token_ceiling_leaves_room_for_the_document_after_thinking():
-    """A ceiling the thinking budget eats is a failed build with no explanation."""
-    from services.docgen.build import MAX_TOKENS, THINKING_TOKENS
-
-    # A CV document, generously.
-    document_tokens = 8_000
-    assert document_tokens * 2 <= MAX_TOKENS - THINKING_TOKENS
-
-
-def test_a_cover_letter_is_not_judged_by_the_cvs_checklist(tmp_path):
+def test_a_cover_letter_is_not_judged_by_the_cvs_checklist():
     """An always-wrong signal is worse than no signal."""
     letter = ("Dear hiring team,\n\nI am writing about the Fullstack Engineer role. "
               "I have spent four years building payment systems in Python and Go, and the "
               "problem you describe is one I have solved before at some length.\n\n"
               "Kind regards,\nAlice Example\n") * 3
 
-    as_cv = pdf.inspect_pdf_text(letter, kind="cv")
-    as_cover = pdf.inspect_pdf_text(letter, kind="cover")
+    as_cv = pdf.inspect_pdf_text(letter, kind="cv", headings=("Experience", "Education"))
+    as_cover = pdf.inspect_pdf_text(letter, kind="cover", headings=("Experience", "Education"))
 
-    assert any("education" in issue for issue in as_cv.issues), (
-        "the CV checklist should still look for sections")
+    assert any("Education" in issue for issue in as_cv.issues), (
+        "the CV checklist should still look for its sections")
     assert as_cover.ats_ok, as_cover.issues
 
 
-# ── one render per document (2026-08-07) ──────────────────────────────────────────────────────
+# ── what a reviewer would send back (`checks`) ────────────────────────────────────────────────
 
-def test_a_cv_that_fits_is_rendered_once(monkeypatch, fake_chrome):
-    """The delivered PDF is the one that was measured: there is no separate probe render."""
-    session, user, _job, _state = _session(monkeypatch)
-
-    result = _ai(session, user)
-
-    assert fake_chrome["calls"] == 1, "the delivered PDF is the one that was measured"
-    assert result.calls == 1
-    assert result.revised is False
+def _letter(*paragraphs: str) -> str:
+    body = "".join(f"<p>{each}</p>" for each in paragraphs)
+    return ('<p class="letter-subject">Backend engineer specialising in payments</p><div class="letter">'
+            f'<p>Dear Hiring Manager,</p>{body}<p class="closing">Kind regards,</p>'
+            '<p class="signature">Alice Example</p></div>')
 
 
-def test_a_cv_that_came_back_too_long_is_rendered_twice_and_says_so(monkeypatch, fake_chrome):
-    """The revision loop is unchanged — but each one costs a second call and a second render."""
-    session, user, _job, _state = _session(monkeypatch)
-    fake_chrome["pages"] = 4
-
-    result = _ai(session, user)
-
-    assert fake_chrome["calls"] == 2, "one render per attempt, and no separate probe"
-    assert result.calls == 2
-    assert result.revised is True, "the rate of this is what says whether the prompt needs work"
-
-
-def test_the_downloaded_file_is_named_for_the_person_after_a_revision_too(monkeypatch, fake_chrome):
-    """The browser shows the filename, and "retry-Alice_CV.pdf" is not a CV."""
-    session, user, _job, _state = _session(monkeypatch)
-    fake_chrome["pages"] = 4
-
-    assert _ai(session, user).filename == "Alice_Example_CV.pdf"
+# About two hundred words in short paragraphs, with nothing in it a reviewer would send back.
+GOOD_LETTER = _letter(
+    "At Northwind I cut checkout latency to 40ms at p99 for 1,200 shops. The Backend Engineer role asks for "
+    "the same care with payments, and it is the work I most want to keep doing.",
+    "I rebuilt the billing service in Python and Postgres so that refunds settle on the day they are made. "
+    "Before the change, support answered the same question about missing money every morning. Afterwards "
+    "those tickets stopped, and the finance team closed each month two days earlier.",
+    "The latency work started with a slow page that nobody owned. I traced each request through the service, "
+    "moved the heaviest query out of the checkout path, and added a cache with a clear owner. The page has "
+    "stayed fast since, through two seasonal peaks.",
+    "Your posting describes a small team that runs what it builds and is on call for it. That is how I have "
+    "worked for four years, and it is why this role appeals to me.",
+    "I would like to bring the same habits to your payments platform, starting with the parts that wake "
+    "people at night. Quiet nights are the measure I care about most.")
 
 
-def test_a_document_that_fails_its_checks_never_reaches_chrome(monkeypatch, fake_chrome):
-    """A check answerable from the markup must not cost a render.
+def test_a_cv_that_talks_about_applying_or_rates_itself_is_sent_back_saying_so():
+    """Four of the first twelve CVs Haiku 5.5 wrote opened on "applicant" or "applying for the role", and
+    three rated themselves ("Strong in"): the line a recruiter's six seconds go on (2026-11-11)."""
+    applying = CV_BODY.replace("Backend engineer who", "Backend engineer applying for this role who")
+    rating = CV_BODY.replace("who cut", "strong in Python, who cut")
 
-    `sanitise` strips hidden content on the way out of the model and `scan_hidden` verifies the
-    strip worked, so the two agreeing is the normal case — this forces the disagreement to assert
-    the ordering: the scan runs first, and a document that fails it is refused before any render.
-    """
-    session, user, _job, _state = _session(monkeypatch)
-    monkeypatch.setattr(run.build, "scan_hidden", lambda _html: ["display:none in the header"])
-
-    with pytest.raises(run.NotBuildable, match="hidden content"):
-        _ai(session, user)
-
-    assert fake_chrome["calls"] == 0
+    assert checks.cv(CV_BODY) == [], "a CV with nothing wrong is left alone"
+    assert any('"applying"' in fault for fault in checks.cv(applying))
+    assert any('"strong in"' in fault for fault in checks.cv(rating))
 
 
-def test_the_prompt_is_told_what_day_it_is():
-    """What "Present" and "for four years" are counted to. Nothing supplied it, and the model wrote a
-    date from its own sense of time: a letter generated in August 2026 went out dated 22 June 2026. A
-    letter carries no date of its own now (owner, 2026-11-08): see the test of an AI cover's date below.
-    """
-    from datetime import UTC, datetime
-
-    context = build.job_context(FakeJob())
-
-    assert datetime.now(UTC).strftime("%d %B %Y") in context
+def _entry(dates: str) -> str:
+    return ('<div class="entry"><div class="entry-head"><span class="entry-title">Role</span>'
+            f'<span class="entry-date">{dates}</span></div></div>')
 
 
-def test_the_date_reaches_the_cover_prompt_itself():
-    """Asserted through the prompt the model is handed, not just the context helper."""
-    from datetime import UTC, datetime
-
-    client = FakeClient(TAILORED)
-    build.tailor_cover(client, build.job_context(FakeJob()), head=COVER.head, style=COVER.style,
-                       template=COVER_PROMPT, model=MODEL)
-
-    sent = client.calls[0]["messages"][0]["content"]
-    assert datetime.now(UTC).strftime("%d %B %Y") in sent
+def _section(title: str, *entries: str) -> str:
+    return f'<div class="section"><div class="section-title">{title}</div>{"".join(entries)}</div>'
 
 
-def test_the_cover_prompt_is_not_handed_a_text_dump_of_the_cv(monkeypatch, fake_chrome):
-    """The CV reaches the cover call as grounding, never as a plain-text extract in the prompt.
+def test_a_role_that_ended_above_one_still_held_is_sent_back_and_each_section_is_its_own_list():
+    """Eight of twelve CVs put a finished internship above the job the person still holds: the model
+    sorted by start date (2026-11-11). Education is a list of its own, so a project after it is not."""
+    wrong = _section("Experience", _entry("Jan 2026 - May 2026"), _entry("Jun 2024 - Present"))
+    right = (_section("Experience", _entry("Jun 2024 - Present"), _entry("Jan 2026 - May 2026"))
+             + _section("Education", _entry("2016 - 2019")) + _section("Projekte", _entry("2025 - heute")))
 
-    It used to be both. The system prompt is the account's whole profile — tens of thousands of
-    characters, verbatim — and the user prompt *also* carried 1,500 characters of tag-stripped
-    `base_cv.html` under a heading announcing itself as the candidate's CV and telling the model
-    not to copy it wholesale. Measured over 8 postings on 2026-08-09, the model copied out of it in
-    five letters of eight; with the extract gone, one of eight (t=-2.38).
-
-    Since 2026-11-07 not even the CV's `<head>` is read for a letter: the page rules come from the
-    letter's own look. Asserted through a whole build, so no path can carry the CV's prose back in.
-    """
-    sentinel = "Rebuilt the settlement ledger so month-end close ran in nine minutes."
-    cv = TAILORED.replace("Senior backend engineer &mdash; payments and APIs.", sentinel)
-    session, user, _job, _state = _session(monkeypatch, profile_files={**DEFAULT_FILES, "base_cv.html": cv})
-    client = FakeClient(TAILORED)
-
-    _ai(session, user, client, kind="cover")
-
-    sent = client.calls[0]["messages"][0]["content"]
-    assert sentinel not in sent, "a text extract of the CV reached the cover prompt"
-    assert "<CV_HTML>" not in sent, "the marker was left unfilled in the prompt"
+    assert any("still hold" in fault for fault in checks.cv(wrong))
+    assert not any("still hold" in fault for fault in checks.cv(right))
 
 
-# ── the look they picked ──────────────────────────────────────────────────────────────────────
+def test_a_cv_names_nobody_and_states_no_length_of_experience_their_documents_do_not():
+    """One profile called its owner "he", a guess from the name, and two worked out "over two years"
+    (2026-11-11). A length their own CV gives is theirs to keep."""
+    he = CV_BODY.replace("Backend engineer who cut", "Backend engineer. He cut")
+    years = CV_BODY.replace("Backend engineer who", "Backend engineer with over two years of work who")
 
-def test_an_ai_cv_is_laid_out_in_the_look_they_picked_whatever_its_base_cv_or_the_model_said(
-        monkeypatch, fake_chrome):
-    """The model writes the words; the look decides how they sit on the page."""
-    own = "<style>.cv-name{color:hotpink}</style>"
-    base_cv = TAILORED.replace("<head>", f"<head>{own}")
-    session, user, _job, _state = _session(
-        monkeypatch, profile_files={**DEFAULT_FILES, "base_cv.html": base_cv}, cv_template="kestrel")
-    client = FakeClient(TAILORED.replace("<head>", "<head><style>body{font-size:4pt}</style>"))
-
-    _ai(session, user, client)
-
-    assert templates.find("cv", "kestrel").style in fake_chrome["html"]
-    assert "hotpink" not in fake_chrome["html"] and "font-size:4pt" not in fake_chrome["html"]
-    assert "@page" not in client.calls[0]["messages"][0]["content"], "the model saw a stylesheet"
+    assert any('"He"' in fault for fault in checks.cv(he))
+    assert any("two years" in fault for fault in checks.cv(years, CV_TEXT))
+    assert checks.cv(years, CV_TEXT + "\nTwo years of payments work at Northwind") == []
 
 
-def test_an_ai_cover_is_handed_its_looks_head_and_comes_back_in_it(monkeypatch, fake_chrome):
-    """`<HEAD_BLOCK>` is the letter's look, and a letter that came back in another style is put back."""
-    tabula = templates.find("cover", "tabula")
-    session, user, _job, _state = _session(monkeypatch, cover_template="tabula")
-    client = FakeClient(TAILORED.replace("<head>", "<head><style>body{font-size:4pt}</style>"))
-
-    _ai(session, user, client, kind="cover")
-
-    assert tabula.head in client.calls[0]["messages"][0]["content"]
-    assert tabula.style in fake_chrome["html"] and "font-size:4pt" not in fake_chrome["html"]
+def test_end_to_end_testing_is_work_and_owning_something_end_to_end_is_filler():
+    """The old prompt banned "end-to-end", and eleven of those twelve CVs said it, each about Playwright."""
+    assert checks.cliches("Built end-to-end testing with Playwright, covering every user flow") == []
+    assert checks.cliches("Owned the platform end-to-end") == ["end-to-end"]
+    assert checks.cliches("Modelled fee dynamics") == [], "a word that holds a cliché is not one"
 
 
-def test_an_ai_cover_comes_back_without_the_day_it_was_made(monkeypatch, fake_chrome):
-    """No document carries the day it was made (owner, 2026-11-08). The model is told today's date and
-    heads a letter with it: each line that is only a date goes, the company's address above one keeps
-    its own lines, and a date inside a sentence stays."""
-    session, user, _job, _state = _session(monkeypatch)
-    dated = TAILORED.replace("<body>", "<body><p class=\"date-line\">8 November 2026</p>"
-                             "<p>Payfast<br>Budapest<br>Lisbon, 8 November 2026</p>"
-                             "<p>Since 8 November 2021 I have run the desk.</p>")
+def test_the_word_rules_are_english_and_a_german_cv_is_held_to_the_rest():
+    """A German "dynamisch" is not the cliché the list means; a bullet too long is long in any language."""
+    long = ("Entwickelte die Zahlungsplattform für zwölfhundert Händler in Berlin und München neu, "
+            "senkte die Latenz an der Kasse deutlich, schrieb die Tests dazu, betreute den Betrieb rund um "
+            "die Uhr und "
+            "arbeitete eng mit dem Produktteam an neuen Funktionen für Rückerstattungen und Abrechnungen.")
+    german = ('<p class="profile">Dynamische Backend-Entwicklerin mit fünf Jahren Erfahrung in Python und '
+              'verteilten Systemen.</p><div class="section"><div class="section-title">Berufserfahrung</div>'
+              f"<ul><li>{long}</li></ul></div>")
 
-    _ai(session, user, FakeClient(dated), kind="cover")
+    assert [fault.split()[1:4] for fault in checks.cv(german)] == [["bullet(s)", "run", "over"]]
 
-    body = fake_chrome["html"].split("<body>", 1)[1]
-    assert "<p>Payfast<br>Budapest</p>" in body and "Since 8 November 2021 I have run the desk." in body
-    assert "2026" not in body and "date-line" not in body
 
-# ── what must never reach a person ────────────────────────────────────────────────────────────
+def test_a_letter_is_sent_back_for_what_gives_a_generated_one_away():
+    """A colon in a sentence, a contraction, an opening that never names the company: what the owner's own
+    review caught every time (`libs/scaffolds/tailor_cover.md`, failures 1, 4 and 5)."""
+    bad = (GOOD_LETTER.replace("At Northwind I cut", "In my last role I cut")
+           .replace("I rebuilt", "I've rebuilt")
+           .replace("so that refunds", "so that one thing held: refunds"))
 
-def test_a_document_that_came_back_carrying_a_placeholder_is_never_delivered(monkeypatch,
-                                                                            fake_chrome):
-    """The prompt is checked before the call; this checks what came back.
+    assert checks.letter(GOOD_LETTER, company="Northwind GmbH") == []
+    found = " ".join(checks.letter(bad, company="Northwind GmbH"))
+    assert "does not name Northwind" in found and "colon" in found and "I've" in found
 
-    `build._require_personalised` refuses a writing prompt that still carries a marker, so a model
-    handed a real prompt has none to echo. Nothing checked the other end. A CV addressed to
-    `<<NAME>>`, or one whose footer reads `<<CONTACT>>`, would have compiled, been delivered, and
-    gone to an employer — no exception, no failed job, just a worse document than the person
-    thinks they sent. That is the failure class this whole week has been about: silent, and visible
-    only as quality.
-    """
-    session, user, _job, _state = _session(monkeypatch)
-    leaked = TAILORED.replace("Alice Example", "<<NAME>>")
 
-    with pytest.raises(run.NotBuildable, match="placeholder"):
-        _ai(session, user, FakeClient(leaked, leaked))
+def test_a_letter_that_closes_on_applying_is_sent_back_and_one_quoting_the_posting_is_not():
+    """Every letter the first wording wrote closed on "I would welcome a conversation", and "a proactive
+    assistant" was A1's own product, in A1's own posting (2026-11-11)."""
+    welcome = GOOD_LETTER.replace("Quiet nights are the measure I care about most.",
+                                  "I would welcome a conversation about the role.")
+    quoting = GOOD_LETTER.replace("payments platform", "proactive payments platform")
 
-    assert fake_chrome["calls"] == 0, "nothing was rendered, so nothing could be downloaded"
+    assert any("i would welcome" in fault for fault in checks.letter(welcome, company="Northwind"))
+    assert checks.letter(quoting, company="Northwind", posting="We run a proactive payments platform.") == []
+    assert checks.letter(quoting, company="Northwind"), "the same word, not the posting's, is a cliché"
+
+
+def test_a_second_page_with_a_few_lines_on_it_is_sent_back_and_a_full_one_is_not():
+    """The fourth failure the owner's review caught every time: an orphan line or two on page two."""
+    request, body = _request(), build.answer(ANSWER, "cv")
+
+    assert any("page 2" in fault for fault in build.problems(request, body, 2, 120).faults)
+    assert build.problems(request, body, 2, 2_400).ok
+
+
+def test_a_fault_is_said_back_once_and_the_answer_without_it_kept(monkeypatch, fake_chrome):
+    session, user = _session(monkeypatch)
+    applying = ANSWER.replace("Backend engineer who", "Backend engineer applying for this role who")
+    client = FakeClient(applying, ANSWER)
+
+    result = _ai(session, user, client)
+
+    assert result.calls == 2 and result.revised
+    assert '"applying"' in client.calls[1]["messages"][2]["content"]
+    assert "applying" not in fake_chrome["html"][-1]
+    assert client.calls[0]["effort"] == build.EFFORT, "every call says how hard to think"
+
+
+def test_a_profile_written_as_several_paragraphs_is_laid_out_as_one():
+    body = build.answer('<cv><p class="profile">Backend engineer.</p>\n<p class="profile">Cut latency '
+                        'to 40ms.</p><div class="section"><div class="section-title">Experience</div>'
+                        "</div></cv>", "cv")
+
+    assert body.count('class="profile"') == 1 and "Backend engineer. Cut latency to 40ms." in body
+
+
+def test_the_ats_check_reads_a_cv_by_its_own_headings_in_any_language():
+    """It looked for "experience" and "education", which a CV written in German never says."""
+    text = ("Alice Example\nalice@example.com | Berlin\nBerufserfahrung\n"
+            + "Backend-Entwicklerin bei Northwind, Zahlungsplattform in Python und Postgres\n" * 4
+            + "Ausbildung\nInformatik, Technische Universität Berlin\n")
+
+    assert pdf.inspect_pdf_text(text, headings=("Berufserfahrung", "Ausbildung")).ats_ok
+    assert pdf.inspect_pdf_text(text, headings=("Ausbildung", "Berufserfahrung")).issues, "in order"

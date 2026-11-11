@@ -38,7 +38,6 @@ from libs.documents import (
 from libs.legal import has_consented
 from libs.llm import own
 from libs.obs import audit
-from libs.profiles.repository import ProfileFiles
 from libs.queue import enqueue
 from services.api.deps import current_user, get_db, rate_limit
 
@@ -339,10 +338,6 @@ def _ai_payer(db: Database, user: User, kind: str) -> str:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail="agree to how AI-written documents use your profile first — "
                                    "it is on the privacy page")
-    if ProfileFiles(db, user.id).build_blocker() is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            detail="AI-written documents need a writing profile this account does "
-                                   "not have yet")
     return payer.kind
 
 

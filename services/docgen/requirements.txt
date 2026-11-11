@@ -1,4 +1,4 @@
-# services/docgen — instant documents by code, AI ones on the key that pays, one Chrome kept.
+# services/docgen — documents written with the person's own AI account, one Chrome kept.
 #
 # The heaviest image on the platform and the only one with a browser in it, which is the whole
 # reason it is a separate service (CODE_STRUCTURE.md §5). Chrome comes from the Dockerfile's apt
@@ -10,3 +10,4 @@ pypdf>=5.1                 # page count and the ATS text-extraction check
 pydantic>=2.10             # libs/contracts, which libs/documents reads a CV with
 pymongo>=4.19,<5
 cryptography>=44.0         # libs/secrets: the user's own credential, decrypted for one build
+langdetect>=1.0.9          # libs/corpus/langfilter: which rules a written document is checked by (services/docgen/checks)

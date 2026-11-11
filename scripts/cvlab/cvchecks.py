@@ -13,20 +13,10 @@ from __future__ import annotations
 
 import re
 
-# First person, in the body text.
-#
-# **Bare `I` is the hard one, and a naive `\bI\b` is wrong on real CVs.** Two things in this corpus
-# look like the pronoun and are not: `I/O`, and the seniority numeral in an entry title — "Design
-# Engineer I", "Design Engineer II". Both appear in CVs this bench scores, so counting them would
-# report first person in a document that has none and hand the third-person draft a win it did not
-# earn. Possessives are unambiguous and matched on their own.
-_POSSESSIVE = re.compile(r"(?<![\w'])(I'm|I've|I'd|I'll|my|me|mine)(?![\w'])", re.IGNORECASE)
-
-# A bare `I` that is not followed by a slash (I/O) and not preceded by a capitalised word, which is
-# what a title numeral always is. "…, and I rebuilt" counts; "Design Engineer I on the I/O layer"
-# does not.
-_BARE_I = re.compile(r"(?<![\w'])I(?![\w'/])")
-_TITLE_NUMERAL = re.compile(r"[A-Z][a-z]+\s+$")
+# The docgen worker's own detections (`services/docgen/checks.py`), so the bench counts what production
+# sends back. First person there skips "I/O" and a title's numeral ("Design Engineer I"), which counted as
+# the pronoun here once and handed a draft a win it did not earn.
+from services.docgen.checks import cliches, first_person
 
 # The em-dash rule the prompt states: banned in bullets and the profile paragraph, allowed in an
 # entry's title header. Measured only where it is banned.
@@ -38,24 +28,9 @@ _ENTRY = re.compile(r'(?is)class="entry"')
 _TAGS = re.compile(r"(?s)<[^>]+>")
 _STYLE = re.compile(r"(?is)<style\b.*?</style>")
 
-# Stated in the prompt's own banned list. Kept short: each one is a phrase the prompt names, not a
-# taste of mine.
-_CLICHES = ("leveraging", "leverage", "passionate", "robust", "end-to-end", "results-driven",
-            "team player", "detail-oriented", "proven track record", "responsible for",
-            "institutional-quality", "cutting-edge", "synergy", "spearheaded")
-
 # A2 at 10pt in this layout runs about 3,600 characters of extracted text per page. Only ever used
 # as a fitting signal — the real page count needs Chrome, which the bench does not have.
 CHARS_PER_PAGE = 3_600
-
-
-def first_person(text: str) -> int:
-    """How many first-person references one piece of prose makes."""
-    count = len(_POSSESSIVE.findall(text))
-    for match in _BARE_I.finditer(text):
-        if not _TITLE_NUMERAL.search(text[:match.start()]):
-            count += 1
-    return count
 
 
 def text_of(html: str) -> str:
@@ -82,7 +57,6 @@ def check(html: str) -> dict:
     profile_hits = first_person(profile)
     body_hits = profile_hits + sum(first_person(bullet) for bullet in experience)
 
-    lowered = text.lower()
     return {
         "chars": len(text),
         "est_pages": round(len(text) / CHARS_PER_PAGE, 2),
@@ -98,7 +72,7 @@ def check(html: str) -> dict:
         # the drafts by breaking something that was working.
         "emdash_violations": (len(_EMDASH.findall(profile))
                               + sum(len(_EMDASH.findall(b)) for b in experience)),
-        "cliches": sum(lowered.count(word) for word in _CLICHES),
+        "cliches": len(cliches(text)),
         "numeric_bullets": sum(1 for b in experience if re.search(r"\d", b)),
         "placeholder": int(bool(re.search(r"<<[A-Z_]+>>|\[FILLED BY", html))),
     }

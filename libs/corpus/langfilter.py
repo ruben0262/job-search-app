@@ -2,9 +2,16 @@
 from __future__ import annotations
 
 import logging
+import threading
 from functools import cache
 
 logger = logging.getLogger(__name__)
+
+# One reading at a time. langdetect loads its language profiles into one shared factory on first use, and
+# threads that start together read it half-loaded: eight English CVs read at once came back as None seven
+# times and as Norwegian twice (2026-11-11). The harvester describes on two threads, LinkedIn beside the
+# boards, and the CV bench checks on several.
+_READING = threading.Lock()
 
 # Below this, detection is guesswork. A three-word title is not evidence of anything.
 MIN_CHARS = 40
@@ -46,8 +53,9 @@ def detect_language(text: str) -> str | None:
         return None
 
     try:
-        DetectorFactory.seed = 0
-        return detect(text)
+        with _READING:
+            DetectorFactory.seed = 0
+            return detect(text)
     except Exception:
         # A posting this cannot read is data, not an error: `is_allowed` keeps an unknown language
         # deliberately, because hiding a job somebody wanted is worse than showing one they did not.

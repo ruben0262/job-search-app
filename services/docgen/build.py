@@ -1,230 +1,372 @@
-"""Turning one job posting into one tailored CV."""
+"""Writing one CV or cover letter for one job: what the model is given, and what is kept of its answer.
+
+**One call a document** (owner, 2026-11-10). The prompt (`libs/prompts/write_cv.md`, `write_cover.md`)
+carries the job and everything the person gave us: every CV they switched on, for a letter every cover
+letter too, their "About you", their other files and their languages. Then what to do, then a final
+check. Code decides everything it can (CLAUDE.md §0): the model writes the middle of the document in the
+one markup every look lays out (`libs/templates`), and code writes the rest of it: the header (their name,
+contact details and links), on a letter the company and its place, and the look they picked.
+
+What comes back is cleaned to that markup and nothing else, so no style, script or hidden text can reach
+an employer. Then it is checked (`problems`): too many pages or a short last one, a number found nowhere
+in the person's documents or the posting, and what a reviewer would send back (`checks`) are said back once
+(`feedback`) for a second answer.
+
+The profile files the setup agents wrote (`base_cv.html`, `tailor_cv.md`, `tailor_cover.md`, …) are no
+longer read: a person's own uploads replaced them (owner, 2026-11-10). They stay where they are, as those
+people's work.
+"""
 from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from html import unescape
+from html import escape, unescape
+from html.parser import HTMLParser
 
-from libs.profiles import PLACEHOLDER_MARKERS
-from libs.templates import STYLE as _STYLE
-from libs.templates import split_style
+from libs import prompts
+from libs.documents.read import LANGUAGE_NAMES, read, texts
+from libs.templates import Template
+from services.docgen import checks
 
 logger = logging.getLogger(__name__)
 
-# Enough for a two-page CV with room to spare.
-MAX_TOKENS = 32_000
+PROMPTS = {"cv": "write_cv.md", "cover": "write_cover.md"}
+# What the model's answer is wrapped in: anything around it, its working or a word of its own, is dropped.
+TAGS = {"cv": "cv", "cover": "letter"}
+# The most pages of A4 each may be. More is said back once.
+MAX_PAGES = {"cv": 2, "cover": 1}
 
-# 4096 measured better on writing quality than the adaptive default (2026-07-20, reference instance).
-THINKING_TOKENS = 4_096
+# Room for a two-page CV after its thinking.
+MAX_TOKENS = 16_000
+# How hard the model thinks before it writes (`output_config.effort`; Claude Code's `--effort`), given on
+# every call so an API key and a Claude sign-in write alike: unset, a key ran at Haiku 5.5's own default
+# and a sign-in at Claude Code's, which nobody had chosen. Measured 2026-11-11 (CHANGELOG).
+EFFORT = "medium"
+# Less than this on the last of two pages is a few lines that spilled over (`tailor_cv.md`, failure 4).
+SHORT_LAST_PAGE_CHARS = 500
 
-# The posting, capped.
-JD_MAX_CHARS = 6_000
+# The posting, capped. Measured 2026-11-11 over the 27,275 described postings stored here: median 3,678
+# characters, longest 13,985. The 6,000 the writer took before cut the end off 17.1% of them; this cuts none.
+POSTING_MAX_CHARS = 15_000
 
-_HTML = re.compile(r"(?is)(<!doctype html.*?</html>|<html\b.*?</html>)")
-_EMDASH = re.compile(r"\s*(?:—|&mdash;|&#8212;)\s*")
+SYSTEM = ("You write CVs and cover letters for people applying for jobs, using only what they have told "
+          "you about themselves.")
 
-# Invisible characters and the inline styles that hide text.
-_ZERO_WIDTH = re.compile("[\u200b-\u200f\u2060-\u2064\ufeff\u202a-\u202e]")
-_HIDE_STYLE = re.compile(
-    r"(?is)(display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?!\.)|"
-    r"font-size\s*:\s*0(?:px|pt)?\b|color\s*:\s*#?f{3,6}\b|text-indent\s*:\s*-\d{3,}|"
-    r"left\s*:\s*-\d{3,})")
+# What the person gave us, by the kind it was uploaded as, under the name the prompt gives it.
+OTHER_KINDS = {"linkedin": "LinkedIn profile", "reference": "Reference", "achievement": "Achievement",
+               "diploma": "Diploma or certificate", "other": "Other document"}
+# A prompt's places to fill: `{{job}}`.
+_SLOT = re.compile(r"\{\{(\w+)\}\}")
 
 
 class BuildFailed(RuntimeError):
     """The model did not return a usable document. Retryable; the worker decides."""
 
 
-def job_context(job, *, score: float | None = None, description: str | None = None,
-                fit_notes: str | None = None, salary_bands: dict | None = None) -> str:
-    """What the model is told about the posting — the reference instance's context, ported whole."""
-    # **Today's date**, which "Present" and "for four years" are counted to. It was added when a letter
-    # generated in August 2026 went out dated 22 June 2026, from the model's own sense of time. A letter
-    # carries no date of its own any more (owner, 2026-11-08): `_undated` takes out the one a model
-    # still writes.
-    lines = [f"Today's date: {datetime.now(UTC).strftime('%d %B %Y')}",
-             f"Title: {job.title or ''}",
-             f"Company: {job.company or ''}",
-             f"Location: {job.location or ''}",
-             f"Source: {job.source or ''}",
-             f"URL: {job.url}"]
-    if getattr(job, "application_url", None):
-        lines.append(f"Application URL: {job.application_url}")
-    if score is not None:
-        lines.append(f"Model fit score: {score:.0f}")
+@dataclass(frozen=True)
+class Request:
+    """One document to write: the filled prompt, and what code puts around the answer."""
 
-    posted = _age(getattr(job, "posted_at", None))
-    if posted:
-        lines.append(f"Posted: {posted}")
-    if getattr(job, "applicants", None) is not None:
-        # How contested it is.
-        lines.append(f"Applicants: {job.applicants}")
-    if getattr(job, "workplace", None):
-        lines.append(f"Workplace: {job.workplace}")
-
-    text = (description if description is not None else job.description) or ""
-    lines.extend(_salary_lines(job, text, salary_bands))
-
-    if fit_notes:
-        lines += ["", "=== What we understand (our assessment) ===", fit_notes]
-
-    text = text.strip() or "(no description was captured for this posting)"
-    if len(text) > JD_MAX_CHARS:
-        text = text[:JD_MAX_CHARS] + f"\n[truncated to {JD_MAX_CHARS} chars]"
-    return "\n".join([*lines, "", "=== Job description ===", text])
+    kind: str
+    prompt: str
+    # Their name, and the header and title of the page, written by code.
+    name: str
+    header: str
+    # On a letter, the company and its place.
+    letter_to: str
+    look: Template
+    # Every text a number in the document may come from: their documents and the posting.
+    sources: str
+    # The employer, which a letter's opening names, and the posting, whose own words a letter may quote.
+    company: str = ""
+    posting: str = ""
 
 
-def _salary_lines(job, description: str, bands: dict | None) -> list[str]:
-    """What the posting pays and what this candidate should be asking for."""
-    from libs.corpus import salary as salarylib  # noqa: PLC0415 - one caller, kept local
-
-    payload = {"title": job.title or "", "location": job.location or "",
-               "description": description, "source": job.source or ""}
-    posted = salarylib.extract(description)
-    ask = salarylib.suggest(payload, posted, bands)
-
-    out = []
-    if posted:
-        out.append(f"Posted salary: {salarylib.fmt(posted)}")
-    if ask:
-        below = "  (posting below target)" if ask.get("below_target") else ""
-        out.append(f"Target ask band: {salarylib.fmt(ask)}{below}")
-    return out
-
-
-def _age(posted_at) -> str:
-    """`3d`, `<1h`, or empty. Freshness changes how much effort a posting is worth."""
-    from libs.corpus.filters import age_label  # noqa: PLC0415 - one caller
-
-    if posted_at is None:
-        return ""
-    return age_label(posted_at.isoformat() if hasattr(posted_at, "isoformat") else str(posted_at))
-
-
-
-def fill_role_angles(template: str, role_angles: str | None) -> str:
-    """Put this candidate's role angles into the prompt, or take the instruction out."""
-    if "<<ROLE_ANGLES>>" not in template:
-        return template                       # a prompt from before the split, or the user's own
-    angles = (role_angles or "").strip()
-    if not angles or any(marker in angles for marker in PLACEHOLDER_MARKERS):
-        return template.replace("<<ROLE_ANGLES>>", "")
-    return template.replace("<<ROLE_ANGLES>>", f"ROLE ANGLES FOR THIS CANDIDATE\n{angles}")
+def prepare(kind: str, *, user, job, documents: dict[str, list[str]], look: Template,
+            languages: tuple[str, ...] = (), template: str | None = None,
+            today: datetime | None = None) -> Request:
+    """The request for `kind` ("cv" or "cover"): `documents` are their switched-on texts by kind
+    (`libs.suggestions.documents_of`), `languages` the job languages their search accepts, and `template`
+    a prompt to try in place of the live one (the CV bench's variants)."""
+    facts = read(documents)
+    name, header = _header(facts, {"full_name": user.full_name, "links": user.links or []})
+    spoken = [f"From their CV: {', '.join(_names(facts.languages))}."] if facts.languages else []
+    if languages:
+        spoken.append(f"The jobs they are looking for are in: {', '.join(_names(languages))}.")
+    values = {
+        "job": _job(job),
+        "cvs": _each(texts(documents, "cv"), "CV"),
+        "letters": _each(texts(documents, "cover_letter"), "Cover letter"),
+        "about": "\n\n".join(texts(documents, "history")) or "(nothing)",
+        "other": "\n\n".join(_each(texts(documents, kind_), label, alone=False)
+                             for kind_, label in OTHER_KINDS.items() if documents.get(kind_)) or "(none)",
+        "languages": " ".join(spoken) or "Not stated.",
+        "name": name or "(not given)",
+        "today": (today or datetime.now(UTC)).strftime("%d %B %Y"),
+    }
+    text = _SLOT.sub(lambda slot: values[slot.group(1)], template or prompts.load(PROMPTS[kind]))
+    company, place = (job.company or "").strip(), (job.location or "").strip()
+    sources = "\n".join([*(text_ for kind_ in documents for text_ in texts(documents, kind_)),
+                         job.title or "", company, place, job.description or ""])
+    return Request(kind=kind, prompt=text, name=name, header=header, look=look, sources=sources,
+                   letter_to="<br>".join(escape(each) for each in (company, place) if each), company=company,
+                   posting=job.description or "")
 
 
-def _require_personalised(template: str | None, name: str) -> str:
-    """This account's own writing prompt, refused if it is still a scaffold.
-
-    `render_cv_prompt` fell back to the shipped scaffold when no per-user template was passed and then
-    substituted five markers into it, so a missing file still produced a working prompt — built from
-    nobody. Without the substitution that fallback would send a CV addressed to `<<NAME>>`, so it
-    refuses instead. The fix is a setup conversation, and the refusal names it.
-    """
-    if not (template or "").strip():
-        raise BuildFailed(f"this account has no {name} yet — finish setup first")
-    found = [marker for marker in PLACEHOLDER_MARKERS if marker in template]
-    if found:
-        raise BuildFailed(
-            f"{name} is still a scaffold ({', '.join(found[:3])}) — run the setup step that "
-            "personalises your writing prompts before building documents")
-    return template
-
-
-def build_prompt(base_html: str, context: str, *,
-                 template: str | None = None, feedback: str | None = None,
-                 role_angles: str | None = None) -> str:
-    """The SACRED prompt, filled: the job and the base document.
-
-    **The candidate is no longer substituted here.** `libs/scoring/docprompt.py` replaced five
-    markers — `<<NAME>>`, `<<CONTACT>>`, `<<LANGUAGES>>`, `<<WORK_ELIGIBILITY>>`,
-    `<<HOME_LOCATION>>` — from `ProfileSchema` on every build. That was the last thing the document
-    path read the schema for, and it read the wrong copy of it: one account's three typed links were
-    a single link in its profile, and another's name lost its accent.
-
-    The prompt is that person's own file now, written once by `setup-prompts` with their real details
-    in it — which is how the reference instance has always done it: load the prompt, substitute the
-    job and the base template, send.
-    """
-    prompt = (fill_role_angles(_require_personalised(template, "tailor_cv.md"), role_angles)
-              .replace("<JOB_CONTEXT>", context)
-              .replace("<BASE_TEMPLATE>", base_html))
-    if feedback:
-        prompt += f"\n\nREVISION NEEDED: {feedback}\nReturn the full corrected HTML document."
-    return prompt
+def draft(client, request: Request, *, model: str, revision: tuple[str, str] | None = None,
+          effort: str = EFFORT) -> tuple[str, str]:
+    """One call: the model's whole reply, and the document in it, cleaned. `revision` is the reply
+    before and what was wrong with it: the second call is that conversation, continued. `effort` is the CV
+    bench's to vary."""
+    messages = [{"role": "user", "content": request.prompt}]
+    if revision is not None:
+        messages += [{"role": "assistant", "content": revision[0]}, {"role": "user", "content": revision[1]}]
+    reply = client.complete_text(model=model, system=SYSTEM, messages=messages, max_tokens=MAX_TOKENS,
+                                 effort=effort)
+    body = answer(reply, request.kind)
+    if body is None:
+        # Never log the reply: it is the person's CV.
+        logger.error("docgen: the %s call returned %d chars with no complete <%s> in it", request.kind,
+                     len(reply or ""), TAGS[request.kind])
+        raise BuildFailed(f"the model did not return a complete {'CV' if request.kind == 'cv' else 'letter'}")
+    return reply, body
 
 
-def tailor(client, base_html: str, context: str, *, model: str, style: str,
-           facts_md: str | None = None, feedback: str | None = None, template: str | None = None,
-           role_angles: str | None = None) -> str:
-    """One call, on the model of whichever provider pays for it (`libs.settings.document_model`).
-
-    `style` is the look the CV is laid out in: the person's chosen template (`libs.templates`), put
-    back after the call. The base CV's own `<style>` is taken off before it, and stays off: the model
-    never sees CSS, and since 2026-11-07 the template, not the base CV, decides how a CV looks.
-    """
-    stripped, _ = split_style(base_html)
-    prompt = build_prompt(stripped, context, template=template, role_angles=role_angles,
-                          feedback=feedback)
-
-    reply = client.complete_text(
-        model=model,
-        system=facts_md or _MINIMAL_SYSTEM,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=MAX_TOKENS,
-        thinking_tokens=THINKING_TOKENS)
-
-    html = extract_html(reply)
-    if html is None:
-        # Never log the reply: it is the candidate's CV.
-        started = "<html" in reply.lower()
-        logger.error("the tailor call returned %d chars with no complete HTML document "
-                     "(document %s)", len(reply),
-                     "started and was cut off" if started else "never started")
-        raise BuildFailed("the model did not return a complete HTML document")
-
-    return sanitise(restore_style(html, style))
+def answer(reply: str | None, kind: str) -> str | None:
+    """The document out of the reply, cleaned to the markup: the last complete `<cv>…</cv>`, as a model
+    that thinks aloud may write the tag in its working first."""
+    tag = TAGS[kind]
+    found = re.findall(rf"(?is)<{tag}>(.*?)</{tag}>", reply or "")
+    if not found or not found[-1].strip():
+        return None
+    body = clean(found[-1])
+    if kind == "cover":
+        return _undated(_EMDASH.sub(", ", body))
+    return _one_profile(strip_prose_emdashes(body))
 
 
-# Used only when a user somehow has no rendered facts block.
-_MINIMAL_SYSTEM = ("Write only what the base template below already states about the candidate. "
-                   "Never invent an employer, a date, a metric, or a technology.")
+def assemble(request: Request, body: str) -> str:
+    """The whole page: the look, the header, a letter's company and place, then what the model wrote."""
+    meta = (f'<div class="letter-meta">\n<p class="letter-to">{request.letter_to}</p>\n</div>\n'
+            if request.kind == "cover" and request.letter_to else "")
+    title = f"{request.name}, {'CV' if request.kind == 'cv' else 'cover letter'}".strip(", ")
+    return ('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n'
+            f"<title>{escape(title)}</title>\n{request.look.style}\n</head>\n<body>\n"
+            f"{request.header}\n{meta}{body}\n</body>\n</html>\n")
 
 
-# ── the cover letter ──────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class Check:
+    """What is wrong with a document: its pages, its numbers, and what a reviewer would send back."""
+
+    pages_over: int
+    invented: tuple[str, ...]
+    faults: tuple[str, ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        return not self.pages_over and not self.invented and not self.faults
+
+    def worse_than(self, other: Check) -> bool:
+        def weight(check: Check) -> tuple[int, int, int]:
+            return check.pages_over, len(check.invented), len(check.faults)
+        return weight(self) > weight(other)
 
 
-def tailor_cover(client, context: str, *, model: str, head: str, style: str,
-                 facts_md: str | None = None, template: str | None = None) -> str:
-    """The cover letter for one job, laid out in the person's chosen cover template.
+def problems(request: Request, body: str, pages: int | None, last_page_chars: int | None = None) -> Check:
+    over = max(0, (pages or 0) - MAX_PAGES[request.kind])
+    if request.kind == "cv":
+        found = checks.cv(body, request.sources)
+        if not over and (pages or 0) > 1 and last_page_chars is not None \
+                and last_page_chars < SHORT_LAST_PAGE_CHARS:
+            found.insert(0, f"Only a few lines reach page {pages}. Cut the least relevant lines so it "
+                            f"ends on page {pages - 1}.")
+    else:
+        found = checks.letter(body, company=request.company, posting=request.posting)
+    return Check(pages_over=over, invented=numbers_not_in(text_of(body), request.sources),
+                 faults=tuple(found))
 
-    `head` is that template's `<head>`, the fonts and page rules the prompt's `<HEAD_BLOCK>` asks the
-    letter to use, and `style` its `<style>`, put back over whatever came back so the letter is in the
-    template whatever the model did with it. The CV is deliberately *not* sent as text: the account's
-    whole profile is already the system prompt (`libs.profiles.grounding` — context.md and the
-    candidate profile, tens of thousands of characters, verbatim). A plain-text extract of the CV
-    alongside it repeated a subset of that, truncated at 1,500 characters, which cut mid-sentence
-    before a single experience entry and left a mangled skills list under a heading claiming to be
-    the CV.
-    """
-    prompt = (_require_personalised(template, "tailor_cover.md")
-              .replace("<HEAD_BLOCK>", head)
-              .replace("<JOB_CONTEXT>", context))
 
-    reply = client.complete_text(
-        model=model,
-        system=facts_md or _MINIMAL_SYSTEM,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=MAX_TOKENS,
-        thinking_tokens=THINKING_TOKENS)
+def feedback(request: Request, check: Check, pages: int | None) -> str:
+    """What the second call is told: only what the checks found."""
+    noun = "CV" if request.kind == "cv" else "letter"
+    found = []
+    if check.pages_over:
+        found.append(f"It came to {pages} pages of A4, and it must fit on {MAX_PAGES[request.kind]}. Cut the "
+                     "least relevant parts. Do not shrink anything, and do not drop what matters most.")
+    if check.invented:
+        found.append(f"These numbers are not in their documents or the posting: {', '.join(check.invented)}. "
+                     "Take each one out, or use what their documents actually say.")
+    found += check.faults
+    tag = TAGS[request.kind]
+    return (f"Your {noun} needs fixing before it can be used:\n" + "\n".join(f"- {each}" for each in found)
+            + f"\n\nFix only that, keep everything else as it is, and answer with the whole {noun} again, "
+              f"between <{tag}> and </{tag}>.")
 
-    letter = extract_html(reply)
-    if letter is None:
-        logger.error("the cover call returned %d chars with no HTML document in it", len(reply))
-        raise BuildFailed("the model did not return an HTML document")
 
-    # Em-dashes come out of the whole letter, not just its bullets.
-    return strip_hidden(_strip_cover_emdashes(_undated(restore_style(letter, style))))
+# ── what the model is told ────────────────────────────────────────────────────────────────────
+
+def _job(job) -> str:
+    workplace = {"remote": "Remote", "hybrid": "Hybrid", "onsite": "On-site", "on-site": "On-site"}.get(
+        (getattr(job, "workplace", None) or "").lower(), "")
+    place = ", ".join(each for each in ((job.location or "").strip(), workplace) if each)
+    language = getattr(job, "language", None)
+    posting = (job.description or "").strip() or "(no description was captured for this posting)"
+    if len(posting) > POSTING_MAX_CHARS:
+        posting = posting[:POSTING_MAX_CHARS] + f"\n[cut at {POSTING_MAX_CHARS} characters]"
+    lines = [f"Job title: {job.title or ''}", f"Company: {job.company or 'not given'}",
+             f"Location: {place or 'not given'}"]
+    if language:
+        lines.append(f"The posting is written in: {LANGUAGE_NAMES.get(language, (language,))[0]}")
+    return "\n".join([*lines, "", posting])
+
+
+def _names(codes) -> list[str]:
+    return [LANGUAGE_NAMES.get(code, (code,))[0] for code in codes]
+
+
+def _each(found: list[str], label: str, *, alone: bool = True) -> str:
+    """Each document under its own heading, numbered when there are several."""
+    if not found:
+        return "(none)"
+    if len(found) == 1 and alone:
+        return found[0].strip()
+    return "\n\n".join(f"=== {label} {index} of {len(found)} ===\n{text.strip()}"
+                       for index, text in enumerate(found, start=1))
+
+
+def _header(facts, identity: dict) -> tuple[str, str]:
+    """Their name and contact line: what they typed in "Your name and links", else what their CV says."""
+    name = (identity.get("full_name") or facts.name or "").strip()
+    links = [link.get("url") if isinstance(link, dict) else str(link)
+             for link in identity.get("links") or []] or list(facts.links)
+    contact = [escape(each) for each in (facts.location, facts.phone) if each]
+    if facts.email:
+        contact.append(f'<a href="mailto:{escape(facts.email)}">{escape(facts.email)}</a>')
+    contact += [f'<a href="{escape(url if "://" in url else f"https://{url}")}">'
+                f'{escape(re.sub(r"^(?:https?://)?(?:www[.])?|/$", "", url))}</a>' for url in links if url]
+    spans = "".join(f"<span>{each}</span>" for each in contact)
+    return name, (f'<div class="cv-header">\n<div class="cv-name">{escape(name)}</div>\n'
+                  f'<div class="cv-contact">{spans}</div>\n</div>\n<hr class="header-rule">')
+
+
+# ── what is kept of the answer ────────────────────────────────────────────────────────────────
+
+# The markup every look lays out (libs/templates/README.md), and nothing else.
+_TAGS = frozenset({"p", "div", "span", "ul", "li", "strong", "em", "b", "i", "a", "br"})
+_CLASSES = frozenset({"profile", "section", "competencies", "section-title", "entry", "entry-head",
+                      "entry-title", "entry-date", "entry-desc", "plain-list", "letter-subject", "letter",
+                      "closing", "signature"})
+# Gone with everything inside them.
+_DROPPED = frozenset({"script", "style", "head", "title", "template", "noscript", "svg", "math", "iframe",
+                      "object", "header", "footer", "nav"})
+_ZERO_WIDTH = re.compile("[\u200b-\u200f\u2060-\u2064\ufeff\u202a-\u202e]")
+
+
+class _Clean(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.out: list[str] = []
+        self.skipping = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in _DROPPED:
+            self.skipping += 1
+        if self.skipping or tag not in _TAGS:
+            return
+        if tag == "br":
+            self.out.append("<br>")
+            return
+        kept = ""
+        values = dict(attrs)
+        classes = [name for name in (values.get("class") or "").split() if name in _CLASSES]
+        if classes:
+            kept += f' class="{" ".join(classes)}"'
+        href = (values.get("href") or "").strip()
+        if tag == "a" and re.match(r"(?i)(?:https?://|mailto:)", href):
+            kept += f' href="{escape(href)}"'
+        self.out.append(f"<{tag}{kept}>")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in _DROPPED:
+            self.skipping = max(0, self.skipping - 1)
+            return
+        if not self.skipping and tag in _TAGS and tag != "br":
+            self.out.append(f"</{tag}>")
+
+    def handle_data(self, data: str) -> None:
+        if not self.skipping:
+            self.out.append(escape(_ZERO_WIDTH.sub("", data), quote=False))
+
+
+def clean(fragment: str) -> str:
+    """Only the markup's own tags and class names, links that are links, and the text: no style, script,
+    comment or invisible character. Whatever hid text in a document cannot survive this."""
+    parser = _Clean()
+    parser.feed(fragment)
+    parser.close()
+    return "".join(parser.out).strip()
+
+
+def text_of(html: str) -> str:
+    return checks.text(html)
+
+
+def headings(body: str) -> tuple[str, ...]:
+    """The CV's section titles, in order: what the ATS check looks for in its PDF."""
+    return tuple(" ".join(text_of(each).split()) for each in re.findall(
+        r'(?is)<div class="section-title">(.*?)</div>', body))
+
+
+_PROFILE_P = re.compile(r'(?is)\s*<p class="profile">(.*?)</p>')
+
+
+def _one_profile(body: str) -> str:
+    """One profile paragraph, as every look lays it out: written as several, they are joined."""
+    parts = _PROFILE_P.findall(body)
+    if len(parts) < 2:
+        return body
+    first = _PROFILE_P.search(body)
+    joined = " ".join(part.strip() for part in parts)
+    return f'{body[:first.start()]}\n<p class="profile">{joined}</p>{_PROFILE_P.sub("", body[first.end():])}'
+
+
+# A number as a person writes it: 40, 1,200, 3.5, 2021, 10k. Compared without its thousands commas, and a
+# "10k" as the 10,000 it is: a letter wrote "10,000 records" for a CV's "10k+" and was sent back for it
+# (2026-11-11).
+_NUMBER = re.compile(r"(\d+(?:[.,]\d+)*)(?:\s?([kKmM])(?![a-zA-Z]))?")
+
+
+def numbers_not_in(text: str, sources: str) -> tuple[str, ...]:
+    """The numbers in `text` that appear nowhere in `sources`, each once: the fabrication a reader cannot
+    see and an interviewer will ask about."""
+    def forms(digits: str, scale: str) -> set[str]:
+        plain = digits.replace(",", "")
+        if not scale:
+            return {plain}
+        try:
+            value = float(plain) * (1_000 if scale in "kK" else 1_000_000)
+        except ValueError:
+            return {plain}
+        return {plain, str(int(value)) if value.is_integer() else str(value)}
+
+    known = set().union(*(forms(*each) for each in _NUMBER.findall(sources)))
+    return tuple(dict.fromkeys(match.group(0) for match in _NUMBER.finditer(text)
+                               if not forms(match.group(1), match.group(2) or "") & known))
+
+
+_EMDASH = re.compile(r"\s*(?:—|&mdash;|&#8212;)\s*")
+
+
+def strip_prose_emdashes(html: str) -> str:
+    """Em-dashes out of bullets and the profile paragraph, left alone in entry titles."""
+    def fix(match: re.Match[str]) -> str:
+        return _EMDASH.sub(", ", match.group(0))
+
+    html = re.sub(r"(?is)<li\b[^>]*>.*?</li>", fix, html)
+    return re.sub(r'(?is)<p\b[^>]*class="[^"]*profile[^"]*"[^>]*>.*?</p>', fix, html)
 
 
 # A line that is a date and nothing else, the way a letter is dated: "8 November 2026", "November 8,
@@ -243,8 +385,7 @@ _BR_TAG = re.compile(r"(?i)<br\s*/?>")
 
 def _undated(letter: str) -> str:
     """The letter without the day it was made (owner, 2026-11-08): each line that is only a date goes, and
-    a paragraph left with nothing in it goes with it. The rest of a paragraph stays, so the company's
-    address above a date keeps every line of its own."""
+    a paragraph left with nothing in it goes with it. The rest of a paragraph stays."""
     def line_text(part: str) -> str:
         return " ".join(unescape(re.sub(r"<[^>]+>", " ", part)).split())
 
@@ -259,101 +400,3 @@ def _undated(letter: str) -> str:
         return f"{opening}{'<br>'.join(kept)}</{match.group(1)}>"
 
     return _INNERMOST.sub(without, letter)
-
-
-def _strip_cover_emdashes(letter: str) -> str:
-    match = _STYLE.search(letter)
-    if not match:
-        return _EMDASH.sub(", ", letter)
-    return (_EMDASH.sub(", ", letter[:match.start()]) + match.group(0)
-            + _EMDASH.sub(", ", letter[match.end():]))
-
-
-def sanitise(html: str) -> str:
-    """The mechanical enforcement of the rules the prompt states and the model breaks."""
-    return strip_hidden(strip_prose_emdashes(html))
-
-
-def strip_hidden(html: str) -> str:
-    """Zero-width characters out, and any inline `style` attribute that hides text."""
-    style = _STYLE.search(html)
-    if style:
-        head, block, tail = html[:style.start()], style.group(0), html[style.end():]
-        return _clean_body(head) + block + _clean_body(tail)
-    return _clean_body(html)
-
-
-def _clean_body(fragment: str) -> str:
-    fragment = _ZERO_WIDTH.sub("", fragment)
-    return re.sub(r'(?i)\s*style="[^"]*"',
-                  lambda match: "" if _HIDE_STYLE.search(match.group(0)) else match.group(0),
-                  fragment)
-
-
-def restore_style(tailored: str, style: str) -> str:
-    """Re-inject the canonical CSS, replacing whatever the model emitted."""
-    if not style:
-        return tailored
-
-    match = _STYLE.search(tailored)
-    if match:
-        return tailored[:match.start()] + style + tailored[match.end():]
-
-    head = tailored.find("</head>")
-    if head != -1:
-        return tailored[:head] + style + "\n" + tailored[head:]
-
-    body = re.search(r"(?i)<body\b[^>]*>", tailored)
-    if body:
-        return tailored[:body.start()] + f"<head>\n{style}\n</head>\n" + tailored[body.start():]
-
-    # No head, no body: whatever came back is the content.
-    return ("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
-            f"{style}\n</head>\n<body>\n{tailored}\n</body>\n</html>")
-
-
-def extract_html(reply: str) -> str | None:
-    """The document out of the reply, ignoring any commentary around it."""
-    if not reply:
-        return None
-    match = _HTML.search(reply)
-    return match.group(1) if match else None
-
-
-def strip_prose_emdashes(html: str) -> str:
-    """Em-dashes out of bullets and the profile paragraph, left alone in entry titles."""
-    def fix(match: re.Match[str]) -> str:
-        return _EMDASH.sub(", ", match.group(0))
-
-    html = re.sub(r"(?is)<li\b[^>]*>.*?</li>", fix, html)
-    return re.sub(r'(?is)<p\b[^>]*class="[^"]*profile[^"]*"[^>]*>.*?</p>', fix, html)
-
-
-def scan_hidden(html: str) -> list[str]:
-    """Invisible content in the body."""
-    body = _STYLE.sub("", html)
-    issues: list[str] = []
-
-    invisible = len(_ZERO_WIDTH.findall(body))
-    if invisible:
-        issues.append(f"{invisible} invisible/zero-width character(s) in body text")
-
-    hidden = sorted({match.group(1).split(":")[0].strip().lower()
-                     for match in _HIDE_STYLE.finditer(body)})
-    if hidden:
-        issues.append("inline hiding style(s): " + ", ".join(hidden))
-    return issues
-
-
-def page_feedback(pages: int | None, *, maximum: int = 2) -> str | None:
-    """What to tell the model when the PDF came out too long, or nothing when it did not."""
-    if pages is None or pages <= maximum:
-        return None
-    return (f"Your CV compiled to {pages} pages. It must not exceed {maximum} pages of A4, and one "
-            f"sharp page is better than two. Cut the least-relevant entries and bullets until it "
-            f"fits. Do not shrink the font, the padding or the margins, and do not pad what "
-            f"remains.")
-
-
-
-

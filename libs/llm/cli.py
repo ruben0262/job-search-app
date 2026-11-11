@@ -130,9 +130,10 @@ class CliClient:
         self._kind, self._blob, self._on_refresh = kind, blob, on_refresh
 
     def complete_text(self, *, model: str, system: str, messages: list[dict],
-                      max_tokens: int, thinking_tokens: int | None = None) -> str:
-        """One answer. `max_tokens` and `thinking_tokens` are the tool's own to decide."""
-        del max_tokens, thinking_tokens
+                      max_tokens: int, effort: str | None = None) -> str:
+        """One answer. `max_tokens` is the tool's own to decide; `effort` is passed to Claude Code, so a
+        sign-in thinks as hard as an API key does."""
+        del max_tokens
         prompt = "\n\n".join(str(message["content"]) for message in messages)
         with tempfile.TemporaryDirectory(prefix="ai-") as folder:
             home, work = Path(folder) / "home", Path(folder) / "work"
@@ -142,20 +143,18 @@ class CliClient:
             unpack(self._kind, self._blob, home)
             (Path(folder) / "system.md").write_text(system)
             try:
-                return self._run(model, home, work, Path(folder), prompt)
+                return self._run(model, home, work, Path(folder), prompt, effort=effort)
             finally:
                 renewed = snapshot(self._kind, home)
                 if renewed and renewed != self._blob:
                     self._blob = renewed
                     self._on_refresh(renewed)
 
-    def complete_json(self, **_kwargs) -> dict:
-        raise LlmError("a signed-in account writes documents only")
-
     def complete_tools(self, **_kwargs) -> dict:
         raise LlmError("a signed-in account writes documents only")
 
-    def _run(self, model: str, home: Path, work: Path, folder: Path, prompt: str) -> str:
+    def _run(self, model: str, home: Path, work: Path, folder: Path, prompt: str, *,
+             effort: str | None = None) -> str:
         binary, system = TOOLS[self._kind].path(), str(folder / "system.md")
         env = environment(self._kind, home)
         answer = folder / "answer.txt"
@@ -163,6 +162,7 @@ class CliClient:
             argv = [binary, "-p", "--output-format", "json", "--system-prompt-file", system, "--tools", "",
                     "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config"]
             argv += ["--model", model] if model else []
+            argv += ["--effort", effort] if effort else []
             stdin = prompt
         elif self._kind == "codex_login":
             argv = [binary, "exec", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config",

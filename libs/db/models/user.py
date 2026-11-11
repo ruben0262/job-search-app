@@ -52,7 +52,7 @@ class User(Document):
     # email shares the mailbox's daily cap with sign-up mail), and when the last one was sent.
     email_alerts: bool = False
     email_digest_at: datetime | None = None
-    # What the person's documents say about them, read by rules (`libs.profiles`).
+    # The old profile schema: nothing reads it (tests/test_columns_have_producers.py, KNOWN_UNWRITTEN).
     profile: dict | None = None
     documents_changed_at: datetime | None = None
     processed_at: datetime | None = None

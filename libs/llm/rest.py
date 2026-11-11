@@ -35,8 +35,8 @@ class GeminiClient:
         self._headers, self._http = {"x-goog-api-key": key}, http
 
     def complete_text(self, *, model: str, system: str, messages: list[dict],
-                      max_tokens: int, thinking_tokens: int | None = None) -> str:
-        """One call. `thinking_tokens` is Anthropic's budget; Gemini thinks by its own default."""
+                      max_tokens: int, effort: str | None = None) -> str:
+        """One call. `effort` is Claude's; Gemini thinks by its own default."""
         reply = _post(self._http, "Gemini", GEMINI_URL.format(model=model), self._headers, {
             "systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "model" if message["role"] == "assistant" else "user",
@@ -69,8 +69,8 @@ class OpenAIClient:
         self._headers, self._http = {"Authorization": f"Bearer {key}"}, http
 
     def complete_text(self, *, model: str, system: str, messages: list[dict],
-                      max_tokens: int, thinking_tokens: int | None = None) -> str:
-        """One call. `thinking_tokens` is Anthropic's budget; OpenAI reasons at its own default."""
+                      max_tokens: int, effort: str | None = None) -> str:
+        """One call. `effort` is Claude's; OpenAI reasons at its own default."""
         reply = _post(self._http, "OpenAI", OPENAI_URL, self._headers, {
             "model": model,
             "messages": [{"role": "developer", "content": system},

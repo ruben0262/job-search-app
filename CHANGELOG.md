@@ -14,6 +14,129 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-11 — every CV and cover letter written from the person's own uploads, in one call, and checked before it arrives
+
+The owner (2026-11-10): "2 separate routes one for cv writing and one for cover letter writing … we'll
+have a prompt collect all of it, and that's the prompt that we will optimize", with a final check, the
+answer in whatever form is quickest to process, and the ATS check we already have. Then (2026-11-11): learn
+how Claude Haiku 5.5 works and prompt for it; judge the results in the chat for now; make the checks a
+document passes before it arrives as thorough as that judgement, on Haiku 5.5; keep the old documents that
+hold rules and detections, "because we don't want to work twice"; every CV passes the ATS checklist.
+
+- **Two prompts, one call each.** `libs/prompts/write_cv.md` and `write_cover.md` carry the job (title,
+  company, place, the posting's language, the whole posting) and everything the person switched on in My
+  documents: every CV, for a letter every cover letter too, "About you", their other files, and the
+  languages their CV and their search name. The data comes first and the task last, as Anthropic's guidance
+  for long inputs and for Haiku 5.5 has it (read 2026-11-11). Before writing, the model lists the five to
+  seven things the posting wants most and quotes the line in their documents that shows each. Its final
+  check is the review the CVs were judged by, step by step: six seconds on the profile and first job, every
+  line traced to their documents, the posting's needs in its words, relevance, order and words, language,
+  length, markup. The answer comes back between `<cv>` or `<letter>` tags. **New wording, approved by the
+  owner on 2026-11-11 with the measurements below (CLAUDE.md §3a).**
+- **The rules the owner's own reviews found are in it**, from the files that held them, which stay:
+  `libs/scaffolds/tailor_cv.md`'s "most common failures", `tailor_cover.md`'s failures and mechanical scan,
+  `03-writing-style.md`, `05-cv-templates.md`, `context.md`. A CV cuts hard to what this employer wants
+  (about ten to twelve bullets), leaves no orphan lines on page two, says "end-to-end" only of testing,
+  summarises long lists, never ends a bullet on what it shows, passes the interview backtrack test, and
+  treats an AI tool as a tool. A letter opens on the work and names the company and role, shows rather
+  than announces the match, closes on the work and never on applying, has no colons or contractions, and
+  runs 220 to 280 words under a headline-style subject. The three CV-bench drafts removed this morning are
+  back as superseded prompts in `libs/scaffolds/history/`, and `d-fallback`'s rule for when relevant
+  experience runs out is in `write_cv.md`.
+- **Code checks what a reviewer would send back, and says it back once** (`services/docgen/checks.py`, §0).
+  A CV: a role that ended above one still held; a bullet over 35 words; a second page with a few lines on
+  it; and in English the banned words, "I", "my", "me", "he" or "she", a length of experience their
+  documents never state, a profile about applying or rating itself, two bullets on one verb, a bullet that
+  ends on what it shows, a task bullet. A letter: under 180 or over 320 words, a paragraph over four
+  sentences, a colon in a sentence, an opening without the company, and in English the banned words
+  (unless the posting itself uses them), a close about applying, contractions. With the two checks from
+  before: too many pages, and a number found nowhere in their documents or the posting, which now reads
+  "10k+" as 10,000 (a letter was sent back for "10,000 records"). The second answer is kept unless it is
+  worse; what is still wrong is logged as a count, never the CV's words. The word rules are English rules,
+  so they run on English documents only, read by `libs.corpus.langfilter`: `langdetect` joins the docgen
+  image.
+- **One effort for an API key and a Claude sign-in.** Every writing call asks for `medium`
+  (`build.EFFORT`): adaptive thinking with `output_config.effort` on a key, `--effort` on Claude Code.
+  Until now a key ran at Haiku 5.5's default and a sign-in at Claude Code's own, which nobody had chosen.
+  `complete_json`, which nothing called, is gone.
+- **The ATS check reads the CV's own headings, in order, in whatever language they are in.** It looked
+  for "experience" and "education", so every CV written in the posting's German or Hungarian, as the
+  prompt asks, would have been flagged in Admin.
+- **Language detection reads one text at a time.** langdetect fills one shared factory on first use, and
+  threads that start together read it half-filled: eight English CVs read at once came back as None seven
+  times, and in another run twice as Norwegian. The harvester describes postings on two threads (LinkedIn
+  beside the boards), so a posting could have been stored in the wrong language and hidden by someone's
+  language filter. No sign of it in the local corpus: its 20 postings tagged Norwegian, Danish, Afrikaans,
+  Somali, Welsh or Tagalog read the same again, and its 115 with no language are all 40 characters or
+  shorter. Found because the CV bench checks on several threads and counted different faults each run.
+- **Chrome would not start while MongoDB's sockets held descriptors 3 and 4**, where Chrome reads and
+  writes: a Python `preexec_fn` put the pipes there, and it runs after the fork's hooks, one of which is
+  pymongo closing its sockets in the child, so `make_inheritable(3, 4)` met closed descriptors (EBADF).
+  bash now puts the pipes there after the fork. Its test fails on the old code with the bench's own error.
+- **The posting is no longer cut at 6,000 characters.** That cut the end off 17.1% of the 27,275 stored
+  postings; 15,000 cuts none (the longest is 13,985).
+- **The CV bench measures what production checks.** `NAME=db:EMAIL` reads a candidate from the local
+  database; `--account EMAIL` writes on that person's linked AI account; `uploaded` is their own CV with no
+  call; `--baseline`, `--effort`; each CV is held to `build.problems` and to the whole ATS checklist, read
+  by pypdf and by pdfminer; renders take turns through the one Chrome, which crossed two documents' answers
+  when a dry run rendered them at once.
+
+Removed, each replaced by the above: the old builder (`tailor`, `tailor_cover`, `build_prompt`,
+`fill_role_angles`, `_require_personalised`, `job_context` and its salary lines, `restore_style`,
+`scan_hidden`, `page_feedback`); `libs/profiles`, which only it read; the API's "needs a writing profile"
+refusal, which every account made on the site got; `Template.head`, the old letter prompt's `<HEAD_BLOCK>`;
+`LlmClient.complete_json`; and their tests. **Kept (owner, 2026-11-11):** the setup agents' profile files
+in each account, and every prompt file nothing reads now (`libs/scaffolds/`, `libs/prompts/SKILL.md`,
+`03-writing-style.md`, `06-cover-letter-templates.md`), for the rules in them.
+
+**Measured, 2026-11-11.** claude-haiku-5-5 on the owner's Claude Pro sign-in, the owner's account in the
+local database, four postings in four groups (`scripts/cvlab`).
+
+First, the first wording against the CV they uploaded, judged by `eval_cv.md` on claude-sonnet-5-5, three
+samples, paired by posting: 57.0 against 37.5, **+19.5** (sd 4.29, ±2.15, 4/0/0), every dimension higher on
+every posting. Every CV filled two pages and all twelve verdicts were "borderline".
+
+Then judged in the chat by Claude Opus 5.5, at the owner's word: each CV read against the posting and their
+documents and scored out of 100, the same postings, three samples. **Not blind**: the first wording's CVs
+were read before the next was written, and the wordings differ visibly. The final wording is v3 plus the
+rule for when relevant experience runs out, which these postings do not reach.
+
+| measure | first wording | v2 | v3 (final) |
+|---|---|---|---|
+| judged, /100 | 62.8 | 73.7 | 77.6 |
+| paired against the first, by posting | | +10.8 (3.7, ±1.9, 4/0/0) | **+14.8** (3.5, ±1.8, 4/0/0) |
+| bullets, mean | 16.7 | 11.4 | 11.1 |
+| one page | 0 of 12 | 7 of 12 | 12 of 12 |
+| sent back by the checks | 12 of 12 | 10 of 12 | **0 of 12** |
+| numbers not in their documents | 0 | 0 | 0 |
+| ATS checklist, pypdf and pdfminer | 12 of 12 pass | 12 of 12 | 12 of 12 |
+| seconds | 40.3 (Claude Code's effort) | 47.3 (`medium`) | 41.6 (`medium`) |
+
+Effort: v3 at `low` took 30.0 s, but the checks sent back 4 of 8 (two short second pages, two repeated
+verbs), each a second call of about 25 s; `medium` was kept.
+Thin experience: a fictional 2026 graduate with retail, warehouse and tutoring work, two junior postings,
+two samples. v3 and the final wording both gave one page and no faults, Education first in 7 of 8,
+"Hard-working" and "my" gone; the final wording ran 263 words to v3's 243, with the same seven bullets.
+
+Letters (no judge prompt yet; read in the chat, two samples): the first wording 68.5, v2 77.3, **+8.8**
+(4.0, ±2.0, 4/0/0). The checks sent back all 8 of the first wording's (every one closed on "I would
+welcome…") and 5 of v2's 8 (colons). The final wording, v2 with a worked colon example and the phrases that
+announce a match, one letter a posting: 1 of 4 sent back (a paragraph of five sentences). 18 to 22 s a
+letter on average.
+
+What did not move, or is not shown: **a CV takes about 42 s, twice the 20 s target** (CLAUDE.md §0), while
+a letter is within it; `low` is faster per call but needs second calls. The scores are one reader's and not
+blind; Sonnet's 57 and this 62.8 for the same first CVs are different scales. Seen on the final wording and
+not checkable by code: a side project above the main job (1 of 12), a finished internship in the present
+tense (1), a tool moved to the project it was not used on (1). The plan's five-hour limit stopped the run
+once, and the last calls were made after it reset: the final CV wording, one CV a posting, gave 3 of 4 on
+one page with nothing to send back; the fourth, for 12Build, kept a team-lead project and spilled a few
+lines onto page two, which the check sends back; 40 to 49 s. Not measured: GPT and Gemini.
+
+Gates, 2026-11-11: import contracts 2 kept; ruff clean; schema on an empty local mongod (28 collections);
+contract current (80 paths); site built; pytest 1,379 passed, 2 skipped (a Postgres source, the
+reference instance).
+
 ## 2026-11-10, evening — Admin's chart counts by source; an account's page you can read at a glance; back goes to Accounts
 
 The owner asked for:

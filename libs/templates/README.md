@@ -12,20 +12,22 @@ document of that kind is then made in it. None picked is Meridian, the look ever
 
 ## How a document gets its look
 
-The writer never sees a template. It writes the body in the one markup every document carries:
+The writer never sees a template. It writes the middle of the body in the one markup every document
+carries, and code writes the rest (`services/docgen/build.py`):
 
 - **CV:** `cv-header`, `cv-name`, `cv-contact` (one `span` a part), `header-rule`, `profile`, `section`,
   `section-title`, `competencies`, `entry`, `entry-head`, `entry-title`, `entry-date`, `entry-desc`,
   `plain-list`. These are the scaffold's fourteen class names, measured on every account's `base_cv.html`
   in 2026-08.
 - **Letter:** the CV's header, then `letter-meta` holding `letter-to` (company, place), then
-  `letter-subject` ("Application for …"), then `letter`. Both are filled from the job when the letter is
-  made, never written into a template, and `letter-meta` is left out when the job names neither.
+  `letter-subject` ("Application for …"), then `letter`. The company and place are filled from the job by
+  code, and `letter-meta` is left out when the job names neither; the subject line is the model's, so it is
+  in the letter's language.
 
 **What every document carries, whoever writes it** (owner, 2026-11-08):
 
 - **No date of its own.** Not the day a CV or a letter was made. An AI letter's model is told today's
-  date (for counting "Present") and often heads the letter with it: `build._undated` takes each line
+  date (for counting "Present") and may head the letter with it: `build._undated` takes each line
   that is only a date out of it, and keeps a date inside a sentence.
 - **Dates only where the person has them, at the right of the line.** A job with no dates has none, and
   nothing is made of it: no placeholder, no gap, its title where the others are. The reader takes a job
@@ -35,13 +37,14 @@ The writer never sees a template. It writes the body in the one markup every doc
 
 Then:
 
-- **An AI CV** (`services.docgen.build.tailor`) has its base CV's `<style>` taken off before the call, as
-  always, and the *template's* put back after it. A person's `base_cv.html` still decides what the CV
-  says. It no longer decides how it looks.
-- **An AI letter** (`build.tailor_cover`) is handed the template's `<head>` as `<HEAD_BLOCK>`, which the
-  prompt already asks it to use, and the template's `<style>` is put back over whatever came back. The
-  prompt does not yet describe the letter frame's class names, so a letter the model writes may place
-  its date or subject its own way. Telling it is a prompt change, which waits for the owner (§3a).
+- **A CV or a letter** (`services.docgen.build`, owner 2026-11-10) is written in one call from the person's
+  own uploads, by the prompt in `libs/prompts/write_cv.md` or `write_cover.md`, which shows the model the
+  markup above and nothing of any look. Code writes the header (the name and links they typed, else their
+  CV's, and the email, phone and place their CV has), on a letter the company and its place, and puts the
+  look they picked around it. What the model wrote is cleaned to the markup's own tags and class names, so
+  a class or style of its own cannot reach the page, and checked for what a reviewer would send back
+  (`services/docgen/checks.py`); the ATS check reads the PDF for the CV's own headings, in order, in
+  whatever language they are in.
 - **The picker's pictures** are `templates.picture`, sent with the shelf (`GET /templates`). Each is the
   look in abstract shapes, not a document (owner, 2026-11-07). One small fixed sketch in the markup every
   document carries (a name, a contact strip, headings, a few entries and lines) is laid out by the look's
@@ -116,7 +119,7 @@ the one most of continental Europe expects.
   [Imperial](https://www.imperial.ac.uk/admin-services/careers/applications-and-interviews/cv/)).
 
 Section *order* (education first for law and academia, registration first for nursing) is what the writer
-decides, not the look. It belongs to the CV prompts the owner has scheduled next.
+decides, not the look: `write_cv.md` asks for it.
 
 ## Adding a look
 

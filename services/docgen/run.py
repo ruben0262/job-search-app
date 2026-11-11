@@ -1,10 +1,9 @@
 """One `docgen` build, end to end: write the document, check it, render it once, record it.
 
-**AI** writes it: the tailoring prompts, unchanged, on whichever key `libs.llm.resolve` chose, for an
-account with the personalised setup files those prompts need. The PDF comes back as bytes for the
-worker to keep until it is downloaded (D9). The instant document, written by code from the person's
-uploads, was removed on 2026-11-08 (owner: every document is written by AI, and where AI cannot be
-used the person is told so).
+**AI** writes it, in one call (`build`), on the AI account the person linked, from what they uploaded
+and switched on. The PDF comes back as bytes for the worker to keep until it is downloaded (D9). The
+instant document, written by code from the person's uploads, was removed on 2026-11-08 (owner: every
+document is written by AI, and where AI cannot be used the person is told so).
 """
 from __future__ import annotations
 
@@ -17,8 +16,7 @@ from libs import templates
 from libs.db import get
 from libs.db.models import CorpusJob, User
 from libs.obs import audit
-from libs.profiles import PLACEHOLDER_MARKERS, ProfileIncomplete
-from libs.profiles.repository import ProfileFiles
+from libs.suggestions import documents_of
 from libs.tenant.repository import TenantRepository
 from services.docgen import build, pdf
 from services.docgen.refresh import PostingClosed, refresh_before_build
@@ -38,7 +36,7 @@ class Built:
     filename: str
     pdf: bytes
     pages: int | None
-    # Model calls: one, or two when a CV came back too long.
+    # Model calls: one, or two when the first answer failed a check.
     calls: int
     # Counted because every revision is a second model call and a second render: if this is
     # common, the fix belongs in the prompt rather than in the loop that cleans up after it.
@@ -49,7 +47,7 @@ class Built:
 
 def run_ai(db, user_id: _uuid.UUID, job_id: int, *, client, model: str, kind: str,
            http: object | None = None) -> Built:
-    """The tailored document, written by the model on the key that pays for it."""
+    """The document for this job, written by the model on the account that pays for it."""
     user, job = _load(db, user_id, job_id)
     if not (job.description or "").strip():
         # Without the posting there is nothing to tailor to, and the result is the generic CV.
@@ -62,33 +60,37 @@ def run_ai(db, user_id: _uuid.UUID, job_id: int, *, client, model: str, kind: st
         except PostingClosed as exc:
             raise NotBuildable(str(exc)) from exc
 
-    # The reference instance's `CLAUDE.md` and skill files, per user (`libs/profiles`).
-    files = ProfileFiles(db, user_id)
-    try:
-        grounding = files.grounding()
-    except ProfileIncomplete as exc:
-        raise NotBuildable(str(exc)) from exc
-
-    # Their own CV, written by the setup agent into `base_cv.html`, not rendered from a schema.
-    base_cv = files.read("base_cv.html")
-    if not base_cv or not base_cv.strip():
-        raise NotBuildable("this account has no base CV yet — finish setup first")
-
-    # No score and no fit notes since the model was switched off: what the build was given then too.
-    context = build.job_context(job, score=None, fit_notes=None,
-                                salary_bands=_salary_bands(db, user_id))
-    # The look they picked: the model writes the words, the template lays them out.
-    look = templates.chosen(user, kind)
-    if kind == "cover":
-        document, report, calls = _cover(
-            client, context, model=model, look=look, grounding=grounding,
-            template=files.read("tailor_cover.md"))
-    else:
-        document, report, calls = _tailor_until_it_fits(
-            client, context, model=model, base_cv=base_cv, style=look.style, facts_md=grounding,
-            template=files.read("tailor_cv.md"), role_angles=files.read("08-role-angles.md"))
-    return _done(db, user, job, kind=kind, mode="ai", document=document, report=report,
-                 calls=calls)
+    request = build.prepare(kind, user=user, job=job, documents=documents_of(db, user_id),
+                            look=templates.chosen(user, kind), languages=_languages(db, user_id))
+    reply, body = build.draft(client, request, model=model)
+    document, report = _render(build.assemble(request, body), kind=kind, headings=build.headings(body))
+    check = build.problems(request, body, report.pages, report.last_page_chars)
+    calls = 1
+    if not check.ok:
+        # Said back once, with only what was found. Kept only if it is no worse. The faults are not logged:
+        # they quote the person's CV.
+        logger.info("docgen: %s for %s: %d page(s) over, %d number(s) not in their documents, %d other "
+                    "fault(s); asking again", kind, user_id, check.pages_over, len(check.invented),
+                    len(check.faults))
+        calls = 2
+        try:
+            _, second = build.draft(client, request, model=model,
+                                    revision=(reply, build.feedback(request, check, report.pages)))
+        except build.BuildFailed as exc:
+            logger.warning("docgen: the second %s for %s came back unusable (%s); keeping the first", kind,
+                           user_id, exc)
+        else:
+            second_document, second_report = _render(build.assemble(request, second), kind=kind,
+                                                     headings=build.headings(second))
+            second_check = build.problems(request, second, second_report.pages, second_report.last_page_chars)
+            if not second_check.worse_than(check):
+                document, report, check = second_document, second_report, second_check
+    if not check.ok:
+        # Delivered: a number the check could not find may be written another way in their CV ("1 200").
+        logger.warning("docgen: %s for %s delivered with %d page(s) over, number(s) not found in their "
+                       "documents (%s) and %d other fault(s)", kind, user_id, check.pages_over,
+                       ", ".join(check.invented) or "none", len(check.faults))
+    return _done(db, user, job, kind=kind, mode="ai", document=document, report=report, calls=calls)
 
 
 def _done(db, user: User, job: CorpusJob, *, kind: str, mode: str, document: bytes,
@@ -105,65 +107,10 @@ def _done(db, user: User, job: CorpusJob, *, kind: str, mode: str, document: byt
                  revised=calls > 1, ats_ok=report.ats_ok)
 
 
-def _cover(client, context: str, *, model: str, look: templates.Template, grounding: str | None,
-           template: str | None = None) -> tuple[bytes, pdf.PdfReport, int]:
-    """One call, no revision loop."""
-    letter = build.tailor_cover(client, context, model=model, head=look.head, style=look.style,
-                                facts_md=grounding, template=template)
-    return (*_render(letter, kind="cover"), 1)
-
-
-def _tailor_until_it_fits(client, context: str, *, model: str, base_cv: str, style: str,
-                          facts_md: str | None, template: str | None = None,
-                          role_angles: str | None = None) -> tuple[bytes, pdf.PdfReport, int]:
-    """Tailor, render once, and if the PDF is too long, say so once and tailor again.
-
-    The document that gets delivered is the one that was measured — there is no separate probe
-    render. A CV that fits is one render; only a CV that came back too long is two.
-    """
-    html = build.tailor(client, base_cv, context, model=model, style=style, facts_md=facts_md,
-                        template=template, role_angles=role_angles)
-    document, report = _render(html, kind="cv")
-
-    feedback = build.page_feedback(report.pages)
-    if feedback is None:
-        return document, report, 1
-
-    logger.info("docgen: %s pages, asking for one revision", report.pages)
-    retried = build.tailor(client, base_cv, context, model=model, style=style, facts_md=facts_md,
-                           template=template, role_angles=role_angles, feedback=feedback)
-    second, second_report = _render(retried, kind="cv")
-
-    # Keep whichever is shorter, and deliver the document that was actually measured.
-    if second_report.pages is not None and (report.pages is None
-                                            or second_report.pages < report.pages):
-        return second, second_report, 2
-    return document, report, 2
-
-
-def _render(html: str, *, kind: str) -> tuple[bytes, pdf.PdfReport]:
-    """Check the document, then render it once.
-
-    Everything that can be answered from the markup is answered before Chrome is asked: a
-    hidden-text injection costs a string scan rather than a render, and a document that fails it
-    never reaches the renderer at all.
-    """
-    leftover = build.scan_hidden(html)
-    if leftover:
-        # Fail closed.
-        raise NotBuildable(f"the generated document contained hidden content: "
-                           f"{'; '.join(leftover)}")
-
-    # The prompt is checked for markers before the call (`build._require_personalised`); this checks
-    # what came back. The document goes to an employer, so it fails closed rather than shipping a CV
-    # addressed to `<<NAME>>`.
-    markers = [marker for marker in PLACEHOLDER_MARKERS if marker in html]
-    if markers:
-        raise NotBuildable("the generated document still carried a placeholder: "
-                           f"{', '.join(markers)}")
-
+def _render(html: str, *, kind: str, headings: tuple[str, ...] = ()) -> tuple[bytes, pdf.PdfReport]:
+    """The page as a PDF, rendered once, and what an ATS reads of it."""
     document = pdf.render(html)
-    return document, pdf.inspect_pdf(document, kind=kind)
+    return document, pdf.inspect_pdf(document, kind=kind, headings=headings)
 
 
 def _load(db, user_id: _uuid.UUID, job_id: int) -> tuple[User, CorpusJob]:
@@ -178,9 +125,9 @@ def _load(db, user_id: _uuid.UUID, job_id: int) -> tuple[User, CorpusJob]:
     return user, job
 
 
-def _salary_bands(db, user_id: _uuid.UUID) -> dict | None:
-    """This user's target ask bands, from their config."""
-    return (TenantRepository(db).get_config(user_id) or {}).get("salary_bands")
+def _languages(db, user_id: _uuid.UUID) -> tuple[str, ...]:
+    """The job languages their search accepts (My search): which languages they work in."""
+    return tuple((TenantRepository(db).get_config(user_id) or {}).get("languages") or ())
 
 
 def _filename(full_name: str | None, kind: str = "cv") -> str:

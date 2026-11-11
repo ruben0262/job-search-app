@@ -32,7 +32,6 @@ def test_every_look_is_an_a4_page_with_margins(template):
     style = template.style
     assert re.search(r"@page\s*{[^}]*size:\s*A4", style), f"{template.id} is not laid out on A4"
     assert re.search(r"@page\s*{[^}]*margin:", style), f"{template.id} has no @page margin"
-    assert "<style" in template.head, f"{template.id}'s head, the AI letter's <HEAD_BLOCK>, has no style"
 
 
 def test_the_shelf_starts_with_the_most_popular_and_has_every_sector_with_a_look_of_each_kind():
