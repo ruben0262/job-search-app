@@ -17,6 +17,7 @@ def t(db):
 
 def _user(db, **fields) -> User:
     return insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x",
+                           subscription_status="active",
                            timezone="Europe/Budapest", **fields))
 
 

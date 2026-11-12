@@ -5,6 +5,8 @@ import { AiAccounts } from "../aiaccounts";
 import { Alerts } from "../alerts";
 import { api, type Ready, type Schema } from "../api";
 import { useKept } from "../kept";
+import { MembershipCard } from "../membership";
+import { AlertsForMembers } from "../alerts";
 import { Card, Error, Field, Prompt, useAction, useNewPassword } from "../ui";
 
 type Account = Schema<"AccountOut">;
@@ -51,21 +53,25 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
         <p className="small muted">
           Optional. New jobs that match your search reach you as they are found, or in one email each morning.
         </p>
-        <Alerts />
-        <div className="channel">
-          <span>
-            <span className="label">{account.active ? "Alerts are on" : "Alerts are paused"}</span>
-            <span className="hint">
-              {account.active
-                ? "Pausing stops alerts to Telegram and to this browser. Your jobs page keeps filling up."
-                : "Nothing is sent to your phone. Your jobs page keeps filling up as usual."}
-            </span>
-          </span>
-          <button type="button" className="secondary" disabled={pause.busy} onClick={() => void pause.run()}>
-            {account.active ? "Pause alerts" : "Turn alerts back on"}
-          </button>
-        </div>
-        <Error>{pause.error}</Error>
+        {dashboard.member ? (
+          <>
+            <Alerts />
+            <div className="channel">
+              <span>
+                <span className="label">{account.active ? "Alerts are on" : "Alerts are paused"}</span>
+                <span className="hint">
+                  {account.active
+                    ? "Pausing stops alerts to Telegram and to this browser. Your jobs page keeps filling up."
+                    : "Nothing is sent to your phone. Your jobs page keeps filling up as usual."}
+                </span>
+              </span>
+              <button type="button" className="secondary" disabled={pause.busy} onClick={() => void pause.run()}>
+                {account.active ? "Pause alerts" : "Turn alerts back on"}
+              </button>
+            </div>
+            <Error>{pause.error}</Error>
+          </>
+        ) : <AlertsForMembers />}
       </Card>
 
       <Card title="Your AI accounts">
@@ -80,6 +86,8 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
         ) : null}
         <Error>{withdraw.error}</Error>
       </Card>
+
+      <MembershipCard />
 
       <Card title="Your account">
         <p>{account.email}</p>
@@ -153,8 +161,8 @@ function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
       {asking ? (
         <Prompt title="Delete your account?" onClose={() => setAsking(false)}>
             <p className="small muted">
-              Your documents, words and keys are erased and your encryption key destroyed. This cannot
-              be undone.
+              Your documents, words and keys are erased and your encryption key destroyed. Your membership
+              ends at once and is not charged again. This cannot be undone.
             </p>
             <Field label="Type your password to confirm">
               <input type="password" value={password} autoFocus autoComplete="current-password"

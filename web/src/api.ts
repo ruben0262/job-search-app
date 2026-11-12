@@ -96,6 +96,8 @@ export const api = {
 export type Schema<K extends keyof components["schemas"]> = components["schemas"][K];
 
 export type Dashboard = Schema<"OnboardingDashboard"> | Schema<"ReadyDashboard">;
+export type Membership = Schema<"Membership">;
+export type Plan = Schema<"Plan">;
 export type Ready = Schema<"ReadyDashboard">;
 /** What the word screens edit. The review sends it as a plain object, so it is read as the very
  * model the save is checked against. */

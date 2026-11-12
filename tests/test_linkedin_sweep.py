@@ -25,7 +25,8 @@ def _config(*words: str, places=("germany",)) -> dict:
 
 def _user(db, config: dict, **kwargs) -> User:
     kwargs = {"status": "active", "active": True, **kwargs}
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x", **kwargs))
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x",
+                           subscription_status="active", **kwargs))
     insert(db, UserConfig(user_id=user.id, config=config))
     return user
 

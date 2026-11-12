@@ -1,11 +1,22 @@
-/** Sign in and sign up, on one screen — the first thing behind the landing page's CTAs. Signing up agrees to the
- * privacy policy and its cookies, the only way to an account (owner, 2026-11-12). */
+/** Sign in and sign up, on one screen — the first thing behind the landing page's CTAs. Signing up picks the plan
+ * (owner, 2026-11-12): free, which asks for no card, or the membership, whose payment form follows the email
+ * link; and agrees to the privacy policy and its cookies, the only way to an account. */
 import { useEffect, useState } from "react";
 
-import { ApiError, api, type Schema } from "../api";
+import { ApiError, api, type Plan, type Schema } from "../api";
+import { price } from "../membership";
+import { span } from "../time";
 import { Error, Field, useAction, useNewPassword } from "../ui";
 import { ThemeToggle } from "../theme";
 import { Brand, Wheel } from "../wheel";
+
+type Picked = "free" | "member";
+
+/** The plan the address asks for: the landing page's Member card is `#/signup?plan=member`; anything else is
+ * free. Read again by the email link's page (`Verify`), which carries it on. */
+export function planAsked(): Picked {
+  return new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("plan") === "member" ? "member" : "free";
+}
 
 export function SignIn({
   onSignedIn,
@@ -19,20 +30,26 @@ export function SignIn({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const chosen = useNewPassword();
+  const [picked, setPicked] = useState<Picked>(planAsked);
   const [agreed, setAgreed] = useState(false);
   const [sent, setSent] = useState(false);
-  // What the box agrees to (`/legal/privacy`).
+  // What the box agrees to (`/legal/privacy`), and what a membership costs (`/billing/plan`): none while Stripe
+  // is not set up, and then the free plan is the only one.
   const [policy, setPolicy] = useState<string | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
   useEffect(() => {
     if (mode !== "up") return;
     void api.get<Schema<"Disclosure">>("/legal/privacy").then((body) => setPolicy(body.version)).catch(() => undefined);
+    void api.get<Plan | null>("/billing/plan").then(setPlan).catch(() => undefined);
   }, [mode]);
+  const member = plan !== null && picked === "member";
 
   const submit = useAction(async () => {
     if (mode === "up") {
       if (!agreed) throw new ApiError(0, "Tick the box to agree to the privacy policy and cookies.");
       if (!policy) throw new ApiError(0, "The privacy policy didn't load. Reload the page and try again.");
-      await api.post("/auth/signup", { email, password: chosen.check(), consent_version: policy });
+      await api.post("/auth/signup", { email, password: chosen.check(), consent_version: policy,
+                                       plan: member ? "member" : "free" });
       setSent(true);
       return;
     }
@@ -50,10 +67,11 @@ export function SignIn({
       <AuthShell title="Check your email">
         <p className="muted">
           If <strong>{email}</strong> can be registered, a confirmation link is on its way. Open it
-          on this device and you land back here, signed up and ready.
+          on this device and you land back here, signed up{member ? ", at the form that starts your free trial"
+            : " and ready"}.
         </p>
         <p className="facts">Nothing arriving? Check spam, or have a fresh link sent.</p>
-        <ResendLink email={email} />
+        <ResendLink email={email} plan={member ? "member" : "free"} />
       </AuthShell>
     );
   }
@@ -66,6 +84,7 @@ export function SignIn({
           void submit.run();
         }}
       >
+        {mode === "up" && plan ? <Plans plan={plan} picked={picked} onPick={setPicked} /> : null}
         <Field label="Email">
           <input
             type="email"
@@ -122,13 +141,36 @@ export function SignIn({
   );
 }
 
-/** A fresh confirmation email, for an account still waiting for one. Asks for the address if it is
- * not known yet. */
-export function ResendLink({ email }: { email: string }) {
+/** The two plans, the membership's price and free days as Stripe and Admin have them. */
+function Plans({ plan, picked, onPick }: { plan: Plan; picked: Picked; onPick: (picked: Picked) => void }) {
+  const options: [Picked, string, string][] = [
+    ["free", "Free", `Every job that fits you, ${span(plan.free_delay_hours)} after members see it. No card.`],
+    ["member", "Member", `${plan.trial_days ? `${plan.trial_days} days free, then ${price(plan)}` : price(plan)}. `
+      + "Every job the moment it's found, CVs and cover letters, and alerts."],
+  ];
+  return (
+    <fieldset className="plans">
+      <legend className="label">Your plan</legend>
+      {options.map(([key, name, line]) => (
+        <label key={key} className={picked === key ? "plan on" : "plan"}>
+          <input type="radio" name="plan" value={key} checked={picked === key} onChange={() => onPick(key)} />
+          <span>
+            <strong>{name}</strong>
+            <span className="small muted">{line}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+/** A fresh confirmation email, for an account still waiting for one, going where the first one did (`plan`).
+ * Asks for the address if it is not known yet. */
+export function ResendLink({ email, plan }: { email: string; plan: Picked }) {
   const [address, setAddress] = useState(email);
   const [sent, setSent] = useState(false);
   const resend = useAction(async () => {
-    await api.post("/auth/resend", { email: address });
+    await api.post("/auth/resend", { email: address, plan });
     setSent(true);
   });
 

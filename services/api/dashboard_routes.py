@@ -11,22 +11,24 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, ValidationError
 from pymongo.database import Database
 
+from libs import settings
 from libs.corpus import salary
 from libs.corpus.boards import apply_on, board_name
 from libs.corpus.freshness import platform_windows, shelf_life
 from libs.corpus.geo import CITIES, COUNTRY_LABELS
 from libs.corpus.postings import paragraphs
+from libs.corpus.repository import TYPED
 from libs.db import get, now
 from libs.db.models import AtsToken, BuiltDocument, CorpusJob, CountryCount, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
 from libs.matching import Match, marks, norm, scan_for, their_jobs
+from libs.membership import delay_hours, is_admin, is_member, jobs_as_of
 from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
 from libs.settings import HARVEST_SOURCES, PLATFORM_TICK_MIN
 from libs.tenant import applications
-from services.api.admin_routes import admin_emails
 from services.api.deps import current_user, get_db
 from services.api.onboarding_routes import OnboardingSteps
 from services.api.saved_routes import JobDocument, job_document
@@ -51,6 +53,8 @@ class OnboardingDashboard(BaseModel):
     # `onboarding_state(...).as_dict()`, in onboarding's own model: its pages are onboarding's to define.
     onboarding: OnboardingSteps
     is_admin: bool
+    # Has a membership (`libs.membership`); without one the site is theirs a week behind, with no documents.
+    member: bool
 
 
 class JobFilters(BaseModel):
@@ -78,6 +82,8 @@ class ReadyDashboard(BaseModel):
     load — /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it."""
     stage: Literal["ready"]
     is_admin: bool
+    # Has a membership (`libs.membership`); without one the site is theirs a week behind, with no documents.
+    member: bool
     # How many jobs they said they applied to — moved only by "Mark as applied".
     applied: int
     banners: list[DashboardBanner]
@@ -163,38 +169,37 @@ class Feed(BaseModel):
     # that posts less often keeps its jobs there (`freshness.shelf_life`). Said on the page.
     shelf_hours: int
     shelf_longest_hours: int
+    # How old a job is before it reaches this list, in hours: 0 for a member, `free_delay_hours` for a free
+    # account (`libs.membership.delay_hours`). "Posted" offers only the times longer than it.
+    delay_hours: int = 0
     # More of their jobs matched than one read takes in (`libs.matching.scan_for`): the list is the newest
     # of them, and the page says so rather than call it all of them.
     cut: bool
 
 
-def _is_admin(user: User) -> bool:
-    """The same rule `require_admin` enforces, in one place."""
-    return bool(user.is_admin) or user.email.lower() in admin_emails()
-
-
 @router.get("/dashboard")
 def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)
               ) -> OnboardingDashboard | ReadyDashboard:
-    """Everything the front page shows, in one call. Opening the site is being online: the time is
-    kept to the minute, for the admin's account page."""
+    """Everything the front page shows, in one call. Opening the site is being online: the time is kept to
+    the minute, for the admin's account page."""
     user = get(db, User, user_id)
     db[User.COLLECTION].update_one(
         {"_id": user_id, "$or": [{"last_active_at": None},
                                  {"last_active_at": {"$lt": now() - timedelta(minutes=1)}}]},
         {"$set": {"last_active_at": now()}})
+    member = is_member(db, user_id)
     state = onboarding_state(db, user_id)
     # Finished once is not enough: a search saved before the minimums (owner, 2026-11-04) is finished on
     # its page, since without a country no job comes in for it.
     unfinished = {page.key for page in state.pages if not page.complete}
     if user.onboarding_completed_at is None or "review" in unfinished:
         # Nothing below is meaningful yet, and empty panels read as a broken product.
-        return OnboardingDashboard(stage="onboarding", is_admin=_is_admin(user),
+        return OnboardingDashboard(stage="onboarding", is_admin=is_admin(user), member=member,
                                    onboarding=OnboardingSteps(**state.as_dict()))
 
     _, applied = marks(db, user_id)
-    return ReadyDashboard(stage="ready", is_admin=_is_admin(user), applied=len(applied),
-                          banners=_banners(db, user), job_filters=_job_filters(user))
+    return ReadyDashboard(stage="ready", is_admin=is_admin(user), member=member, applied=len(applied),
+                          banners=_banners(db, user, member), job_filters=_job_filters(user))
 
 
 def _job_filters(user: User) -> JobFilters:
@@ -242,9 +247,22 @@ def stats(db: Database = Depends(get_db)) -> Reach:
 
 
 
-def _banners(db: Database, user: User) -> list[DashboardBanner]:
+def _span(hours: int) -> str:
+    """A time as the pages say it (`web/src/time.ts`, `span`): "36 hours", "7 days"."""
+    return f"{hours} hours" if hours < 48 or hours % 24 else f"{hours // 24} days"
+
+
+def _banners(db: Database, user: User, member: bool) -> list[DashboardBanner]:
     """What the jobs page says above the list, one thing at a time. Alerts are optional, so having
-    none is a quiet offer rather than a warning — and a Telegram that stopped is a button to press."""
+    none is a quiet offer rather than a warning — and a Telegram that stopped is a button to press. A free
+    account is told first what it is looking at, and what a membership adds: alerts are members' too."""
+    if not member:
+        delay = int(settings.get(db, "free_delay_hours"))
+        text = "CVs, cover letters and alerts come with a membership."
+        if delay:
+            text = (f"You see jobs {_span(delay)} after members see them. Members see each one the moment "
+                    "it's found, and apply among the first.")
+        return [DashboardBanner(level="info", key="free", text=text)]
     if user.telegram_status == "broken":
         return [DashboardBanner(level="warning", key="telegram_broken",
                                 text="Telegram stopped taking our messages.")]
@@ -286,11 +304,18 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     jobs" and a refresh made the list 15 longer (owner, 2026-11-06).
 
     A job they skipped or applied to is gone from it for good: Applied lists the second."""
-    as_of = now()
+    # A free account sees a job `free_delay_hours` after a member does (`libs.membership`), so a "Posted"
+    # shorter than that would be empty: it is all of their list instead, which is what the page shows it as.
+    # New jobs are counted from when its list stands, the newest a job in it can have arrived.
+    delay = delay_hours(db, user := get(db, User, user_id))
+    behind = jobs_as_of(db, user, delay)
+    if since_hours and since_hours <= delay:
+        since_hours = None
+    as_of = behind or now()
     shortest, longest = shelf_life(platform_windows(db))
-    cutoff = as_of - timedelta(hours=since_hours) if since_hours else None
+    cutoff = now() - timedelta(hours=since_hours) if since_hours else None
     # The read reaches as far back as asked, "Any time" being the longest shelf life (`scan_for`).
-    read = their_jobs(db, get(db, User, user_id), since=cutoff, scan=scan_for(since_hours or longest))
+    read = their_jobs(db, user, since=cutoff, scan=scan_for(since_hours or longest), as_of=behind)
     # The time asked is how the list is shown, so what the filters offer is counted inside it too: "golang 5"
     # beside a list of 2 from the last day disagreed (2026-11-07).
     visible = [match for match in read if cutoff is None or _when(match) >= cutoff]
@@ -338,7 +363,8 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
                            for code, count in countries.most_common()],
                 cities=[FeedPlace(value=slug, label=CITIES[slug].label if slug in CITIES else slug,
                                   jobs=count) for slug, count in cities.most_common()],
-                as_of=as_of, shelf_hours=shortest, shelf_longest_hours=longest, cut=read.cut)
+                as_of=as_of, shelf_hours=shortest, shelf_longest_hours=longest, delay_hours=delay,
+                cut=read.cut)
 
 
 def _when(match: Match) -> datetime:
@@ -372,10 +398,14 @@ class JobDescription(BaseModel):
 
 @router.get("/jobs/{job_id}/description")
 def job_description(job_id: int, db: Database = Depends(get_db),
-                    _user_id: _uuid.UUID = Depends(current_user)) -> JobDescription:
+                    user_id: _uuid.UUID = Depends(current_user)) -> JobDescription:
     """A posting's whole description, for a card that was asked to show it: as stored, or in paragraphs
     if it was stored as one line (`paragraphs`)."""
-    found = db[CorpusJob.COLLECTION].find_one({"_id": job_id}, {"description": 1})
+    where: dict = {"_id": job_id}
+    if (behind := jobs_as_of(db, get(db, User, user_id))) is not None:
+        # Not the text of a job a free account's list does not show yet, asked for by its number.
+        where["$or"] = [{"source": TYPED}, {"described_at": {"$lte": behind}}]
+    found = db[CorpusJob.COLLECTION].find_one(where, {"description": 1})
     if not found or not found.get("description"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no description for that job")
     return JobDescription(text=paragraphs(found["description"]))
@@ -461,7 +491,11 @@ def mark_job(job_id: int, mark: Literal["applied", "hidden"], request: Request,
              db: Database = Depends(get_db),
              user_id: _uuid.UUID = Depends(current_user)) -> JobMarks:
     """PUT records the mark, DELETE takes it back. Only ever this person's own row."""
-    if not db[CorpusJob.COLLECTION].count_documents({"_id": job_id}, limit=1):
+    where: dict = {"_id": job_id}
+    if request.method == "PUT" and (behind := jobs_as_of(db, get(db, User, user_id))) is not None:
+        # A free account marks only what its list shows: Applied would show the rest of a newer job.
+        where["$or"] = [{"source": TYPED}, {"described_at": {"$lte": behind}}]
+    if not db[CorpusJob.COLLECTION].count_documents(where, limit=1):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such job")
     state = record_state(db, user_id, job_id, **{_MARKS[mark]: now() if request.method == "PUT" else None})
     audit(logger, "job.marked", user=user_id, job=job_id, mark=mark, on=request.method == "PUT")

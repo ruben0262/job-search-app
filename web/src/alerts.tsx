@@ -203,6 +203,16 @@ export function PushButton() {
 }
 
 /** Every channel, each with where it stands. */
+/** Where the alerts are, for an account without a membership: they come with one (owner, 2026-11-12), and a
+ * channel set up without it would wait in silence, with nothing to say why. */
+export function AlertsForMembers() {
+  return (
+    <p className="small">
+      Alerts come with a membership. <a href="#/upgrade">Become a member</a>
+    </p>
+  );
+}
+
 export function Alerts() {
   return (
     <div className="channels">

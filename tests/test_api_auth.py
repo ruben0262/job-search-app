@@ -57,9 +57,13 @@ def _verify_token(db, email: str) -> str | None:
     return token.id if token else None
 
 
-def _link_token(mailer: ConsoleSender) -> str:
+def _link(mailer: ConsoleSender) -> str:
     (_, _, body) = mailer.sent[-1]
-    return body.split("token=")[1].split()[0]
+    return next(word for word in body.split() if "token=" in word)
+
+
+def _link_token(mailer: ConsoleSender) -> str:
+    return _link(mailer).split("token=")[1].split("&")[0]
 
 
 # ── the account-existence oracle ──────────────────────────────────────────────────────────────
@@ -110,6 +114,23 @@ def test_the_account_holds_what_was_agreed_to_and_when(client):
     user = find_one(db, User, {"email": email})
     assert user.processing_consent_version == DISCLOSURE_VERSION
     assert user.processing_consent_at is not None
+
+
+def test_a_member_signing_up_is_sent_on_to_the_payment_form(client):
+    """The Member choice is carried by the email link (owner, 2026-11-12: the card is asked for after); the
+    free choice, and an old page that sends none, land on the site as before. A fresh link goes the same
+    way."""
+    http, _db, mailer = client
+    member, free = _email(), _email()
+
+    _signup(http, member, plan="member")
+    assert _link(mailer).endswith("&plan=member")
+    http.post("/auth/resend", json={"email": member, "plan": "member"})
+    assert _link(mailer).endswith("&plan=member"), "the fresh link goes where the first did"
+
+    _signup(http, free)
+    assert "plan=" not in _link(mailer)
+    assert _signup(http, _email(), plan="gold").status_code == 422
 
 
 def test_a_login_for_an_unknown_address_looks_like_a_wrong_password(client):

@@ -41,7 +41,8 @@ def api(db, monkeypatch):
 
     monkeypatch.setattr("services.api.ai_account_routes.validate_credential",
                         lambda kind, value, **kw: ValidationResult(True))
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                           subscription_status="active", status="active",
                            onboarding_completed_at=now()))
     store = SecretStore(db, KeyRing.from_env({"SECRETS_KEK": f"k1:{generate_key()}"}))
     app.dependency_overrides[deps.get_store] = lambda: store
@@ -148,7 +149,8 @@ def test_another_persons_account_cannot_be_switched_or_removed(api):
 
     http, db, _, _ = api
     (account,) = _key(http).json()["accounts"]
-    stranger = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    stranger = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                               subscription_status="active", status="active"))
     http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
 
     assert http.get("/ai-accounts").json()["accounts"] == []
@@ -236,8 +238,10 @@ def test_accounts_linked_before_the_change_are_settled_once(db):
     from libs.db.models import User, UserSecret
     from libs.llm.accounts import settle
 
-    alice = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x"))
-    bob = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x"))
+    alice = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                            subscription_status="active"))
+    bob = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                          subscription_status="active"))
     rows = [{"user_id": alice.id, "kind": "gemini_api"}, {"user_id": alice.id, "kind": "claude_api"},
             {"user_id": bob.id, "kind": "claude_oauth"}, {"user_id": bob.id, "kind": "telegram_bot"}]
     # As the old rules wrote them: no label, no switch, and a kind the new rules no longer allow.

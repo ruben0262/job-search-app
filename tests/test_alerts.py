@@ -33,7 +33,8 @@ def _person(db, *, telegram=True, browsers=0, joined_minutes_ago=24 * 60):
     from libs.db.models import PushSubscription, User, UserConfig
 
     word = f"wrangler{uuid.uuid4().hex[:8]}"
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                           subscription_status="active", status="active",
                            active=True, telegram_status="connected" if telegram else "unconfigured",
                            telegram_chat_id="555" if telegram else None,
                            created_at=now() - timedelta(minutes=joined_minutes_ago)))
@@ -464,7 +465,8 @@ def api(monkeypatch, db):
     from libs.db.models import User
     from services.api.app import app
 
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                           subscription_status="active", status="active"))
     with TestClient(app, base_url="https://testserver") as http:
         http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
         yield http, db, user

@@ -20,7 +20,12 @@ class User(Document):
     COLLECTION = "users"
     OWNER = None
     CHOICES = {"status": USER_STATUSES, "telegram_status": TELEGRAM_STATUSES}  # noqa: RUF012
-    INDEXES = (IndexModel("email", unique=True, name="email_unique"),)
+    INDEXES = (
+        IndexModel("email", unique=True, name="email_unique"),
+        # How a payment Stripe reports finds its account, and one account to a Stripe customer.
+        IndexModel("stripe_customer_id", unique=True, name="one_customer",
+                   partialFilterExpression={"stripe_customer_id": {"$type": "string"}}),
+    )
     # Whether the person could open the profile files the setup agents wrote: nothing read it once the
     # file tiles left the site, and the admin's switch for it went on 2026-11-04. And when the account's
     # own LinkedIn search was next due: LinkedIn is read for everybody at once since 2026-11-04.
@@ -68,6 +73,29 @@ class User(Document):
     cover_template: str | None = None
     # This account's data key, wrapped by the platform key (`libs.secrets`).
     wrapped_dek: bytes | None = None
+    # Their membership: a Stripe subscription, seven days free and then billed (owner, 2026-11-11). Stripe is
+    # the record; these are its answer when last asked (`billing_synced_at`), written only by
+    # `services.api.billing_routes.sync` and read by `libs.membership`. Their customer at Stripe, made the
+    # first time the payment form opens for them.
+    stripe_customer_id: str | None = None
+    # Their newest subscription and Stripe's word for it: trialing, active, past_due, unpaid, paused,
+    # canceled, incomplete or incomplete_expired. None: they never had one. Not in CHOICES: the word is
+    # Stripe's, and one it adds must still be copied, where it reads as not paying.
+    subscription_id: str | None = None
+    subscription_status: str | None = None
+    trial_ends_at: datetime | None = None
+    # The end of the period paid for, or of the trial: when the next payment is taken, unless it ends.
+    period_ends_at: datetime | None = None
+    # When it stops, because they cancelled it: it runs until then and nothing more is charged.
+    cancels_at: datetime | None = None
+    # Their last payment that took money (a trial's 0 is not one), in the smallest unit of `currency`.
+    last_paid_at: datetime | None = None
+    last_paid_amount: int | None = None
+    currency: str | None = None
+    billing_synced_at: datetime | None = None
+    # When an admin let them use the whole site without a membership, whatever Stripe says (owner,
+    # 2026-11-11). None: not let in.
+    free_access_at: datetime | None = None
     created_at: datetime = field(default_factory=now)
     updated_at: datetime = field(default_factory=now)
 

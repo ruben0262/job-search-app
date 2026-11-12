@@ -17,3 +17,5 @@ python-docx>=1.1          # same, for .docx
 fpdf2>=2.8.9,<2.9         # libs/documents/remake: an older upload's PDF, written again from its text
 beautifulsoup4>=4.12     # libs/corpus/postings: a pasted job's page, its JSON-LD and its text
 langdetect>=1.0.9        # libs/corpus/langfilter: a kept job's language, read where its text is stored
+stripe>=16.1,<17          # the membership (billing_routes). Capped at the major: each pins a Stripe
+                           # API version, and fields move between them (leadops, 2026-05)

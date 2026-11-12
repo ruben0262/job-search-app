@@ -4,7 +4,8 @@
  * /documents/build/{id}` says where it is, and its `download_url` is the PDF. Every button asks here.
  * The buttons show for everyone (owner, 2026-11-10); pressed without an AI account in use, or without
  * the CV or cover letter it is written from, the server says what is missing (`libs.documents.needs`),
- * and a toast says it, with the way to each. The server puts it in the bell too.
+ * and a toast says it, with the way to each. Pressed by a free account, the toast is the way to a
+ * membership, which the documents come with (owner, 2026-11-12). The server puts each in the bell too.
  */
 import { useEffect, useState } from "react";
 
@@ -53,7 +54,10 @@ export function useBuild(jobId: number, kind: Ask["kind"]) {
       setBuild(null);
       const refusal = caught instanceof ApiError ? caught : new ApiError(0, "");
       const missing = refusal.status === 409 ? (refusal.data as { missing?: string[] } | undefined)?.missing : null;
-      if (missing) {
+      if (refusal.status === 402) {
+        notificationsChanged();
+        toast({ text: refusal.detail, links: [{ href: "#/upgrade", label: "Become a member" }] });
+      } else if (missing) {
         notificationsChanged();
         toast({ text: refusal.detail, links: [
           ...missing.includes("account") ? [{ href: "#/settings", label: "Open Settings" }] : [],

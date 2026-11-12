@@ -3341,6 +3341,45 @@ account keeps its login, words, documents and settings ✅ (tested against a Pos
 tag), and the jobs page answers in under 300 ms against Atlas — 337–451 ms measured from the owner's
 machine, which depends on the region (owner's item 8).
 
+## Phase 10 — the membership, through Stripe (added 2026-11-11)
+
+**Why.** The owner's decision: one subscription, seven days free and then billed automatically. Since
+2026-11-12 the site is everybody's: a free account signs up with no card, sets up its search and uses every
+page, seeing each job a week after members do, with no CVs, cover letters or alerts; the membership adds
+those, and is picked at sign-up or later.
+
+**Built (2026-11-11 and 2026-11-12, CHANGELOG):** the one rule for who has a membership
+(`libs/membership.py`), asked by the Jobs page, the documents and the alerts; the sign-up page's Free and
+Member choice, the password typed twice and the privacy-and-cookies box; Stripe's payment fields drawn in the
+site's own page and colours, in either theme; Stripe's portal from Settings; Stripe read whole on its webhook
+and when a person comes back; the account's membership fields; Admin's Membership column, card and *Free
+access* switch, which holds what Stripe charges while it is on; an account's Stripe customer deleted before
+the account; the trial's length and the free plan's wait in Admin. Jobs stay thirty days, for everybody.
+
+**Tried on Stripe's test mode, 2026-11-11 (CHANGELOG, evening):** seven runs and 76 checks in a real browser
+with real webhooks and test clocks: the trial, cancelling in it, the first payment, a renewal, cancelling
+after, a failed payment paid in the portal, one never paid, coming back, and an account deleted while
+paying. **2026-11-12:** the site's own form, signing up as a member, a card asking for the bank's check, and
+free access on and off in a trial and over a failed payment (CHANGELOG). `tests/test_billing_stripe.py`
+re-checks Stripe's part for every `stripe` upgrade.
+
+**Decided (owner, 2026-11-11):** every account that exists at the deploy gets free access, once
+(`libs.membership.free_for_existing`). **(2026-11-12):** the free plan above; the trial only with the
+membership's card; jobs kept thirty days; alerts are members'.
+
+**Waiting on the owner, for live (deploy/SERVER.md step 10):**
+
+1. Which live account: one of Mahoraga's own, or the existing one beside other products (whose portal
+   is then shared: plan switching stays off).
+2. In it: the product with a **recurring monthly** £4.99 price, a restricted key, the webhook endpoint, the
+   portal (activated in the dashboard, as the sandbox's is), failed payments set to cancel after the
+   retries, and the trial-reminder and receipt emails. Then the four values in `certificates/server.env`
+   and a deploy of every service. Adaptive Pricing stays on (owner, 2026-11-12).
+3. Optional, each a Stripe setting rather than code: VAT through Stripe Tax, promotion codes, a yearly price.
+
+**Done when** the first real member has started a trial on the live site and cancelled it in the portal
+without being charged.
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.
@@ -3351,7 +3390,7 @@ Do not build these before Phase 4, regardless of how appealing they look mid-bui
 | Redis | Postgres `SKIP LOCKED` is sufficient below ~100 users |
 | pgvector | Nothing does similarity *search* yet |
 | Non-Claude labelling models | Needs a relabel A/B per `MODEL_SELECTION_RESEARCH.md` §8; the ladder is Haiku+batch+cache first |
-| Billing / payments | Business decision, not a technical blocker |
+| ~~Billing / payments~~ | Built 2026-11-11: Phase 10 |
 | Shared bootstrap model trained on all users' labels | Consent surface; launch with operator-only labels (`COLD_START_PLAN.md` §2) |
 | Postgres row-level security | Second layer; get the repository layer right first |
 

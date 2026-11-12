@@ -50,6 +50,9 @@ NEEDS_AI_ACCOUNT = Event("document.needs_ai_account", "warning", "Link your AI a
                          "#/settings")
 NEEDS_UPLOAD = Event("document.needs_upload", "warning", "Upload what your documents are made from",
                      "#/documents")
+# A Make button pressed by a free account (owner, 2026-11-12: the documents are a member's).
+NEEDS_MEMBERSHIP = Event("document.needs_membership", "info",
+                         "Making CVs and cover letters comes with a membership", "#/upgrade")
 
 def notify(db: Database, user_id: _uuid.UUID, event: Event, body: str = "") -> None:
     """Record one. An unread one of the same kind is brought up to date rather than repeated."""

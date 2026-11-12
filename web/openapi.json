@@ -75,6 +75,30 @@
             "title": "Active",
             "type": "boolean"
           },
+          "billing_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Synced At"
+          },
+          "cancels_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancels At"
+          },
           "created_at": {
             "anyOf": [
               {
@@ -86,6 +110,17 @@
               }
             ],
             "title": "Created At"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
           },
           "email": {
             "title": "Email",
@@ -102,6 +137,18 @@
               }
             ],
             "title": "Email Verified At"
+          },
+          "free_access_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Access At"
           },
           "full_name": {
             "anyOf": [
@@ -134,6 +181,33 @@
             ],
             "title": "Last Active At"
           },
+          "last_paid_amount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Paid Amount"
+          },
+          "last_paid_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Paid At"
+          },
+          "member": {
+            "title": "Member",
+            "type": "boolean"
+          },
           "onboarded": {
             "title": "Onboarded",
             "type": "boolean"
@@ -150,13 +224,59 @@
             ],
             "title": "Onboarding Completed At"
           },
+          "period_ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Ends At"
+          },
           "status": {
             "title": "Status",
             "type": "string"
           },
+          "stripe_customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stripe Customer Id"
+          },
+          "subscription_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subscription Status"
+          },
           "telegram": {
             "title": "Telegram",
             "type": "string"
+          },
+          "trial_ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Ends At"
           }
         },
         "required": [
@@ -171,7 +291,18 @@
           "created_at",
           "email_verified_at",
           "onboarding_completed_at",
-          "last_active_at"
+          "last_active_at",
+          "member",
+          "free_access_at",
+          "stripe_customer_id",
+          "subscription_status",
+          "trial_ends_at",
+          "period_ends_at",
+          "cancels_at",
+          "last_paid_at",
+          "last_paid_amount",
+          "currency",
+          "billing_synced_at"
         ],
         "title": "AdminAccount",
         "type": "object"
@@ -686,6 +817,19 @@
           "state"
         ],
         "title": "BuildStatus",
+        "type": "object"
+      },
+      "Checkout": {
+        "properties": {
+          "client_secret": {
+            "title": "Client Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_secret"
+        ],
+        "title": "Checkout",
         "type": "object"
       },
       "ConfigChoice": {
@@ -1363,6 +1507,11 @@
             "title": "Cut",
             "type": "boolean"
           },
+          "delay_hours": {
+            "default": 0,
+            "title": "Delay Hours",
+            "type": "integer"
+          },
           "jobs": {
             "items": {
               "$ref": "#/components/schemas/FeedJob"
@@ -1796,6 +1945,19 @@
         "title": "FoundInDocuments",
         "type": "object"
       },
+      "FreeAccess": {
+        "properties": {
+          "on": {
+            "title": "On",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "title": "FreeAccess",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2138,6 +2300,19 @@
         "title": "LimitPatch",
         "type": "object"
       },
+      "Link": {
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "Link",
+        "type": "object"
+      },
       "LinkAnswer": {
         "properties": {
           "draft": {
@@ -2292,6 +2467,151 @@
         "title": "MarkRead",
         "type": "object"
       },
+      "Membership": {
+        "description": "Where a person's membership stands, for the page that asks them to pay and for Settings.",
+        "properties": {
+          "can_manage": {
+            "title": "Can Manage",
+            "type": "boolean"
+          },
+          "can_start": {
+            "title": "Can Start",
+            "type": "boolean"
+          },
+          "cancels_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancels At"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "free_access": {
+            "title": "Free Access",
+            "type": "boolean"
+          },
+          "last_paid_amount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Paid Amount"
+          },
+          "last_paid_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Paid At"
+          },
+          "member": {
+            "title": "Member",
+            "type": "boolean"
+          },
+          "period_ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Ends At"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Plan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishable_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishable Key"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "trial_days": {
+            "title": "Trial Days",
+            "type": "integer"
+          },
+          "trial_ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Ends At"
+          }
+        },
+        "required": [
+          "member",
+          "free_access",
+          "status",
+          "can_start",
+          "trial_days",
+          "trial_ends_at",
+          "period_ends_at",
+          "cancels_at",
+          "last_paid_at",
+          "last_paid_amount",
+          "currency",
+          "can_manage",
+          "plan",
+          "publishable_key"
+        ],
+        "title": "Membership",
+        "type": "object"
+      },
       "NameAndLinks": {
         "properties": {
           "full_name": {
@@ -2409,6 +2729,10 @@
             "title": "Is Admin",
             "type": "boolean"
           },
+          "member": {
+            "title": "Member",
+            "type": "boolean"
+          },
           "onboarding": {
             "$ref": "#/components/schemas/OnboardingSteps"
           },
@@ -2421,7 +2745,8 @@
         "required": [
           "stage",
           "onboarding",
-          "is_admin"
+          "is_admin",
+          "member"
         ],
         "title": "OnboardingDashboard",
         "type": "object"
@@ -2558,6 +2883,45 @@
           "new_password"
         ],
         "title": "PasswordChange",
+        "type": "object"
+      },
+      "Plan": {
+        "description": "The one membership: its price as Stripe has it, and the free trial a new member gets; and, for the\nsign-up page's choice, how far behind a member the free plan sees each job (`libs.membership`).",
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "free_delay_hours": {
+            "title": "Free Delay Hours",
+            "type": "integer"
+          },
+          "interval": {
+            "title": "Interval",
+            "type": "string"
+          },
+          "interval_count": {
+            "title": "Interval Count",
+            "type": "integer"
+          },
+          "trial_days": {
+            "title": "Trial Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "amount",
+          "currency",
+          "interval",
+          "interval_count",
+          "trial_days",
+          "free_delay_hours"
+        ],
+        "title": "Plan",
         "type": "object"
       },
       "ProfileLink": {
@@ -2735,6 +3099,10 @@
           "job_filters": {
             "$ref": "#/components/schemas/JobFilters"
           },
+          "member": {
+            "title": "Member",
+            "type": "boolean"
+          },
           "stage": {
             "const": "ready",
             "title": "Stage",
@@ -2744,6 +3112,7 @@
         "required": [
           "stage",
           "is_admin",
+          "member",
           "applied",
           "banners",
           "job_filters"
@@ -2756,6 +3125,15 @@
           "email": {
             "format": "email",
             "title": "Email",
+            "type": "string"
+          },
+          "plan": {
+            "default": "free",
+            "enum": [
+              "free",
+              "member"
+            ],
+            "title": "Plan",
             "type": "string"
           }
         },
@@ -3182,6 +3560,15 @@
             "maxLength": 256,
             "minLength": 9,
             "title": "Password",
+            "type": "string"
+          },
+          "plan": {
+            "default": "free",
+            "enum": [
+              "free",
+              "member"
+            ],
+            "title": "Plan",
             "type": "string"
           }
         },
@@ -5026,6 +5413,62 @@
         ]
       }
     },
+    "/admin/users/{user_id}/free-access": {
+      "put": {
+        "description": "Give an account everything a membership gives without paying, or stop: over whatever Stripe says. A\nsubscription they have stops charging while it is on and starts again when it is off (`hold_billing`).",
+        "operationId": "set_free_access_admin_users__user_id__free_access_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FreeAccess"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Free Access Admin Users  User Id  Free Access Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Free Access",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/users/{user_id}/limits/{key}": {
       "put": {
         "description": "Set one ceiling on one account, or clear it to unlimited.",
@@ -5753,6 +6196,124 @@
         ]
       }
     },
+    "/billing": {
+      "get": {
+        "description": "Their membership as last read from Stripe: what Settings shows.",
+        "operationId": "membership_billing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Membership"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Membership",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/billing/checkout": {
+      "post": {
+        "description": "Open the payment form: a new membership, with the free trial if they never had one. Opening it ends\nany form opened before, so two tabs cannot become two memberships.",
+        "operationId": "checkout_billing_checkout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Checkout"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Checkout",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/billing/plan": {
+      "get": {
+        "description": "Public: the sign-up page says what a membership costs before anybody has an account.",
+        "operationId": "public_plan_billing_plan_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Plan"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Public Plan Billing Plan Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Public Plan",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/billing/portal": {
+      "post": {
+        "description": "Stripe's page for their membership: pay what is owed, change the card, read invoices, cancel. It\ncomes back to Settings, which reads Stripe again.",
+        "operationId": "portal_billing_portal_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Link"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Portal",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/billing/refresh": {
+      "post": {
+        "description": "Stripe read again for somebody back from its form or its portal, so what they did there shows at\nonce.",
+        "operationId": "refresh_billing_refresh_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Membership"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/contact": {
       "get": {
         "description": "Where the form's messages go, for anyone who would rather use their own email app.",
@@ -5817,7 +6378,7 @@
     },
     "/dashboard": {
       "get": {
-        "description": "Everything the front page shows, in one call. Opening the site is being online: the time is\nkept to the minute, for the admin's account page.",
+        "description": "Everything the front page shows, in one call. Opening the site is being online: the time is kept to\nthe minute, for the admin's account page.",
         "operationId": "dashboard_dashboard_get",
         "responses": {
           "200": {
@@ -5909,7 +6470,7 @@
     },
     "/documents/build": {
       "post": {
-        "description": "Queue one CV or cover letter for one job.\n\nAsked again while it waits, it is the same build, answered before any check: a second click must\nnot be refused for the allowance its own first click used.",
+        "description": "Queue one CV or cover letter for one job.\n\nAsked again while it waits, it is the same build, answered before any check: a second click must\nnot be refused for the allowance its own first click used. A free account makes none (owner,\n2026-11-12): 402, and the bell says where the membership is.",
         "operationId": "build_document_documents_build_post",
         "requestBody": {
           "content": {

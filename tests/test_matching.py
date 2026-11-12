@@ -118,13 +118,16 @@ def test_a_minimum_salary_drops_what_pays_less_and_keeps_what_does_not_say(accou
 
 @needs_db
 def test_no_green_words_means_no_jobs_rather_than_every_job(account):
-    from libs.matching import matching_jobs
+    from libs.matching import matching_jobs, their_jobs
 
     db, user = account
     _search(db, user, {"sections": [{"platform": "all", "keywords": []}]})
     _jobs(db, ("Backend Engineer", "", True, 1))
 
     assert matching_jobs(db, user) == []
+    # And the Jobs page's own list, which answered 500 here: a plain list has no `cut` (2026-11-11).
+    listed = their_jobs(db, user)
+    assert listed == [] and listed.cut is False
 
 
 @needs_db

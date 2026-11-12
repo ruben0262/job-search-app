@@ -1,8 +1,9 @@
-/** The email confirmation link lands here: `#/verify?token=…`. A working link signs you in. */
+/** The email confirmation link lands here: `#/verify?token=…`. A working link signs you in, and one from the
+ * sign-up page's Member choice (`&plan=member`) goes on to the payment form. */
 import { useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "../api";
-import { AuthShell, ResendLink } from "./SignIn";
+import { AuthShell, ResendLink, planAsked } from "./SignIn";
 
 export function Verify({ onDone }: { onDone: () => void | Promise<void> }) {
   const [failed, setFailed] = useState<string | null>(null);
@@ -23,7 +24,7 @@ export function Verify({ onDone }: { onDone: () => void | Promise<void> }) {
       // The session first, then the route, exactly as signing in does: straight into the app.
       .then(async () => {
         await onDone();
-        window.location.hash = "/";
+        window.location.hash = planAsked() === "member" ? "/upgrade" : "/";
       })
       .catch((error: unknown) => {
         setFailed(error instanceof ApiError ? error.detail : "That link did not work.");
@@ -43,7 +44,7 @@ export function Verify({ onDone }: { onDone: () => void | Promise<void> }) {
       <p className="muted" style={{ marginBottom: "1.75rem" }}>
         {failed}
       </p>
-      <ResendLink email="" />
+      <ResendLink email="" plan={planAsked()} />
     </AuthShell>
   );
 }

@@ -36,6 +36,8 @@ services:
       ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}
       ADZUNA_APP_KEY: ${ADZUNA_APP_KEY:-}
       FINDWORK_API_KEY: ${FINDWORK_API_KEY:-}
+      # LinkedIn is searched for members' countries only (`libs.membership`), and the admins are members.
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       # Inside the container; bind-mounted to ./logs on the host below. Without the mount a
       # `compose run --rm` harvest writes its log into a filesystem that is deleted the moment the
       # cycle exits — which is precisely the run you want to read afterwards.
@@ -158,6 +160,8 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_DAILY_CAP: ${MAIL_DAILY_CAP:-400}
+      # Alerts go to members only (`libs.membership`), and the admins are members.
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       LOG_DIR: /var/log/jobsearch
       WORKER_NAME: notifier-1
     volumes:
@@ -211,6 +215,12 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       # A pasted LinkedIn link is read through the site's proxy, as the harvest reads LinkedIn.
       HARVEST_PROXY: ${HARVEST_PROXY:-}
+      # The membership (`services/api/billing_routes.py`). `:-`, by the rule at cloudflared below: without
+      # them the API says so at start and on every payment tried, and a `:?` would stop the harvest too.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       LOG_DIR: /var/log/jobsearch
     volumes:
       - ../logs:/var/log/jobsearch

@@ -2,7 +2,7 @@
  * held back only so a person stays on a screen until they press its button. */
 import { useState } from "react";
 
-import { Alerts } from "../alerts";
+import { Alerts, AlertsForMembers } from "../alerts";
 import { api, type Schema } from "../api";
 import { ThemeToggle } from "../theme";
 import { Brand } from "../wheel";
@@ -13,8 +13,10 @@ import { WordsForm } from "./WordsPage";
 /** The three steps, as the bar over each screen names them. */
 const STEPS = [["documents", "Your CV"], ["review", "Your search"], ["done", "Done"]] as const;
 
-export function Onboarding({ state, onChanged }: {
+export function Onboarding({ state, member, onChanged }: {
   state: Schema<"OnboardingSteps">;
+  /** Has a membership: alerts are a member's (`AlertsForMembers`). */
+  member: boolean;
   onChanged: () => void;
 }) {
   const [viewing, setViewing] = useState<string | null>(null);
@@ -94,7 +96,7 @@ export function Onboarding({ state, onChanged }: {
               <section className="optional">
                 <h2>Get alerts</h2>
                 <p className="small muted">Optional. New jobs by Telegram, in this browser, or by email.</p>
-                <Alerts />
+                {member ? <Alerts /> : <AlertsForMembers />}
               </section>
             </>
           )}

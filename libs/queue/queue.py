@@ -14,6 +14,7 @@ from libs import settings
 from libs.db import find, insert, now
 from libs.db.models import CorpusJob, LanePause, QueueJob, User
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, LANES, MAX_ATTEMPTS
+from libs.membership import members
 from libs.notify import reachable
 from libs.notify.digest import due
 
@@ -96,8 +97,9 @@ def dispatch_due_notifications(db: Database) -> int:
     newest = db[CorpusJob.COLLECTION].find_one({}, {"first_seen_at": 1}, sort=[("first_seen_at", -1)])
     if newest is None:
         return 0
+    # Members only (`libs.membership`): a job alert is the site's content, as the jobs page is.
     accounts = db[User.COLLECTION].distinct(
-        "_id", {"$and": [{"active": True, "status": "active"}, reachable(db)]})
+        "_id", {"$and": [{"active": True, "status": "active"}, reachable(db), members()]})
     last_run = {row["_id"]: row["last"] for row in db[QueueJob.COLLECTION].aggregate([
         {"$match": {"lane": "notify", "state": "done", "user_id": {"$in": accounts}}},
         {"$group": {"_id": "$user_id", "last": {"$max": "$finished_at"}}}])}
@@ -115,7 +117,8 @@ def dispatch_due_digests(db: Database) -> int:
     the alerts, so it has no clock of its own; the `digest` dedup key keeps it to one at a time."""
     hour = settings.get(db, "email_digest_hour")
     enqueued = 0
-    for user in find(db, User, {"email_alerts": True, "active": True, "status": "active"}):
+    for user in find(db, User, {"$and": [{"email_alerts": True, "active": True, "status": "active"},
+                                         members()]}):
         if due(db, user, hour) and enqueue(db, "notify", user.id, payload={"digest": True},
                                            dedup_key="digest") is not None:
             enqueued += 1

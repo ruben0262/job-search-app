@@ -8,7 +8,8 @@ First the AI accounts linked before 2026-11-09 are settled (`libs.llm.accounts.s
 nothing once done: under the rules they were written with, since the new ones refuse any change to a
 row of a kind they no longer allow, and the prune changes every row it removes a retired field from.
 Then the chart's counts kept before 2026-11-10 are split by source (`libs.ops.countries.split_by_source`),
-which also does nothing once done.
+which also does nothing once done. Then every account from before memberships began is given free access,
+once ever (`libs.membership.free_for_existing`).
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import sys
 from libs.db import database, ensure_schema
 from libs.db.models import MODELS
 from libs.llm.accounts import settle
+from libs.membership import free_for_existing
 from libs.ops.countries import split_by_source
 
 
@@ -25,6 +27,8 @@ def main() -> int:
     settle(db)
     if split := split_by_source(db):
         print(f"country_counts: {split} count(s) kept before sources were, split by source")
+    if freed := free_for_existing(db):
+        print(f"users: {freed} account(s) from before memberships given free access")
     ensure_schema(db, prune="--prune" in sys.argv[1:])
     for model in MODELS:
         indexes = len(list(db[model.COLLECTION].list_indexes()))

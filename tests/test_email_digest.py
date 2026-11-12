@@ -25,6 +25,7 @@ def _person(db, **fields):
 
     word = f"wrangler{uuid.uuid4().hex[:8]}"
     user = insert(db, User(**{"email": f"{uuid.uuid4()}@example.com", "password_hash": "x",
+                              "subscription_status": "active",
                               "status": "active", "active": True, "email_alerts": True,
                               "created_at": now() - timedelta(days=3), **fields}))
     insert(db, UserConfig(user_id=user.id, schema_version=2,

@@ -22,7 +22,8 @@ def ctx(db):
 
 def _active_user(s, keywords=("python",), **fields) -> User:
     fields = {"status": "active", "active": True, **fields}
-    u = insert(s, User(email=f"{uuid.uuid4()}@example.test", password_hash="x", timezone="UTC", **fields))
+    u = insert(s, User(email=f"{uuid.uuid4()}@example.test", password_hash="x",
+                       subscription_status="active", timezone="UTC", **fields))
     TenantRepository(s).save_config(u.id, {"keywords": list(keywords), "locations": ["london"]})
     return u
 

@@ -25,7 +25,8 @@ def api(db, monkeypatch):
     from libs.auth.access import issue_access_token
     from services.api.app import app
 
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                           subscription_status="active", status="active",
                            active=True, onboarding_completed_at=now()))
     job = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer"))
     with TestClient(app, base_url="https://testserver") as http:
@@ -87,7 +88,8 @@ def test_how_far_applications_got_is_counted_by_the_cv_that_went_with_them(api):
     from libs.tenant.applications import outcomes
 
     _http, db, user, _ = api
-    other = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    other = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                            subscription_status="active", status="active"))
 
     def application(who, *stages, cv=None):
         job = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",

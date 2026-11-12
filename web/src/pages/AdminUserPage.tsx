@@ -1,8 +1,10 @@
 /** One account, for an operator. */
 import { Fragment, useState } from "react";
 
-import { api } from "../api";
+import { ApiError, api } from "../api";
 import { useKept } from "../kept";
+import { money, standingWord } from "../membership";
+import { day } from "../time";
 import type { components } from "../api-types";
 
 type LimitSpec = {
@@ -65,6 +67,22 @@ export function AdminUserPage({ userId }: { userId: string }) {
   const [saving, setSaving] = useState<string | null>(null);
   const failed = account.failed && !detail;
 
+  // Over whatever Stripe says, and Stripe charges nothing while it is on (`/admin/users/{id}/free-access`): the
+  // switch moves only once Stripe has, and says why when it could not.
+  const [freeError, setFreeError] = useState<string | null>(null);
+  const toggleFree = async () => {
+    setSaving("free_access");
+    setFreeError(null);
+    try {
+      await api.put(`/admin/users/${userId}/free-access`, { on: !detail?.user.free_access_at });
+      await account.reload();
+    } catch (caught) {
+      setFreeError(caught instanceof ApiError ? caught.detail : "That didn't work. Try again.");
+    } finally {
+      setSaving(null);
+    }
+  };
+
   // The catalogue drives the form, so adding a ceiling is one entry in `libs.limits` rather than an entry.
   const save = async (key: string, raw: string) => {
     setSaving(key);
@@ -85,6 +103,9 @@ export function AdminUserPage({ userId }: { userId: string }) {
   const { user, usage } = detail;
   const reached = usage.applications;
   const [status, tone] = STATUS[user.status] ?? [user.status, "unknown"];
+  const [membership, paying] = standingWord(user.subscription_status, Boolean(user.free_access_at), user.is_admin);
+  const ended = user.subscription_status === "canceled" || user.subscription_status === "incomplete_expired";
+  const renews = !user.cancels_at && (user.subscription_status === "trialing" || user.subscription_status === "active");
   const most = Math.max(1, ...usage.sources.map((each) => each.jobs));
   // What they did, newest first: only what has happened.
   const story = ([
@@ -104,6 +125,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
           {user.full_name ? <p className="muted">{user.email}</p> : null}
           <ul className="account-badges" aria-label="Where the account stands">
             <li className={`verdict ${tone}`}>{status}</li>
+            <li className={`verdict ${user.member ? paying : "down"}`}>{membership}</li>
             {user.onboarded ? null : <li className="verdict warn">Still setting up</li>}
             {user.active ? null : <li className="verdict warn">Alerts paused</li>}
             {user.is_admin ? <li className="verdict unknown">Admin</li> : null}
@@ -136,6 +158,56 @@ export function AdminUserPage({ userId }: { userId: string }) {
           <dd><strong>{usage.skipped.toLocaleString()}</strong>gone from their list for good</dd>
         </div>
       </dl>
+
+      <section className="card">
+        <h2>Membership</h2>
+        <dl className="facts-list">
+          <dt>The site</dt>
+          <dd>{user.member ? "Open to them" : <span className="verdict down">Closed: they see the page that asks them to pay</span>}</dd>
+          {user.trial_ends_at ? (
+            <>
+              <dt>Free trial</dt>
+              <dd>{user.subscription_status === "trialing" ? "until" : "ended"} {day(user.trial_ends_at)}</dd>
+            </>
+          ) : null}
+          {renews && user.period_ends_at ? (
+            <>
+              <dt>Next payment</dt>
+              <dd>{day(user.period_ends_at)}</dd>
+            </>
+          ) : null}
+          {user.cancels_at ? (
+            <>
+              <dt>{ended ? "Ended" : "Ends, cancelled"}</dt>
+              <dd>{day(user.cancels_at)}</dd>
+            </>
+          ) : null}
+          <dt>Last payment</dt>
+          <dd>
+            {user.last_paid_at && user.last_paid_amount !== null && user.currency
+              ? `${money(user.last_paid_amount, user.currency)} on ${day(user.last_paid_at)}` : "none yet"}
+          </dd>
+          <dt>Stripe customer</dt>
+          <dd>{user.stripe_customer_id ?? <span className="muted">none yet</span>}</dd>
+          {user.billing_synced_at ? (
+            <>
+              <dt>Read from Stripe</dt>
+              <dd>{ago(user.billing_synced_at)}</dd>
+            </>
+          ) : null}
+        </dl>
+        <label className="switch" title="The whole site without a membership">
+          <input type="checkbox" role="switch" checked={Boolean(user.free_access_at)}
+                 disabled={saving === "free_access"} onChange={() => void toggleFree()} />
+          <span>Free access{user.free_access_at ? `, since ${day(user.free_access_at)}` : ""}</span>
+        </label>
+        {freeError ? <p className="error">{freeError}</p> : null}
+        <p className="muted small">
+          The whole site, CVs, cover letters and alerts included, whatever Stripe says. A membership they pay for is held
+          meanwhile: Stripe charges nothing while this is on, a trial runs out without a charge, and the payments
+          start again from the next one when it is off.
+        </p>
+      </section>
 
       <section className="card">
         <h2>Their applications</h2>

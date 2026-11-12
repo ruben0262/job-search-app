@@ -26,8 +26,9 @@ def api(db, monkeypatch):
     from libs.auth.access import issue_access_token
     from services.api.app import app
 
-    operator = insert(db, User(email=ADMIN, password_hash="x", status="active"))
-    ordinary = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    operator = insert(db, User(email=ADMIN, password_hash="x", subscription_status="active", status="active"))
+    ordinary = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                               subscription_status="active", status="active"))
 
     def sign_in(http, user):
         http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")

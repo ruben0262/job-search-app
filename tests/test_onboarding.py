@@ -58,7 +58,8 @@ def api(db, monkeypatch):
     from libs.db.models import User
     from services.api.app import app
 
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                           subscription_status="active", status="active"))
 
     with TestClient(app, base_url="https://testserver") as http:
         http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")

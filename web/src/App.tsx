@@ -6,6 +6,7 @@ import { HelpButton } from "./help";
 import { Landing } from "./landing/Landing";
 import { stopped } from "./leave";
 import { forgetMarks } from "./marks";
+import { MEMBERSHIP, backFromStripe } from "./membership";
 import { ADMIN_READS, AdminPage, CORPUS_FIRST, LATENCY_FIRST } from "./pages/AdminPage";
 import { forgetKept, readAhead } from "./kept";
 import { ADDED, AddJobPage } from "./pages/AddJobPage";
@@ -18,6 +19,7 @@ import { PrivacyPage } from "./pages/PrivacyPage";
 import { ForgotPassword, ResetPassword } from "./pages/ResetPassword";
 import { ACCOUNT, SettingsPage } from "./pages/SettingsPage";
 import { SignIn } from "./pages/SignIn";
+import { UpgradePage } from "./pages/UpgradePage";
 import { Verify } from "./pages/Verify";
 import { REVIEW, WordsPage } from "./pages/WordsPage";
 import { NotificationBell } from "./notifications";
@@ -57,6 +59,9 @@ export function App() {
 
   const reload = useCallback(async () => {
     try {
+      // Back from Stripe's form or portal: Stripe is read again first, so what they did there shows now,
+      // not when its webhook arrives.
+      if (backFromStripe()) await api.post("/billing/refresh").catch(() => undefined);
       setSession({ state: "in", dashboard: await api.get<Dashboard>("/dashboard") });
     } catch (error) {
       // 401 is the ordinary signed-out case — `request` has already tried a refresh.
@@ -91,9 +96,12 @@ export function App() {
   // list: Jobs is where everybody lands, and it reads that itself (measured locally: 71 ms, the rest
   // under 10 ms each).
   const ready = session.state === "in" && session.dashboard.stage === "ready";
-  const admin = ready && session.dashboard.is_admin;
+  const admin = session.state === "in" && session.dashboard.stage === "ready" && session.dashboard.is_admin;
   useEffect(() => {
-    if (ready) readAhead([ADDED, APPLIED, REVIEW, DOCUMENTS, SAVED, HISTORY, IDENTITY, TEMPLATES, ACCOUNT, AI_ACCOUNTS]);
+    if (ready) {
+      readAhead([ADDED, APPLIED, REVIEW, DOCUMENTS, SAVED, HISTORY, IDENTITY, TEMPLATES, ACCOUNT, AI_ACCOUNTS,
+                 MEMBERSHIP]);
+    }
   }, [ready]);
   // And Admin's, for whoever sees it: its first open draws at once too.
   useEffect(() => {
@@ -131,9 +139,11 @@ export function App() {
   }
 
   const { dashboard } = session;
+  // Open before onboarding as after it: the sign-up page's Member choice lands here (owner, 2026-11-12).
+  if (hash.startsWith("/upgrade")) return <UpgradePage onChanged={reload} />;
   if (dashboard.stage === "onboarding") {
     // Deliberately not routable past: a half-configured account produces a bad feed and the user concludes.
-    return <Onboarding state={dashboard.onboarding} onChanged={reload} />;
+    return <Onboarding state={dashboard.onboarding} member={dashboard.member} onChanged={reload} />;
   }
 
   const [path, query = ""] = hash.split("?");

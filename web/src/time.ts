@@ -29,6 +29,18 @@ export function ago(iso: string | null, now: number = Date.now()): string {
   return at.toLocaleDateString();
 }
 
+/** A time as people say it: "24 hours", "3 days". The server words its own the same (`_span`). */
+export const span = (hours: number) => (hours < 48 || hours % 24 ? `${hours} hours` : `${hours / 24} days`);
+
+/** A day as a person writes it, "18 November", and the year when it is not this one: for what falls due on
+ * a date, like a membership's next payment, rather than what happened a while ago. */
+export function day(iso: string | null): string {
+  const at = parse(iso);
+  if (!at) return "";
+  const year = at.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" as const };
+  return at.toLocaleDateString(undefined, { day: "numeric", month: "long", ...year });
+}
+
 // One clock for every "… ago" on screen, so all of them move on together and a page left open stays
 // right (owner, 2026-11-02). It wakes once a minute, on the minute, and when the tab is shown again,
 // and only while something shows a time; a label re-renders only when its minute has changed. Nothing

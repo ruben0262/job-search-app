@@ -21,7 +21,8 @@ from libs.queue.queue import (
 
 
 def _user(db, **kw) -> User:
-    return insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x", **kw))
+    return insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x",
+                           subscription_status="active", **kw))
 
 
 def _age(db, job_id: int, **fields) -> None:

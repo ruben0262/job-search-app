@@ -139,7 +139,8 @@ def api(db, monkeypatch):
     from libs.db.models import User
     from services.api.app import app
 
-    users = [insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    users = [insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                             subscription_status="active", status="active"))
              for _ in range(2)]
 
     with TestClient(app, base_url="https://testserver") as http:

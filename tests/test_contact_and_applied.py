@@ -38,7 +38,8 @@ def api(db, monkeypatch):
     from services.api import deps
     from services.api.app import app
 
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                           subscription_status="active", status="active"))
     inbox = Inbox()
     app.dependency_overrides[deps.get_mailer] = lambda: inbox
 
@@ -55,7 +56,8 @@ def _admin(db):
     from libs.db import insert
     from libs.db.models import User
 
-    return insert(db, User(email=f"admin-{uuid.uuid4()}@example.com", password_hash="x", status="active",
+    return insert(db, User(email=f"admin-{uuid.uuid4()}@example.com", password_hash="x",
+                           subscription_status="active", status="active",
                            is_admin=True))
 
 
@@ -159,5 +161,6 @@ def test_another_persons_applications_are_not_listed(api):
 
     http, db, _user, _inbox, as_user = api
     http.put(f"/jobs/{_job(db, 'Backend Engineer').id}/applied")
-    as_user(insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")))
+    as_user(insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                            subscription_status="active", status="active")))
     assert http.get("/applied").json() == []

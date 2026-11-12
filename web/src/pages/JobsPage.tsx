@@ -11,7 +11,7 @@ import { keep, peek } from "../kept";
 import { type Mark, mark as record, send, unsent } from "../marks";
 import { POLL_MS } from "../notifications";
 import { PLACES } from "../places";
-import { ago, useNow } from "../time";
+import { ago, span, useNow } from "../time";
 import { Banner, Error, Prompt, useAction } from "../ui";
 
 type Feed = Schema<"Feed">;
@@ -41,9 +41,6 @@ export const PICTURES = {
   applied: <svg viewBox="0 0 24 24" aria-hidden="true">{PLACES.find(([key]) => key === "applied")?.[2]}</svg>,
   skip: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12zM14.5 12a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM4 4l16 16" /></svg>,
 };
-
-/** A time a job stays listed, as people say it: "24 hours", "3 days". */
-const span = (hours: number) => (hours < 48 || hours % 24 ? `${hours} hours` : `${hours / 24} days`);
 
 /** The orders the list comes in: its words, when the board says it was posted, when it arrived here. */
 const ORDERS = [["best", "Most of your words first"], ["newest", "Newest posted first"],
@@ -240,11 +237,15 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   };
 
   const total = feed ? feed.total - marked.size : 0;
-  // How long the longest-kept jobs stay, once an answer says: "Any time" under "Posted" is all of it.
+  // How long the longest-kept jobs stay, once an answer says: "Any time" under "Posted" is all of it. And how
+  // old a job is before a free account sees it: a shorter time would be empty, so the server reads it as all
+  // of their list (`/feed`), and so does "Posted" here.
   const longest = feed?.shelf_longest_hours ?? Infinity;
+  const delay = feed?.delay_hours ?? 0;
+  const within = since && since > delay && since < longest ? since : null;
   // What "Posted" is set to, in a sentence: "the last 24 hours".
-  const posted = since && since < longest
-    ? (POSTED.find(([, hours]) => hours === since)?.[0] ?? `Last ${span(since)}`).toLowerCase() : null;
+  const posted = within
+    ? (POSTED.find(([, hours]) => hours === within)?.[0] ?? `Last ${span(within)}`).toLowerCase() : null;
   // The new ones, and the older ones that left meanwhile, past their shelf life: the list a refresh brings
   // is this one, plus the first, less the second.
   const fresh = news.arrived;
@@ -259,8 +260,8 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       {dashboard.banners.map((banner) => (
         <Banner key={banner.key} level={banner.level}>
           <span>{banner.text}</span>{" "}
-          <a href="#/settings">
-            {banner.key === "telegram_broken" ? "Fix it in Settings"
+          <a href={banner.key === "free" ? "#/upgrade" : "#/settings"}>
+            {banner.key === "free" ? "Become a member" : banner.key === "telegram_broken" ? "Fix it in Settings"
               : banner.key === "paused" ? "Turn them back on" : "Turn on alerts"}
           </a>
         </Banner>
@@ -283,7 +284,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       {/* How long a job stays here, as Admin sets it: a job leaving is then no surprise (owner, 2026-11-06). */}
       {feed ? (
         <p className="small muted">
-          Jobs stay here for {span(feed.shelf_hours)}
+          {delay ? `You see each job ${span(delay)} after members do. ` : ""}Jobs stay here for {span(feed.shelf_hours)}
           {feed.shelf_longest_hours > feed.shelf_hours
             ? `, or ${span(feed.shelf_longest_hours)} from slower boards` : ""}.
           {feed.cut ? " More match your words than the page reads at once, so these are the newest." : ""}
@@ -301,10 +302,10 @@ export function JobsPage({ dashboard, focus, onChanged }: {
                onChange={(event) => set({ q: event.target.value })} />
       </div>
       <div className="filters">
-        {/* Only the times shorter than jobs stay: "Any time" is all of them. */}
-        <select aria-label="Posted" value={since && since < longest ? since : ""}
+        {/* Only the times shorter than jobs stay and longer than a free account waits: "Any time" is all of them. */}
+        <select aria-label="Posted" value={within ?? ""}
                 onChange={(event) => set({ since_hours: event.target.value ? Number(event.target.value) : null })}>
-          {POSTED.filter(([, hours]) => hours === null || hours < longest).map(([label, hours]) => (
+          {POSTED.filter(([, hours]) => hours === null || (hours > delay && hours < longest)).map(([label, hours]) => (
             <option key={label} value={hours ?? ""}>{label}</option>
           ))}
         </select>

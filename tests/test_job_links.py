@@ -175,7 +175,8 @@ def api(db, monkeypatch):
 
     fake_web.real = link_routes._client  # type: ignore[attr-defined]
     monkeypatch.setattr(link_routes, "_client", fake_web)
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                           subscription_status="active", status="active",
                            active=True, onboarding_completed_at=now()))
     with TestClient(app, base_url="https://testserver") as http:
         http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
@@ -219,7 +220,8 @@ def test_a_new_job_is_read_kept_for_everyone_and_shown_to_whoever_has_its_words(
     assert job.described_at is not None, "a whole job: alerts and CVs read it"
     assert _added(http) == [job.id]
 
-    other = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+    other = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                            subscription_status="active", status="active",
                             active=True, onboarding_completed_at=now()))
     insert(db, UserConfig(user_id=other.id, schema_version=2,
                           config={"sections": [{"platform": "all", "keywords": ["backend engineer"]}]}))
@@ -280,7 +282,8 @@ def test_a_job_written_in_is_theirs_alone_and_stands_in_for_no_real_posting(api)
     assert saved["apply_on"] == "the job's site"
     mine = saved["id"]
 
-    other = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+    other = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                            subscription_status="active", status="active",
                             active=True, onboarding_completed_at=now()))
     insert(db, UserConfig(user_id=other.id, schema_version=2,
                           config={"sections": [{"platform": "all", "keywords": ["backend engineer"]}]}))

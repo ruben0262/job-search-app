@@ -93,9 +93,10 @@ def path_lines(path, needle: str) -> int:
     return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if needle in line)
 
 
-@pytest.mark.parametrize("library", ["httpx", "httpx2"])
+@pytest.mark.parametrize("library", ["httpx", "httpx2", "stripe"])
 def test_a_library_narrating_every_request_does_not_drown_our_own_lines(tmp_path, library):
-    """One line in ten was ours. `httpx2` is the client the Anthropic SDK moved to at 1.0."""
+    """One line in ten was ours. `httpx2` is the client the Anthropic SDK moved to at 1.0; Stripe's SDK says
+    two lines a call, the request and its answer (2026-11-11)."""
     path = configure("notifier", log_dir=tmp_path, console=False)
 
     logging.getLogger(library).info('HTTP Request: GET https://example.com "HTTP/1.1 200 OK"')

@@ -446,6 +446,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/{user_id}/free-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Free Access
+         * @description Give an account everything a membership gives without paying, or stop: over whatever Stripe says. A
+         *     subscription they have stops charging while it is on and starts again when it is off (`hold_billing`).
+         */
+        put: operations["set_free_access_admin_users__user_id__free_access_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users/{user_id}/limits/{key}": {
         parameters: {
             query?: never;
@@ -792,6 +813,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Membership
+         * @description Their membership as last read from Stripe: what Settings shows.
+         */
+        get: operations["membership_billing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Checkout
+         * @description Open the payment form: a new membership, with the free trial if they never had one. Opening it ends
+         *     any form opened before, so two tabs cannot become two memberships.
+         */
+        post: operations["checkout_billing_checkout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public Plan
+         * @description Public: the sign-up page says what a membership costs before anybody has an account.
+         */
+        get: operations["public_plan_billing_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/portal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Portal
+         * @description Stripe's page for their membership: pay what is owed, change the card, read invoices, cancel. It
+         *     comes back to Settings, which reads Stripe again.
+         */
+        post: operations["portal_billing_portal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh
+         * @description Stripe read again for somebody back from its form or its portal, so what they did there shows at
+         *     once.
+         */
+        post: operations["refresh_billing_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/contact": {
         parameters: {
             query?: never;
@@ -825,8 +949,8 @@ export interface paths {
         };
         /**
          * Dashboard
-         * @description Everything the front page shows, in one call. Opening the site is being online: the time is
-         *     kept to the minute, for the admin's account page.
+         * @description Everything the front page shows, in one call. Opening the site is being online: the time is kept to
+         *     the minute, for the admin's account page.
          */
         get: operations["dashboard_dashboard_get"];
         put?: never;
@@ -875,7 +999,8 @@ export interface paths {
          * @description Queue one CV or cover letter for one job.
          *
          *     Asked again while it waits, it is the same build, answered before any check: a second click must
-         *     not be refused for the allowance its own first click used.
+         *     not be refused for the allowance its own first click used. A free account makes none (owner,
+         *     2026-11-12): 402, and the bell says where the membership is.
          */
         post: operations["build_document_documents_build_post"];
         delete?: never;
@@ -1724,12 +1849,20 @@ export interface components {
         AdminAccount: {
             /** Active */
             active: boolean;
+            /** Billing Synced At */
+            billing_synced_at: string | null;
+            /** Cancels At */
+            cancels_at: string | null;
             /** Created At */
             created_at: string | null;
+            /** Currency */
+            currency: string | null;
             /** Email */
             email: string;
             /** Email Verified At */
             email_verified_at: string | null;
+            /** Free Access At */
+            free_access_at: string | null;
             /** Full Name */
             full_name: string | null;
             /** Id */
@@ -1738,14 +1871,28 @@ export interface components {
             is_admin: boolean;
             /** Last Active At */
             last_active_at: string | null;
+            /** Last Paid Amount */
+            last_paid_amount: number | null;
+            /** Last Paid At */
+            last_paid_at: string | null;
+            /** Member */
+            member: boolean;
             /** Onboarded */
             onboarded: boolean;
             /** Onboarding Completed At */
             onboarding_completed_at: string | null;
+            /** Period Ends At */
+            period_ends_at: string | null;
             /** Status */
             status: string;
+            /** Stripe Customer Id */
+            stripe_customer_id: string | null;
+            /** Subscription Status */
+            subscription_status: string | null;
             /** Telegram */
             telegram: string;
+            /** Trial Ends At */
+            trial_ends_at: string | null;
         };
         /** AdminAccountDetail */
         AdminAccountDetail: {
@@ -1914,6 +2061,11 @@ export interface components {
              * @enum {string}
              */
             state: "queued" | "building" | "ready" | "failed" | "expired";
+        };
+        /** Checkout */
+        Checkout: {
+            /** Client Secret */
+            client_secret: string;
         };
         /** ConfigChoice */
         ConfigChoice: {
@@ -2154,6 +2306,11 @@ export interface components {
             countries: components["schemas"]["FeedPlace"][];
             /** Cut */
             cut: boolean;
+            /**
+             * Delay Hours
+             * @default 0
+             */
+            delay_hours: number;
             /** Jobs */
             jobs: components["schemas"]["FeedJob"][];
             /** Shelf Hours */
@@ -2274,6 +2431,11 @@ export interface components {
             titles: string[];
             /** Years */
             years: number | null;
+        };
+        /** FreeAccess */
+        FreeAccess: {
+            /** On */
+            on: boolean;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2436,6 +2598,11 @@ export interface components {
             /** Value */
             value?: number | null;
         };
+        /** Link */
+        Link: {
+            /** Url */
+            url: string;
+        };
         /** LinkAnswer */
         LinkAnswer: {
             draft?: components["schemas"]["Draft"] | null;
@@ -2482,6 +2649,39 @@ export interface components {
             /** Ids */
             ids?: number[] | null;
         };
+        /**
+         * Membership
+         * @description Where a person's membership stands, for the page that asks them to pay and for Settings.
+         */
+        Membership: {
+            /** Can Manage */
+            can_manage: boolean;
+            /** Can Start */
+            can_start: boolean;
+            /** Cancels At */
+            cancels_at: string | null;
+            /** Currency */
+            currency: string | null;
+            /** Free Access */
+            free_access: boolean;
+            /** Last Paid Amount */
+            last_paid_amount: number | null;
+            /** Last Paid At */
+            last_paid_at: string | null;
+            /** Member */
+            member: boolean;
+            /** Period Ends At */
+            period_ends_at: string | null;
+            plan: components["schemas"]["Plan"] | null;
+            /** Publishable Key */
+            publishable_key: string | null;
+            /** Status */
+            status: string | null;
+            /** Trial Days */
+            trial_days: number;
+            /** Trial Ends At */
+            trial_ends_at: string | null;
+        };
         /** NameAndLinks */
         NameAndLinks: {
             /** Full Name */
@@ -2519,6 +2719,8 @@ export interface components {
         OnboardingDashboard: {
             /** Is Admin */
             is_admin: boolean;
+            /** Member */
+            member: boolean;
             onboarding: components["schemas"]["OnboardingSteps"];
             /**
              * Stage
@@ -2572,6 +2774,25 @@ export interface components {
             current_password: string;
             /** New Password */
             new_password: string;
+        };
+        /**
+         * Plan
+         * @description The one membership: its price as Stripe has it, and the free trial a new member gets; and, for the
+         *     sign-up page's choice, how far behind a member the free plan sees each job (`libs.membership`).
+         */
+        Plan: {
+            /** Amount */
+            amount: number;
+            /** Currency */
+            currency: string;
+            /** Free Delay Hours */
+            free_delay_hours: number;
+            /** Interval */
+            interval: string;
+            /** Interval Count */
+            interval_count: number;
+            /** Trial Days */
+            trial_days: number;
         };
         /** ProfileLink */
         ProfileLink: {
@@ -2644,6 +2865,8 @@ export interface components {
             /** Is Admin */
             is_admin: boolean;
             job_filters: components["schemas"]["JobFilters"];
+            /** Member */
+            member: boolean;
             /**
              * Stage
              * @constant
@@ -2657,6 +2880,12 @@ export interface components {
              * Format: email
              */
             email: string;
+            /**
+             * Plan
+             * @default free
+             * @enum {string}
+             */
+            plan: "free" | "member";
         };
         /** ResetRequest */
         ResetRequest: {
@@ -2801,6 +3030,12 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+            /**
+             * Plan
+             * @default free
+             * @enum {string}
+             */
+            plan: "free" | "member";
         };
         /** SourceSeries */
         SourceSeries: {
@@ -3825,6 +4060,43 @@ export interface operations {
             };
         };
     };
+    set_free_access_admin_users__user_id__free_access_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FreeAccess"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     set_user_limit_admin_users__user_id__limits__key__put: {
         parameters: {
             query?: never;
@@ -4369,6 +4641,106 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    membership_billing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Membership"];
+                };
+            };
+        };
+    };
+    checkout_billing_checkout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Checkout"];
+                };
+            };
+        };
+    };
+    public_plan_billing_plan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"] | null;
+                };
+            };
+        };
+    };
+    portal_billing_portal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Link"];
+                };
+            };
+        };
+    };
+    refresh_billing_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Membership"];
                 };
             };
         };

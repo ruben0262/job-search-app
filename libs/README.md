@@ -34,6 +34,7 @@ What is here is what runs: what the platform no longer uses is in [`retired/`](.
 | [`limits/`](limits/) | Every ceiling on one account, and who may change it |
 | [`llm/`](llm/) | The one seam to the AI providers: Anthropic, Google and OpenAI, on an API key or a signed-in account's own tool; each person's AI accounts and the one in use |
 | [`mail/`](mail/) | Transactional email |
+| `membership.py` | Who has a membership: paid or in its trial (Stripe), free access from an admin, or an admin. One filter, for what members get: every job at once (`delay_hours`), documents, alerts |
 | [`notify/`](notify/) | In-app notifications, and the new matches owed to a person off the site |
 | [`obs/`](obs/) | Logging for every process |
 | [`onboarding/`](onboarding/) | What a new account must supply before it has jobs |

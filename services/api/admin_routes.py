@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
 import uuid as _uuid
 from collections import Counter
@@ -21,7 +20,7 @@ from libs.corpus.boards import board_name
 from libs.corpus.freshness import platform_windows, shelf_life
 from libs.corpus.geo import COUNTRIES
 from libs.corpus.repository import CorpusRepository
-from libs.db import delete_account, find, get
+from libs.db import delete_account, find, get, now
 from libs.db.models import (
     AtsToken,
     BuiltDocument,
@@ -36,6 +35,7 @@ from libs.documents.read import LANGUAGE_NAMES
 from libs.limits import all_for, describe, set_limit
 from libs.llm.accounts import listing as ai_listing
 from libs.matching import green_words, norm, scan_for, their_jobs
+from libs.membership import admin_emails, is_admin, is_member
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
 from libs.ops.countries import RANGES_HOURS, by_country
@@ -62,25 +62,19 @@ from libs.settings import (
 )
 from libs.tenant import applications
 from libs.tenant.repository import TenantRepository
+from services.api.billing_routes import _stripe_answers, end_membership, hold_billing
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-def admin_emails() -> set[str]:
-    """Read per call rather than cached at import: a restart is a slow way to fix an env var."""
-    raw = os.environ.get("ADMIN_EMAILS", "")
-    return {entry.strip().lower() for entry in raw.split(",") if entry.strip()}
-
-
 def require_admin(db: Database = Depends(get_db),
                   user_id: _uuid.UUID = Depends(current_user)) -> User:
     """404, not 403."""
     user = get(db, User, user_id)
-    allowed = admin_emails()
     # The env var or the row.
-    granted = user is not None and (user.is_admin or user.email.lower() in allowed)
+    granted = user is not None and is_admin(user)
     if not granted:
         logger.warning("admin: refused %s", user_id)
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not found")
@@ -135,7 +129,10 @@ def users(db: Database = Depends(get_db), admin: User = Depends(require_admin)) 
                 "active": row.active,
                 "telegram": row.telegram_status,
                 # Effective access, not just the column.
-                "is_admin": row.is_admin or row.email.lower() in allowed,
+                "is_admin": is_admin(row),
+                # Stripe's word for their membership (None: never had one), and whether an admin let them in.
+                "membership": row.subscription_status,
+                "free_access": row.free_access_at is not None,
                 # Whether the flag can be changed here at all.
                 "admin_locked": row.email.lower() in allowed,
                 "onboarded": row.onboarding_completed_at is not None,
@@ -164,6 +161,18 @@ class AdminAccount(BaseModel):
     onboarding_completed_at: datetime | None
     # When they last opened the site, to the minute (`/dashboard`).
     last_active_at: datetime | None
+    # Their membership, as Stripe said when last asked (`billing_routes.sync`), and an admin's free access.
+    member: bool
+    free_access_at: datetime | None
+    stripe_customer_id: str | None
+    subscription_status: str | None
+    trial_ends_at: datetime | None
+    period_ends_at: datetime | None
+    cancels_at: datetime | None
+    last_paid_at: datetime | None
+    last_paid_amount: int | None
+    currency: str | None
+    billing_synced_at: datetime | None
 
 
 class Tally(BaseModel):
@@ -233,7 +242,12 @@ def user_detail(user_id: _uuid.UUID, db: Database = Depends(get_db),
             active=user.active, is_admin=user.is_admin, telegram=user.telegram_status,
             onboarded=user.onboarding_completed_at is not None, created_at=user.created_at,
             email_verified_at=user.email_verified_at, onboarding_completed_at=user.onboarding_completed_at,
-            last_active_at=user.last_active_at),
+            last_active_at=user.last_active_at, member=is_member(db, user.id),
+            free_access_at=user.free_access_at, stripe_customer_id=user.stripe_customer_id,
+            subscription_status=user.subscription_status, trial_ends_at=user.trial_ends_at,
+            period_ends_at=user.period_ends_at, cancels_at=user.cancels_at, last_paid_at=user.last_paid_at,
+            last_paid_amount=user.last_paid_amount, currency=user.currency,
+            billing_synced_at=user.billing_synced_at),
         usage=_usage(db, user),
         limits=all_for(user))
 
@@ -343,6 +357,27 @@ def set_admin(user_id: _uuid.UUID, body: AdminFlag, db: Database = Depends(get_d
     return {"status": "ok", "id": str(user_id), "is_admin": body.is_admin}
 
 
+class FreeAccess(BaseModel):
+    on: bool
+
+
+@router.put("/users/{user_id}/free-access")
+def set_free_access(user_id: _uuid.UUID, body: FreeAccess, db: Database = Depends(get_db),
+                    admin: User = Depends(require_admin)) -> dict:
+    """Give an account everything a membership gives without paying, or stop: over whatever Stripe says. A
+    subscription they have stops charging while it is on and starts again when it is off (`hold_billing`)."""
+    target = get(db, User, user_id)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such user")
+    with _stripe_answers("pause or resume the billing of an account given free access"):
+        hold_billing(db, target, free=body.on)
+    # Asked twice, as a double click does, it keeps the day it was first given.
+    db[User.COLLECTION].update_one({"_id": user_id, **({"free_access_at": None} if body.on else {})},
+                                   {"$set": {"free_access_at": now() if body.on else None}})
+    audit(logger, "admin.free_access", user=admin.id, subject=user_id, on=body.on)
+    return {"status": "ok", "id": str(user_id), "free_access": body.on}
+
+
 class DeleteConfirmation(BaseModel):
     # The typed address, which must match the account being deleted.
     email: str
@@ -366,6 +401,9 @@ def delete_user(user_id: _uuid.UUID, body: DeleteConfirmation, db: Database = De
             detail="That address does not match the account. Nothing was deleted.")
 
     email = target.email
+    # Their membership first: an account deleted while Stripe still bills it is a charge nobody can stop.
+    with _stripe_answers("end the membership of an account being deleted"):
+        end_membership(target)
     # Credentials and the key that reads them included: both are this account's documents.
     delete_account(db, user_id)
     audit(logger, "admin.user_deleted", user=admin.id, subject=user_id)

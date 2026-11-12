@@ -38,7 +38,7 @@ def log_path(service: str, log_dir: Path | str | None = None) -> Path:
 
 
 # Libraries that log one INFO line per network call, raised so they report trouble only.
-NOISY_LIBRARIES = ("httpx", "httpx2", "httpcore", "urllib3", "asyncio", "pymongo")
+NOISY_LIBRARIES = ("httpx", "httpx2", "httpcore", "urllib3", "asyncio", "pymongo", "stripe")
 
 
 def _quieten_libraries() -> None:

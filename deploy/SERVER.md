@@ -144,6 +144,7 @@ Each setting says in the file what it is and how to make it. In short:
 | `SMTP_PASSWORD` | The Zoho mailbox's password (an app password, with 2FA) |
 | `VAPID_*` | Made **once**, with the command in the file (run it with `.venv/bin/python`). A new pair stops every browser that already subscribed |
 | `HARVEST_PROXY` | If the Proxmox host is on the same network as your proxy (`192.168.50.223`), the same value as on your laptop: LinkedIn then works from here. Otherwise empty, and LinkedIn is skipped |
+| `STRIPE_*` | Step 10. Without them nobody can start a membership: everybody is on the free plan, but admins and people given free access |
 | the rest | Optional: the platform's AI key, and the Adzuna, Jooble and Findwork keys |
 
 Check it without starting anything: `deploy/compose.sh config --quiet && echo ok` names any required
@@ -242,3 +243,80 @@ To undo a bad change: revert the commit on your laptop, push, then `deploy/deplo
 The old VPS still holds the accounts, in Postgres. [`README.md`](README.md), *Moving the accounts off
 the old VPS*, copies them into Atlas. Do it before step 7, and use the old server's `SECRETS_KEK`
 here, or the copied credentials cannot be opened.
+
+## 10. Stripe: the membership
+
+Seven days free, then £4.99 a month, billed automatically (owner, 2026-11-11). Without one an account is on
+the free plan: the whole site, each job a week after members see it, and no CVs, cover letters or alerts
+(owner, 2026-11-12). The sign-up page offers both; the membership's card form is Stripe's fields drawn inside
+the site's own page. Test mode and live mode are
+separate worlds: products, prices, customers, webhooks, the portal and keys exist in one only, and a value
+from one never works in the other (the API's log says so at start if its two keys are mixed). The sandbox
+"mahoraga jobs" is set up and was tested end to end on 2026-11-11 (CHANGELOG); this is the same, once, in
+**live** mode.
+
+**Which live account.** If your live Stripe account sells other things, either give Mahoraga an account of
+its own (the account switcher → *New account*: its own name on card statements, payouts, emails and portal,
+and nothing shared, which is what the sandbox is), or add it to the existing one. The site works in both. In
+a shared account the portal is shared too, so keep its plan switching off (step 4) or it could offer your
+other products; and the webhook also hears about your other customers, which the site answers and ignores.
+
+1. **The price.** Product catalog → *Add product*: "Mahoraga - Tier 1", with a **recurring, monthly**
+   price of £4.99. Its id, `price_…`, is `STRIPE_PRICE_ID`. A **one-time** price cannot start a membership
+   (the sandbox's first price was one, and a monthly one was added beside it). To change the price later,
+   add a new price and change the id: Stripe never edits a price, and people already paying stay on
+   theirs. The free trial's length is the site's: Admin → Settings → *Free trial*.
+2. **The keys.** Developers → API keys: the publishable key (`pk_live_…`) is `STRIPE_PUBLISHABLE_KEY`; for
+   `STRIPE_SECRET_KEY` a **restricted key** (`rk_live_…`) with write access to Customers, Checkout Sessions,
+   Customer portal, Subscriptions and **Invoices** (free access voids what is owed), and read access to
+   Prices. The sandbox's restricted key ran every step of the test, voiding included. Put live keys straight into `certificates/server.env` on the server, never
+   in a chat or an email.
+3. **The webhook.** Developers → Webhooks → *Add endpoint*: `https://mahoraga.rubenlekli.com/billing/webhook`,
+   sending `checkout.session.completed`, `customer.subscription.created`, `.updated`, `.deleted`, `.paused`,
+   `.resumed`, `invoice.paid` and `invoice.payment_failed`. Its signing secret (`whsec_…`) is
+   `STRIPE_WEBHOOK_SECRET`. Stripe shows each delivery and the answer: 400 is a wrong secret; 503 a moment
+   Stripe could not be read back, and it sends it again.
+4. **The portal**, where people pay what is owed, change their card or cancel: Settings → Billing → Customer
+   portal → *Activate*, with payment methods and invoice history on, cancelling **at the end of the billing
+   period**, and switching plans off; its redirect link `https://mahoraga.rubenlekli.com`. The site opens
+   this portal for each person already signed in to it (Settings → *Manage membership*, and *Pay now*); the
+   login link Stripe shows on that page opens the same portal for somebody arriving from Stripe's emails,
+   after a code by email, and the site does not need it.
+5. **A payment that fails** (Settings → Billing → Subscriptions and emails → Manage failed payments): the
+   account is on the free plan the moment one fails and a member again once it is paid, through the portal's
+   *Update payment method*, which pays what is owed with the new card. The sandbox retries 9 times over two weeks and then
+   **cancels** the subscription, after which the person starts again from the site's form, without a
+   trial. Set the live account the same. Turn on Stripe's emails for receipts, failed payments and the
+   **reminder before a trial ends**: Mastercard's rules ask for the terms by email on any free trial and a
+   reminder on one longer than seven days; for a trial of seven days or less Stripe sends it as it starts.
+6. **The currency.** Stripe's Adaptive Pricing shows each person their own currency: from Hungary the form
+   says HUF 2,266 with a switch to GBP. Settings → Payments → *Adaptive Pricing* turns that off if everybody
+   should pay £4.99.
+7. **Cloudflare** must let Stripe through: if Bot Fight Mode or a WAF rule is on, add a rule that skips them
+   for the path `/billing/webhook`.
+8. Put the **four** values in `certificates/server.env` (the secret key, the publishable key, the price and
+   the webhook secret: nothing else of Stripe's), and run `deploy/deploy.sh` with no names: the membership is
+   in `libs`, which every service reads (the alerts and the harvest ask it too). **Every account that
+   exists then is given free access, once** (`python -m libs.db`, the deploy's schema step); everybody who
+   signs up afterwards starts on the free plan, or picks Member on the sign-up page and starts the trial.
+   Then sign up as a member with a real card of your own and cancel in the portal the same day: nothing is
+   charged until the trial ends.
+
+**Moving from test keys to live ones on the server**, if you ever tested there: run, once, after the deploy
+with the live keys, `deploy/compose.sh run --rm --no-deps --entrypoint python api -m services.api.billing_routes`.
+It reads every account from Stripe again. Live Stripe has no test customer, so an account that "paid" in
+test mode is on the free plan, and becomes a member through the real payment form, with its free trial.
+
+**On your laptop**, `certificates/stripe.env` holds the sandbox's values (`scripts/dev.sh` reads it). Stripe
+cannot reach `localhost`, so the site reads Stripe when you come back from its form or portal, which is
+enough to try it. For webhooks too, run the Stripe CLI, `stripe listen --forward-to
+localhost:8000/billing/webhook`, whose `whsec_…` is already in that file. With `STRIPE_TEST_SECRET_KEY` and
+`STRIPE_PRICE_ID` set, `pytest tests/test_billing_stripe.py` re-checks the membership against the sandbox
+(after any `stripe` upgrade).
+
+**Who is a member without paying:** admins (`ADMIN_EMAILS` or the switch in Accounts), and anybody given
+*Free access* on their page in Admin. Free access holds their own membership, if they have one: Stripe takes
+no payment while it is on (each invoice voided, and one already owed voided too), a trial ends without a
+charge, and when it is turned off the payments start again from the next one. It can go on and off as often
+as needed (`tests/test_billing_stripe.py` runs it on Stripe). Deleting an account deletes its Stripe customer first, which ends its
+subscription at once; its payments and invoices stay at Stripe, where a finalised invoice cannot be deleted.

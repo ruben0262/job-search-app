@@ -20,6 +20,8 @@ from services.api.account_routes import router as account_router
 from services.api.admin_routes import router as admin_router
 from services.api.ai_account_routes import router as ai_account_router
 from services.api.auth_routes import router as auth_router
+from services.api.billing_routes import router as billing_router
+from services.api.billing_routes import setup_problems
 from services.api.contact_routes import router as contact_router
 from services.api.dashboard_routes import router as dashboard_router
 from services.api.document_routes import router as document_router
@@ -41,14 +43,18 @@ install()
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """The schema first, so nothing is served before its unique rules exist; then the help-chat
-    replies the last stop cut off are written again — off the start-up path."""
+    replies the last stop cut off are written again — off the start-up path. A Stripe setting missing is
+    said here, once, as well as on every payment it stops."""
     ensure_schema()
+    if problems := setup_problems():
+        logging.getLogger(__name__).error("billing: nobody can start a membership: %s", "; ".join(problems))
     threading.Thread(target=assistant.resume, daemon=True, name="support-resume").start()
     yield
 
 
 app = FastAPI(title="job-search platform", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.include_router(auth_router)
+app.include_router(billing_router)
 app.include_router(contact_router)
 app.include_router(account_router)
 app.include_router(admin_router)

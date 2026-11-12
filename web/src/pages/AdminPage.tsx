@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 
 import { api, type Schema } from "../api";
 import { keep, peek, readAhead, useKept } from "../kept";
+import { standingWord } from "../membership";
 import { BinIcon, Error, Prompt, useAction } from "../ui";
 import { JobsByCountry } from "./AdminCountries";
 
@@ -48,6 +49,9 @@ type AdminUser = {
   is_admin: boolean;
   /** Last sign-in or Telegram tap. Null for an account that has never done either. */
   last_active_at: string | null;
+  /** Stripe's word for their subscription (`billing_routes.sync`); null if they never had one. */
+  membership: string | null;
+  free_access: boolean;
 };
 
 /** One latency stage. */
@@ -183,6 +187,10 @@ type Settings = {
   support_email: string;
   /** The hour of each person's own day their daily email of new jobs goes out. */
   email_digest_hour: number;
+  /** The free days a new membership starts with; 0 is none. */
+  trial_days: number;
+  /** How many hours after a member a free account sees a job; 0 is at once. */
+  free_delay_hours: number;
 };
 
 type Source = {
@@ -746,6 +754,40 @@ export function AdminPage({ tab: asked }: { tab: string }) {
             ))}
           </select>
 
+          <p className="label" style={{ marginTop: "1.5rem" }}>Free trial</p>
+          <span className="hint">
+            The days a new membership is free before Stripe takes the first payment, for somebody who never
+            had one. The price is set at Stripe.
+          </span>
+          <select
+            value={settings.trial_days}
+            disabled={savePlatform.busy}
+            aria-label="Free trial"
+            onChange={(event) => void savePlatform.run("trial_days", Number(event.target.value))}
+            style={{ maxWidth: "10rem", marginTop: "0.5rem" }}
+          >
+            {[0, 3, 7, 14, 30].map((n) => (
+              <option key={n} value={n}>{n ? `${n} days` : "None"}</option>
+            ))}
+          </select>
+
+          <p className="label" style={{ marginTop: "1.5rem" }}>Free accounts see a job</p>
+          <span className="hint">
+            How long after a member an account without a membership sees each job. CVs, cover letters and
+            alerts stay members&apos; whatever this says.
+          </span>
+          <select
+            value={settings.free_delay_hours}
+            disabled={savePlatform.busy}
+            aria-label="Free accounts see a job"
+            onChange={(event) => void savePlatform.run("free_delay_hours", Number(event.target.value))}
+            style={{ maxWidth: "12rem", marginTop: "0.5rem" }}
+          >
+            {[...new Set([0, 24, 72, 168, 336, settings.free_delay_hours])].sort((a, b) => a - b).map((n) => (
+              <option key={n} value={n}>{n ? `${n < 48 ? `${n} hours` : `${n / 24} days`} later` : "At once"}</option>
+            ))}
+          </select>
+
           <p className="label" style={{ marginTop: "1.5rem" }}>Support address</p>
           <span className="hint">
             Where the Help page&apos;s contact form is emailed. Each message is also kept under
@@ -794,6 +836,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
             <th>Status</th>
             <th>Telegram</th>
             <th>Onboarded</th>
+            <th>Membership</th>
             <th>Last active</th>
             <th>Access</th>
             <th />
@@ -812,6 +855,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
               </td>
               <td className="job-sub">{user.telegram}</td>
               <td className="job-sub">{user.onboarded ? "yes" : "no"}</td>
+              <td className="job-sub">{standingWord(user.membership, user.free_access, user.is_admin)[0]}</td>
               <td className="job-sub">{lastActive(user.last_active_at)}</td>
               {/* Both controls stop the click reaching the row, or granting access would also navigate. */}
               <td onClick={(event) => event.stopPropagation()}>

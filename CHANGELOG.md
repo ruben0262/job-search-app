@@ -14,6 +14,86 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12, evening — The free plan, the Free or Member choice at sign-up, and the site's own payment form
+
+The owner asked for:
+- **Free first** (2026-11-12): "ideally i would like users to sign up and complete the onboarding without
+  having to give their details … for free accounts limit the jobs they see to after 7 days … and no option
+  to make a cv or cover either. with a sub all these limits are removed".
+- **Both ways in at sign-up:** "the free membership without any credit card info being asked after, or the
+  only sub which gives a free 7 day trial, asks for credit card info via stripe".
+- **The payment form "built into the site properly"**, in the light and dark modes.
+- **Free access in cycles:** "turn it on, make it free, and then turn it off and its activated again, and
+  this can be in cycles".
+
+**The free plan replaces the pay page.** Everybody signs up, sets up a search and uses every page.
+- **The jobs, a week late.** A free account sees a job `free_delay_hours` after members do (168, set in
+  Admin → Settings → *Free accounts see a job*). The wait is counted from when the job was found and read,
+  not from a posting date the site does not always have, and lasts until the job leaves everybody's list.
+  Members see jobs from 0 to 30 days old, free accounts from 7 to 30 (`libs.membership.delay_hours`,
+  `libs.matching`). A newer job's text and its marks are refused when asked for by number (404).
+- **The Jobs page says so.** The banner reads "You see jobs 7 days after members see them…", with *Become a
+  member*. `Feed.delay_hours` is new, and "Posted" offers only times longer than the wait; a shorter one saved
+  earlier reads as the whole list rather than an empty one.
+- **No documents.** Building one answers 402 and puts a note in the bell that links to `#/upgrade`. The Make
+  buttons stay for everybody (owner, 2026-11-10); pressed on the free plan, a toast says so, with *Become a
+  member*.
+- **Alerts and the daily email stay members'.** Settings and onboarding say so, instead of offering a channel
+  that would wait in silence. The harvest is everybody's again, because a free account's list needs its
+  words searched for.
+- **Deleted:** `MembershipPage`, the `membership` stage, `MembershipDashboard`, the app's 402 handler
+  (`onLapsed`) and `DeleteAccount`'s `quiet`. The pay page's walk over the whole API is now its opposite: no
+  page answers a free account 402 (`test_a_free_account_reaches_every_page_of_the_site`).
+
+**The plan, picked at sign-up.** Two cards, Free and Member, with the price and trial from Stripe and Admin
+(`/billing/plan` now carries `free_delay_hours`). The landing page's Member card (`#/signup?plan=member`)
+picks Member. The email's link, and any fresh one, carry `&plan=member` and land on `#/upgrade`, the
+membership's page, which is open before onboarding as well as after it.
+
+**The payment form is the site's.**
+- **Stripe's fields in the site's page.** Checkout Elements (`ui_mode: elements`) replaces the white
+  embedded box. The fields are drawn from the site's own colour tokens (`membership.appearance`) and follow
+  the theme button (`changeAppearance`).
+- **The price, and the site's button.** Stripe's currency picker comes first (Adaptive Pricing). The price
+  is the session's, in the currency picked, and the button is the site's own. A bank's check opens in the
+  page (`redirect: "if_required"`).
+- **Link left out.** Link's "save my information" (`wallets.link: never`) asked for a phone number. It also
+  opened as the card was finished, moving the button out from under the first click; the browser run below
+  found that.
+
+**Free access holds Stripe's billing** (`billing_routes.hold_billing`). Turned on, it sets
+`pause_collection: void` and voids any invoice already owed. Turned off, collection resumes from the next
+payment. The switch moves only once Stripe has (503 otherwise), and a repeat keeps the first day.
+
+**Tried on Stripe's test mode:**
+- **The site's form in a real browser: 16 checks.** Member picked from the landing link; the link on to the
+  form; the session's price in HUF, with the trial; Stripe's text colour following the theme (245,246,248 →
+  15,16,19); one real click; trialing at once; on to setting up; a phone screen with nothing past its edge;
+  and a card needing the bank's check, approved in the page. The bank-check run passed 2 of 3 times; one
+  timed out after the test bank's button, and the cause was not pinned.
+- **`tests/test_billing_stripe.py`: 5 passed, 2 of them new.**
+  - Free access turned on, off and on during a trial: the trial ended with nothing charged and its invoice
+    void. Turned off, the next month's payment was taken, on one subscription throughout.
+  - Free access over a failed payment: the owed invoice was voided, and Stripe moved the subscription from
+    past_due to active.
+- **The restricted key.** The sandbox's restricted key paused, voided and resumed. The live key needs
+  **Invoices: write** (deploy/SERVER.md step 10).
+
+**Gates:** lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db --prune` built the schema on an empty
+database; the contract regenerated; the site built; pytest 1,417 passed, 7 skipped (the five Stripe tests,
+which passed 5 of 5 run on their own against the sandbox; a Postgres copy; the reference instance).
+
+**Decided here; the owner's to revisit:**
+1. **No Link.** Link is left out of the form.
+2. **What is owed is forgiven.** Free access voids it, so turning free access off leaves a paying member from
+   the next payment.
+3. **The buttons stay.** Free accounts keep the Make buttons, which explain themselves when pressed, rather
+   than losing them.
+
+**Raised (CLAUDE.md §5):** the upgrade page's list of what a membership adds, and the sign-up's plan lines,
+are typed in `UpgradePage.tsx` and `SignIn.tsx`. The landing page's Member card says the same from Admin
+(`pricing_cards`). Once the pricing work is in, read them from `/pricing`.
+
 ## 2026-11-12 — Sign-up: the password typed twice, and the privacy policy and its cookies agreed to first
 
 The owner asked for "a confirmation password as well, not just one password entry on signup", and "a box to
@@ -78,6 +158,28 @@ database; the contract unchanged; the site built; pytest 1,379 passed, 2 skipped
 reference instance). The archive's, the health check's and the Jobs page's changed tests fail on the
 commit before.
 
+## 2026-11-12 — Stripe's own portal, and production needs only Stripe's four values
+
+The owner made the monthly £4.99 price the product's default (the one-time price is gone) and activated the
+sandbox's customer portal in the dashboard, which made the configuration made for the site yesterday the
+account's default, login link and all. They asked for Stripe's portal rather than a custom one, for production
+to need nothing but Stripe's values in the env, and kept Adaptive Pricing ("unless there are arbitrage
+problems").
+
+- **`STRIPE_PORTAL_CONFIGURATION` is removed** (code, compose, `server.env.example`, SERVER.md and its test):
+  the site opens the account's default portal, as saved in the dashboard, for each person already signed in.
+  Its login link opens the same portal after a code by email; the site does not need it. Production's Stripe
+  settings are four: the secret (restricted) key, the publishable key, the price and the webhook secret. A
+  test asserts no `configuration` is sent.
+- **Adaptive Pricing, checked** (Stripe's docs, 2026-11-12, and a test-mode payment): the customer pays a 2–4%
+  conversion fee in their currency, nothing if they pick GBP, and the business pays 0%; the rate is guaranteed
+  through settlement and a refund uses it again, so no exchange-rate exposure. A forint payment is recorded by
+  Stripe as £4.99 on the subscription and the invoice, with HUF 2,264.48 beside it on the payment; the site
+  keeps £4.99, and Settings says "Last payment: £4.99". Renewals are converted at each month's rate.
+- **Tried again on the sandbox, with its default portal:** the seven runs of yesterday and the forint one, 81
+  checks, all passed; `tests/test_billing_stripe.py` 3 passed (51 s). Stripe made 3 attempts at the never-paid
+  payment this time against 9 yesterday (Smart Retries chooses), and cancelled it within two weeks both times.
+
 ## 2026-11-12 — The landing page's selling points: be first, be seen, each figure with its source
 
 The owner asked for:
@@ -135,6 +237,136 @@ Measured with a built site: nothing past the screen's edge at 320, 390 and 1,440
 
 Test: the landing page's test names the new section and the dock's "Why", and each of its five figures
 links to an `https://` source. It fails on the previous commit, which has neither.
+
+## 2026-11-11, evening — the membership tried end to end on Stripe's test mode, and what that changed
+
+The owner gave the sandbox's keys and product ("Mahoraga - Tier 1", £4.99), decided that **every existing
+account gets free access**, and asked for cancelling before the 7 days are over, what happens after them,
+coming back, and no way in without a valid subscription to be tried first.
+
+**How it was tried.** The built site and the API on the site's own **restricted** key, the Stripe CLI
+(1.55.6, checksum checked) forwarding Stripe's real webhooks, a real browser for Stripe's form and portal,
+and a test clock for each person to move time. Seven runs, 76 checks, all passed in one run:
+
+| | What happened | Checked |
+|---|---|---|
+| S0 | New account: the site made the customer with its own key, the form took the card, onboarding opened | 7 |
+| S1 | Cancelled in the portal on day 0: open to the trial's end, then closed, nothing charged ("Your membership has ended"), back at £4.99 at once with no second trial | 22 |
+| S2 | Day 8: £4.99 taken by itself, the next payment a month on and taken; cancelled in the portal, open to the month's end, then closed; charged £0, £4.99, £4.99 | 16 |
+| S3 | A card that fails when charged: on day 8 closed at once, "Your last payment didn't go through", paid in the portal with another card, open again | 11 |
+| S4 | The same never fixed: closed through Stripe's 9 attempts over two weeks; Stripe then cancelled it; back through the form | 12 |
+| S5 | Cancelled at once at Stripe: closed at once | 5 |
+| S6 | Account deleted while paying: Stripe customer deleted, subscription cancelled | 3 |
+
+At every closed step: `/feed`, `/applied`, `/documents` and `/notifications` answered 402, the app showed
+the pay page at whatever address it was opened, and the account was outside the alerts and the harvest.
+
+**Found, and changed:**
+
+- **The product's price was one-time**, which a membership cannot use: a monthly £4.99 price was added in
+  the sandbox (`price_1UaiyGJ7E2072aP952lBVTV9`). deploy/SERVER.md step 10 now says recurring, monthly.
+- **The sandbox had no portal saved**, and Stripe opens none without one. `STRIPE_PORTAL_CONFIGURATION`
+  (optional) names a portal of the site's own, made for the sandbox (`bpc_1Uaj13J7E2072aP925yImu0z`:
+  cancel at the period's end, cards, invoices, no switching plans): also what a live account that sells
+  other things needs, so its portal never offers them. Unset, the account's default.
+- **Two syncs at once could write the older read last.** Stripe sent the last failed payment and the
+  cancel 0.3 s apart. `sync` now writes only over an older read (`billing_synced_at`, when its read
+  began); in the final run three older reads were not written. A test fails without it.
+- `billing.status_changed` was logged once per event that arrived together (three lines for one trial);
+  it is now taken from what the write replaced, so once per change.
+- **Stripe's SDK logged two INFO lines per call**; `stripe` joins the quieted libraries (`libs.obs`).
+- An event for a customer the site does not have is INFO, not WARNING: normal after an account's deletion,
+  and in an account that sells other things.
+- **Every account there was before memberships gets free access, once** (`libs.membership.free_for_existing`,
+  at the deploy's `python -m libs.db`). A counter says it ran (`next_ids`), so an admin's later Off stays off
+  and anybody signing up afterwards starts at the trial. Tested through the schema step itself.
+
+**For Stripe's settings** (step 10): Adaptive Pricing shows the form in the visitor's currency (HUF from
+Hungary, with a switch to GBP); the sandbox retries a failed payment 9 times over two weeks, then cancels.
+At a trial's end Stripe marks the subscription active while the first charge is attempted (in live mode it
+can wait up to an hour), so a card that then fails keeps access for that long.
+
+`tests/test_billing_stripe.py` re-checks the state changes against the sandbox through real subscriptions on
+test clocks (3 tests, 51 s), skipped without `STRIPE_TEST_SECRET_KEY` and `STRIPE_PRICE_ID`: for every
+`stripe` upgrade. The browser harness stayed in the session's scratchpad; its screenshots were read at each step.
+
+## 2026-11-11 — a membership through Stripe: seven days free, then billed, and the site closed to anybody not paying
+
+The owner (2026-11-11): people sign up, fill in their details on Stripe, start a 7-day free trial and are
+billed after it, automatically; anybody who did not pay is restricted and can only pay, after which the site
+opens again; the membership is managed from Settings on Stripe's side; the account holds when they last
+paid, when the next payment is due and whether it is active; admins can give access without a
+subscription, over it. One subscription. leadops' Stripe code and its fixes were the reference.
+
+- **One rule for who the site is open to** (`libs/membership.py`): paying or in the trial (Stripe's
+  `trialing`, `active`), free access from an admin, or an admin. One filter, asked by every page, by the
+  alert and daily-email sweeps, and by the harvest's LinkedIn places (`active_configs`), so nobody gets a job
+  by one door that another keeps shut. `current_user` now means signed in **and** a member, 402 otherwise,
+  so a page added later is closed by default; the few that stay open ask `signed_in`: `/dashboard`,
+  `/billing`, `/account` (password, consent, deletion), and Admin, which still answers 404. A test walks the
+  whole published API as a non-member and names those. `ADMIN_EMAILS` moved into `libs`, and the notifier
+  and harvester now get it, or the owner would be a member on the site and not to the alerts.
+- **Stripe is the record** (`services/api/billing_routes.py`). `sync` copies a customer's whole subscription
+  from Stripe, never one event's slice, so the order events arrive in, a repeat, or a missed one cannot
+  leave an account wrong. It runs on Stripe's webhook (eight events, each checked against the endpoint's
+  secret; 400 if not, 503 to be sent again when Stripe cannot be read back) and when the person comes back
+  from Stripe (`?stripe=back` → `/billing/refresh`), so the site opens the moment they have paid rather than
+  when the webhook arrives. What leadops had to fix, avoided by that: a status taken from an invoice event, an
+  older event written over a newer one, the server's clock instead of Stripe's, a period end read off the
+  subscription (on its item since Stripe's 2025-03-31 API: leadops got 0). The SDK is `stripe` 16
+  (API `2026-10-28.endive`), capped at the major, since each pins an API version.
+- **The payment form is Stripe's own, inside the page** (`ui_mode: embedded_page`; CLAUDE.md §0, never
+  leave the site to finish a step). Stripe's script is fetched on that page only (`@stripe/stripe-js/pure`,
+  its own 3.4 kB chunk), so no other page contacts Stripe. A card is taken even for the trial, so the first
+  payment happens by itself; the trial is only for somebody who never had a subscription; opening the form
+  ends any form opened before, so two tabs cannot become two memberships; somebody whose subscription is
+  still running gets Stripe's portal, never a second one.
+- **Who is restricted, and what they see.** A new account lands on "Start your free trial" right after
+  confirming its email, before setting up a search; a failed payment closes the site at once ("Your last
+  payment didn't go through" → *Pay now* → Stripe's portal); paying opens it again. Sign out and Delete my
+  account stay on that page. Nothing else of the site is reachable from it, alerts included.
+- **Settings → Your membership**: where it stands ("Active. Next payment on 2 December."), the last
+  payment, and *Manage membership*, Stripe's portal, which comes back to Settings.
+- **On the account**: `stripe_customer_id` (unique), `subscription_id`, `subscription_status`,
+  `trial_ends_at`, `period_ends_at`, `cancels_at`, `last_paid_at`, `last_paid_amount`, `currency`,
+  `billing_synced_at`, and `free_access_at`. A trial's 0 is not a payment.
+- **Admin**: a Membership column in Accounts, and a Membership card on each account (where it stands, the
+  trial, the next payment or the end, the last payment, the Stripe customer, when Stripe was last read) with
+  a *Free access* switch (`PUT /admin/users/{id}/free-access`). Free access changes nothing at Stripe.
+- **A customer Stripe does not have with the keys in use** (test mode's, after the live keys; one deleted at
+  Stripe) is forgotten by `sync` with all that was read of it, so a membership from test mode opens
+  nothing and the next payment form makes a real customer rather than failing for good. After moving the
+  server from test keys to live ones, `python -m services.api.billing_routes` reads every account again
+  (deploy/SERVER.md step 10); until then such an account stayed open.
+- **Deleting an account deletes its Stripe customer first**, from Settings and from Admin, which cancels
+  its subscription at once. If Stripe cannot be reached the account is not deleted (503): an account gone
+  while still billed is a charge nobody can stop.
+- **The trial's length is a platform setting** (`trial_days`, 7; Admin → Settings → *Free trial*). The price
+  is Stripe's (`STRIPE_PRICE_ID`), read once a process, since a Stripe price never changes; the sign-up page
+  and the trial page say it ("7 days free, then €9.99 a month").
+- **Privacy**: Stripe is named as a processor, and `DISCLOSURE_VERSION` is 2026-11-11, which by that file's
+  rule asks everyone to agree again before their next AI document or help-chat answer.
+- **Found on the way**: `/feed` answered 500 for a person with no green words: `matching_jobs` returned a
+  plain list and `their_jobs` set `.cut` on it. It returns `Matches()`; the existing test now asks the Jobs
+  page's list too, and failed before.
+- **Setup**: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` on the
+  API (`:-`, by compose's own rule: missing, the API says so at start and on every payment tried; a `:?`
+  would also stop the harvest). The API's log names a missing one, or keys from both test and live mode.
+  `deploy/SERVER.md` step 10 is the Stripe side, test mode first; `scripts/dev.sh` reads
+  `certificates/stripe.env`.
+- **Measured**: the gate is one query by `_id` per signed-in request, 0.41 ms median and 0.63 ms p99 on the
+  local mongod with 2,000 accounts. Against a remote Atlas it is one more round trip a request.
+- **Tests**: `tests/test_billing.py`, 25, against Stripe faked at the network under the real SDK, so what is
+  asserted is what is sent to Stripe and what is made of its answers; webhooks signed as Stripe signs them.
+  Each guards a behaviour and was checked to fail when it broke: the gate letting everyone in (6 failed),
+  alerts ignoring membership (1), an event's status trusted over Stripe's (1), an unknown customer kept (2).
+  The suite's test accounts became paying members (`subscription_status="active"`): without that 196
+  failed, which is what closed by default looks like. The browser walk now meets the trial page, checks
+  it at every width from 320 to 1440 px and its theme switch, and plays Stripe's part by writing what
+  the webhook would.
+- **A walk that passed by luck**: the Admin chart's walk (2026-11-10) measured its six controls the moment
+  the heading showed, before the chart's answer drew two of them, and failed one run in three. It waits
+  for all six now (five runs of five).
 
 ## 2026-11-11 — every CV and cover letter written from the person's own uploads, in one call, and checked before it arrives
 

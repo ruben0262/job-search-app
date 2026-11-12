@@ -1,9 +1,12 @@
-"""A new person, end to end, on the real built site: sign up, open the emailed link, the three
-onboarding screens, their jobs with why each one is there, and a CV that downloads as a PDF.
+"""A new person, end to end, on the real built site: sign up, open the emailed link, the three onboarding
+screens, their jobs with why each one is there, and a CV that downloads as a PDF; and the free plan, a week
+behind with the way to a membership wherever it is missed.
 
 Headless Chromium drives `web/dist`, served by the real API on a real MongoDB, with the real docgen
 worker beside it rendering through the real Chrome. Only the outside world is faked: the email is
-printed instead of sent, and nothing here can reach Telegram or an AI — an instant CV needs neither.
+printed instead of sent, nothing here can reach Telegram or an AI — an instant CV needs neither — and
+Stripe's part is played by writing what its webhook would (`tests/test_billing.py` tests that part, and
+`tests/test_billing_stripe.py` Stripe itself).
 
 And the same build with no API behind it, which needs no database: the first screen anybody sees.
 """
@@ -76,6 +79,9 @@ def site(monkeypatch, built, db):
     from services.api.app import app
 
     monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
+    # Never Stripe from here: its form would be fetched from Stripe for every walk.
+    for name in ("STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "STRIPE_PRICE_ID", "STRIPE_WEBHOOK_SECRET"):
+        monkeypatch.delenv(name, raising=False)
     run = uuid.uuid4().hex[:8]
     ids = _jobs(db, run, TITLES)
     app.dependency_overrides[deps.get_mailer] = ConsoleSender
@@ -175,8 +181,11 @@ def test_the_theme_button_is_a_circle_on_every_page_and_switches_the_theme(site,
 
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         _sign_up(page, base, email, capsys)
-        expect(page.get_by_role("heading", name="Your CV")).to_be_visible()
         check(page, "onboarding")
+        page.goto(f"{base}/#/upgrade")
+        expect(page.get_by_role("heading", name="You're a member")).to_be_visible()
+        check(page, "membership")
+        page.goto(f"{base}/#/")
         _onboard(page)
         check(page, "jobs")
         browser.close()
@@ -292,7 +301,14 @@ def test_nothing_runs_off_the_screen_or_over_something_else_at_any_size(site, ca
             page.set_viewport_size({"width": width, "height": 900})
             assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"landing at {width}px"
 
-        _sign_up(page, base, email, capsys)
+        _sign_up(page, base, email, capsys, member=False)
+        page.goto(f"{base}/#/upgrade")
+        expect(page.get_by_role("heading", name="Become a member")).to_be_visible()
+        for width in sizes:
+            page.set_viewport_size({"width": width, "height": 900})
+            assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"the membership's page at {width}px"
+        _member(page, email)
+        page.goto(f"{base}/#/")
         _onboard(page)
         expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
         for width in sizes:
@@ -502,6 +518,9 @@ def test_the_admin_chart_counts_every_job_board_at_first_and_only_those_ticked(s
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = _admin_corpus(browser, site, capsys)
+        # Measured once all six are drawn: two come with the chart's own answer, after its heading, and
+        # measuring at once failed one run in three (2026-11-11).
+        expect(page.locator(".chart-controls :is(select, summary, button.toggle)")).to_have_count(6)
         heights = page.evaluate("""() => [...document.querySelectorAll(
             '.chart-controls :is(select, summary, button.toggle)')].map((box) => box.offsetHeight)""")
         assert len(heights) == 6 and len(set(heights)) == 1, f"one size for every box in the row: {heights}"
@@ -1342,11 +1361,89 @@ def _fill_sign_up(page, email: str, password: str = PASSWORD) -> None:
     expect(page.get_by_role("heading", name="Check your email")).to_be_visible()
 
 
-def _sign_up(page, base: str, email: str, capsys) -> None:
-    """Sign up, and open the link from the email, which is printed rather than sent."""
+def _sign_up(page, base: str, email: str, capsys, *, member: bool = True) -> None:
+    """Sign up free, open the link from the email, which is printed rather than sent, and land on the first
+    step of setting up. `member`: with a membership begun, as Stripe's webhook writes one."""
     page.goto(f"{base}/#/signup")
     _fill_sign_up(page, email)
     page.goto(_emailed(capsys, "verify"))
+    expect(page.get_by_role("heading", name="Your CV")).to_be_visible()
+    if member:
+        _member(page, email)
+
+
+def _member(page, email: str) -> None:
+    """Stripe's part: a trial begun, as its webhook writes it; the page read again."""
+    from libs.db import database
+    from libs.db.models import User
+
+    database()[User.COLLECTION].update_one({"email": email}, {"$set": {"subscription_status": "trialing"}})
+    page.reload()
+
+
+def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_where_it_is_missed(
+        site, db, capsys, monkeypatch):
+    """Owner, 2026-11-12: sign up free with no card asked, set up the search, and see the jobs a week after
+    members do; the documents and the alerts are a member's, and each place they are missed says so with the
+    way to the membership. Picking Member on the sign-up page sends its link on to the payment form, which
+    says so plainly here, where Stripe has no keys."""
+    from libs.db import insert, now
+    from libs.db.models import CorpusJob
+    from services.api import billing_routes
+
+    base, email, _ = site
+    monkeypatch.setattr(billing_routes, "plan", lambda db: billing_routes.Plan(
+        amount=499, currency="gbp", interval="month", interval_count=1, trial_days=7, free_delay_hours=168))
+    week_old = now() - timedelta(days=8)
+    insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="test", company="Acme",
+                         title="Backend Engineer, a week ago", location="Berlin, Germany", country="DE",
+                         language="en", first_seen_at=week_old, described_at=week_old,
+                         description="Backend Engineer. Python, Postgres."))
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        page.goto(f"{base}/#/signup")
+        plans = page.get_by_role("group", name="Your plan")
+        expect(plans.get_by_role("radio", name=re.compile("^Free"))).to_be_checked()
+        expect(plans).to_contain_text("Every job that fits you, 7 days after members see it. No card.")
+        expect(plans).to_contain_text("7 days free, then £4.99 a month.")
+        _fill_sign_up(page, email)
+        page.goto(_emailed(capsys, "verify"))
+        _onboard(page)
+
+        # The week-old job, and not the three found today.
+        expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()
+        expect(page.get_by_text("You see jobs 7 days after members see them.")).to_be_visible()
+        expect(page.get_by_text("You see each job 7 days after members do. Jobs stay here for 30 days.")) \
+            .to_be_visible()
+        expect(page.get_by_label("Posted").locator("option")).to_have_text(["Any time", "Last 2 weeks"])
+        page.get_by_role("button", name="Make my CV").click()
+        notice = page.locator(".toast").filter(has_text="CVs and cover letters comes with a membership.")
+        expect(notice).to_be_visible()
+        notice.get_by_role("link", name="Become a member").click()
+        expect(page.get_by_role("heading", name="Become a member")).to_be_visible()
+        expect(page.get_by_text("Payments aren't set up yet.")).to_be_visible()
+        page.get_by_role("link", name="Not now").click()
+
+        page.goto(f"{base}/#/settings")
+        expect(page.get_by_text("Alerts come with a membership.")).to_be_visible()
+        expect(page.get_by_role("button", name="Pause alerts")).to_have_count(0)
+        expect(page.get_by_text("The free plan.")).to_be_visible()
+
+        # The Member card's link from the landing page: Member picked, and the email's link goes on to pay.
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        page.goto(f"{base}/#/signup?plan=member")
+        expect(page.get_by_role("group", name="Your plan").get_by_role("radio", name=re.compile("^Member"))) \
+            .to_be_checked()
+        _fill_sign_up(page, f"member.{email}")
+        expect(page.get_by_text("at the form that starts your free trial")).to_be_visible()
+        link = _emailed(capsys, "verify")
+        assert link.endswith("&plan=member")
+        page.goto(link)
+        expect(page.get_by_role("heading", name="Become a member")).to_be_visible()
+        page.get_by_role("link", name="Not now").click()
+        expect(page.get_by_role("heading", name="Your CV")).to_be_visible()
+        browser.close()
 
 
 def test_sign_up_confirm_sign_in_and_reset_the_password_each_step_at_once(site, capsys):
@@ -1480,7 +1577,11 @@ def _alert_links(page, base: str, ids: dict[str, int]) -> None:
     for event in vars(notify).values():
         if isinstance(event, notify.Event) and event.url:
             page.goto(f"{base}/{event.url}")
-            expect(page.locator("nav a[aria-current=page]")).to_have_attribute("href", event.url)
+            if event.url == "#/upgrade":
+                # The membership's own page, apart from the places in the bar.
+                expect(page.get_by_role("heading", name=re.compile(r"\bmember\b"))).to_be_visible()
+            else:
+                expect(page.locator("nav a[aria-current=page]")).to_have_attribute("href", event.url)
 
 
 def _settings(browser, page, base: str) -> None:

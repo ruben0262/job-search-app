@@ -165,8 +165,9 @@ HARVEST_CYCLE_WARN_FRACTION = 0.75
 # How old a posting may be and still be worth scoring and sending. A different question from the
 # freshness windows above, which say how far back to *ask* a source: this one is how long a posting
 # already in the corpus stays a candidate, and it is the only age check between the corpus and a
-# user's feed. Thirty days (owner, 2026-11-12: "instead of 15 days its 30 days now"); a week from
-# 2026-11-07, a day before. The Jobs page opens on the last 24 hours, and "Posted" reaches back the rest.
+# user's feed. Thirty days (owner, 2026-11-12: "instead of 15 days its 30 days now"), so a free account,
+# a week behind (`free_delay_hours`), still has three weeks of them; a week from 2026-11-07, a day before.
+# The Jobs page opens on the last 24 hours, and "Posted" reaches back the rest.
 DEFAULT_JOB_MAX_AGE_HOURS = 720
 
 # The floor a source's delivery window may not go below, because below it that source stops
@@ -271,6 +272,16 @@ DEFAULT_DOCUMENT_KEEP_HOURS = 1
 # `document_models`.
 DEFAULT_SUPPORT_CHAT_ENABLED = 1
 
+# How many days free a membership starts with (owner, 2026-11-11: "a 7 day free trial"), for somebody who
+# never had one; 0 is none. The price is Stripe's, picked with `STRIPE_PRICE_ID` (`billing_routes`).
+DEFAULT_TRIAL_DAYS = 7
+
+# How far behind a member a free account sees the jobs, in hours (owner, 2026-11-12: "only jobs that have
+# passed the 7 day mark should appear for them"): a job reaches its list that long after a member's, and
+# leaves it with everybody's (`libs.membership.jobs_as_of`). 0 shows free accounts the jobs as they come; the
+# documents and the alerts stay members'.
+DEFAULT_FREE_DELAY_HOURS = 168
+
 
 DEFAULTS: dict[str, object] = {
     "job_max_age_hours": DEFAULT_JOB_MAX_AGE_HOURS,
@@ -292,6 +303,8 @@ DEFAULTS: dict[str, object] = {
     "corpus_retention_days": DEFAULT_CORPUS_RETENTION_DAYS,
     "support_email": DEFAULT_SUPPORT_EMAIL,
     "email_digest_hour": DEFAULT_EMAIL_DIGEST_HOUR,
+    "trial_days": DEFAULT_TRIAL_DAYS,
+    "free_delay_hours": DEFAULT_FREE_DELAY_HOURS,
 }
 
 

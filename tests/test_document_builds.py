@@ -64,7 +64,8 @@ def api(db, monkeypatch):
     monkeypatch.delenv("PLATFORM_AI_PROVIDER", raising=False)
     monkeypatch.delenv("PLATFORM_AI_KEY", raising=False)
 
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                           subscription_status="active", status="active",
                            full_name="Alice Example"))
     # Their CV and a cover letter of theirs: what each is written from (`libs.documents.needs`).
     for kind, text in (("cv", CV_TEXT), ("cover_letter", COVER_TEXT)):
@@ -228,7 +229,8 @@ def test_a_build_is_its_owners_alone(ready):
     build_id = _ask(api).json()["id"]
     _work(api)
     assert api.http.get(f"/documents/build/{build_id}/file").status_code == 200, "the premise"
-    stranger = insert(api.db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    stranger = insert(api.db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                                   subscription_status="active", status="active"))
     api.http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
 
     assert api.http.get(f"/documents/build/{build_id}").status_code == 404
@@ -380,7 +382,8 @@ def test_a_kept_document_is_its_owners_alone(ready):
     from libs.db.models import User
 
     made = _make(api)
-    stranger = insert(api.db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    stranger = insert(api.db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                                   subscription_status="active", status="active"))
     api.http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
 
     assert api.http.get(made["download_url"]).status_code == 404

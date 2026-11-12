@@ -111,7 +111,8 @@ def scan_for(hours: int) -> int:
 
 
 def matching_jobs(db: Database, user: User, *, described_since: datetime | None = None,
-                  since: datetime | None = None, scan: int = SCAN, text: bool = False) -> Matches:
+                  since: datetime | None = None, scan: int = SCAN, text: bool = False,
+                  as_of: datetime | None = None) -> Matches:
     """This person's matches, the most of their words first, then newest first. A job is one once its
     whole text is read (`candidate_conditions`), so `described_since` keeps those that became one since:
     what alerts send, and what the Jobs page counts as new.
@@ -123,14 +124,20 @@ def matching_jobs(db: Database, user: User, *, described_since: datetime | None 
 
     `since` is the oldest the caller will show, so the budget is spent inside it: a posting found a day
     before it can still have been posted inside it, by a board whose clock runs ahead of ours.
+
+    `as_of` is a free account's (`libs.membership.jobs_as_of`): the jobs a member's list had by then and still
+    has, so a job reaches it a week late and leaves it when it leaves everybody's.
     """
     config = TenantRepository(db).get_config(user.id)
     mine = green_words(config)
     if not mine:
-        return []
+        return Matches()
 
     filters = filters_for(db, user)
     where = candidate_conditions(filters)
+    if as_of is not None:
+        # Found by then, which the words index reads by and stops at; and read by then, the rule itself.
+        where += [{"first_seen_at": {"$lte": as_of}}, {"described_at": {"$lte": as_of}}]
     if described_since is not None:
         where.append({"described_at": {"$gte": described_since}})
     if since is not None:
@@ -198,11 +205,11 @@ def marks(db: Database, user_id) -> tuple[set[int], dict[int, datetime]]:
 
 
 def their_jobs(db: Database, user: User, *, described_since: datetime | None = None,
-               since: datetime | None = None, scan: int = SCAN) -> Matches:
+               since: datetime | None = None, scan: int = SCAN, as_of: datetime | None = None) -> Matches:
     """What this person's Jobs page lists: their matches, less a job they skipped or applied to, which is
-    gone from it for good."""
+    gone from it for good; for a free account, only those a member's list had by `as_of` (`matching_jobs`)."""
     skipped, applied = marks(db, user.id)
-    found = matching_jobs(db, user, described_since=described_since, since=since, scan=scan)
+    found = matching_jobs(db, user, described_since=described_since, since=since, scan=scan, as_of=as_of)
     mine = Matches(match for match in found if match.job.id not in skipped and match.job.id not in applied)
     mine.cut = found.cut
     return mine

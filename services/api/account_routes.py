@@ -17,6 +17,7 @@ from libs.db.models import User
 from libs.legal import DISCLOSURE_VERSION, disclosure, has_consented
 from libs.obs import audit
 from services.api.auth_routes import _clear_session_cookies
+from services.api.billing_routes import _stripe_answers, end_membership
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,9 @@ def delete_account(body: DeleteBody, db: Database = Depends(get_db),
         # Deliberately the same shape as a failed login: no oracle, no timing shortcut.
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="that password is not correct")
 
+    # Their membership first: an account deleted while Stripe still bills it is a charge nobody can stop.
+    with _stripe_answers("end the membership of an account being deleted"):
+        end_membership(user)
     # Their credentials and the key that could read them go with the account (`libs.db.delete_account`).
     erase_account(db, user_id)
     audit(logger, "account.deleted", user=user_id)

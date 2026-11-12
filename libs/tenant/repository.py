@@ -32,7 +32,8 @@ class TenantRepository:
             upsert=True)
 
     def active_configs(self) -> dict[_uuid.UUID, dict]:
-        """Every active user's config, for the harvester's query-set fold."""
+        """Every active account's config, for the harvester's query-set fold: a free account's too, whose
+        list is the same jobs a week later (`libs.membership.jobs_as_of`), so they must be found."""
         active = self._db[User.COLLECTION].distinct("_id", {"active": True, "status": "active"})
         return {row["user_id"]: row["config"] for row in self._db[UserConfig.COLLECTION].find(
             {"user_id": {"$in": active}}, {"user_id": 1, "config": 1})}

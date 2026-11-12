@@ -74,7 +74,8 @@ def _account(db):
     from libs.db import insert
     from libs.db.models import User, UserConfig
 
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                           subscription_status="active", status="active"))
     insert(db, UserConfig(user_id=user.id, schema_version=2, config=copy.deepcopy(CONFIG)))
     settings.put(db, "support_chat_enabled", 1)
     return user
@@ -166,7 +167,8 @@ def test_a_button_is_only_what_was_offered_and_only_for_whoever_asked(api, monke
     button = f"/support/replies/{reply['id']}/steps"
     assert api.http.post(f"{button}/0").status_code == 404, "a lookup is not a button"
     assert api.http.post(f"{button}/7").status_code == 404
-    stranger = insert(api.db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    stranger = insert(api.db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                                   subscription_status="active", status="active"))
     mine = api.http.cookies.get("access_token")
     api.http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
     assert api.http.post(f"{button}/1").status_code == 404, "somebody else's button"

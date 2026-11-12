@@ -9,6 +9,7 @@ from dataclasses import dataclass
 # key. A new processor asks everyone again.
 # 2026-11-01: the proxy is the site's one provider now, not a person's own, and LinkedIn is searched
 # for everyone's words through it — so it reaches people it did not reach before.
+# 2026-11-11: Stripe, which takes the membership's payments (`services/api/billing_routes.py`).
 # 2026-11-12: the cookies, now agreed to with the rest at sign-up (owner: "a box to confirm the privacy policy
 # and cookies of the site before signing up").
 DISCLOSURE_VERSION = "2026-11-12"
@@ -57,6 +58,15 @@ PROCESSORS = (
         location="United States",
     ),
     Processor(
+        name="Stripe",
+        purpose="Taking the payments for your membership, and the page where you change or cancel it.",
+        data="Your email address, and the card or other payment details you type into Stripe's own form, "
+             "which never reach this site. Nothing else about you: not your CV, your searches or your "
+             "documents.",
+        on_your_credential=False,
+        location="Ireland and the United States",
+    ),
+    Processor(
         name="Telegram",
         purpose="Delivering your job matches.",
         data="The job titles, companies and links we send you. Your bot token and chat id.",
@@ -83,7 +93,8 @@ class Cookie:
 
 
 # What the site keeps in a browser, every one of them needed for it to work: nothing measures or advertises.
-# Its cookies are the two `services/api/auth_routes.py` sets; the rest is the browser's own storage.
+# Its cookies are the two `services/api/auth_routes.py` sets; the rest is the browser's own storage, and
+# Stripe's script, which only the payment form loads (`web/src/membership.tsx`).
 COOKIES = (
     Cookie(name="access_token", purpose="Keeps you signed in while you use the site.", kept="15 minutes"),
     Cookie(name="refresh_token", purpose="Signs you in again when the one above runs out. Only ever sent to "
@@ -93,6 +104,8 @@ COOKIES = (
     Cookie(name="job-marks, in your browser's storage", purpose="A Skip or Mark as applied pressed while the "
                                                                 "connection was lost, until it is sent.",
            kept="Until it is sent"),
+    Cookie(name="Stripe's", purpose="Set by Stripe on the payment form alone, to prevent fraud.",
+           kept="As Stripe's cookie policy says"),
 )
 
 # What the consent screen says above the list.

@@ -57,4 +57,5 @@ def user(db):
     from libs.db import insert
     from libs.db.models import User
     return insert(db, User(email=f"{uuid.uuid4().hex[:12]}@example.com", password_hash="x",
+                           subscription_status="active",
                            status="active", active=True))

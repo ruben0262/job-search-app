@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import uuid as _uuid
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -47,12 +48,19 @@ OPAQUE_SIGNUP = {"status": "check your email"}
 OPAQUE_LOGIN_ERROR = "email or password is incorrect"
 
 
+# What the sign-up page was left on (owner, 2026-11-12: "an option to do the free membership without any
+# credit card info being asked after, or the only sub which gives a free 7 day trial"). The account is the
+# same either way, and free: "member" only sends the confirmation link on to the payment form.
+Plan = Literal["free", "member"]
+
+
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
     # The privacy policy's version the page showed beside its box (`libs.legal`): ticking it is the only way
     # to an account (owner, 2026-11-12), and agrees to the cookies and to the AI that writes documents too.
     consent_version: str | None = Field(None, max_length=16)
+    plan: Plan = "free"
 
 
 class LoginRequest(BaseModel):
@@ -105,7 +113,7 @@ def signup(body: SignupRequest, request: Request, background: BackgroundTasks,
         return OPAQUE_SIGNUP
 
     token = issue_token(db, user.id, "verify_email")
-    background.add_task(_send_verification, db, mailer, email, token)
+    background.add_task(_send_verification, db, mailer, email, token, body.plan)
     return OPAQUE_SIGNUP
 
 
@@ -115,6 +123,7 @@ class AuthStatus(BaseModel):
 
 class ResendRequest(BaseModel):
     email: EmailStr
+    plan: Plan = "free"
 
 
 @router.post("/resend", status_code=status.HTTP_202_ACCEPTED)
@@ -128,7 +137,7 @@ def resend(body: ResendRequest, request: Request, background: BackgroundTasks,
     if user is not None and user.status == "pending_verification":
         # Issuing revokes the older links, so the newest one in the inbox is the one that works.
         background.add_task(_send_verification, db, mailer, email,
-                            issue_token(db, user.id, "verify_email"))
+                            issue_token(db, user.id, "verify_email"), body.plan)
     else:
         logger.info("verification resend for an unknown or verified address; answering opaquely")
     return AuthStatus(**OPAQUE_SIGNUP)
@@ -303,10 +312,10 @@ def logout_everywhere(request: Request, response: Response,
 # message, and an address with an account answered that much slower than one without: the timing told
 # what the opaque answer was written to hide.
 
-def _send_verification(db: Database, mailer: EmailSender, email: str, token: str) -> None:
+def _send_verification(db: Database, mailer: EmailSender, email: str, token: str, plan: Plan) -> None:
     """Send the link, and treat any delivery failure as recoverable."""
-    # The SPA's hash route, not the API's path.
-    url = site_url(f"/#/verify?token={token}")
+    # The SPA's hash route, not the API's path; for a membership, on to the payment form once it is opened.
+    url = site_url(f"/#/verify?token={token}" + ("&plan=member" if plan == "member" else ""))
     subject, body = verification_email(url)
     # The token grants access to the account, so it is scrubbed from anything logged in flight.
     with redacting(token):

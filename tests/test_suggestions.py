@@ -136,7 +136,8 @@ def api(db, monkeypatch):
     from libs.db.models import CorpusJob, User
     from services.api.app import app
 
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                           subscription_status="active", status="active"))
     moment = now()
     for minute, title in enumerate(["Sales Engineer", "Sales Engineer EMEA", "Field Sales Engineer",
                                     "Python Developer", "Backend Engineer"]):

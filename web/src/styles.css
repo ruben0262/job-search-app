@@ -685,6 +685,32 @@ button[disabled] {
   margin: -1.25rem 0 1.75rem;
 }
 
+/* The payment form (`membership.tsx`): the price over Stripe's fields, which are drawn in the site's own
+   colours (`appearance`), and the site's own button under them. */
+.pay-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.pay-form p {
+  margin: 0;
+}
+
+.pay-form .main {
+  margin-top: 0.5rem;
+}
+
+/* What a membership adds, over its form (`UpgradePage`). */
+.adds {
+  margin: -0.5rem 0 1.75rem;
+  padding-left: 1.2rem;
+  color: var(--muted);
+}
+
+.adds li + li {
+  margin-top: 0.4rem;
+}
+
 /* ── signed out: sign in, sign up, the emailed links (`AuthShell`) ──────────────────────────── */
 
 .auth-body {
@@ -741,6 +767,56 @@ button[disabled] {
   .auth-art {
     display: none;
   }
+}
+
+/* The two plans on the sign-up page, each a card to pick (`SignIn.tsx`). */
+.plans {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0 0 1.4rem;
+  padding: 0;
+  border: 0;
+}
+
+.plan {
+  position: relative;
+  display: block;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--faint);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  cursor: pointer;
+  transition: border-color var(--fade) var(--ease), box-shadow var(--fade) var(--ease);
+}
+
+.plan.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.2);
+}
+
+.plan:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* The card is the choice; its dot would only say it again. */
+.plan input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.plan strong,
+.plan .small {
+  display: block;
+}
+
+/* The box that agrees to the privacy policy and its cookies: the switch, then its sentence. */
+.agree {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
 }
 
 /* The one thing to do, the width of the column. */
@@ -2844,6 +2920,10 @@ button.ai-provider {
 }
 .account .card .facts-list {
   margin: 0;
+}
+/* The membership card's free-access switch, apart from the facts above it. */
+.account .card .switch {
+  margin-top: 1.25rem;
 }
 .account-head {
   display: flex;

@@ -30,7 +30,8 @@ def api(db, monkeypatch):
     from libs.db.models import UserConfig
     from services.api.app import app
 
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                           subscription_status="active", status="active",
                            active=True, full_name="Alice Example", telegram_status="connected",
                            telegram_chat_id="1", onboarding_completed_at=now()))
     insert(db, UserConfig(user_id=user.id, config=CONFIG, schema_version=2))
