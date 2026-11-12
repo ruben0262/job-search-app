@@ -25,6 +25,7 @@ const after = (seconds: number) => ({ "--d": `${seconds}s` }) as CSSProperties;
  * (owner, 2026-11-06), so each is the thing its section is about. */
 const SECTIONS: [id: string, name: string, short: string, icon: ReactNode][] = [
   ["top", "Mahoraga", "Top", null],
+  ["edge", "Why it works", "Why", <path key="i" d="M13.2 2.8L5.5 13.4h5.6l-1.3 7.8 7.7-10.6h-5.6z" />],
   ["what", "What it is", "What", <path key="i" d="M12 3.5a8.5 8.5 0 110 17 8.5 8.5 0 010-17zM12 11v5.3M12 7.9h.01" />],
   ["how", "How it works", "How", <path key="i" d="M6 20.2a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4zM18 8.2a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4zM8.2 18h7.3a3 3 0 000-6h-7a3 3 0 010-6h7.3" />],
   ["live", "Your jobs", "Jobs", PLACES.find(([key]) => key === "jobs")?.[2]],
@@ -42,6 +43,30 @@ const steps = (often: string): [string, ReactNode, ReactNode][] => [
     in seconds. Nothing made up.</>, <TapArt />],
   ["Apply, and keep track", <>Apply on the job's own site, <strong>in minutes, not hours.</strong> Then follow each
     one: the interview, the offer, the job.</>, <ApplyArt />],
+];
+
+/** A figure behind the selling points, with where it comes from: each read at its source on 2026-11-12, and
+ * each said with its own scope. Claims that could not be traced to a source were left out ("4x within 10
+ * minutes", "8x in 4 days"). */
+type Figure = [figure: string, what: string, source: string, link: string];
+const LINKEDIN = "https://news.linkedin.com/2026/LinkedIn-Research-Talent-2026";
+const ASHBY = "https://ashbyhq.com/blog/recruiting/operationalizing-2023-application-per-job-report";
+const FORTUNE = "https://fortune.com/2025/02/02/linkedin-indeed-greenhouse-job-seekers-likely-response-interviews/";
+const ISE = "https://ise.org.uk/knowledge/insights/410/record_graduate_job_applications";
+/** The market the page's readers are in: Europe's, the UK's above all (owner, 2026-11-12: "mainly european"). */
+const MARKET: Figure[] = [
+  ["140", "applications for each UK graduate job, a record", "Institute of Student Employers, 2024", ISE],
+  ["65%", "of people say finding a job has got harder", "LinkedIn survey, 13 countries incl. UK, DE, FR, Nov 2025",
+   LINKEDIN],
+];
+/** Be first: hiring starts in a job's first week, when most of its applicants arrive. */
+const FIRST: Figure[] = [
+  ["~60%", "of hirers find someone to interview in a job's first week", "LinkedIn, Jan 2026 (Hiring Pro users)", LINKEDIN],
+  ["~2×", "the applications in a job's first week as in each week after", "Ashby, 13M applications", ASHBY],
+];
+/** Be seen: most applications are never answered. */
+const SEEN: Figure[] = [
+  ["14M+", "applications went unanswered in one quarter of 2024", "Greenhouse, in Fortune, Feb 2025", FORTUNE],
 ];
 
 /** Get started: what they do once, and what then happens every day without them. */
@@ -255,6 +280,50 @@ export function Landing() {
           ) : null}
         </section>
 
+        {/* Why it gets people interviews (owner, 2026-11-12): there first, with a CV made for the job. */}
+        <section id="edge" className="section">
+          <div className="head center" data-reveal>
+            <h2>Be first. <span className="glow">Be seen.</span></h2>
+            <p className="lp-lede">
+              More people apply for every job, and hiring starts in its first week. Mahoraga gets you there
+              <strong> early,</strong> with <strong>a CV made for the job.</strong>
+            </p>
+          </div>
+          <div className="market" data-reveal><Figures of={MARKET} /></div>
+          <div className="edge-grid">
+            <article className="tile edge-card" data-reveal data-spot>
+              <WeekArt />
+              <h3>New jobs in minutes, not days</h3>
+              <p>Every job site read {often}. <strong>Apply in a job's first days,</strong> when hiring starts.</p>
+              <Figures of={FIRST} />
+            </article>
+            <article className="tile edge-card" data-reveal data-spot style={after(0.08)}>
+              <AtsArt />
+              <h3>A CV made for each job, in seconds</h3>
+              <p>From your own CV, with a cover letter, <strong>in one tap,</strong> and read the way an ATS reads it.</p>
+              <Figures of={SEEN} />
+            </article>
+          </div>
+          {/* The rest of what it does for them, a picture each, so the point lands without reading. */}
+          <div className="edge-row">
+            <article className="tile edge-mini" data-reveal data-spot>
+              <SitesArt boards={reach?.company_boards ?? 0} />
+              <h3>Straight from company sites</h3>
+              <p>Not only job boards: jobs from companies' own career pages.</p>
+            </article>
+            <article className="tile edge-mini" data-reveal data-spot style={after(0.06)}>
+              <FilterArt />
+              <h3>Filters that do the reading</h3>
+              <p>Your words find jobs, red words hide them. Never the same job twice.</p>
+            </article>
+            <article className="tile edge-mini" data-reveal data-spot style={after(0.12)}>
+              <TrackArt />
+              <h3>Every application tracked</h3>
+              <p>Applied, interview, offer: one tap each. No spreadsheet.</p>
+            </article>
+          </div>
+        </section>
+
         <section id="what" className="section">
           <div className="head center" data-reveal>
             <h2>Every job site. <span className="glow">One list for you.</span></h2>
@@ -378,6 +447,82 @@ function Dock({ at, jump }: { at: number; jump: (id: string) => (event: MouseEve
         </a>
       ))}
     </nav>
+  );
+}
+
+/** The figures behind a claim, each with its source, linked. */
+function Figures({ of }: { of: Figure[] }) {
+  return (
+    <dl className="figures">
+      {of.map(([figure, what, source, link]) => (
+        <div key={what}>
+          <dt>{figure}</dt>
+          <dd>{what}<a href={link} target="_blank" rel="noreferrer">{source}</a></dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Applications a week over a job's first month, as Ashby counted them (the first week about twice each later
+ * one), and you on its first day. */
+function WeekArt() {
+  return (
+    <div className="week-art" aria-hidden="true">
+      <span className="week-you">You, day 1</span>
+      {[100, 50, 48, 46].map((tall, i) => (
+        <i key={i} style={{ "--h": `${tall}%`, "--i": i } as CSSProperties}><b>Week {i + 1}</b></i>
+      ))}
+    </div>
+  );
+}
+
+/** The hiring systems whose career pages it reads directly, Europe's among them, and how many companies' pages
+ * (`/stats`, never typed here; left out while it counts none). */
+function SitesArt({ boards }: { boards: number }) {
+  return (
+    <div className="mini-art sites-art" aria-hidden="true">
+      {boards ? <span className="sites-count"><AtLeast n={boards} /> career pages</span> : null}
+      <div>
+        {["Personio", "Recruitee", "Greenhouse", "Workable", "Lever", "SmartRecruiters"].map((name, i) => (
+          <span key={name} style={{ "--i": i } as CSSProperties}>{name}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** What the filters do: green words in, red words out, the places, the way of working and the languages. */
+function FilterArt() {
+  return (
+    <div className="mini-art filter-art" aria-hidden="true">
+      <span className="in">nurse</span><span className="in">care</span><span className="out">night</span>
+      <span>Germany</span><span>Remote</span><span>English</span>
+    </div>
+  );
+}
+
+/** An application followed: applied and interview reached, the offer next. */
+function TrackArt() {
+  return (
+    <ol className="mini-art track-art" aria-hidden="true">
+      {["Applied", "Interview", "Offer"].map((step, i) => <li key={step} className={i < 2 ? "done" : ""}>{step}</li>)}
+    </ol>
+  );
+}
+
+/** A CV read the way an applicant tracking system reads it: its headings found, the posting's words in it. */
+function AtsArt() {
+  return (
+    <div className="ats-art" aria-hidden="true">
+      <div className="ats-paper">
+        <b />
+        {["Profile", "Experience", "Skills"].map((heading, i) => (
+          <span key={heading} style={{ "--i": i } as CSSProperties}>{heading}<em>✓</em></span>
+        ))}
+      </div>
+      <span className="ats-badge"><svg viewBox="0 0 20 20"><path d="M5.5 10.4l3 3 6-6.4" /></svg>Read like an ATS</span>
+    </div>
   );
 }
 

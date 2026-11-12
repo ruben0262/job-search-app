@@ -186,7 +186,8 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         site, capsys):
     """The landing page's numbers are the server's (`/stats`): typed into it, they said 25 sources long
     after that was true. A big one is said as the round number it is at least, so it reads at a glance
-    and stays true (owner, 2026-11-07). Sign in and sign up follow the address, going back included. And
+    and stays true (owner, 2026-11-07). The selling points come second, each figure behind them linked to
+    its source (owner, 2026-11-12). Sign in and sign up follow the address, going back included. And
     on a phone each tab is a picture over a word (owner, 2026-11-07; pictures alone, 2026-11-06, were not
     enough), each opening its page. Its card says where people apply: on the job's own site, never here
     (owner, 2026-11-06)."""
@@ -212,12 +213,17 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         expect(demo).to_contain_text("opens it on LinkedIn, and you apply there")
         # The sections at the foot of a phone: a picture over each one's word (owner, 2026-11-07).
         expect(page.locator(".dock a").filter(has=page.locator(".short"))).to_have_text(
-            ["What", "How", "Jobs", "Start"], use_inner_text=True)
+            ["Why", "What", "How", "Jobs", "Start"], use_inner_text=True)
         # Each section says what it is in a big title of its own, where a small label stood (owner,
         # 2026-11-07).
         expect(page.locator("main section h2")).to_have_text([
-            "Every job site. One list for you.", "From sign\u2011up to applied.", "See it working.",
-            "Start in a few minutes."])
+            "Be first. Be seen.", "Every job site. One list for you.", "From sign\u2011up to applied.",
+            "See it working.", "Start in a few minutes."])
+        # Each figure behind a selling point says where it comes from, and links there (owner, 2026-11-12).
+        figures = page.locator("#edge .figures > div")
+        expect(figures).to_have_count(5)
+        for figure in figures.all():
+            expect(figure.locator("a")).to_have_attribute("href", re.compile(r"^https://"))
 
         page.goto(f"{base}/#/signin")
         expect(page.get_by_role("heading", name="Sign in")).to_be_visible()

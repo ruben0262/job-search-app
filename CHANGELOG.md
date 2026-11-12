@@ -14,6 +14,64 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12 — The landing page's selling points: be first, be seen, each figure with its source
+
+The owner asked for:
+- **The selling points, said so that somebody scrolling past gets them:**
+  - jobs reported as they appear, so an applicant in a crowded field gets ahead and is among the first to
+    apply, with figures behind it ("especially online applications");
+  - CVs and cover letters made for each job on the site, quickly, passing ATS checks;
+  - the applications tracked for them;
+  - filtering that makes reading jobs far easier than on any other job site.
+- **Then:** "these sections emphasised as well… so they get the message", and "its mainly european not us
+  or east/asia based".
+
+**"Be first. Be seen.", the second section,** "Why" in the dock. Under the title, one line: more people
+apply for every job, and hiring starts in its first week.
+- **Two figures for the market the readers are in:**
+  - 140 applications for each UK graduate job, a record;
+  - 65% of people say finding a job has got harder.
+- **Be first: "New jobs in minutes, not days".**
+  - The picture is a job's first month as applications a week: the first week twice the others, as Ashby
+    counted them, with "You, day 1" at its start. The bars grow as the card is reached.
+  - The figures: ~60% of hirers find someone to interview in a job's first week, and ~2× the applications
+    in that week.
+- **Be seen: "A CV made for each job, in seconds".**
+  - The picture is a CV read the way an applicant tracking system reads it, its headings ticked in turn.
+  - The figure: 14M+ applications unanswered in one quarter.
+- **Three smaller cards, each with a picture so its point lands unread:**
+  - **"Straight from company sites":** the hiring systems whose career pages it reads (Personio, Recruitee,
+    Greenhouse, Workable, Lever, SmartRecruiters), with how many companies' pages, from `/stats`;
+  - **"Filters that do the reading":** green words, a red one crossed out, a country, remote, a language;
+  - **"Every application tracked":** applied and interview reached, the offer next.
+- **The dock on a phone** hides its wheel (back to the top), so its sections keep their room: as many as
+  six, 44 px each at 320 px.
+
+**The figures, each read at its source on 2026-11-12, and linked on the page with its scope:**
+
+| Figure | Source | Scope |
+|---|---|---|
+| 140 applications per UK graduate job, a record since 1991 | Institute of Student Employers, Oct 2024 | UK graduate jobs |
+| 65% say finding a job has become more challenging | LinkedIn survey, Nov 2025, published 7 Jan 2026 | 19,113 people, 13 countries incl. UK, Germany, France, Italy, Spain, Sweden |
+| Nearly 60% of hirers find a candidate to interview within the first week | LinkedIn, 7 Jan 2026 | Hiring Pro users |
+| ~2× the inbound applications in a role's first week as in later weeks | Ashby, Application Per Job Report | 13M applications, 2021–23 |
+| 14M+ applications ignored in a single quarter of 2024 | Greenhouse, in Fortune, 2 Feb 2025 | one hiring platform |
+
+Left out:
+- **"US applicants per role doubled since 2022" (LinkedIn) and Huntr's figures (its users mostly
+  American):** the readers are European.
+- **"Applying within 10 minutes of a job alert: up to 4x more likely to hear back":** quoted secondhand
+  from LinkedIn staff, and not found in any LinkedIn publication.
+- **"Up to 8x in the first 96 hours" (TalentWorks, 2017):** not found at its source.
+- **"72% of offers go to applicants of the first five days":** no source.
+- **"10x easier than any other job site":** nothing measures it, and a comparison with other sites needs
+  evidence before it is published. The filters card says what they do instead.
+
+Measured with a built site: nothing past the screen's edge at 320, 390 and 1,440 px.
+
+Test: the landing page's test names the new section and the dock's "Why", and each of its five figures
+links to an `https://` source. It fails on the previous commit, which has neither.
+
 ## 2026-11-11 — every CV and cover letter written from the person's own uploads, in one call, and checked before it arrives
 
 The owner (2026-11-10): "2 separate routes one for cv writing and one for cover letter writing … we'll
