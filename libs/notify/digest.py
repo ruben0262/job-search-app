@@ -13,9 +13,10 @@ from zoneinfo import ZoneInfo
 from pymongo.database import Database
 
 from libs import limits
+from libs.corpus.boards import board_name
 from libs.db import now
 from libs.db.models import User
-from libs.mail import EmailSender, MailError, send_within_cap
+from libs.mail import DigestJob, EmailSender, MailError, digest_email, send_within_cap
 from libs.matching import matching_jobs
 from libs.notify import site_url
 
@@ -46,20 +47,15 @@ def send_digest(db: Database, mailer: EmailSender, user: User) -> int:
     if not jobs:
         logger.info("digest: nothing new for %s since %s", user.id, since.isoformat())
         return 0
-    shown = jobs[:DIGEST_LIMIT]
-    lines = [f"{len(jobs)} new job{'s' if len(jobs) != 1 else ''} match your search:", ""]
-    for match in shown:
-        job = match.job
-        where = " · ".join(part for part in (job.company, job.location) if part)
-        lines += [f"• {job.title}" + (f" — {where}" if where else ""),
-                  f"  {site_url(f'/#/feed?job={job.id}')}", ""]
-    if len(jobs) > len(shown):
-        lines.append(f"And {len(jobs) - len(shown)} more on your jobs page: {site_url()}")
-    lines += ["", f"Turn this email off in Settings: {site_url('/#/settings')}"]
+    shown = [DigestJob(title=match.job.title or "A new job",
+                       where=" · ".join(part for part in (match.job.company, match.job.location) if part),
+                       board=board_name(match.job.source or ""), words=match.words,
+                       url=site_url(f"/#/feed?job={match.job.id}"))
+             for match in jobs[:DIGEST_LIMIT]]
+    subject, text, html = digest_email(shown, total=len(jobs), site=site_url(),
+                                       settings=site_url("/#/settings"))
     try:
-        send_within_cap(db, mailer, user.email,
-                        f"{len(jobs)} new job{'s' if len(jobs) != 1 else ''} for you", "\n".join(lines),
-                        purpose="digest")
+        send_within_cap(db, mailer, user.email, subject, text, purpose="digest", html=html)
     except MailError:
         logger.warning("digest: the email to %s did not go; tomorrow's will try again", user.id,
                        exc_info=True)

@@ -17,7 +17,7 @@ class Inbox:
         self.sent: list[dict] = []
         self.fail = fail
 
-    def send(self, to, subject, body, *, reply_to=None):
+    def send(self, to, subject, body, *, reply_to=None, html=None):
         from libs.mail import MailError
 
         if self.fail:

@@ -18,7 +18,8 @@ class MailError(RuntimeError):
 
 
 class EmailSender(Protocol):
-    def send(self, to: str, subject: str, body: str, *, reply_to: str | None = None) -> None: ...
+    def send(self, to: str, subject: str, body: str, *, reply_to: str | None = None,
+             html: str | None = None) -> None: ...
 
 
 class SmtpSender:
@@ -29,7 +30,8 @@ class SmtpSender:
         self._user, self._password = user, password
         self._from = sender
 
-    def send(self, to: str, subject: str, body: str, *, reply_to: str | None = None) -> None:
+    def send(self, to: str, subject: str, body: str, *, reply_to: str | None = None,
+             html: str | None = None) -> None:
         message = EmailMessage()
         message["From"] = self._from
         message["To"] = to
@@ -37,6 +39,9 @@ class SmtpSender:
         if reply_to:
             message["Reply-To"] = reply_to
         message.set_content(body)
+        if html:
+            # The text first and the HTML as its alternative: a client shows the last one it can.
+            message.add_alternative(html, subtype="html")
         try:
             with smtplib.SMTP(self._host, self._port, timeout=SMTP_TIMEOUT) as smtp:
                 smtp.starttls(context=ssl.create_default_context())
@@ -53,7 +58,8 @@ class ConsoleSender:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str, str]] = []
 
-    def send(self, to: str, subject: str, body: str, *, reply_to: str | None = None) -> None:
+    def send(self, to: str, subject: str, body: str, *, reply_to: str | None = None,
+             html: str | None = None) -> None:
         self.sent.append((to, subject, body))
         logger.info("email (not sent) to %s: %s", to, subject)
         print(f"--- email to {to}: {subject} ---\n{body}\n---", flush=True)

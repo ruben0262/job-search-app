@@ -16,8 +16,8 @@ class Inbox:
     def __init__(self):
         self.sent: list[dict] = []
 
-    def send(self, to, subject, body, *, reply_to=None):
-        self.sent.append({"to": to, "subject": subject, "body": body})
+    def send(self, to, subject, body, *, reply_to=None, html=None):
+        self.sent.append({"to": to, "subject": subject, "body": body, "html": html})
 
 
 def _person(db, **fields):
@@ -116,6 +116,27 @@ def test_it_lists_the_jobs_found_since_the_last_one_with_a_link_to_each(db, monk
     assert f"New {word} — Acme · Berlin" in mail["body"] and f"Old {word}" not in mail["body"]
     assert f"https://jobs.example.com/#/feed?job={new.id}" in mail["body"]
     assert "https://jobs.example.com/#/settings" in mail["body"], "and how to turn it off"
+
+
+@needs_db
+def test_its_designed_version_lists_each_job_linked_with_the_words_that_found_it(db, monkeypatch):
+    """The email as most people see it: each job a link to it on the site, with the words of theirs it has,
+    and a title that is markup shown as words, not run."""
+    from libs.notify.digest import send_digest
+
+    monkeypatch.setenv("PUBLIC_URL", "https://jobs.example.com")
+    user, word = _person(db)
+    job = _posting(db, f"<b>Lead</b> {word}")
+    inbox = Inbox()
+
+    assert send_digest(db, inbox, user) == 1
+
+    [mail] = inbox.sent
+    html = mail["html"]
+    assert f'href="https://jobs.example.com/#/feed?job={job.id}"' in html
+    assert f"&lt;b&gt;Lead&lt;/b&gt; {word}" in html and "<b>Lead</b>" not in html
+    assert f">{word}</span>" in html, "the word that found it"
+    assert "Acme · Berlin" in html and 'href="https://jobs.example.com/#/settings"' in html
 
 
 @needs_db

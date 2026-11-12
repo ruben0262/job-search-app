@@ -28,6 +28,7 @@ from libs.auth import (
 )
 from libs.auth.access import issue_access_token
 from libs.auth.sessions import ACCESS_TTL, REFRESH_TTL, session_owner
+from libs.auth.tokens import RESET_TTL, VERIFICATION_TTL
 from libs.db import find_one, get, insert, now
 from libs.db.models import User, UserSession
 from libs.legal import DISCLOSURE_VERSION
@@ -316,11 +317,11 @@ def _send_verification(db: Database, mailer: EmailSender, email: str, token: str
     """Send the link, and treat any delivery failure as recoverable."""
     # The SPA's hash route, not the API's path; for a membership, on to the payment form once it is opened.
     url = site_url(f"/#/verify?token={token}" + ("&plan=member" if plan == "member" else ""))
-    subject, body = verification_email(url)
+    subject, body, html = verification_email(url, VERIFICATION_TTL)
     # The token grants access to the account, so it is scrubbed from anything logged in flight.
     with redacting(token):
         try:
-            send_within_cap(db, mailer, email, subject, body, purpose="verify_email")
+            send_within_cap(db, mailer, email, subject, body, purpose="verify_email", html=html)
         except MailError:
             logger.warning("verification email to %s failed; the account still exists", email,
                            exc_info=True)
@@ -328,10 +329,10 @@ def _send_verification(db: Database, mailer: EmailSender, email: str, token: str
 
 def _send_reset(db: Database, mailer: EmailSender, email: str, token: str) -> None:
     """Send the reset link, and treat any delivery failure as recoverable: they can ask again."""
-    subject, body = reset_email(site_url(f"/#/reset?token={token}"))
+    subject, body, html = reset_email(site_url(f"/#/reset?token={token}"), RESET_TTL)
     with redacting(token):
         try:
-            send_within_cap(db, mailer, email, subject, body, purpose="reset_password")
+            send_within_cap(db, mailer, email, subject, body, purpose="reset_password", html=html)
         except MailError:
             logger.warning("reset email failed; the user can ask again", exc_info=True)
 

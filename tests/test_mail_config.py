@@ -62,3 +62,61 @@ def test_the_api_container_is_given_the_public_url():
         "the api service must pass PUBLIC_URL or every emailed link points at localhost")
     # Required, not defaulted: a silently wrong link is worse than a container that will not start.
     assert re.search(r"^\s+PUBLIC_URL:\s+\$\{PUBLIC_URL:\?", api_block, re.MULTILINE)
+
+
+# ── what the emails look like (owner, 2026-11-12: "improve on email designs") ──────────────────
+
+def test_an_email_with_a_designed_version_goes_as_its_text_then_its_html(monkeypatch):
+    """A client shows the last part it can: the HTML where it can, the text where it cannot."""
+    import smtplib
+
+    sent = []
+
+    class Server:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def starttls(self, **kwargs):
+            pass
+
+        def login(self, *args):
+            pass
+
+        def send_message(self, message):
+            sent.append(message)
+
+    monkeypatch.setattr(smtplib, "SMTP", Server)
+    sender_from_env(CONFIGURED).send("ada@example.com", "Hello", "Plain words", html="<p>Designed words</p>")
+
+    [message] = sent
+    assert message.get_content_type() == "multipart/alternative"
+    assert [part.get_content_type() for part in message.iter_parts()] == ["text/plain", "text/html"]
+    assert "Designed words" in message.get_body(("html",)).get_content()
+    assert "Plain words" in message.get_body(("plain",)).get_content()
+
+
+@pytest.mark.parametrize("which", ["verify", "reset"])
+def test_an_account_email_shows_its_link_as_a_button_and_in_full_and_how_long_it_works(which):
+    """The link in full under its button, so it can be copied and seen before it is followed; and the time it
+    works said from the token's own lifetime, not a second copy of it."""
+    from html import escape
+
+    from libs.auth.tokens import RESET_TTL, VERIFICATION_TTL
+    from libs.mail import reset_email, verification_email
+
+    url = "https://jobs.example.com/#/verify?token=abc&plan=member"
+    ttl = VERIFICATION_TTL if which == "verify" else RESET_TTL
+    subject, text, html = (verification_email if which == "verify" else reset_email)(url, ttl)
+    hours = round(ttl.total_seconds() / 3600)
+    lasts = "an hour" if hours == 1 else f"{hours} hours"
+
+    assert url in text and f"expires in {lasts}" in text
+    assert html.count(f'href="{escape(url)}"') == 2, "the button, and the link in full"
+    assert f">{escape(url)}</a>" in html and f"expires in {lasts}" in html
+    assert f"<title>{subject}</title>" in html

@@ -14,6 +14,35 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12, late night — The emails in the site's look: confirming the address, resetting the password, the daily list
+
+The owner asked for better designs for the email confirming an address, the password reset, and the daily email
+of jobs.
+
+**Each email goes as text and as HTML in the site's look:**
+- the name at the top;
+- a white card with the heading;
+- one purple button, the link in full under it;
+- a small footer.
+
+**The text stays** for clients without HTML.
+
+**The daily email:**
+- **Each job:** a link, with company, place, board, the words that found it as green chips, and "See the job →".
+- **At the foot:** "See all N on your jobs page".
+
+**Link lifetimes** ("24 hours", "an hour") come from the tokens' own `VERIFICATION_TTL` and `RESET_TTL`, passed
+in by sign-up and reset. The text had a second copy of each.
+- **Not imported by `libs.mail`:** importing `libs.auth.tokens` there loads `libs.auth`'s password hashing
+  (argon2). The notifier's image, which sends the daily email, does not install it. `test_entrypoints` caught
+  that before it could stop the notifier at start.
+- **The email font is `EMAIL_FONT`:** `FONT` was already `libs/documents/remake.py`'s, for another thing
+  (`test_a_constant_is_defined_in_one_place`).
+
+**Tests:**
+- **The account emails:** their link as a button and in full, and how long it works.
+- **An email with HTML** goes as text then HTML.
+- **The daily email's HTML:** lists each job linked with its words, and a title that is markup shown as words.
 ## 2026-11-12, late night — The landing page: Why it works read at a scroll, the phone shows itself, ATS said
 
 The owner asked for:
