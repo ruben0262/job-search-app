@@ -482,20 +482,27 @@ function Dock({ at, jump }: { at: number; jump: (id: string) => (event: MouseEve
   );
 }
 
-/** The two cards, Free and Member, as the landing page shows them and Admin previews them (`preview`: their
- * buttons go nowhere). The words are the operator's (`pricing_cards`); the price is Stripe's, the free days
- * `trial_days` and the delay `free_delay_hours`, filled in here, so no wording can promise what the site
- * does not keep. */
-export function PriceCards({ pricing, preview = false }: { pricing: Pricing; preview?: boolean }) {
+/** The two cards, Free and Member, as the landing page shows them, Admin previews them (`preview`: their buttons
+ * go nowhere) and the plan page offers them (`onChoose`: their buttons pick). The words are the operator's
+ * (`pricing_cards`); the price is Stripe's, the free days `trial_days` and the delay `free_delay_hours`, filled
+ * in here, so no wording can promise what the site does not keep. */
+export function PriceCards({ pricing, preview = false, onChoose, busy = false }: {
+  pricing: Pricing;
+  preview?: boolean;
+  onChoose?: (kind: "free" | "member") => void;
+  busy?: boolean;
+}) {
   const { cards, plan, trial_days: days, free_delay_hours: delay } = pricing;
   const per = plan && (plan.interval_count === 1 ? plan.interval : `${plan.interval_count} ${plan.interval}s`);
   return (
     <div className="price-room">
       <div className="price-cards">
-        <PriceCard card={cards.free} href="#/signup" preview={preview}
+        <PriceCard card={cards.free} href="#/signup" preview={preview} busy={busy}
+                   onChoose={onChoose && (() => onChoose("free"))}
                    amount={plan ? <><strong>{nothing(plan.currency)}</strong><span>for good</span></> : null}
                    under={`Jobs ${behind(delay)} after members see them`} />
-        <PriceCard card={cards.member} href="#/signup?plan=member" preview={preview} lit
+        <PriceCard card={cards.member} href="#/signup?plan=member" preview={preview} lit busy={busy}
+                   onChoose={onChoose && (() => onChoose("member"))}
                    badge={days ? `${days} days free` : null}
                    amount={plan ? <><strong>{money(plan.amount, plan.currency)}</strong><span>/{per}</span></> : null}
                    under={days ? (plan ? `after your ${days}-day free trial` : `The first ${days} days free`) : null} />
@@ -505,10 +512,12 @@ export function PriceCards({ pricing, preview = false }: { pricing: Pricing; pre
 }
 
 /** One card: its name, what it costs, what it gives and leaves out, and its button at the foot. */
-function PriceCard({ card, href, preview, lit = false, badge = null, amount, under }: {
+function PriceCard({ card, href, preview, onChoose, busy, lit = false, badge = null, amount, under }: {
   card: Pricing["cards"]["free"];
   href: string;
   preview: boolean;
+  onChoose?: () => void;
+  busy: boolean;
   lit?: boolean;
   badge?: string | null;
   amount: ReactNode;
@@ -542,8 +551,9 @@ function PriceCard({ card, href, preview, lit = false, badge = null, amount, und
           </li>
         ))}
       </ul>
-      {preview ? <span className={button}>{card.button}<Arrow /></span>
-        : <a className={button} href={href}>{card.button}<Arrow /></a>}
+      {onChoose ? <button type="button" className={button} disabled={busy} onClick={onChoose}>{card.button}<Arrow /></button>
+        : preview ? <span className={button}>{card.button}<Arrow /></span>
+          : <a className={button} href={href}>{card.button}<Arrow /></a>}
       {card.note ? <p className="price-note">{card.note}</p> : null}
     </article>
   );

@@ -3346,12 +3346,13 @@ machine, which depends on the region (owner's item 8).
 **Why.** The owner's decision: one subscription, seven days free and then billed automatically. Since
 2026-11-12 the site is everybody's: a free account signs up with no card, sets up its search and uses every
 page, seeing each job a week after members do, with no CVs, cover letters or alerts; the membership adds
-those, and is picked at sign-up or later.
+those, and is picked after the email link, before setting up, or later.
 
 **Built (2026-11-11 and 2026-11-12, CHANGELOG):** the one rule for who has a membership
-(`libs/membership.py`), asked by the Jobs page, the documents and the alerts; the sign-up page's Free and
-Member choice, the password typed twice and the privacy-and-cookies box; Stripe's payment fields drawn in the
-site's own page and colours, in either theme; Stripe's portal from Settings; Stripe read whole on its webhook
+(`libs/membership.py`), asked by the Jobs page, the documents and the alerts; the password typed twice and the
+privacy-and-cookies box at sign-up; the plan picked on the landing page's two cards after the email link and
+before setting up, nothing past it until it is; Stripe's own checkout inside the page (embedded); Stripe's
+portal from Settings; Stripe read whole on its webhook
 and when a person comes back; the account's membership fields; Admin's Membership column, card and *Free
 access* switch, which holds what Stripe charges while it is on; an account's Stripe customer deleted before
 the account; the trial's length and the free plan's wait in Admin. Jobs stay thirty days, for everybody.
@@ -3374,7 +3375,8 @@ membership's card; jobs kept thirty days; alerts are members'.
 2. In it: the product with a **recurring monthly** £4.99 price, a restricted key, the webhook endpoint, the
    portal (activated in the dashboard, as the sandbox's is), failed payments set to cancel after the
    retries, and the trial-reminder and receipt emails. Then the four values in `certificates/server.env`
-   and a deploy of every service. Adaptive Pricing stays on (owner, 2026-11-12).
+   and a deploy of every service. Adaptive Pricing stays on (owner, 2026-11-12). Its **Branding** (Dashboard →
+   Settings → Branding: the purple, the background, the logo) is how the checkout in the page looks.
 3. Optional, each a Stripe setting rather than code: VAT through Stripe Tax, promotion codes, a yearly price.
 
 **Done when** the first real member has started a trial on the live site and cancelled it in the portal

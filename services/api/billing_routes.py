@@ -340,20 +340,34 @@ def checkout(request: Request, db: Database = Depends(get_db),
             client.v1.checkout.sessions.expire(older.id)
         days = trial_for(db, user)
         session = client.v1.checkout.sessions.create(params={
-            # Drawn by the site itself, in its own colours and either theme (owner, 2026-11-12).
-            "mode": "subscription", "ui_mode": "elements",
+            # Stripe's own checkout, inside the site's page: official, its price large, its look Stripe's
+            # (Dashboard → Settings → Branding), and it never leaves the site (owner, 2026-11-12, after the
+            # site-drawn form "doesn't look official").
+            "mode": "subscription", "ui_mode": "embedded_page",
             "customer": user.stripe_customer_id, "client_reference_id": str(user.id),
             "line_items": [{"price": _env("STRIPE_PRICE_ID"), "quantity": 1}],
             # A card even for a free trial, so the first payment is taken by itself when the trial ends.
             "payment_method_collection": "always",
             "subscription_data": {"metadata": {"user_id": str(user.id)},
                                   **({"trial_period_days": days} if days else {})},
-            # A card finishes in the page; a payment that goes to a bank's page comes back here. The mark is
-            # in the query, not after the `#`, which is the app's own address.
+            # A card finishes in the page (`onComplete`); a payment that goes to a bank's page comes back
+            # here. The mark is in the query, not after the `#`, which is the app's own address.
+            "redirect_on_completion": "if_required",
             "return_url": site_url(f"/?{BACK}#/"),
         })
     audit(logger, "billing.checkout", user=user.id, trial_days=days)
     return Checkout(client_secret=session.client_secret)
+
+
+@router.post("/free")
+def choose_free(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """The free plan, picked on the page between the email link and setting up: on to setting up, no card
+    asked (`libs.membership.choosing`). Picked once; picking it again changes nothing."""
+    picked = db[User.COLLECTION].update_one({"_id": user_id, "plan_chosen_at": None},
+                                            {"$set": {"plan_chosen_at": now()}}).modified_count
+    if picked:
+        audit(logger, "billing.free_plan", user=user_id)
+    return {"status": "ok"}
 
 
 class Link(BaseModel):

@@ -1,9 +1,8 @@
-/** The membership (Stripe, owner 2026-11-11): Stripe's payment fields drawn inside the site's own page, in its
- * colours and either theme (owner, 2026-11-12), Stripe's portal behind a button, and where a membership stands
- * in words. Stripe decides all of it (`billing_routes.py`); this says it. */
+/** The membership (Stripe, owner 2026-11-11): Stripe's own checkout inside the site's page (owner, 2026-11-12:
+ * "it needs to be stripes payment page"), Stripe's portal behind a button, and where a membership stands in
+ * words. Stripe decides all of it (`billing_routes.py`); this says it. */
 import { useEffect, useRef, useState } from "react";
-import type { Appearance, StripeCheckoutConfirmResult, StripeCheckoutElementsSdk,
-  StripeCheckoutSession } from "@stripe/stripe-js";
+import type { Stripe, StripeEmbeddedCheckout } from "@stripe/stripe-js";
 
 import { ApiError, api, type Membership, type Plan } from "./api";
 import { useKept } from "./kept";
@@ -85,126 +84,86 @@ export async function openPortal(): Promise<void> {
   window.location.assign(url);
 }
 
-/** The site's own colours, read off the page as they are now, for Stripe's fields: its purple, its raised
- * panels, its ink, the hairline and ring its own inputs have. Not its font, which a frame from Stripe cannot
- * load from this site, so the system's sans in its place. */
-function appearance(): Appearance {
-  const css = getComputedStyle(document.documentElement);
-  const token = (name: string) => css.getPropertyValue(name).trim();
-  return {
-    theme: document.documentElement.dataset.theme === "light" ? "stripe" : "night",
-    variables: {
-      colorPrimary: token("--accent"), colorBackground: token("--bg-raised"), colorText: token("--ink"),
-      colorTextSecondary: token("--muted"), colorTextPlaceholder: token("--dim"), colorDanger: token("--danger"),
-      fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif', fontSizeBase: "15px",
-      borderRadius: token("--radius"),
-    },
-    rules: {
-      ".Input, .Tab, .PickerItem": { border: `1px solid ${token("--faint")}`, boxShadow: "none" },
-      ".Input:focus, .Tab:focus, .Tab--selected": {
-        borderColor: token("--accent"), boxShadow: `0 0 0 4px rgba(${token("--accent-rgb")}, 0.2)` },
-      ".Label": { fontWeight: "600" },
-    },
-  };
+/** Stripe's script, fetched once a page and kept: asked for as soon as a page that may show the checkout opens
+ * (`preloadStripe`), so a tap on the membership finds it there. */
+let loading: Promise<Stripe> | null = null;
+
+function stripeFor(publishableKey: string): Promise<Stripe> {
+  loading ??= import("@stripe/stripe-js/pure").then(({ loadStripe }) => loadStripe(publishableKey)).then((stripe) => {
+    if (!stripe) throw new globalThis.Error("Stripe's script did not load");
+    return stripe;
+  });
+  // A failed fetch is asked again by the next page, not kept.
+  loading.catch(() => {
+    loading = null;
+  });
+  return loading;
 }
 
-/** What a trial ends on, from Stripe's seconds. */
-const until = (seconds: number) => day(new Date(seconds * 1000).toISOString());
+export function preloadStripe(publishableKey: string): void {
+  stripeFor(publishableKey).catch(() => undefined);
+}
 
-/** Stripe's payment fields in this page, with the site's own button: the card goes to Stripe and never reaches
- * this site. Stripe's script is fetched when the form is first shown, so no other page asks Stripe for
- * anything. The price is the session's, in the currency they pick (Stripe's Adaptive Pricing). */
-export function PaymentForm({ publishableKey, onPaid }: { publishableKey: string; onPaid: () => void }) {
-  const fields = useRef<HTMLDivElement>(null);
-  const currency = useRef<HTMLDivElement>(null);
-  const [session, setSession] = useState<StripeCheckoutSession | null>(null);
-  const [confirm, setConfirm] = useState<(() => Promise<StripeCheckoutConfirmResult>) | null>(null);
+/** The checkout shown last, or being made: Stripe allows one on a page at a time, and React mounts each twice
+ * in development, so each waits until the one before it is gone. */
+let showing: Promise<unknown> = Promise.resolve();
+
+/** Stripe's own checkout inside this page (`ui_mode: embedded_page`): the price large, the trial, the card,
+ * Stripe's currency switch and its button, as Stripe draws them for every shop (its look is Stripe's: Dashboard
+ * → Settings → Branding). The card goes to Stripe and never reaches this site. `onPaid` when Stripe says it is
+ * done, and the site reads Stripe again then, so it opens on Stripe's word rather than the webhook's timing. */
+export function StripeCheckout({ publishableKey, onPaid }: { publishableKey: string; onPaid: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [drawn, setDrawn] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [paying, setPaying] = useState(false);
+  const paid = useRef(onPaid);
+  paid.current = onPaid;
 
   useEffect(() => {
     let gone = false;
-    let checkout: StripeCheckoutElementsSdk | null = null;
-    // The theme button changes the page's colours, and so Stripe's.
-    const theme = new MutationObserver(() => checkout?.changeAppearance(appearance()));
-    void (async () => {
-      const { loadStripe } = await import("@stripe/stripe-js/pure");
-      const stripe = await loadStripe(publishableKey);
-      if (!stripe) throw new globalThis.Error("Stripe's script did not load");
-      // Gone already, as React's second look in development leaves the first: no session is opened for it.
-      if (gone || !fields.current || !currency.current) return;
-      checkout = stripe.initCheckoutElementsSdk({
-        clientSecret: api.post<{ client_secret: string }>("/billing/checkout").then((body) => body.client_secret),
-        elementsOptions: { appearance: appearance() },
-        adaptivePricing: { allowed: true },
+    const mine = showing.then(async (): Promise<StripeEmbeddedCheckout | null> => {
+      const stripe = await stripeFor(publishableKey);
+      if (gone || !box.current) return null;
+      const checkout = await stripe.createEmbeddedCheckoutPage({
+        fetchClientSecret: () => api.post<{ client_secret: string }>("/billing/checkout").then((body) => body.client_secret),
+        onComplete: () => paid.current(),
+        onAnalyticsEvent: (event) => {
+          if (event.eventType === "checkoutRendered" && !gone) setDrawn(true);
+        },
       });
-      checkout.on("change", (next) => {
-        if (!gone) setSession(next);
-      });
-      // Stripe asks for its currency picker wherever it offers a local price.
-      checkout.createCurrencySelectorElement().mount(currency.current);
-      // Without Link's "save my information", which asks for a phone number and, opening as the card is
-      // finished, moved the button out from under a click (2026-11-12).
-      checkout.createPaymentElement({ wallets: { link: "never" } }).mount(fields.current);
-      theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-      const loaded = await checkout.loadActions();
-      if (gone) return;
-      if (loaded.type === "error") throw new globalThis.Error(loaded.error.message);
-      setSession(loaded.actions.getSession());
-      setConfirm(() => () => loaded.actions.confirm({ redirect: "if_required" }));
-    })().catch((caught: unknown) => {
+      if (gone || !box.current) {
+        checkout.destroy();
+        return null;
+      }
+      checkout.mount(box.current);
+      return checkout;
+    });
+    showing = mine.catch(() => null);
+    mine.catch((caught: unknown) => {
       if (!gone) {
         setError(caught instanceof ApiError ? caught.detail
-          : "The payment form didn't load. Check your connection and reload the page.");
+          : "Stripe's checkout didn't load. Check your connection and reload the page.");
       }
     });
     return () => {
       gone = true;
-      theme.disconnect();
-      checkout?.getPaymentElement()?.destroy();
-      checkout?.getCurrencySelectorElement()?.destroy();
+      // Destroyed once it is made, and the next one waits for that.
+      showing = mine.then((checkout) => checkout?.destroy(), () => undefined);
     };
   }, [publishableKey]);
 
-  const pay = async () => {
-    if (!confirm) return;
-    setPaying(true);
-    setError(null);
-    const result = await confirm().catch(() => null);
-    if (result?.type === "success") {
-      onPaid();
-      return;
-    }
-    setError(result?.error.message ?? "That didn't go through. Try again.");
-    setPaying(false);
-  };
-
-  const recurring = session?.recurring;
-  const trial = recurring?.trial;
-  const then = recurring ? `${recurring.dueNext.total.amount} ${every(recurring.interval, recurring.intervalCount)}` : "";
   return (
-    <form className="pay-form" onSubmit={(event) => {
-      event.preventDefault();
-      void pay();
-    }}>
-      {recurring ? (
-        <p className="pay-price">
-          {trial ? <>Free until {until(trial.trialEnd)}, then <strong>{then}</strong>. Nothing to pay today.</>
-            : <><strong>{then}</strong>, from today.</>}
-        </p>
-      ) : error ? null : <p className="muted">Loading the payment form…</p>}
-      <div ref={currency} />
-      <div ref={fields} />
+    <div className="stripe-checkout">
       <Error>{error}</Error>
-      {session ? (
-        <>
-          <button type="submit" className="main" disabled={!confirm || !session.canConfirm || paying}>
-            {paying ? "Starting…" : trial ? "Start my free trial" : `Pay ${session.total.total.amount}`}
-          </button>
-          <p className="small muted">Cancel any time in Settings{trial ? ", and before it ends you pay nothing" : ""}.</p>
-        </>
-      ) : null}
-    </form>
+      {/* Under Stripe's page while it loads, and covered by it once it is drawn. */}
+      {drawn || error ? null : (
+        <p className="stripe-loading" role="status">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10.5V8a5 5 0 0110 0v2.5M5.5 10.5h13v10h-13z" /></svg>
+          Opening Stripe's secure checkout…
+        </p>
+      )}
+      <div ref={box} className="stripe-box" />
+    </div>
   );
 }
 

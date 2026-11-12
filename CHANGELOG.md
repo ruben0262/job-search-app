@@ -14,6 +14,70 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12, night — The plan picked after the email link on the landing page's cards; Stripe's own checkout
+
+The owner asked for:
+- **The plan choice moved:** "similar to how its on the frontend… after sign up and email confirmation and
+  before the actual onboarding begins… and not during the inital signup".
+- **The payment, Stripe's own:** "it doesn't look official so it needs to be stripes payment page, either
+  integrated fast… or we open a new page… once its done we get a signal back so we continue to onboarding…
+  and until that happens we don't allow users through".
+- **The charged amount large:** "displayed properly and its not small font".
+
+**Signing up asks for no plan.** Address, the password twice and the privacy-and-cookies box. The "Your
+plan" choice on the form is gone, with its styles.
+
+**After the email link, before setting up: "Choose your plan"** (`PlanPage`).
+- **The page:** the landing page's own two cards, Free and Member, their words as Admin sets them
+  (`PriceCards`, whose buttons pick here).
+- **Free** goes on to setting up with no card asked (`POST /billing/free`, which marks
+  `User.plan_chosen_at`).
+- **Member** opens Stripe's checkout on the same page. `#/signup?plan=member`, the landing page's Member
+  card, opens the page there.
+- **Nothing past it until a plan is picked.** The dashboard's new stage, `plan`, comes before onboarding
+  (`libs.membership.choosing`), whatever the address: Settings or a reload lands on it again. The way back
+  from Stripe's checkout is to the cards, not past them.
+- **Who is asked:** only a new account. Not a member already (free access, an admin), not somebody whose
+  membership ended (free without being asked again), and not an account set up before the choice began.
+
+**The payment is Stripe's own checkout, inside the page** (`ui_mode: embedded_page`, `StripeCheckout`).
+- **What it shows:** the trial ("7 days free") large, the monthly price, Stripe's currency switch (Adaptive
+  Pricing), the card, Link, its own button and "Powered by Stripe", as Stripe draws them for every shop.
+- **What replaced it:** the site-drawn form (`ui_mode: elements`), with its colours code, is removed.
+- **Its look** is the Stripe account's Branding (Dashboard → Settings → Branding: colours, logo, font), so it
+  does not follow the site's theme button.
+- **The signal back.** When Stripe says it is done (`onComplete`) the site reads Stripe again
+  (`/billing/refresh`) and goes on to setting up. A payment that goes to a bank's page comes back by the
+  address, as before (`redirect_on_completion: if_required`).
+- **Fast.** Stripe's script is fetched while the cards are read, so the checkout opens straight after the
+  tap.
+- **One at a time.** Stripe allows one embedded checkout on a page, and React mounts twice in development,
+  so each waits for the one before it to be gone.
+- **The price, large, over it:** "£4.99 a month, after 7 days free", from Stripe's price. Stripe's own page
+  says it smaller, and in the person's currency.
+
+**The upgrade page** (from the free plan, later) uses the same checkout, with the same large price. Its list
+of what a membership adds is now the Member card's lines as Admin words them, where it was a second copy
+typed into the page.
+
+**Tried on Stripe's test mode** (the sandbox's restricted key, a built site, a real browser):
+- **Free:** the cards, then setting up.
+- **Member:** the checkout drawn 2.7 s after the tap. Away and back, Settings, a reload: the plan page each
+  time. Paid with the test card 4242 at 1,280 px and at 390 px, it went on to setting up as a member
+  (`trialing`), on Stripe's word.
+
+Docs: deploy/SERVER.md step 10 (Branding, the plan page) and ROADMAP Phase 10.
+
+Tests, each failing on the previous commit:
+- **A new account picks its plan first,** and Free goes on to setting up.
+- **Who is asked:** a new account, and not a member, a lapsed member, free access, an admin, an account set
+  up already, or one that picked Free.
+- **The checkout** is `embedded_page`, finishing in the page.
+- **In the browser:** sign-up asks for no plan; the plan page shows both cards and nothing gets past it by
+  the address; the Member card's link opens the checkout with its price large and goes back to the cards.
+
+The sign-up walks in the other browser tests pick Free on the new page.
+
 ## 2026-11-12, later — The landing page's pricing: Free and Member, their words set in Admin
 
 The owner asked for:

@@ -1,11 +1,10 @@
-/** Sign in and sign up, on one screen — the first thing behind the landing page's CTAs. Signing up picks the plan
- * (owner, 2026-11-12): free, which asks for no card, or the membership, whose payment form follows the email
- * link; and agrees to the privacy policy and its cookies, the only way to an account. */
+/** Sign in and sign up, on one screen — the first thing behind the landing page's CTAs. Signing up asks for the
+ * address, the password twice and agreement to the privacy policy and its cookies, the only way to an account;
+ * the plan is picked after the email link, before setting up (owner, 2026-11-12: "not during the initial
+ * signup"). */
 import { useEffect, useState } from "react";
 
-import { ApiError, api, type Plan, type Schema } from "../api";
-import { price } from "../membership";
-import { span } from "../time";
+import { ApiError, api, type Schema } from "../api";
 import { Error, Field, useAction, useNewPassword } from "../ui";
 import { ThemeToggle } from "../theme";
 import { Brand, Wheel } from "../wheel";
@@ -13,7 +12,7 @@ import { Brand, Wheel } from "../wheel";
 type Picked = "free" | "member";
 
 /** The plan the address asks for: the landing page's Member card is `#/signup?plan=member`; anything else is
- * free. Read again by the email link's page (`Verify`), which carries it on. */
+ * free. Carried by the email link (`Verify`) to the plan page, which opens on the membership for it. */
 export function planAsked(): Picked {
   return new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("plan") === "member" ? "member" : "free";
 }
@@ -30,26 +29,21 @@ export function SignIn({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const chosen = useNewPassword();
-  const [picked, setPicked] = useState<Picked>(planAsked);
+  const [picked] = useState<Picked>(planAsked);
   const [agreed, setAgreed] = useState(false);
   const [sent, setSent] = useState(false);
-  // What the box agrees to (`/legal/privacy`), and what a membership costs (`/billing/plan`): none while Stripe
-  // is not set up, and then the free plan is the only one.
+  // What the box agrees to (`/legal/privacy`).
   const [policy, setPolicy] = useState<string | null>(null);
-  const [plan, setPlan] = useState<Plan | null>(null);
   useEffect(() => {
     if (mode !== "up") return;
     void api.get<Schema<"Disclosure">>("/legal/privacy").then((body) => setPolicy(body.version)).catch(() => undefined);
-    void api.get<Plan | null>("/billing/plan").then(setPlan).catch(() => undefined);
   }, [mode]);
-  const member = plan !== null && picked === "member";
 
   const submit = useAction(async () => {
     if (mode === "up") {
       if (!agreed) throw new ApiError(0, "Tick the box to agree to the privacy policy and cookies.");
       if (!policy) throw new ApiError(0, "The privacy policy didn't load. Reload the page and try again.");
-      await api.post("/auth/signup", { email, password: chosen.check(), consent_version: policy,
-                                       plan: member ? "member" : "free" });
+      await api.post("/auth/signup", { email, password: chosen.check(), consent_version: policy, plan: picked });
       setSent(true);
       return;
     }
@@ -66,12 +60,11 @@ export function SignIn({
     return (
       <AuthShell title="Check your email">
         <p className="muted">
-          If <strong>{email}</strong> can be registered, a confirmation link is on its way. Open it
-          on this device and you land back here, signed up{member ? ", at the form that starts your free trial"
-            : " and ready"}.
+          If <strong>{email}</strong> can be registered, a confirmation link is on its way. Open it and
+          you land back here, signed up, to choose your plan.
         </p>
         <p className="facts">Nothing arriving? Check spam, or have a fresh link sent.</p>
-        <ResendLink email={email} plan={member ? "member" : "free"} />
+        <ResendLink email={email} plan={picked} />
       </AuthShell>
     );
   }
@@ -84,7 +77,6 @@ export function SignIn({
           void submit.run();
         }}
       >
-        {mode === "up" && plan ? <Plans plan={plan} picked={picked} onPick={setPicked} /> : null}
         <Field label="Email">
           <input
             type="email"
@@ -138,29 +130,6 @@ export function SignIn({
         ) : null}
       </p>
     </AuthShell>
-  );
-}
-
-/** The two plans, the membership's price and free days as Stripe and Admin have them. */
-function Plans({ plan, picked, onPick }: { plan: Plan; picked: Picked; onPick: (picked: Picked) => void }) {
-  const options: [Picked, string, string][] = [
-    ["free", "Free", `Every job that fits you, ${span(plan.free_delay_hours)} after members see it. No card.`],
-    ["member", "Member", `${plan.trial_days ? `${plan.trial_days} days free, then ${price(plan)}` : price(plan)}. `
-      + "Every job the moment it's found, CVs and cover letters, and alerts."],
-  ];
-  return (
-    <fieldset className="plans">
-      <legend className="label">Your plan</legend>
-      {options.map(([key, name, line]) => (
-        <label key={key} className={picked === key ? "plan on" : "plan"}>
-          <input type="radio" name="plan" value={key} checked={picked === key} onChange={() => onPick(key)} />
-          <span>
-            <strong>{name}</strong>
-            <span className="small muted">{line}</span>
-          </span>
-        </label>
-      ))}
-    </fieldset>
   );
 }
 

@@ -874,6 +874,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/free": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Choose Free
+         * @description The free plan, picked on the page between the email link and setting up: on to setting up, no card
+         *     asked (`libs.membership.choosing`). Picked once; picking it again changes nothing.
+         */
+        post: operations["choose_free_billing_free_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing/plan": {
         parameters: {
             query?: never;
@@ -2834,6 +2855,22 @@ export interface components {
             /** Trial Days */
             trial_days: number;
         };
+        /**
+         * PlanDashboard
+         * @description Between the email link and setting up: Free or the membership, picked first (owner, 2026-11-12), and
+         *     nothing else of the site until it is (`libs.membership.choosing`).
+         */
+        PlanDashboard: {
+            /** Is Admin */
+            is_admin: boolean;
+            /** Member */
+            member: boolean;
+            /**
+             * Stage
+             * @constant
+             */
+            stage: "plan";
+        };
         /** Pricing */
         Pricing: {
             cards: components["schemas"]["PricingCards"];
@@ -4790,6 +4827,28 @@ export interface operations {
             };
         };
     };
+    choose_free_billing_free_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     public_plan_billing_plan_get: {
         parameters: {
             query?: never;
@@ -4918,7 +4977,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OnboardingDashboard"] | components["schemas"]["ReadyDashboard"];
+                    "application/json": components["schemas"]["PlanDashboard"] | components["schemas"]["OnboardingDashboard"] | components["schemas"]["ReadyDashboard"];
                 };
             };
         };

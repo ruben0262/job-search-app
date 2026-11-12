@@ -95,7 +95,7 @@ export const api = {
  * fails the build, not the page. `Schema<"FeedJob">` is `components["schemas"]["FeedJob"]`. */
 export type Schema<K extends keyof components["schemas"]> = components["schemas"][K];
 
-export type Dashboard = Schema<"OnboardingDashboard"> | Schema<"ReadyDashboard">;
+export type Dashboard = Schema<"PlanDashboard"> | Schema<"OnboardingDashboard"> | Schema<"ReadyDashboard">;
 export type Membership = Schema<"Membership">;
 export type Plan = Schema<"Plan">;
 export type Ready = Schema<"ReadyDashboard">;

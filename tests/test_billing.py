@@ -323,18 +323,40 @@ def test_the_operator_sets_how_far_behind_a_free_account_is(db, http):
         "CVs, cover letters and alerts come with a membership."
 
 
-def test_a_new_account_starts_free_with_no_card_asked(db, http):
-    """Owner, 2026-11-12: sign up and set up the search "without having to give their details"; the trial
-    comes with the membership, and the sign-up page says what both are."""
-    sign_in(http, person(db))
+def test_a_new_account_picks_its_plan_first_and_free_asks_for_no_card(db, http):
+    """Owner, 2026-11-12: after the email link and before setting up, the plan, "not during the initial
+    signup"; free goes on to setting up "without having to give their details", and the trial comes with the
+    membership."""
+    newcomer = person(db)
+    sign_in(http, newcomer)
 
     board = http.get("/dashboard").json()
+    assert (board["stage"], board["member"]) == ("plan", False)
+    assert http.post("/billing/free").status_code == 200
+    board = http.get("/dashboard").json()
     assert (board["stage"], board["member"]) == ("onboarding", False)
+    assert get(db, User, newcomer.id).plan_chosen_at is not None
     membership = http.get("/billing").json()
     assert membership["member"] is False and membership["can_start"] is True and membership["trial_days"] == 7
     assert membership["publishable_key"] == "pk_test_fake"
     assert http.get("/billing/plan").json() == {"amount": 999, "currency": "eur", "interval": "month",
                                                 "interval_count": 1, "trial_days": 7, "free_delay_hours": 168}
+
+
+def test_only_a_new_account_is_asked_for_its_plan(db, http):
+    """Asked once, before setting up: not a member already (free access, an admin), not somebody whose
+    membership ended (free without asking again), and not an account set up before the choice began."""
+    asked = {}
+    for name, fields in (("new", {}), ("member", {"subscription_status": "trialing"}),
+                         ("lapsed", {"subscription_status": "canceled"}),
+                         ("free access", {"free_access_at": now()}), ("admin", {"is_admin": True}),
+                         ("set up", {"onboarding_completed_at": now()}),
+                         ("picked free", {"plan_chosen_at": now()})):
+        sign_in(http, person(db, **fields))
+        asked[name] = http.get("/dashboard").json()["stage"] == "plan"
+
+    assert asked == {"new": True, "member": False, "lapsed": False, "free access": False, "admin": False,
+                     "set up": False, "picked free": False}
 
 
 def test_the_form_starts_the_trial_with_a_card_and_only_for_somebody_who_never_had_one(db, http, fake):
@@ -347,8 +369,10 @@ def test_the_form_starts_the_trial_with_a_card_and_only_for_somebody_who_never_h
     assert customer["email"] == newcomer.email and customer["metadata[user_id]"] == str(newcomer.id)
     assert get(db, User, newcomer.id).stripe_customer_id == "cus_1"
     [form] = fake.calls("POST", "/v1/checkout/sessions")
-    # Drawn by the site itself, in its colours (owner, 2026-11-12), not Stripe's white box.
-    assert form["mode"] == "subscription" and form["ui_mode"] == "elements"
+    # Stripe's own checkout inside the page (owner, 2026-11-12: "it needs to be stripes payment page"), a card
+    # finishing there and only a bank's page coming back by the address.
+    assert form["mode"] == "subscription" and form["ui_mode"] == "embedded_page"
+    assert form["redirect_on_completion"] == "if_required"
     assert form["customer"] == "cus_1" and form["line_items[0][price]"] == "price_test"
     assert form["subscription_data[trial_period_days]"] == "7"
     # A card even for the free trial, so the first payment is taken by itself when it ends.

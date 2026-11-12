@@ -1413,14 +1413,22 @@ def _fill_sign_up(page, email: str, password: str = PASSWORD) -> None:
 
 
 def _sign_up(page, base: str, email: str, capsys, *, member: bool = True) -> None:
-    """Sign up free, open the link from the email, which is printed rather than sent, and land on the first
-    step of setting up. `member`: with a membership begun, as Stripe's webhook writes one."""
+    """Sign up, open the link from the email, which is printed rather than sent, pick the free plan on the
+    page between it and setting up, and land on setting up's first step. `member`: with a membership begun,
+    as Stripe's webhook writes one."""
     page.goto(f"{base}/#/signup")
     _fill_sign_up(page, email)
     page.goto(_emailed(capsys, "verify"))
-    expect(page.get_by_role("heading", name="Your CV")).to_be_visible()
+    _pick_free(page)
     if member:
         _member(page, email)
+
+
+def _pick_free(page) -> None:
+    """The page between the email link and setting up: the free plan, and on to setting up."""
+    expect(page.get_by_role("heading", name="Choose your plan")).to_be_visible()
+    page.get_by_role("button", name="Start free").click()
+    expect(page.get_by_role("heading", name="Your CV")).to_be_visible()
 
 
 def _member(page, email: str) -> None:
@@ -1434,10 +1442,9 @@ def _member(page, email: str) -> None:
 
 def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_where_it_is_missed(
         site, db, capsys, monkeypatch):
-    """Owner, 2026-11-12: sign up free with no card asked, set up the search, and see the jobs a week after
-    members do; the documents and the alerts are a member's, and each place they are missed says so with the
-    way to the membership. Picking Member on the sign-up page sends its link on to the payment form, which
-    says so plainly here, where Stripe has no keys."""
+    """Owner, 2026-11-12: a free account, with no card asked, sees the jobs a week after members do; the
+    documents and the alerts are a member's, and each place they are missed says so with the way to the
+    membership."""
     from libs.db import insert, now
     from libs.db.models import CorpusJob
     from services.api import billing_routes
@@ -1453,13 +1460,7 @@ def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_wh
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
-        page.goto(f"{base}/#/signup")
-        plans = page.get_by_role("group", name="Your plan")
-        expect(plans.get_by_role("radio", name=re.compile("^Free"))).to_be_checked()
-        expect(plans).to_contain_text("Every job that fits you, 7 days after members see it. No card.")
-        expect(plans).to_contain_text("7 days free, then £4.99 a month.")
-        _fill_sign_up(page, email)
-        page.goto(_emailed(capsys, "verify"))
+        _sign_up(page, base, email, capsys, member=False)
         _onboard(page)
 
         # The week-old job, and not the three found today.
@@ -1481,19 +1482,50 @@ def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_wh
         expect(page.get_by_role("button", name="Pause alerts")).to_have_count(0)
         expect(page.get_by_text("The free plan.")).to_be_visible()
 
-        # The Member card's link from the landing page: Member picked, and the email's link goes on to pay.
+        browser.close()
+
+
+def test_the_plan_is_picked_after_the_email_link_on_the_landing_pages_cards(site, capsys, monkeypatch):
+    """Owner, 2026-11-12: signing up asks for no plan; after the email link and before setting up, the
+    landing page's two cards, and nothing past them by the address alone. The landing page's Member card
+    opens that page on Stripe's checkout, its price large over it, which says plainly here, where Stripe has
+    no keys, that payments aren't set up; the way back is to the cards, not past them."""
+    from services.api import billing_routes
+
+    base, email, _ = site
+    monkeypatch.setattr(billing_routes, "plan", lambda db: billing_routes.Plan(
+        amount=499, currency="gbp", interval="month", interval_count=1, trial_days=7, free_delay_hours=168))
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        page.goto(f"{base}/#/signup")
+        expect(page.get_by_text("Your plan")).to_have_count(0)
+        _fill_sign_up(page, email)
+        expect(page.get_by_text("to choose your plan")).to_be_visible()
+        page.goto(_emailed(capsys, "verify"))
+        expect(page.get_by_role("heading", name="Choose your plan")).to_be_visible()
+        cards = page.locator(".price-card")
+        expect(cards.locator(".price-name")).to_have_text(["Free", "Member"])
+        expect(cards.first).to_contain_text("Jobs 7 days after members see them")
+        expect(cards.last).to_contain_text("£4.99")
+        expect(cards.last.locator(".price-badge")).to_have_text("7 days free")
+        page.goto(f"{base}/#/settings")
+        expect(page.get_by_role("heading", name="Choose your plan")).to_be_visible()
+        _pick_free(page)
+
+        # The Member card's link from the landing page: the email's link opens the plan page on the checkout,
+        # its price large over it, and the way back is to the cards.
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         page.goto(f"{base}/#/signup?plan=member")
-        expect(page.get_by_role("group", name="Your plan").get_by_role("radio", name=re.compile("^Member"))) \
-            .to_be_checked()
         _fill_sign_up(page, f"member.{email}")
-        expect(page.get_by_text("at the form that starts your free trial")).to_be_visible()
         link = _emailed(capsys, "verify")
         assert link.endswith("&plan=member")
         page.goto(link)
-        expect(page.get_by_role("heading", name="Become a member")).to_be_visible()
-        page.get_by_role("link", name="Not now").click()
-        expect(page.get_by_role("heading", name="Your CV")).to_be_visible()
+        expect(page.get_by_role("heading", name="Start your membership")).to_be_visible()
+        expect(page.locator(".plan-price")).to_have_text("£4.99 a month, after 7 days free")
+        expect(page.get_by_text("Payments aren't set up yet. Pick Free for now.")).to_be_visible()
+        page.get_by_role("button", name="← Back to the plans").click()
+        _pick_free(page)
         browser.close()
 
 
@@ -1526,7 +1558,9 @@ def test_sign_up_confirm_sign_in_and_reset_the_password_each_step_at_once(site, 
         page.goto(f"{base}/#/signup")
         step("sign up", lambda: _fill_sign_up(page, email, old),
              page.get_by_role("heading", name="Check your email"))
-        step("confirm", lambda: page.goto(_emailed(capsys, "verify")), mine)
+        step("confirm", lambda: page.goto(_emailed(capsys, "verify")),
+             page.get_by_role("heading", name="Choose your plan"))
+        step("plan", lambda: page.get_by_role("button", name="Start free").click(), mine)
 
         # Signed out as a new visit is: no cookies, and the page loaded afresh.
         def fresh(route: str) -> None:

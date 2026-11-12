@@ -248,8 +248,9 @@ here, or the copied credentials cannot be opened.
 
 Seven days free, then £4.99 a month, billed automatically (owner, 2026-11-11). Without one an account is on
 the free plan: the whole site, each job a week after members see it, and no CVs, cover letters or alerts
-(owner, 2026-11-12). The sign-up page offers both; the membership's card form is Stripe's fields drawn inside
-the site's own page. Test mode and live mode are
+(owner, 2026-11-12). Each new account picks one after its email link, before setting up; the membership's
+checkout is Stripe's own, inside the site's page (its embedded checkout), and looks as the account's Branding
+says (Dashboard → Settings → Branding: colours, logo, font). Test mode and live mode are
 separate worlds: products, prices, customers, webhooks, the portal and keys exist in one only, and a value
 from one never works in the other (the API's log says so at start if its two keys are mixed). The sandbox
 "mahoraga jobs" is set up and was tested end to end on 2026-11-11 (CHANGELOG); this is the same, once, in
@@ -298,7 +299,8 @@ other products; and the webhook also hears about your other customers, which the
    the webhook secret: nothing else of Stripe's), and run `deploy/deploy.sh` with no names: the membership is
    in `libs`, which every service reads (the alerts and the harvest ask it too). **Every account that
    exists then is given free access, once** (`python -m libs.db`, the deploy's schema step); everybody who
-   signs up afterwards starts on the free plan, or picks Member on the sign-up page and starts the trial.
+   signs up afterwards picks the free plan or Member on the page after the email link, Member starting the
+   trial in Stripe's checkout there.
    Then sign up as a member with a real card of your own and cancel in the portal the same day: nothing is
    charged until the trial ends.
 

@@ -1,5 +1,5 @@
-/** The email confirmation link lands here: `#/verify?token=…`. A working link signs you in, and one from the
- * sign-up page's Member choice (`&plan=member`) goes on to the payment form. */
+/** The email confirmation link lands here: `#/verify?token=…`. A working link signs you in, on to picking a plan;
+ * one from the landing page's Member card (`&plan=member`) opens that page on the membership. */
 import { useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "../api";
@@ -24,7 +24,7 @@ export function Verify({ onDone }: { onDone: () => void | Promise<void> }) {
       // The session first, then the route, exactly as signing in does: straight into the app.
       .then(async () => {
         await onDone();
-        window.location.hash = planAsked() === "member" ? "/upgrade" : "/";
+        window.location.hash = planAsked() === "member" ? "/?plan=member" : "/";
       })
       .catch((error: unknown) => {
         setFailed(error instanceof ApiError ? error.detail : "That link did not work.");

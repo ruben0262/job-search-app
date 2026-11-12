@@ -23,7 +23,7 @@ from libs.db.models import AtsToken, BuiltDocument, CorpusJob, CountryCount, Use
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
 from libs.matching import Match, marks, norm, scan_for, their_jobs
-from libs.membership import delay_hours, is_admin, is_member, jobs_as_of
+from libs.membership import choosing, delay_hours, is_admin, is_member, jobs_as_of
 from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
@@ -46,6 +46,14 @@ class DashboardBanner(BaseModel):
     level: Literal["error", "warning", "info"]
     key: str
     text: str
+
+
+class PlanDashboard(BaseModel):
+    """Between the email link and setting up: Free or the membership, picked first (owner, 2026-11-12), and
+    nothing else of the site until it is (`libs.membership.choosing`)."""
+    stage: Literal["plan"]
+    is_admin: bool
+    member: bool
 
 
 class OnboardingDashboard(BaseModel):
@@ -179,7 +187,7 @@ class Feed(BaseModel):
 
 @router.get("/dashboard")
 def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)
-              ) -> OnboardingDashboard | ReadyDashboard:
+              ) -> PlanDashboard | OnboardingDashboard | ReadyDashboard:
     """Everything the front page shows, in one call. Opening the site is being online: the time is kept to
     the minute, for the admin's account page."""
     user = get(db, User, user_id)
@@ -188,6 +196,8 @@ def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curr
                                  {"last_active_at": {"$lt": now() - timedelta(minutes=1)}}]},
         {"$set": {"last_active_at": now()}})
     member = is_member(db, user_id)
+    if choosing(user, member):
+        return PlanDashboard(stage="plan", is_admin=is_admin(user), member=member)
     state = onboarding_state(db, user_id)
     # Finished once is not enough: a search saved before the minimums (owner, 2026-11-04) is finished on
     # its page, since without a country no job comes in for it.

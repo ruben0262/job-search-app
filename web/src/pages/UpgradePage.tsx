@@ -1,24 +1,25 @@
-/** Becoming a member (owner, 2026-11-12): what it adds, and Stripe's payment fields in the page. Where the sign-up
- * page's Member choice lands once the email is confirmed, and where the jobs page's banner, a Make button and
- * Settings send a free account. Somebody whose payment failed is sent on to Stripe's portal to pay it instead,
- * since their membership is still there. A page of its own, before onboarding as after it: one job, paying, and
- * "Not now" the way out. */
+/** Becoming a member later, from the free plan (owner, 2026-11-12): what it adds, and Stripe's own checkout in the
+ * page. Where the jobs page's banner, a Make button and Settings send a free account. Somebody whose payment
+ * failed is sent on to Stripe's portal to pay it instead, since their membership is still there. A page of its
+ * own: one job, paying, and "Not now" the way out. */
+import { useEffect } from "react";
+
 import { api, type Membership } from "../api";
 import { useKept } from "../kept";
-import { MEMBERSHIP, PaymentForm, openPortal, standing } from "../membership";
+import type { Pricing } from "../landing/Landing";
+import { MEMBERSHIP, StripeCheckout, openPortal, preloadStripe, price, standing } from "../membership";
 import { ThemeToggle } from "../theme";
 import { Error, useAction } from "../ui";
 import { Brand } from "../wheel";
 
-/** What a membership adds to the free plan, in the order people asked for it. */
-const ADDS = [
-  "Every new job the moment it's found, so you apply among the first",
-  "A CV and a cover letter made for any job in one tap, read the way an applicant tracking system reads them",
-  "Alerts on Telegram, in your browser or by email",
-];
-
 export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | void }) {
   const { data: m, reload } = useKept<Membership>(MEMBERSHIP);
+  // What a membership adds: the landing page's Member card, as Admin words it, not a second copy here.
+  const pricing = useKept<Pricing>("/pricing");
+  const key = m?.publishable_key ?? null;
+  useEffect(() => {
+    if (key) preloadStripe(key);
+  }, [key]);
   const portal = useAction(openPortal);
   // Paid in the form: Stripe read again, so everything opens now rather than when its webhook arrives.
   const paid = async () => {
@@ -57,14 +58,18 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
           ) : (
             <>
               <h1>Become a member</h1>
-              <ul className="adds">
-                {ADDS.map((line) => <li key={line}>{line}</li>)}
-              </ul>
-              {m.publishable_key ? (
-                <PaymentForm publishableKey={m.publishable_key} onPaid={() => void paid()} />
-              ) : (
-                <p className="error">Payments aren't set up yet. Try again later.</p>
-              )}
+              {m.plan ? (
+                <p className="plan-price">
+                  {price(m.plan)}{m.trial_days ? <span>, after {m.trial_days} days free</span> : null}
+                </p>
+              ) : null}
+              {pricing.data ? (
+                <ul className="adds">
+                  {pricing.data.cards.member.benefits.map((line) => <li key={line}>{line}</li>)}
+                </ul>
+              ) : null}
+              {key ? <StripeCheckout publishableKey={key} onPaid={() => void paid()} />
+                : <p className="error">Payments aren't set up yet. Try again later.</p>}
             </>
           )}
           {m && !m.member ? <p className="small"><a href="#/">Not now</a></p> : null}

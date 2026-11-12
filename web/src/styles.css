@@ -685,19 +685,92 @@ button[disabled] {
   margin: -1.25rem 0 1.75rem;
 }
 
-/* The payment form (`membership.tsx`): the price over Stripe's fields, which are drawn in the site's own
-   colours (`appearance`), and the site's own button under them. */
-.pay-form {
-  display: grid;
-  gap: 1rem;
+/* Stripe's own checkout in the page (`StripeCheckout`): its page, framed, with a line under it saying it is
+   coming while it loads, which Stripe's page covers once it is drawn. */
+.stripe-checkout {
+  position: relative;
+  min-height: 34rem;
 }
 
-.pay-form p {
+.stripe-loading {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.6rem;
   margin: 0;
+  padding: 5rem 1rem;
+  color: var(--muted);
 }
 
-.pay-form .main {
-  margin-top: 0.5rem;
+.stripe-loading svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+
+.stripe-box {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+
+.stripe-box:has(iframe) {
+  box-shadow: 0 30px 80px -40px rgba(0, 0, 0, 0.6);
+}
+
+/* Picking a plan (`PlanPage`): the landing page's two cards, under one big title; then, for the membership,
+   Stripe's checkout. Wider than the setting-up pages, so the two cards sit side by side. */
+.plan-page {
+  position: relative;
+  z-index: 1;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 0 1rem 4rem;
+}
+
+.plan-page h1 {
+  margin: 1.5rem 0 0.75rem;
+  font-size: clamp(2rem, 6vw, 3rem);
+  text-align: center;
+}
+
+.plan-page .lede {
+  max-width: 36rem;
+  margin: 0 auto 2.25rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.plan-page .back {
+  margin-top: 1rem;
+}
+
+/* What the membership costs, large, over Stripe's checkout, which says it smaller. */
+.plan-price {
+  margin: 0 0 0.5rem;
+  font: 600 clamp(1.6rem, 4.5vw, 2.25rem)/1.2 var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.plan-price span {
+  color: var(--muted);
+  font-size: 0.6em;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.plan-page .plan-price {
+  text-align: center;
+}
+
+.plan-price + .adds {
+  margin-top: 0.75rem;
 }
 
 /* What a membership adds, over its form (`UpgradePage`). */
@@ -767,48 +840,6 @@ button[disabled] {
   .auth-art {
     display: none;
   }
-}
-
-/* The two plans on the sign-up page, each a card to pick (`SignIn.tsx`). */
-.plans {
-  display: grid;
-  gap: 0.6rem;
-  margin: 0 0 1.4rem;
-  padding: 0;
-  border: 0;
-}
-
-.plan {
-  position: relative;
-  display: block;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--faint);
-  border-radius: var(--radius);
-  background: var(--bg-raised);
-  cursor: pointer;
-  transition: border-color var(--fade) var(--ease), box-shadow var(--fade) var(--ease);
-}
-
-.plan.on {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.2);
-}
-
-.plan:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
-/* The card is the choice; its dot would only say it again. */
-.plan input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.plan strong,
-.plan .small {
-  display: block;
 }
 
 /* The box that agrees to the privacy policy and its cookies: the switch, then its sentence. */

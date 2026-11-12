@@ -18,8 +18,9 @@ from pymongo.database import Database
 from libs import settings
 from libs.db.models import User
 from libs.obs import audit
+from services.api import billing_routes
 from services.api.admin_routes import require_admin
-from services.api.billing_routes import Plan, plan
+from services.api.billing_routes import Plan
 from services.api.deps import get_db
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ def cards_of(db: Database) -> PricingCards:
 def pricing(db: Database = Depends(get_db)) -> Pricing:
     """Public: what the landing page's pricing says, before anybody has an account."""
     return Pricing(cards=cards_of(db), trial_days=int(settings.get(db, "trial_days")),
-                   free_delay_hours=int(settings.get(db, "free_delay_hours")), plan=plan(db))
+                   free_delay_hours=int(settings.get(db, "free_delay_hours")), plan=billing_routes.plan(db))
 
 
 @router.put("/admin/pricing")

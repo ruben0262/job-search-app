@@ -96,6 +96,10 @@ class User(Document):
     # When an admin let them use the whole site without a membership, whatever Stripe says (owner,
     # 2026-11-11). None: not let in.
     free_access_at: datetime | None = None
+    # When they picked the free plan on the page that comes after the email link and before setting up
+    # (owner, 2026-11-12; `POST /billing/free`). None: not picked, or picked the membership, whose
+    # subscription says so (`libs.membership.choosing`).
+    plan_chosen_at: datetime | None = None
     created_at: datetime = field(default_factory=now)
     updated_at: datetime = field(default_factory=now)
 

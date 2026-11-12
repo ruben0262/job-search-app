@@ -2924,6 +2924,31 @@
         "title": "Plan",
         "type": "object"
       },
+      "PlanDashboard": {
+        "description": "Between the email link and setting up: Free or the membership, picked first (owner, 2026-11-12), and\nnothing else of the site until it is (`libs.membership.choosing`).",
+        "properties": {
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
+          },
+          "member": {
+            "title": "Member",
+            "type": "boolean"
+          },
+          "stage": {
+            "const": "plan",
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "is_admin",
+          "member"
+        ],
+        "title": "PlanDashboard",
+        "type": "object"
+      },
       "Pricing": {
         "properties": {
           "cards": {
@@ -6389,6 +6414,30 @@
         ]
       }
     },
+    "/billing/free": {
+      "post": {
+        "description": "The free plan, picked on the page between the email link and setting up: on to setting up, no card\nasked (`libs.membership.choosing`). Picked once; picking it again changes nothing.",
+        "operationId": "choose_free_billing_free_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Choose Free Billing Free Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Choose Free",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/billing/plan": {
       "get": {
         "description": "Public: the sign-up page says what a membership costs before anybody has an account.",
@@ -6535,6 +6584,9 @@
               "application/json": {
                 "schema": {
                   "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PlanDashboard"
+                    },
                     {
                       "$ref": "#/components/schemas/OnboardingDashboard"
                     },

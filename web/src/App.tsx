@@ -15,6 +15,7 @@ import { APPLIED, AppliedPage } from "./pages/AppliedPage";
 import { DOCUMENTS, DocumentsPage, HISTORY, IDENTITY, SAVED } from "./pages/DocumentsPage";
 import { JobsPage } from "./pages/JobsPage";
 import { Onboarding } from "./pages/Onboarding";
+import { PlanPage } from "./pages/PlanPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { ForgotPassword, ResetPassword } from "./pages/ResetPassword";
 import { ACCOUNT, SettingsPage } from "./pages/SettingsPage";
@@ -139,7 +140,8 @@ export function App() {
   }
 
   const { dashboard } = session;
-  // Open before onboarding as after it: the sign-up page's Member choice lands here (owner, 2026-11-12).
+  // Free or the membership, picked first, whatever the address (owner, 2026-11-12): nothing else until then.
+  if (dashboard.stage === "plan") return <PlanPage onChanged={reload} />;
   if (hash.startsWith("/upgrade")) return <UpgradePage onChanged={reload} />;
   if (dashboard.stage === "onboarding") {
     // Deliberately not routable past: a half-configured account produces a bad feed and the user concludes.

@@ -53,6 +53,15 @@ def is_member(db: Database, user_id: _uuid.UUID) -> bool:
     return db[User.COLLECTION].count_documents({"_id": user_id, **members()}, limit=1) > 0
 
 
+def choosing(user: User, member: bool) -> bool:
+    """Whether this account is still to pick its plan, Free or the membership, on the page between the email
+    link and setting up (owner, 2026-11-12): not a member (an admin, free access or a subscription paying),
+    never picked Free, never had a subscription (a lapsed member is free without being asked again), and not
+    set up yet (an account from before the choice is not sent back to it)."""
+    return (not member and user.plan_chosen_at is None and user.subscription_status is None
+            and user.onboarding_completed_at is None)
+
+
 def delay_hours(db: Database, user: User) -> int:
     """How long after a member this account sees a job, in hours: none for a member, `free_delay_hours` for a
     free account (owner, 2026-11-12: "only jobs that have passed the 7 day mark should appear for them")."""

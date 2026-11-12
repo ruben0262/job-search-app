@@ -104,12 +104,12 @@ def test_saved_cards_that_no_longer_read_are_the_defaults_and_the_log_says_so(ap
 
 def test_the_price_is_the_one_the_payment_form_charges(api, monkeypatch):
     """Stripe's, through the function the form reads it with, never a number typed into the card."""
-    from services.api import pricing_routes
+    from services.api import billing_routes
     from services.api.billing_routes import Plan
 
     http, *_ = api
     stripe = Plan(amount=499, currency="gbp", interval="month", interval_count=1, trial_days=7,
                   free_delay_hours=168)
-    monkeypatch.setattr(pricing_routes, "plan", lambda db: stripe)
+    monkeypatch.setattr(billing_routes, "plan", lambda db: stripe)
 
     assert http.get("/pricing").json()["plan"] == stripe.model_dump()
