@@ -730,6 +730,18 @@ button[disabled] {
   margin-top: 1rem;
 }
 
+/* The checkout while the cards are read (`PlanPage`): drawn where it will show, the plan page's width, but unseen
+   and out of reach, so a tap on the membership only has to show it. Never `.page-in` while it waits: that
+   animation ends at full opacity and kept it showing through the cards. */
+.plan-waiting {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: -1;
+  padding-inline: inherit;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* What the membership costs, large, over Stripe's checkout, which says it smaller. */
 .plan-price {
   margin: 0 0 0.5rem;
@@ -748,19 +760,145 @@ button[disabled] {
   text-align: center;
 }
 
-.plan-price + .adds {
-  margin-top: 0.75rem;
-}
-
-/* What a membership adds, over its form (`UpgradePage`). */
+/* What a membership adds, over its form (`UpgradePage`): ticked as on the landing page's Member card, two to a
+   row where there is room, in a panel of their own so they read before Stripe's form. */
 .adds {
-  margin: -0.5rem 0 1.75rem;
-  padding-left: 1.2rem;
-  color: var(--muted);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr));
+  gap: 0.85rem 1.75rem;
+  max-width: 48rem;
+  margin: 0 auto 2.5rem;
+  padding: 1.4rem 1.6rem;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius-lg);
+  background: rgba(var(--accent-rgb), 0.06);
+  list-style: none;
 }
 
-.adds li + li {
-  margin-top: 0.4rem;
+.adds li {
+  display: grid;
+  grid-template-columns: 1.375rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  line-height: 1.45;
+}
+
+.adds svg {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+.adds circle {
+  fill: rgba(var(--accent-rgb), 0.2);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.adds path {
+  fill: none;
+  stroke: var(--accent-text);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+}
+
+/* Free to member, shown (owner, 2026-11-12): the switch slides from Free to Member, then each thing a membership
+   adds is ticked in turn, its words lighting as its tick is drawn. Each rests at its end, so with less motion
+   asked for (every animation off) it is all there at once. */
+.upgrade-switch {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: min(17rem, 100%);
+  margin: 0 auto 1.4rem;
+  padding: 0.3rem;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: rgba(var(--ink-rgb), 0.05);
+}
+
+.upgrade-switch span {
+  position: relative;
+  padding: 0.55rem 0;
+  color: var(--dim);
+  font-weight: 600;
+  text-align: center;
+  animation: switch-free 0.4s var(--ease) 0.7s both;
+}
+
+.upgrade-switch span:last-child {
+  color: var(--accent-ink);
+  animation-name: switch-member;
+}
+
+.upgrade-switch i {
+  position: absolute;
+  inset: 0.3rem auto 0.3rem 0.3rem;
+  width: calc(50% - 0.3rem);
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 8px 24px -8px rgba(var(--accent-rgb), 0.9);
+  translate: 100% 0;
+  animation: switch-thumb 0.9s var(--spring) 0.5s both;
+}
+
+@keyframes switch-thumb {
+  from {
+    translate: 0 0;
+    background: rgba(var(--ink-rgb), 0.16);
+    box-shadow: none;
+  }
+}
+
+@keyframes switch-free {
+  from {
+    color: var(--ink);
+  }
+}
+
+@keyframes switch-member {
+  from {
+    color: var(--dim);
+  }
+}
+
+.adds li {
+  animation: adds-words 0.4s var(--ease) calc(1.3s + var(--i, 0) * 0.35s) both;
+}
+
+.adds circle {
+  animation: adds-circle 0.5s var(--spring) calc(1.3s + var(--i, 0) * 0.35s) both;
+}
+
+.adds path {
+  animation: adds-tick 0.35s var(--out) calc(1.45s + var(--i, 0) * 0.35s) both;
+}
+
+@keyframes adds-words {
+  from {
+    color: var(--dim);
+  }
+}
+
+@keyframes adds-circle {
+  from {
+    fill: rgba(var(--ink-rgb), 0.08);
+    scale: 0.6;
+  }
+}
+
+@keyframes adds-tick {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+/* A member, or a payment to settle at Stripe: the words and the one button, centred. */
+.upgrade-done {
+  display: grid;
+  justify-items: center;
+  text-align: center;
 }
 
 /* ── signed out: sign in, sign up, the emailed links (`AuthShell`) ──────────────────────────── */

@@ -1475,7 +1475,9 @@ def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_wh
         notice.get_by_role("link", name="Become a member").click()
         expect(page.get_by_role("heading", name="Become a member")).to_be_visible()
         expect(page.get_by_text("Payments aren't set up yet.")).to_be_visible()
-        page.get_by_role("link", name="Not now").click()
+        # The way back at the top, to the page they came from (owner, 2026-11-12), not a link at the foot.
+        page.get_by_role("button", name="← Back").click()
+        expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()
 
         page.goto(f"{base}/#/settings")
         expect(page.get_by_text("Alerts come with a membership.")).to_be_visible()

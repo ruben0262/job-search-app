@@ -84,8 +84,7 @@ export async function openPortal(): Promise<void> {
   window.location.assign(url);
 }
 
-/** Stripe's script, fetched once a page and kept: asked for as soon as a page that may show the checkout opens
- * (`preloadStripe`), so a tap on the membership finds it there. */
+/** Stripe's script, fetched once a page and kept. */
 let loading: Promise<Stripe> | null = null;
 
 function stripeFor(publishableKey: string): Promise<Stripe> {
@@ -98,10 +97,6 @@ function stripeFor(publishableKey: string): Promise<Stripe> {
     loading = null;
   });
   return loading;
-}
-
-export function preloadStripe(publishableKey: string): void {
-  stripeFor(publishableKey).catch(() => undefined);
 }
 
 /** The checkout shown last, or being made: Stripe allows one on a page at a time, and React mounts each twice

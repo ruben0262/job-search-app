@@ -14,6 +14,43 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12, late night — Stripe's checkout ready before the tap; the upgrade page from free to member
+
+The owner asked for:
+- **The plan page** "instant", "for both stripe and the site".
+- **The upgrade page:** a better top, a way back at the top in place of "Not now" at the foot, and "an animation
+  from free to member, and see the benefits being ticked".
+
+**Stripe's checkout, ready before the tap** (owner's choice, 2026-11-12, "ready before the tap").
+- **Before:** 4.2–4.9 s from "Start your free trial" to Stripe's card field, three runs.
+  - ~1.0 s: our call made the customer and the checkout.
+  - ~3 s: Stripe's frame started and drew. That cannot begin until the checkout exists.
+- **Now:** the plan page makes the checkout as it opens, and Stripe draws it under the cards, unseen and out of
+  reach (`inert`).
+  - **Results:** after 5 s on the cards, 0.21–0.31 s from tap to card field; after 10 s, 0.12–0.21 s; after only
+    2 s, 2.4–3.5 s.
+  - **Hidden outright** (`hidden`), the browser stops drawing a cross-origin frame, and the tap still waited
+    1.0–1.9 s.
+  - **Never `.page-in` while it waits:** that animation ends at full opacity, and the first try showed Stripe's
+    form through the cards.
+  - **Left behind by every person who picks Free:** a Stripe customer, and a checkout that expires by itself.
+- **Privacy:** Stripe's purpose on the privacy page now reads "Billing", with the email "kept there for billing".
+  The disclosure's version is unchanged, by the owner's word: "just that users get some info stored because of
+  billing". By the 2026-11-01 precedent (a processor reaching people it did not reach before), it would be
+  bumped.
+- **Deleted:** `preloadStripe`. Both pages that show the checkout now make it on opening, so it had nothing left
+  to speed up.
+
+**The upgrade page.**
+- **Its layout** is the plan page's checkout: "← Back" at the top (to the page they came from, or Jobs), the
+  title and the price centred. "Not now" is removed.
+- **Free to member, shown:**
+  - a switch slides from Free to Member;
+  - then each benefit is ticked in turn, its circle filling and its tick drawn as its words light.
+- **Resting at its end:** each part rests at its end, so with less motion asked for (every animation off) it is
+  all there at once.
+
+**Test:** the free plan's walk presses "← Back" and lands on Jobs.
 ## 2026-11-12, late night — The development site learns the API's new paths
 
 The owner saw the plan page say "Loading…" after signing up.

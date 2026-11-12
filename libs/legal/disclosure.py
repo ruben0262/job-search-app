@@ -9,7 +9,10 @@ from dataclasses import dataclass
 # key. A new processor asks everyone again.
 # 2026-11-01: the proxy is the site's one provider now, not a person's own, and LinkedIn is searched
 # for everyone's words through it — so it reaches people it did not reach before.
-# 2026-11-11: Stripe, which takes the membership's payments (`services/api/billing_routes.py`).
+# 2026-11-11: Stripe, which takes the membership's payments (`services/api/billing_routes.py`). Since
+# 2026-11-12 its customer is made as the plan page opens, so its checkout is ready before the tap: said
+# as billing in general, the version unchanged (owner: "just that users get some info stored because of
+# billing").
 # 2026-11-12: the cookies, now agreed to with the rest at sign-up (owner: "a box to confirm the privacy policy
 # and cookies of the site before signing up").
 DISCLOSURE_VERSION = "2026-11-12"
@@ -59,10 +62,10 @@ PROCESSORS = (
     ),
     Processor(
         name="Stripe",
-        purpose="Taking the payments for your membership, and the page where you change or cancel it.",
-        data="Your email address, and the card or other payment details you type into Stripe's own form, "
-             "which never reach this site. Nothing else about you: not your CV, your searches or your "
-             "documents.",
+        purpose="Billing: the payments for a membership, and the page where you change or cancel it.",
+        data="Your email address, kept there for billing, and the card or other payment details you type "
+             "into Stripe's own form, which never reach this site. Nothing else about you: not your CV, "
+             "your searches or your documents.",
         on_your_credential=False,
         location="Ireland and the United States",
     ),
