@@ -28,6 +28,7 @@ from services.api.document_routes import router as document_router
 from services.api.link_routes import router as link_router
 from services.api.notification_routes import router as notification_router
 from services.api.onboarding_routes import router as onboarding_router
+from services.api.pricing_routes import router as pricing_router
 from services.api.push_routes import router as push_router
 from services.api.saved_routes import router as saved_router
 from services.api.suggestion_routes import router as suggestion_router
@@ -61,6 +62,7 @@ app.include_router(admin_router)
 app.include_router(ai_account_router)
 app.include_router(document_router)
 app.include_router(onboarding_router)
+app.include_router(pricing_router)
 app.include_router(push_router)
 app.include_router(saved_router)
 app.include_router(dashboard_router)

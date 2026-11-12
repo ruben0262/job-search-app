@@ -6,6 +6,7 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
 import { api, type Schema } from "../api";
+import { money } from "../membership";
 import { PICTURES } from "../pages/JobsPage";
 import { PLACES } from "../places";
 import { ThemeToggle } from "../theme";
@@ -14,6 +15,7 @@ import { Demo } from "./Demo";
 import "./landing.css";
 
 type Reach = Schema<"Reach">;
+export type Pricing = Schema<"Pricing">;
 
 const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const pointer = () => matchMedia("(hover: hover) and (pointer: fine)").matches;
@@ -29,6 +31,7 @@ const SECTIONS: [id: string, name: string, short: string, icon: ReactNode][] = [
   ["what", "What it is", "What", <path key="i" d="M12 3.5a8.5 8.5 0 110 17 8.5 8.5 0 010-17zM12 11v5.3M12 7.9h.01" />],
   ["how", "How it works", "How", <path key="i" d="M6 20.2a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4zM18 8.2a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4zM8.2 18h7.3a3 3 0 000-6h-7a3 3 0 010-6h7.3" />],
   ["live", "Your jobs", "Jobs", PLACES.find(([key]) => key === "jobs")?.[2]],
+  ["price", "Pricing", "Price", <path key="i" d="M3.8 12.7V4.9c0-.6.5-1.1 1.1-1.1h7.8l7.6 7.6c.4.4.4 1.1 0 1.5l-7.8 7.8c-.4.4-1.1.4-1.5 0zM8.4 8.4h.01" />],
   ["start", "Get started", "Start", <path key="i" d="M12 3c2.8 1.9 4.2 5 4.2 8.8L14.6 15H9.4l-1.6-3.2C7.8 8 9.2 4.9 12 3zM12 7.6a1.6 1.6 0 110 3.2 1.6 1.6 0 010-3.2zM7.8 11.8l-2.3 2.4v3.3l3.9-2.5M16.2 11.8l2.3 2.4v3.3l-3.9-2.5M10.5 17.6c.3 1.4.8 2.4 1.5 3.1.7-.7 1.2-1.7 1.5-3.1" />],
 ];
 
@@ -38,9 +41,9 @@ const steps = (often: string): [string, ReactNode, ReactNode][] => [
   ["Upload your CV", <>We read it and suggest the words to search with. You check them, pick your countries,
     and that is it: <strong>a few minutes, once.</strong></>, <CvArt />],
   ["Get every job that fits", <>New ones {often}, in one list, the best matches first. Each says why it is
-    there. <strong>On your phone too,</strong> if you like.</>, <MatchArt />],
+    there. <strong>On your phone too,</strong> as a member.</>, <MatchArt />],
   ["Make your CV in one tap", <>A CV and a cover letter <strong>made for that job,</strong> from your own CV. Ready
-    in seconds. Nothing made up.</>, <TapArt />],
+    in seconds, as a member. Nothing made up.</>, <TapArt />],
   ["Apply, and keep track", <>Apply on the job's own site, <strong>in minutes, not hours.</strong> Then follow each
     one: the interview, the offer, the job.</>, <ApplyArt />],
 ];
@@ -69,17 +72,30 @@ const SEEN: Figure[] = [
   ["14M+", "applications went unanswered in one quarter of 2024", "Greenhouse, in Fortune, Feb 2025", FORTUNE],
 ];
 
+/** "£0", in the membership's currency, written the reader's way. */
+function nothing(currency: string): string {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase(),
+                                            maximumFractionDigits: 0 }).format(0);
+}
+
+/** "7 days", "a day", "12 hours": how far behind a free account is, as the app says it. */
+function behind(hours: number): string {
+  if (hours % 24) return `${hours} hours`;
+  return hours === 24 ? "a day" : `${hours / 24} days`;
+}
+
 /** Get started: what they do once, and what then happens every day without them. */
 const PATHS: [when: string, title: string, items: string[]][] = [
   ["A few minutes, once", "You set it up", ["Upload your CV", "Check the words we suggest",
                                            "Pick your countries and languages"]],
-  ["Then every day", "It runs itself", ["New jobs that fit, all day", "A CV for any of them in one tap",
-                                        "Alerts on your phone, if you like"]],
+  ["Then every day", "It runs itself", ["New jobs that fit, every day", "A CV for any of them in one tap, as a member",
+                                        "Alerts on your phone, as a member"]],
 ];
 
 export function Landing() {
   const root = useRef<HTMLDivElement>(null);
   const [reach, setReach] = useState<Reach | null>(null);
+  const [pricing, setPricing] = useState<Pricing | null>(null);
   const [at, setAt] = useState(0);
   // Counted by the server, never typed here: they went stale here before (`/stats`). Without an answer
   // the page says no number rather than an old one.
@@ -87,6 +103,7 @@ export function Landing() {
 
   useEffect(() => {
     api.get<Reach>("/stats").then(setReach).catch(() => undefined);
+    api.get<Pricing>("/pricing").then(setPricing).catch(() => undefined);
   }, []);
 
   // In on arrival, then each part as it is reached.
@@ -233,7 +250,7 @@ export function Landing() {
         <a className="brand" href="#top" onClick={jump("top")}><Mark />Mahoraga</a>
         <div className="lp-actions">
           <a className="lp-link" href="#/signin">Sign in</a>
-          <a className="btn btn-primary btn-sm" href="#/signup">Create account</a>
+          <a className="btn btn-primary btn-sm" href="#/signup">Start free</a>
           <ThemeToggle />
         </div>
       </header>
@@ -261,7 +278,7 @@ export function Landing() {
               list. <strong>A CV for each</strong> in one tap. You apply on the job's own site, in minutes.
             </p>
             <div className="hero-ctas" data-reveal style={after(0.7)}>
-              <a className="btn btn-primary" href="#/signup">Create account <Arrow /></a>
+              <a className="btn btn-primary" href="#/signup">Start free <Arrow /></a>
               <a className="btn btn-glass" href="#/signin">Sign in</a>
               <a className="btn btn-glass" href="#how" onClick={jump("how")}>How it works</a>
             </div>
@@ -378,6 +395,21 @@ export function Landing() {
           </div>
         </section>
 
+        {/* Free, a week behind; or a member, first (owner, 2026-11-12). What the cards say is set in Admin. */}
+        <section id="price" className="section">
+          <div className="head center" data-reveal>
+            <h2>Start free. <span className="glow">Upgrade to be first.</span></h2>
+            {pricing ? (
+              <p className="lp-lede">
+                Free shows you every job that fits, <strong>{behind(pricing.free_delay_hours)} after members see
+                it.</strong> Members get each one the moment it's found, with alerts and a CV for every job
+                {pricing.trial_days ? <>, and <strong>the first {pricing.trial_days} days are free</strong></> : null}.
+              </p>
+            ) : null}
+          </div>
+          {pricing ? <PriceCards pricing={pricing} /> : null}
+        </section>
+
         <section id="start" className="section">
           <div className="head center" data-reveal>
             <h2>Start in <span className="glow">a few minutes.</span></h2>
@@ -400,7 +432,7 @@ export function Landing() {
           <div className="cta" data-reveal>
             <Wheel ticks={0} />
             <p>Your first jobs are there the moment you finish.</p>
-            <a className="btn btn-primary btn-lg" href="#/signup">Create your account <Arrow /></a>
+            <a className="btn btn-primary btn-lg" href="#/signup">Start free <Arrow /></a>
           </div>
         </section>
       </main>
@@ -447,6 +479,73 @@ function Dock({ at, jump }: { at: number; jump: (id: string) => (event: MouseEve
         </a>
       ))}
     </nav>
+  );
+}
+
+/** The two cards, Free and Member, as the landing page shows them and Admin previews them (`preview`: their
+ * buttons go nowhere). The words are the operator's (`pricing_cards`); the price is Stripe's, the free days
+ * `trial_days` and the delay `free_delay_hours`, filled in here, so no wording can promise what the site
+ * does not keep. */
+export function PriceCards({ pricing, preview = false }: { pricing: Pricing; preview?: boolean }) {
+  const { cards, plan, trial_days: days, free_delay_hours: delay } = pricing;
+  const per = plan && (plan.interval_count === 1 ? plan.interval : `${plan.interval_count} ${plan.interval}s`);
+  return (
+    <div className="price-room">
+      <div className="price-cards">
+        <PriceCard card={cards.free} href="#/signup" preview={preview}
+                   amount={plan ? <><strong>{nothing(plan.currency)}</strong><span>for good</span></> : null}
+                   under={`Jobs ${behind(delay)} after members see them`} />
+        <PriceCard card={cards.member} href="#/signup?plan=member" preview={preview} lit
+                   badge={days ? `${days} days free` : null}
+                   amount={plan ? <><strong>{money(plan.amount, plan.currency)}</strong><span>/{per}</span></> : null}
+                   under={days ? (plan ? `after your ${days}-day free trial` : `The first ${days} days free`) : null} />
+      </div>
+    </div>
+  );
+}
+
+/** One card: its name, what it costs, what it gives and leaves out, and its button at the foot. */
+function PriceCard({ card, href, preview, lit = false, badge = null, amount, under }: {
+  card: Pricing["cards"]["free"];
+  href: string;
+  preview: boolean;
+  lit?: boolean;
+  badge?: string | null;
+  amount: ReactNode;
+  under: string | null;
+}) {
+  const button = lit ? "btn btn-primary price-cta" : "btn btn-glass price-cta";
+  return (
+    <article className={lit ? "tile price-card lit" : "tile price-card"} data-spot>
+      {badge ? <span className="price-badge"><Gift />{badge}</span> : null}
+      <div>
+        <h3 className="price-name">{card.name}</h3>
+        {card.tagline ? <p className="price-tagline">{card.tagline}</p> : null}
+      </div>
+      {amount || under ? (
+        <div>
+          {amount ? <p className="price-amount">{amount}</p> : null}
+          {under ? <p className="price-after">{under}</p> : null}
+        </div>
+      ) : null}
+      <ul className="price-list">
+        {card.benefits.map((line, i) => (
+          <li key={`in${i}`}>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" /><path d="M6 10.4l2.6 2.6 5.6-5.6" /></svg>
+            {line}
+          </li>
+        ))}
+        {card.left_out.map((line, i) => (
+          <li key={`out${i}`} className="out">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" /><path d="M7 7l6 6M13 7l-6 6" /></svg>
+            <span className="unseen">Not included: </span>{line}
+          </li>
+        ))}
+      </ul>
+      {preview ? <span className={button}>{card.button}<Arrow /></span>
+        : <a className={button} href={href}>{card.button}<Arrow /></a>}
+      {card.note ? <p className="price-note">{card.note}</p> : null}
+    </article>
   );
 }
 
@@ -523,6 +622,15 @@ function AtsArt() {
       </div>
       <span className="ats-badge"><svg viewBox="0 0 20 20"><path d="M5.5 10.4l3 3 6-6.4" /></svg>Read like an ATS</span>
     </div>
+  );
+}
+
+/** A present: what a free trial is. */
+function Gift() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4.5 11h15v9h-15zM3.5 7.5h17V11h-17zM12 7.5V20M12 7.5C10.6 4.2 7 4.3 7 6.2c0 1.3 2.4 1.3 5 1.3zm0 0c1.4-3.3 5-3.2 5-1.3 0 1.3-2.4 1.3-5 1.3z" />
+    </svg>
   );
 }
 
@@ -682,7 +790,6 @@ function Phone() {
         <div className="phone-body">
           <div className="tabs" aria-hidden="true"><span className="tab on">Your jobs</span><span className="tab">Add a job</span></div>
           <p className="phone-title">12 jobs match your words</p>
-          <p className="small muted">Jobs stay here for 7 days.</p>
           <Demo />
         </div>
         <div className="phone-tabs" aria-hidden="true">

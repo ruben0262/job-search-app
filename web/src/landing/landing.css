@@ -2257,3 +2257,188 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+/* ── pricing ───────────────────────────────────────────────────────────────────────────────── */
+
+/* Two cards, Free and Member, side by side where there is room; the member's raised in the purple's light, its
+   free days on a tab at its top edge. Laid out by the room they have, not the screen's, so Admin's preview
+   beside its form is the same pair. */
+.landing .price-room {
+  container-type: inline-size;
+}
+
+.landing .price-cards {
+  display: grid;
+  gap: 28px 20px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding-top: 16px;
+}
+
+@container (min-width: 700px) {
+  .landing .price-cards {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.landing .price-card {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow: visible;
+  padding: 32px 22px 26px;
+  border-radius: 30px;
+}
+
+@container (min-width: 480px) {
+  .landing .price-card {
+    padding: 38px 34px 30px;
+  }
+}
+
+.landing .price-card.lit {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.08);
+  box-shadow: 0 0 0 6px rgba(var(--accent-rgb), 0.07), 0 40px 110px -40px rgba(var(--accent-rgb), 0.6);
+}
+
+.landing .price-badge {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  translate: -50% -50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px 9px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: 600 14px/1 var(--font-body);
+  white-space: nowrap;
+  box-shadow: 0 10px 30px -10px rgba(var(--accent-rgb), 0.9);
+}
+
+.landing .price-badge svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+
+.landing .price-card .price-name {
+  margin: 0;
+  font: 600 28px/1.1 var(--font-display);
+  letter-spacing: -0.03em;
+}
+
+.landing .price-card .price-tagline {
+  margin-top: 6px;
+  font-size: 16.5px;
+}
+
+.landing .price-card .price-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--ink);
+}
+
+.landing .price-amount strong {
+  font: 600 clamp(2.8rem, 9cqi, 4rem)/1 var(--font-display);
+  letter-spacing: -0.05em;
+}
+
+.landing .price-amount span {
+  color: var(--muted);
+  font-size: 18px;
+}
+
+.landing .price-card .price-after {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
+.landing .price-card.lit .price-after {
+  color: var(--accent-text);
+}
+
+.landing .price-list {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 14px;
+  margin: 0;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--glass-line);
+  list-style: none;
+}
+
+.landing .price-list li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  font-size: 16px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.landing .price-list svg {
+  width: 22px;
+  height: 22px;
+}
+
+.landing .price-list circle {
+  fill: rgba(var(--accent-rgb), 0.2);
+}
+
+.landing .price-list path {
+  fill: none;
+  stroke: var(--accent-text);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Not included: crossed out and grey, its words still read; a screen reader hears "Not included" first. */
+.landing .price-list li.out {
+  color: var(--dim);
+  text-decoration: line-through;
+  text-decoration-color: var(--faint);
+}
+
+.landing .price-list li.out circle {
+  fill: rgba(var(--ink-rgb), 0.07);
+}
+
+.landing .price-list li.out path {
+  stroke: var(--dim);
+}
+
+.landing .unseen {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.landing .price-cta {
+  --h: 54px;
+  width: 100%;
+  font-size: 16px;
+}
+
+.landing .price-card .price-note {
+  margin-top: -6px;
+  color: var(--dim);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+}

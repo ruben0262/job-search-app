@@ -14,6 +14,79 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12, later — The landing page's pricing: Free and Member, their words set in Admin
+
+The owner asked for:
+- **A pricing section for the one subscription:** its 7-day free trial and the whole platform emphasised,
+  in a great design.
+- **What the cards say, controlled from Admin.**
+- **Then a free version beside it:** a week behind, without CVs, cover letters or alerts. Start either way:
+  free with no card asked, or the membership with its trial.
+
+The free tier itself, the trial and the sign-up's plan choice are the membership work. This entry is the
+landing page's part.
+
+**"Start free. Upgrade to be first."**, between "See it working." and "Start in a few minutes." The dock
+gains "Price".
+- **The line under the title** says that Free shows every job 7 days after members see it, and that
+  members get each one the moment it's found, with alerts and a CV for every job, the first 7 days free.
+- **Free:**
+  - "£0 for good", then "Jobs 7 days after members see them";
+  - three lines ticked;
+  - three crossed out (new jobs as they appear, alerts, CVs and cover letters), each read out as "Not
+    included";
+  - "Start free" (`#/signup`), and "No card needed".
+- **Member:**
+  - a "7 days free" tab on its top edge, raised in the purple's light;
+  - Stripe's price, "after your 7-day free trial";
+  - five lines ticked;
+  - "Start your free trial" (`#/signup?plan=member`, which the sign-up's plan choice picks up), and the
+    small print that a card is needed and nothing is taken before the trial ends.
+- **Side by side** where the cards have room, laid out by their container, not the screen, so Admin's
+  preview is the same pair.
+
+**The words are the operator's; the price, the trial and the delay are not.**
+- **What Admin edits.** Admin → Settings → "Pricing on the landing page" switches between the two cards and
+  edits each:
+  - the name and the line under it;
+  - what is included, and what is not (crossed out), 1 to 12 lines each;
+  - the button and the small print.
+
+  A preview of both follows the typing, and Save saves both at once (`pricing_cards`, one platform setting).
+- **What it can't edit.** The price is Stripe's, read by the `billing_routes.plan` the payment form uses.
+  The free days are `trial_days`, and the delay is `free_delay_hours`, the setting the feed's delay reads.
+- **Why.** A typed price could say £3.99 while the form charges £4.99, and a typed "a week" could stay
+  after the delay changed.
+- **Without Stripe,** the cards name no price rather than a wrong one.
+
+**The API.** `GET /pricing` is public, needing no account; `PUT /admin/pricing` is for admins,
+and checks each field against the room the card has, refusing what doesn't fit with what is wrong. Saved
+cards that no longer read show the defaults, with a warning in the log.
+
+**The rest of the page says what is a member's.**
+- **Buttons:** every "Create account" is "Start free".
+- **"How it works":** says "on your phone too, as a member" and "ready in seconds, as a member".
+- **"Get started":** names the CV and alerts as a member's.
+- **The phone picture** no longer says how long jobs stay. It was typed as 7 days, and the app's shelf, now
+  30 days, comes from its setting.
+
+**The default wording** is true to the site: the CV line says "with your own AI account", and the small
+print says a card is needed for the trial.
+
+`test_every_setting_has_a_control_in_the_panel` now reads every `Admin*.tsx` file, the editor being one of
+its own (`AdminPricing.tsx`).
+
+Measured with a built site: nothing past the screen's edge at 320, 390 and 1,440 px, the dock 294 px wide
+at 320.
+
+Tests, each failing without the feature:
+- **The cards:** read without an account, with the trial's and the delay's settings and no price without
+  Stripe; the price passed through from Stripe's.
+- **Admin:** changes the words and the landing page says them; nobody else can; a card with no room is
+  refused and the saved ones kept; broken saved cards are the defaults, said in the log.
+- **The browser:** both cards, the crossed-out lines read as not included, the trial tab, both buttons'
+  addresses; an admin's edit seen in the preview before saving and on a 320 px phone after.
+
 ## 2026-11-12, evening — The free plan, the Free or Member choice at sign-up, and the site's own payment form
 
 The owner asked for:

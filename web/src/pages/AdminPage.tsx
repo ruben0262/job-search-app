@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { api, type Schema } from "../api";
 import { keep, peek, readAhead, useKept } from "../kept";
 import { standingWord } from "../membership";
+import { AdminPricing } from "./AdminPricing";
 import { BinIcon, Error, Prompt, useAction } from "../ui";
 import { JobsByCountry } from "./AdminCountries";
 
@@ -819,7 +820,8 @@ export function AdminPage({ tab: asked }: { tab: string }) {
             <option value={1}>On</option>
           </select>
         </div>
-      ) : null}</> : null}
+      ) : null}
+      <AdminPricing /></> : null}
 
 
       {tab === "corpus" ? <CorpusTab /> : null}

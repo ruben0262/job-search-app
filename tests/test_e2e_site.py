@@ -222,12 +222,12 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         expect(demo).to_contain_text("opens it on LinkedIn, and you apply there")
         # The sections at the foot of a phone: a picture over each one's word (owner, 2026-11-07).
         expect(page.locator(".dock a").filter(has=page.locator(".short"))).to_have_text(
-            ["Why", "What", "How", "Jobs", "Start"], use_inner_text=True)
+            ["Why", "What", "How", "Jobs", "Price", "Start"], use_inner_text=True)
         # Each section says what it is in a big title of its own, where a small label stood (owner,
         # 2026-11-07).
         expect(page.locator("main section h2")).to_have_text([
             "Be first. Be seen.", "Every job site. One list for you.", "From sign\u2011up to applied.",
-            "See it working.", "Start in a few minutes."])
+            "See it working.", "Start free. Upgrade to be first.", "Start in a few minutes."])
         # Each figure behind a selling point says where it comes from, and links there (owner, 2026-11-12).
         figures = page.locator("#edge .figures > div")
         expect(figures).to_have_count(5)
@@ -250,6 +250,57 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         page.get_by_role("link", name="Search", exact=True).click()
         expect(page.get_by_role("heading", name="The jobs you want", level=1)).to_be_visible()
         expect(page.get_by_role("link", name="Search", exact=True)).to_have_attribute("aria-current", "page")
+        browser.close()
+
+
+def test_the_landing_page_offers_free_and_member_and_an_admin_words_both(site, capsys):
+    """Two cards: Free, a week behind, with what it leaves out crossed out and read out as not included, and
+    no card asked for; and Member, its free days on a tab, which signs up for the membership. The price is
+    Stripe's: none here, where Stripe is not set up, rather than a wrong one. An admin changes the words in
+    Settings, watching them as a visitor will see them, and the landing page says them, on the smallest phone
+    too (owner, 2026-11-12)."""
+    from libs.db import database
+    from libs.settings import DEFAULT_PRICING_CARDS
+
+    base, email, _ = site
+    free, member = DEFAULT_PRICING_CARDS["free"], DEFAULT_PRICING_CARDS["member"]
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        page.goto(f"{base}/#/")
+        cards = page.locator(".price-card")
+        expect(cards.locator(".price-name")).to_have_text([free["name"], member["name"]])
+        expect(cards.first.locator(".price-after")).to_have_text("Jobs 7 days after members see them")
+        expect(cards.first.locator(".price-list li.out")).to_have_text(
+            [f"Not included: {line}" for line in free["left_out"]])
+        expect(cards.last.locator(".price-badge")).to_have_text("7 days free")
+        expect(cards.last.locator(".price-list li")).to_have_text(member["benefits"])
+        expect(page.locator(".price-amount")).to_have_count(0)
+        expect(cards.first.get_by_role("link", name=free["button"])).to_have_attribute("href", "#/signup")
+        expect(cards.last.get_by_role("link", name=member["button"])).to_have_attribute(
+            "href", "#/signup?plan=member")
+
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
+        page.goto(f"{base}/#/admin/settings")
+        editor = page.locator(".pricing-admin")
+        editor.get_by_role("button", name="Member", exact=True).click()
+        editor.get_by_label("Name", exact=True).fill("Mahoraga Plus")
+        editor.get_by_role("button", name="Add a line").first.click()
+        editor.get_by_label(f"Included, line {len(member['benefits']) + 1}").fill("Help from a person")
+        # The preview follows the typing, before anything is saved.
+        expect(editor.locator(".price-name").last).to_have_text("Mahoraga Plus")
+        editor.get_by_role("button", name="Save both cards").click()
+        expect(editor.get_by_role("status")).to_have_text("Saved. The landing page shows it now.")
+
+        visitor = browser.new_context(viewport={"width": 320, "height": 640}).new_page()
+        visitor.goto(f"{base}/#/")
+        expect(visitor.locator(".price-name")).to_have_text([free["name"], "Mahoraga Plus"])
+        added = visitor.locator(".price-card").last.locator(".price-list li").last
+        expect(added).to_have_text("Help from a person")
+        assert visitor.evaluate("document.documentElement.scrollWidth") <= 320, "past a small phone's edge"
+        assert visitor.evaluate("document.querySelector('.dock').getBoundingClientRect().width") <= 320 - 16
         browser.close()
 
 

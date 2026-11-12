@@ -301,6 +301,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Pricing
+         * @description Both cards' words, saved together, as the landing page will show them.
+         */
+        put: operations["set_pricing_admin_pricing_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/queue/dead": {
         parameters: {
             query?: never;
@@ -1479,6 +1499,26 @@ export interface paths {
          * @description Everything the review page opens with: what they told us, else what their documents say.
          */
         get: operations["review_onboarding_review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pricing
+         * @description Public: what the landing page's pricing says, before anybody has an account.
+         */
+        get: operations["pricing_pricing_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2794,6 +2834,38 @@ export interface components {
             /** Trial Days */
             trial_days: number;
         };
+        /** Pricing */
+        Pricing: {
+            cards: components["schemas"]["PricingCards"];
+            /** Free Delay Hours */
+            free_delay_hours: number;
+            plan: components["schemas"]["Plan"] | null;
+            /** Trial Days */
+            trial_days: number;
+        };
+        /**
+         * PricingCard
+         * @description One card's words, each with room for what the card has room for.
+         */
+        PricingCard: {
+            /** Benefits */
+            benefits: string[];
+            /** Button */
+            button: string;
+            /** Left Out */
+            left_out: string[];
+            /** Name */
+            name: string;
+            /** Note */
+            note: string;
+            /** Tagline */
+            tagline: string;
+        };
+        /** PricingCards */
+        PricingCards: {
+            free: components["schemas"]["PricingCard"];
+            member: components["schemas"]["PricingCard"];
+        };
         /** ProfileLink */
         ProfileLink: {
             platform?: components["schemas"]["LinkPlatform"] | null;
@@ -3806,6 +3878,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_pricing_admin_pricing_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PricingCards"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pricing"];
                 };
             };
             /** @description Validation Error */
@@ -5709,6 +5814,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReviewPage"];
+                };
+            };
+        };
+    };
+    pricing_pricing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pricing"];
                 };
             };
         };

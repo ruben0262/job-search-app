@@ -2924,6 +2924,113 @@
         "title": "Plan",
         "type": "object"
       },
+      "Pricing": {
+        "properties": {
+          "cards": {
+            "$ref": "#/components/schemas/PricingCards"
+          },
+          "free_delay_hours": {
+            "title": "Free Delay Hours",
+            "type": "integer"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Plan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trial_days": {
+            "title": "Trial Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cards",
+          "trial_days",
+          "free_delay_hours",
+          "plan"
+        ],
+        "title": "Pricing",
+        "type": "object"
+      },
+      "PricingCard": {
+        "description": "One card's words, each with room for what the card has room for.",
+        "properties": {
+          "benefits": {
+            "items": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Benefits",
+            "type": "array"
+          },
+          "button": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Button",
+            "type": "string"
+          },
+          "left_out": {
+            "items": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Left Out",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 280,
+            "title": "Note",
+            "type": "string"
+          },
+          "tagline": {
+            "maxLength": 120,
+            "title": "Tagline",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "tagline",
+          "benefits",
+          "left_out",
+          "button",
+          "note"
+        ],
+        "title": "PricingCard",
+        "type": "object"
+      },
+      "PricingCards": {
+        "properties": {
+          "free": {
+            "$ref": "#/components/schemas/PricingCard"
+          },
+          "member": {
+            "$ref": "#/components/schemas/PricingCard"
+          }
+        },
+        "required": [
+          "free",
+          "member"
+        ],
+        "title": "PricingCards",
+        "type": "object"
+      },
       "ProfileLink": {
         "additionalProperties": false,
         "properties": {
@@ -5077,6 +5184,48 @@
         "summary": "Pipeline Stream",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/admin/pricing": {
+      "put": {
+        "description": "Both cards' words, saved together, as the landing page will show them.",
+        "operationId": "set_pricing_admin_pricing_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PricingCards"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pricing"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Pricing",
+        "tags": [
+          "pricing"
         ]
       }
     },
@@ -7768,6 +7917,28 @@
         "summary": "Review",
         "tags": [
           "onboarding"
+        ]
+      }
+    },
+    "/pricing": {
+      "get": {
+        "description": "Public: what the landing page's pricing says, before anybody has an account.",
+        "operationId": "pricing_pricing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pricing"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Pricing",
+        "tags": [
+          "pricing"
         ]
       }
     },

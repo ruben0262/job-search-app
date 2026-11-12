@@ -49,8 +49,10 @@ def test_every_setting_is_read_by_something():
 
 
 def test_every_setting_has_a_control_in_the_panel():
-    """A stored value nobody can change is a constant with extra steps."""
-    panel = (ROOT / "web" / "src" / "pages" / "AdminPage.tsx").read_text(encoding="utf-8")
+    """A stored value nobody can change is a constant with extra steps. The panel is Admin's page and the
+    parts of it kept in files of their own (`AdminPricing.tsx`)."""
+    panel = "".join(path.read_text(encoding="utf-8")
+                    for path in (ROOT / "web" / "src" / "pages").glob("Admin*.tsx"))
 
     missing = [key for key in DEFAULTS if key not in panel]
     assert not missing, (

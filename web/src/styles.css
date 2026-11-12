@@ -2914,6 +2914,43 @@ button.ai-provider {
   overflow-wrap: anywhere;
 }
 
+/* Admin → Settings: the landing page's pricing, the form beside the card it makes on a wide screen. */
+.pricing-edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem 2rem;
+  align-items: start;
+}
+@media (min-width: 72rem) {
+  .pricing-edit {
+    grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr);
+  }
+}
+.pricing-lines {
+  min-width: 0;
+  margin: 0 0 1.15rem;
+  padding: 0;
+  border: 0;
+}
+.pricing-line {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.pricing-line button {
+  flex: none;
+  padding-inline: 0.95rem;
+}
+.pricing-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.pricing-preview {
+  min-width: 0;
+}
+
 /* The admin's page for one account (`AdminUserPage.tsx`): who, where it stands, then a card a question. */
 .account .card h2 {
   margin: 0 0 1rem;

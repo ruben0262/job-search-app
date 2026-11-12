@@ -282,6 +282,44 @@ DEFAULT_TRIAL_DAYS = 7
 # documents and the alerts stay members'.
 DEFAULT_FREE_DELAY_HOURS = 168
 
+# What the landing page's two pricing cards say, Free and Member (owner, 2026-11-12), the operator's to change
+# in Admin (`services.api.pricing_routes`). The membership's price is Stripe's, its free days `trial_days` and
+# how far behind a free account is `free_delay_hours`, each filled in where the cards are drawn, so no wording
+# here should name them. `left_out` is what the card lists as not included.
+DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
+    "free": {
+        "name": "Free",
+        "tagline": "Every job that fits you, to look around as long as you like.",
+        "benefits": [
+            "Every job that fits you, from every source",
+            "Every filter: your words, countries, languages and way of working",
+            "Every application followed, to the interview and the offer",
+        ],
+        "left_out": [
+            "New jobs the moment they appear",
+            "Alerts on your phone",
+            "CVs and cover letters made for each job",
+        ],
+        "button": "Start free",
+        "note": "No card needed. Upgrade whenever you like.",
+    },
+    "member": {
+        "name": "Member",
+        "tagline": "Every job the moment it appears, and a CV for each.",
+        "benefits": [
+            "New jobs the moment they're found, not a week later",
+            "Alerts on Telegram, in your browser or by email",
+            "A CV and a cover letter for any job, in one tap, with your own AI account",
+            "Every CV read the way an applicant tracking system reads it",
+            "Everything in Free",
+        ],
+        "left_out": [],
+        "button": "Start your free trial",
+        "note": "A card is needed to start the trial. Nothing is taken until it ends, and if you cancel "
+                "before then you pay nothing.",
+    },
+}
+
 
 DEFAULTS: dict[str, object] = {
     "job_max_age_hours": DEFAULT_JOB_MAX_AGE_HOURS,
@@ -305,6 +343,7 @@ DEFAULTS: dict[str, object] = {
     "email_digest_hour": DEFAULT_EMAIL_DIGEST_HOUR,
     "trial_days": DEFAULT_TRIAL_DAYS,
     "free_delay_hours": DEFAULT_FREE_DELAY_HOURS,
+    "pricing_cards": DEFAULT_PRICING_CARDS,
 }
 
 
