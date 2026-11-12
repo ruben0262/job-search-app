@@ -11,7 +11,7 @@ import { PICTURES } from "../pages/JobsPage";
 import { PLACES } from "../places";
 import { ThemeToggle } from "../theme";
 import { Mark, Wheel } from "../wheel";
-import { Demo } from "./Demo";
+import { Alerts, Phone } from "./Demo";
 import "./landing.css";
 
 type Reach = Schema<"Reach">;
@@ -48,27 +48,31 @@ const steps = (often: string): [string, ReactNode, ReactNode][] => [
     one: the interview, the offer, the job.</>, <ApplyArt />],
 ];
 
+/** Be first and be seen: what Mahoraga does about the figures above them, a card each, stacking as How it works'
+ * steps do, so a reader scrolling past still reads both (owner, 2026-11-12: "short and sweet"). */
+const edges = (often: string): [string, ReactNode, ReactNode][] => [
+  ["New jobs in minutes, not days", <>Every job site read {often}. <strong>Apply in a job's first days,</strong> when
+    hiring starts.</>, <WeekArt />],
+  ["A CV made for each job, in seconds", <>From your own CV, with a cover letter, in one tap. <strong>Made to pass
+    ATS checks,</strong> each one checked before you get it.</>, <AtsArt />],
+];
+
 /** A figure behind the selling points, with where it comes from: each read at its source on 2026-11-12, and
  * each said with its own scope. Claims that could not be traced to a source were left out ("4x within 10
- * minutes", "8x in 4 days"). */
+ * minutes", "8x in 4 days"). In the order the section's words go: more people apply (in the market the page's
+ * readers are in, Europe's, the UK's above all), hiring starts in the first week, and most applications are
+ * never answered. */
 type Figure = [figure: string, what: string, source: string, link: string];
 const LINKEDIN = "https://news.linkedin.com/2026/LinkedIn-Research-Talent-2026";
 const ASHBY = "https://ashbyhq.com/blog/recruiting/operationalizing-2023-application-per-job-report";
 const FORTUNE = "https://fortune.com/2025/02/02/linkedin-indeed-greenhouse-job-seekers-likely-response-interviews/";
 const ISE = "https://ise.org.uk/knowledge/insights/410/record_graduate_job_applications";
-/** The market the page's readers are in: Europe's, the UK's above all (owner, 2026-11-12: "mainly european"). */
-const MARKET: Figure[] = [
+const FIGURES: Figure[] = [
   ["140", "applications for each UK graduate job, a record", "Institute of Student Employers, 2024", ISE],
   ["65%", "of people say finding a job has got harder", "LinkedIn survey, 13 countries incl. UK, DE, FR, Nov 2025",
    LINKEDIN],
-];
-/** Be first: hiring starts in a job's first week, when most of its applicants arrive. */
-const FIRST: Figure[] = [
   ["~60%", "of hirers find someone to interview in a job's first week", "LinkedIn, Jan 2026 (Hiring Pro users)", LINKEDIN],
   ["~2×", "the applications in a job's first week as in each week after", "Ashby, 13M applications", ASHBY],
-];
-/** Be seen: most applications are never answered. */
-const SEEN: Figure[] = [
   ["14M+", "applications went unanswered in one quarter of 2024", "Greenhouse, in Fortune, Feb 2025", FORTUNE],
 ];
 
@@ -123,27 +127,29 @@ export function Landing() {
   }, []);
 
   // What moves with the scroll and the pointer: the bar frosts, the halo rises to face you and leans to
-  // the pointer, the dock follows the section you are in, and a step's card shrinks into the shade as the
-  // next one covers it. Written straight onto the few elements that move, never as a variable on the page:
-  // one there restyled every element under it on every frame (54 ms a frame on a laptop, 2026-11-06).
+  // the pointer, the dock follows the section you are in, and a card in a stack (Why it works, How it works)
+  // shrinks into the shade as the next one covers it. Written straight onto the few elements that move, never
+  // as a variable on the page: one there restyled every element under it on every frame (54 ms a frame on a
+  // laptop, 2026-11-06).
   useEffect(() => {
     const page = root.current!;
     const halo = page.querySelector<HTMLElement>(".halo-tilt")!;
-    const stack = page.querySelector<HTMLElement>(".stack")!;
-    const cards = [...stack.querySelectorAll<HTMLElement>(".stack-card")];
-    const shades = cards.map((card) => card.querySelector<HTMLElement>(".stack-shade")!);
+    // Each stack's cards, their shades, and where the CSS sticks each card: read once a size rather than every
+    // frame. None on a short screen, where a card would be taller than the screen and the CSS lets them scroll.
+    const stacks = [...page.querySelectorAll<HTMLElement>(".stack")].map((stack) => {
+      const cards = [...stack.querySelectorAll<HTMLElement>(".stack-card")];
+      return { stack, cards, shades: cards.map((card) => card.querySelector<HTMLElement>(".stack-shade")!),
+               stuck: [] as number[] };
+    });
     const motion = !still();
-    // Where the CSS sticks each card, read once a size rather than every frame. None on a short screen,
-    // where a card would be taller than the screen and the CSS lets them scroll instead.
-    let stuck: number[] = [];
-    const measure = () => {
-      const sticky = getComputedStyle(cards[0]!).position === "sticky";
-      stuck = sticky ? cards.map((card) => parseFloat(getComputedStyle(card).top)) : [];
-      if (!sticky) cards.forEach((card, i) => {
+    const measure = () => stacks.forEach((each) => {
+      const sticky = getComputedStyle(each.cards[0]!).position === "sticky";
+      each.stuck = sticky ? each.cards.map((card) => parseFloat(getComputedStyle(card).top)) : [];
+      if (!sticky) each.cards.forEach((card, i) => {
         card.style.transform = "";
-        shades[i]!.style.opacity = "";
+        each.shades[i]!.style.opacity = "";
       });
-    };
+    });
 
     // The halo glides to where the scroll and the pointer put it: a wheel moves the page a hundred pixels
     // at a time, and the halo eases the distance rather than jumping it, at the same pace at any refresh rate.
@@ -183,8 +189,9 @@ export function Landing() {
         goal.tilt = 70 - 58 * eased;
         goal.grow = 1 + 0.18 * eased;
         aim();
-        const box = stack.getBoundingClientRect();
-        if (stuck.length && box.bottom > 0 && box.top < innerHeight) {
+        for (const { stack, cards, shades, stuck } of stacks) {
+          const box = stack.getBoundingClientRect();
+          if (!stuck.length || box.bottom <= 0 || box.top >= innerHeight) continue;
           const tops = cards.map((card) => card.getBoundingClientRect().top);
           cards.forEach((card, i) => {
             // How far each later card has slid over this one.
@@ -306,21 +313,8 @@ export function Landing() {
               <strong> early,</strong> with <strong>a CV made for the job.</strong>
             </p>
           </div>
-          <div className="market" data-reveal><Figures of={MARKET} /></div>
-          <div className="edge-grid">
-            <article className="tile edge-card" data-reveal data-spot>
-              <WeekArt />
-              <h3>New jobs in minutes, not days</h3>
-              <p>Every job site read {often}. <strong>Apply in a job's first days,</strong> when hiring starts.</p>
-              <Figures of={FIRST} />
-            </article>
-            <article className="tile edge-card" data-reveal data-spot style={after(0.08)}>
-              <AtsArt />
-              <h3>A CV made for each job, in seconds</h3>
-              <p>From your own CV, with a cover letter, <strong>in one tap,</strong> and read the way an ATS reads it.</p>
-              <Figures of={SEEN} />
-            </article>
-          </div>
+          <Figures of={FIGURES} />
+          <Stack cards={edges(often)} />
           {/* The rest of what it does for them, a picture each, so the point lands without reading. */}
           <div className="edge-row">
             <article className="tile edge-mini" data-reveal data-spot>
@@ -356,19 +350,7 @@ export function Landing() {
             <h2>From sign‑up <span className="glow">to applied.</span></h2>
             <p className="lp-lede">What you get, in the order you get it.</p>
           </div>
-          <div className="stack">
-            {steps(often).map(([name, text, art], i) => (
-              <article key={name} className="stack-card" style={{ "--i": i } as CSSProperties}>
-                <div className="stack-shade" aria-hidden="true" />
-                <div>
-                  <span className="stack-num" aria-hidden="true">{i + 1}</span>
-                  <h3>{name}</h3>
-                  <p>{text}</p>
-                </div>
-                <div className="stack-art" aria-hidden="true">{art}</div>
-              </article>
-            ))}
-          </div>
+          <Stack cards={steps(often)} numbered />
         </section>
 
         <section id="live" className="section">
@@ -385,12 +367,7 @@ export function Landing() {
               <p className="lp-lede">
                 By Telegram, in your browser, or one email each morning. Each with a link straight to its CV.
               </p>
-              <div className="alert-card" role="img" aria-label="A new job, as an alert on a phone">
-                <div className="alert-app"><i><Telegram /></i>Jordan's job bot<span>now</span></div>
-                <div className="alert-title">Python Engineer, Data Platform</div>
-                <div className="alert-meta">Northwind · LinkedIn · 2h<br />📍 London · 🏠 Hybrid<br />Matches: python, data platform</div>
-                <div className="alert-buttons"><span>Apply on LinkedIn</span><span>Make my CV</span></div>
-              </div>
+              <Alerts />
             </div>
           </div>
         </section>
@@ -399,13 +376,6 @@ export function Landing() {
         <section id="price" className="section">
           <div className="head center" data-reveal>
             <h2>Start free. <span className="glow">Upgrade to be first.</span></h2>
-            {pricing ? (
-              <p className="lp-lede">
-                Free shows you every job that fits, <strong>{behind(pricing.free_delay_hours)} after members see
-                it.</strong> Members get each one the moment it's found, with alerts and a CV for every job
-                {pricing.trial_days ? <>, and <strong>the first {pricing.trial_days} days are free</strong></> : null}.
-              </p>
-            ) : null}
           </div>
           {pricing ? <PriceCards pricing={pricing} /> : null}
         </section>
@@ -559,10 +529,11 @@ function PriceCard({ card, href, preview, onChoose, busy, lit = false, badge = n
   );
 }
 
-/** The figures behind a claim, each with its source, linked. */
+/** The figures behind the claims, each with its source, linked: one band, the numbers big enough to read at a
+ * scroll. */
 function Figures({ of }: { of: Figure[] }) {
   return (
-    <dl className="figures">
+    <dl className="figures" data-reveal>
       {of.map(([figure, what, source, link]) => (
         <div key={what}>
           <dt>{figure}</dt>
@@ -573,11 +544,31 @@ function Figures({ of }: { of: Figure[] }) {
   );
 }
 
+/** Cards that stick as the page scrolls, each sliding over the one before (`Landing`'s scroll effect shades
+ * it): a title, a line and a picture each, and the step's number where they are steps. */
+function Stack({ cards, numbered = false }: { cards: [string, ReactNode, ReactNode][]; numbered?: boolean }) {
+  return (
+    <div className="stack">
+      {cards.map(([name, text, art], i) => (
+        <article key={name} className="stack-card" style={{ "--i": i } as CSSProperties}>
+          <div className="stack-shade" aria-hidden="true" />
+          <div>
+            {numbered ? <span className="stack-num" aria-hidden="true">{i + 1}</span> : null}
+            <h3>{name}</h3>
+            <p>{text}</p>
+          </div>
+          <div className="stack-art" aria-hidden="true">{art}</div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 /** Applications a week over a job's first month, as Ashby counted them (the first week about twice each later
- * one), and you on its first day. */
+ * one), and you on its first day. Its bars grow once it is reached. */
 function WeekArt() {
   return (
-    <div className="week-art" aria-hidden="true">
+    <div className="week-art" data-reveal>
       <span className="week-you">You, day 1</span>
       {[100, 50, 48, 46].map((tall, i) => (
         <i key={i} style={{ "--h": `${tall}%`, "--i": i } as CSSProperties}><b>Week {i + 1}</b></i>
@@ -620,17 +611,18 @@ function TrackArt() {
   );
 }
 
-/** A CV read the way an applicant tracking system reads it: its headings found, the posting's words in it. */
+/** A CV read the way an applicant tracking system reads it: its headings found, ticked in turn once it is
+ * reached. */
 function AtsArt() {
   return (
-    <div className="ats-art" aria-hidden="true">
+    <div className="ats-art" data-reveal>
       <div className="ats-paper">
         <b />
         {["Profile", "Experience", "Skills"].map((heading, i) => (
           <span key={heading} style={{ "--i": i } as CSSProperties}>{heading}<em>✓</em></span>
         ))}
       </div>
-      <span className="ats-badge"><svg viewBox="0 0 20 20"><path d="M5.5 10.4l3 3 6-6.4" /></svg>Read like an ATS</span>
+      <span className="ats-badge"><svg viewBox="0 0 20 20"><path d="M5.5 10.4l3 3 6-6.4" /></svg>Passes ATS checks</span>
     </div>
   );
 }
@@ -784,47 +776,10 @@ function ApplyArt() {
   );
 }
 
-/** The Jobs page on a phone, as the app draws it: its bar, its two tabs, a job that works, and the tab bar,
- * a picture over each word. */
-function Phone() {
-  return (
-    <figure className="phone" data-reveal aria-label="The Jobs page, on a phone">
-      <div className="phone-screen">
-        <div className="phone-bar" aria-hidden="true">
-          <span className="brand"><Mark />Mahoraga</span>
-          <span className="phone-icons">
-            <i><svg viewBox="0 0 24 24"><path d="M9.5 9.2a2.6 2.6 0 115 1c-.6 1-2.5 1.5-2.5 3M12 17h.01" /></svg></i>
-            <i><svg viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 1112 0v5l1.5 2h-15zM10 20.5h4" /></svg></i>
-          </span>
-        </div>
-        <div className="phone-body">
-          <div className="tabs" aria-hidden="true"><span className="tab on">Your jobs</span><span className="tab">Add a job</span></div>
-          <p className="phone-title">12 jobs match your words</p>
-          <Demo />
-        </div>
-        <div className="phone-tabs" aria-hidden="true">
-          {PLACES.filter(([key]) => key !== "admin").map(([key, , , short], i) => (
-            <span key={key} className={i === 0 ? "on" : undefined}>{short}</span>
-          ))}
-        </div>
-      </div>
-    </figure>
-  );
-}
-
 function Arrow() {
   return (
     <svg className="arrow" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-/** Telegram's paper plane, in one colour. */
-function Telegram() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M21.94 4.6 18.9 18.95c-.23 1.01-.83 1.26-1.68.78l-4.64-3.42-2.24 2.15c-.25.25-.46.46-.94.46l.33-4.72 8.6-7.77c.37-.33-.08-.52-.58-.19L7.12 12.93l-4.57-1.43c-.99-.31-1.01-.99.21-1.47L20.5 3.4c.83-.31 1.55.19 1.44 1.2z" />
     </svg>
   );
 }

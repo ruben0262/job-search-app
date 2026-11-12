@@ -15,8 +15,8 @@ type Applied = Schema<"AppliedJob">;
 type Step = Schema<"Step">;
 type Stage = Step["stage"];
 
-/** The way forward, in order; "rejected" ends it from wherever it stands. */
-const STEPS: [Stage | "applied", string][] = [["applied", "Applied"], ["interview", "Interview"],
+/** The way forward, in order; "rejected" ends it from wherever it stands. The landing page's phone draws it too. */
+export const STEPS: [Stage | "applied", string][] = [["applied", "Applied"], ["interview", "Interview"],
                                               ["offer", "Offer"], ["hired", "Got the job"]];
 /** At each stage: the question, and the answer that moves it on. */
 const NEXT: Partial<Record<Stage | "applied", [string, Stage, string]>> = {

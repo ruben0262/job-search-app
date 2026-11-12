@@ -252,6 +252,39 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         browser.close()
 
 
+def test_the_phone_goes_through_the_site_by_itself_until_a_visitor_touches_it(site):
+    """Owner, 2026-11-12: in "See it working" the phone makes a CV on the Jobs page, then shows Applied, and
+    new alerts arrive on top, pushing the older ones down. The visitor's own touch ends the tour and the phone
+    is theirs; with reduced motion nothing moves."""
+    base, _, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        page.goto(f"{base}/#/")
+        page.locator(".phone").scroll_into_view_if_needed()
+        on = page.locator(".phone-tabs .on")
+        expect(page.locator(".phone .paper")).to_be_visible(timeout=8000)
+        expect(on).to_have_attribute("data-tab", "applied", timeout=10000)
+        titles = page.locator(".alert-title")
+        newest = titles.first.inner_text()
+        expect(titles.nth(1)).to_have_text(newest, timeout=6000)
+
+        page.locator(".phone-tabs [data-tab=words]").click()
+        expect(on).to_have_attribute("data-tab", "words")
+        page.wait_for_timeout(5000)
+        expect(on).to_have_attribute("data-tab", "words")
+
+        still = browser.new_context(viewport={"width": 1280, "height": 900}, reduced_motion="reduce")
+        page = still.new_page()
+        page.goto(f"{base}/#/")
+        page.locator(".phone").scroll_into_view_if_needed()
+        page.wait_for_timeout(5000)
+        expect(page.locator(".phone-tabs .on")).to_have_attribute("data-tab", "jobs")
+        expect(page.locator(".phone .paper")).to_have_count(0)
+        expect(page.locator(".alert-slot")).to_have_count(3)
+        browser.close()
+
+
 def test_the_landing_page_offers_free_and_member_and_an_admin_words_both(site, capsys):
     """Two cards: Free, a week behind, with what it leaves out crossed out and read out as not included, and
     no card asked for; and Member, its free days on a tab, which signs up for the membership. The price is

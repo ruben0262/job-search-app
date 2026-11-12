@@ -14,6 +14,57 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12, late night — The landing page: Why it works read at a scroll, the phone shows itself, ATS said
+
+The owner asked for:
+- **"Be first. Be seen."** to read even when scrolled past, "short and sweet" like the sections after it.
+- **The menu** to sit right in its bar.
+- **Pricing:** without the long sentence under its title.
+- **ATS:** CVs and cover letters that pass ATS checks, said with the membership, as what Free leaves out, and on
+  the landing page.
+- **"See it working":** the phone going through the site by itself, and Telegram alerts arriving one after
+  another, the older pushed down.
+
+**Why it works.**
+- **The five figures** stand in one band under the title: each number big, its line, its source linked. A row
+  on a laptop, a list down a phone.
+- **Be first and be seen** are two cards that stick and stack as How it works' steps do: a title, a line, a
+  picture each. The scroll effect that stacks cards now runs for every stack on the page, and both sections draw
+  their cards with one `Stack`.
+- **The three small cards** stay, tighter on a phone.
+
+**The menu** is centred in its 68 px bar, level with the logo and the buttons. Its links are 38 px, the buttons'
+height. It had sat 6 px low, 1 px above the bar's line.
+
+**Pricing:** the sentence under "Start free. Upgrade to be first." is removed. The cards say it.
+
+**ATS, said without a number.**
+- **What exists:** every CV and cover letter is already checked as it is made (`services/docgen/pdf.py`): its
+  text extracts, its headings are where they belong, its email is found. The result is kept as `ats_ok`.
+- **What a flagged one does:** it is still delivered, with a warning, so "always passes" would not be true.
+  "Made to pass ATS checks, each one checked before you get it" is.
+- **Where it is said:**
+  - the Member card ("…and an ATS-ready CV for each");
+  - what Free leaves out ("Made to pass ATS checks");
+  - the landing page's CV card, and its picture's badge ("Passes ATS checks").
+- **No pass rate:** no stored document locally carries `ats_ok`, so there is none to quote yet. One measured
+  with the online checkers, or counted from `ats_ok` the way `/stats` counts jobs, can be added then.
+
+**See it working.**
+- **The phone's tour:** while it is in sight, the phone taps "Make my CV" and the CV writes, then taps Applied
+  (three applications on the one track) and My search (green, red, countries, ways). A touch marks each tap, and
+  it goes round again.
+- **A visitor's own touch** ends the tour. The card works, and the tab bar changes the page.
+- **A card made again** (a new round, or a tab) waits for its own tap. It reacts to `auto` going up, not to the
+  count it is made with: it had made its CV the moment it appeared.
+- **The alerts:** a new one arrives at the top every 2.8 s while in sight, its slot opening and pushing the older
+  down, and the fourth folds away.
+- **Reduced motion:** no tour, and three alerts standing still.
+- **One source:** Applied's steps are the app's own (`STEPS`, exported).
+
+**The CV picture's paper** has a hairline edge on the light page, where it sat white on white.
+
+**Test:** the phone tours until touched, and the alerts push down; still with reduced motion.
 ## 2026-11-12, late night — Stripe's checkout ready before the tap; the upgrade page from free to member
 
 The owner asked for:

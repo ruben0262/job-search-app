@@ -299,18 +299,21 @@ DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
             "New jobs the moment they appear",
             "Alerts on your phone",
             "CVs and cover letters made for each job",
+            "Made to pass ATS checks",
         ],
         "button": "Start free",
         "note": "No card needed. Upgrade whenever you like.",
     },
     "member": {
         "name": "Member",
-        "tagline": "Every job the moment it appears, and a CV for each.",
+        "tagline": "Every job the moment it appears, and an ATS-ready CV for each.",
         "benefits": [
             "New jobs the moment they're found, not a week later",
             "Alerts on Telegram, in your browser or by email",
             "A CV and a cover letter for any job, in one tap, with your own AI account",
-            "Every CV read the way an applicant tracking system reads it",
+            # Each one checked as it is made (`services/docgen/pdf.py`: its text, headings and contact read
+            # back as an ATS reads them; `ats_ok` kept with the document). No pass rate until one is measured.
+            "Made to pass ATS checks, each one checked before you get it",
             "Everything in Free",
         ],
         "left_out": [],
