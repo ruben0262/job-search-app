@@ -236,6 +236,18 @@
             ],
             "title": "Period Ends At"
           },
+          "plan_chosen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Chosen At"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -250,6 +262,17 @@
               }
             ],
             "title": "Stripe Customer Id"
+          },
+          "subscription_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subscription Id"
           },
           "subscription_status": {
             "anyOf": [
@@ -295,7 +318,9 @@
           "member",
           "free_access_at",
           "stripe_customer_id",
+          "subscription_id",
           "subscription_status",
+          "plan_chosen_at",
           "trial_ends_at",
           "period_ends_at",
           "cancels_at",
@@ -3834,6 +3859,208 @@
         "title": "StoredDocument",
         "type": "object"
       },
+      "SubscriptionRow": {
+        "description": "An account with a subscription or free access, as its row stores it.",
+        "properties": {
+          "cancels_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancels At"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "free_access_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Access At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_paid_amount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Paid Amount"
+          },
+          "last_paid_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Paid At"
+          },
+          "period_ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Ends At"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "subscription_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subscription Status"
+          },
+          "trial_ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Ends At"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "plan",
+          "subscription_status",
+          "trial_ends_at",
+          "period_ends_at",
+          "cancels_at",
+          "last_paid_at",
+          "last_paid_amount",
+          "currency",
+          "free_access_at"
+        ],
+        "title": "SubscriptionRow",
+        "type": "object"
+      },
+      "Subscriptions": {
+        "properties": {
+          "accounts": {
+            "title": "Accounts",
+            "type": "integer"
+          },
+          "cancelling": {
+            "title": "Cancelling",
+            "type": "integer"
+          },
+          "joined_30d": {
+            "title": "Joined 30D",
+            "type": "integer"
+          },
+          "joined_30d_members": {
+            "title": "Joined 30D Members",
+            "type": "integer"
+          },
+          "members": {
+            "title": "Members",
+            "type": "integer"
+          },
+          "monthly": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Plan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plans": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Plans",
+            "type": "object"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "trials_ending": {
+            "title": "Trials Ending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accounts",
+          "members",
+          "plans",
+          "trials_ending",
+          "cancelling",
+          "joined_30d",
+          "joined_30d_members",
+          "monthly",
+          "plan",
+          "rows"
+        ],
+        "title": "Subscriptions",
+        "type": "object"
+      },
       "SupportAi": {
         "properties": {
           "left": {
@@ -5404,6 +5631,28 @@
           }
         },
         "summary": "Sources",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/subscriptions": {
+      "get": {
+        "description": "Who is on which plan, what is about to change, and what the membership brings in: Admin's Subscriptions\ntab (owner, 2026-11-12).",
+        "operationId": "subscriptions_admin_subscriptions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subscriptions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Subscriptions",
         "tags": [
           "admin"
         ]

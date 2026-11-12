@@ -101,6 +101,44 @@ def test_an_account_page_says_what_they_do_with_the_site_and_nothing_of_the_setu
     assert db[UserConfig.COLLECTION].count_documents({"user_id": ordinary.id}) == 1
 
 
+def test_the_subscriptions_tab_counts_every_account_once_and_lists_the_subscriptions(api):
+    """Owner, 2026-11-12: Admin's Subscriptions, who is on which plan and what is about to change. Every
+    account in one plan, by the rule the site lets people in by; the list, a payment failed first."""
+    http, db, operator, ordinary, sign_in = api
+    sign_in(http, operator)
+    soon, later = now() + timedelta(days=3), now() + timedelta(days=20)
+    kinds = {"paying": {"subscription_status": "active", "period_ends_at": later, "last_paid_amount": 499,
+                        "currency": "gbp", "last_paid_at": now()},
+             "trial": {"subscription_status": "trialing", "trial_ends_at": soon},
+             "late trial": {"subscription_status": "trialing", "trial_ends_at": later, "cancels_at": later},
+             "failed": {"subscription_status": "past_due"},
+             "lapsed": {"subscription_status": "canceled", "onboarding_completed_at": now()},
+             "given": {"free_access_at": now()},
+             "picked free": {"plan_chosen_at": now()}, "new": {}}
+    made = {name: insert(db, User(email=f"{name.replace(' ', '.')}@example.com", password_hash="x",
+                                  status="active", **fields)) for name, fields in kinds.items()}
+
+    body = http.get("/admin/subscriptions").json()
+
+    # The operator is an admin and `ordinary` pays; "new" is still on the plan page; the lapsed and "picked
+    # free" are on the free plan.
+    assert body["plans"] == {"paying": 2, "trial": 2, "payment_failed": 1, "paused": 0, "free_access": 1,
+                             "admin": 1, "choosing": 1, "free": 2}
+    assert (body["accounts"], body["members"]) == (10, 6), "two paying, two trials, free access, the admin"
+    assert (body["trials_ending"], body["cancelling"], body["joined_30d"]) == (1, 1, 10)
+    rows = [row["email"] for row in body["rows"]]
+    assert rows[0] == "failed@example.com" and rows[1:3] == ["trial@example.com", "late.trial@example.com"]
+    assert set(rows) == {ADMIN, ordinary.email} | {f"{name.replace(' ', '.')}@example.com"
+                                                   for name in ("paying", "trial", "late trial", "failed",
+                                                                "lapsed", "given")}
+
+    sign_in(http, ordinary)
+    assert http.get("/admin/subscriptions").status_code == 404
+    sign_in(http, operator)
+    detail = http.get(f"/admin/users/{made['picked free'].id}").json()["user"]
+    assert detail["plan_chosen_at"] is not None and detail["subscription_id"] is None
+
+
 def test_opening_the_site_is_when_they_were_last_online(api):
     """It moved only when somebody signed in, and a session lasts for weeks: an account used every day
     read as last active a month ago."""

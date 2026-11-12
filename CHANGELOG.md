@@ -14,6 +14,47 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12, night — Admin's Subscriptions tab, and each account's subscription as it is stored
+
+The owner asked for:
+- **An Admin tab, "Subscriptions":** monitor the subscription types and their stats, and what the landing
+  page says about the plans, their price, description and benefits.
+- **On each account's page:** its subscription "just like they are in db", designed to read well.
+
+**Admin → Subscriptions** (`AdminSubscriptions.tsx`, `GET /admin/subscriptions`).
+- **Four tiles:**
+  - members, of all accounts;
+  - paying, with what they bring a month at Stripe's price;
+  - in a trial, and how many end this week;
+  - joined in 30 days, and how many of them are members (with those cancelling).
+- **"Who is on which plan":** every account once, as one bar and a line each:
+  - paying, in a trial, payment failed, paused;
+  - free access, admins;
+  - choosing a plan, the free plan.
+
+  Each is counted by the rule the site lets people in by (`libs.membership`), so the tab cannot disagree
+  with who gets in.
+- **"The membership":** Stripe's price, large, and the two settings that come with the plans, the free trial
+  and how far behind the free plan is. Both moved here from Settings.
+- **"Pricing on the landing page":** the two cards' editor, moved here from Settings.
+- **"Every subscription":** each account with a subscription or free access, payment failed first, then
+  trials by when they end. Each row shows its plan, Stripe's word as stored, what comes next and the last
+  payment, and links to the account.
+
+**An account's page: "Subscription"**, where "Membership" stood.
+- **Its plan,** a line of where it stands ("In a trial until 16 November, then it renews"), and four tiles:
+  trial ends, next payment, ends, last payment.
+- **"As stored":** every field the membership keeps, by its name in the database, null where empty.
+  `subscription_id` and `plan_chosen_at` join the account's answer for it.
+- **The free-access switch,** as before.
+- **Two lines that were wrong:** the card said a non-member's site was "Closed: they see the page that asks
+  them to pay", which stopped being true with the free plan. It now says where they stand.
+
+Test: the tab counts every account once by plan, members by the site's own rule, trials ending, the
+cancelling and the newly joined, and lists the subscriptions with a payment failed first. Nobody but an
+admin gets it, and an account's answer has its two new fields. It fails on the previous commit, which has
+no such page.
+
 ## 2026-11-12, night — The plan picked after the email link on the landing page's cards; Stripe's own checkout
 
 The owner asked for:

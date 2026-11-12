@@ -4,7 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { api, type Schema } from "../api";
 import { keep, peek, readAhead, useKept } from "../kept";
 import { standingWord } from "../membership";
-import { AdminPricing } from "./AdminPricing";
+import { AdminSubscriptions } from "./AdminSubscriptions";
 import { BinIcon, Error, Prompt, useAction } from "../ui";
 import { JobsByCountry } from "./AdminCountries";
 
@@ -220,11 +220,13 @@ const TABS: [Tab, string][] = [
   ["pipeline", "Pipeline"],
   ["latency", "Latency"],
   ["accounts", "Accounts"],
+  ["subscriptions", "Subscriptions"],
   ["outcomes", "Outcomes"],
   ["messages", "Messages"],
 ];
 
-type Tab = "health" | "settings" | "corpus" | "pipeline" | "latency" | "accounts" | "outcomes" | "messages";
+type Tab = "health" | "settings" | "corpus" | "pipeline" | "latency" | "accounts" | "subscriptions" | "outcomes"
+  | "messages";
 
 /** One message from the Help page's contact form. */
 type ContactRow = { reference: string; email: string; subject: string; message: string; created_at: string;
@@ -755,40 +757,6 @@ export function AdminPage({ tab: asked }: { tab: string }) {
             ))}
           </select>
 
-          <p className="label" style={{ marginTop: "1.5rem" }}>Free trial</p>
-          <span className="hint">
-            The days a new membership is free before Stripe takes the first payment, for somebody who never
-            had one. The price is set at Stripe.
-          </span>
-          <select
-            value={settings.trial_days}
-            disabled={savePlatform.busy}
-            aria-label="Free trial"
-            onChange={(event) => void savePlatform.run("trial_days", Number(event.target.value))}
-            style={{ maxWidth: "10rem", marginTop: "0.5rem" }}
-          >
-            {[0, 3, 7, 14, 30].map((n) => (
-              <option key={n} value={n}>{n ? `${n} days` : "None"}</option>
-            ))}
-          </select>
-
-          <p className="label" style={{ marginTop: "1.5rem" }}>Free accounts see a job</p>
-          <span className="hint">
-            How long after a member an account without a membership sees each job. CVs, cover letters and
-            alerts stay members&apos; whatever this says.
-          </span>
-          <select
-            value={settings.free_delay_hours}
-            disabled={savePlatform.busy}
-            aria-label="Free accounts see a job"
-            onChange={(event) => void savePlatform.run("free_delay_hours", Number(event.target.value))}
-            style={{ maxWidth: "12rem", marginTop: "0.5rem" }}
-          >
-            {[...new Set([0, 24, 72, 168, 336, settings.free_delay_hours])].sort((a, b) => a - b).map((n) => (
-              <option key={n} value={n}>{n ? `${n < 48 ? `${n} hours` : `${n / 24} days`} later` : "At once"}</option>
-            ))}
-          </select>
-
           <p className="label" style={{ marginTop: "1.5rem" }}>Support address</p>
           <span className="hint">
             Where the Help page&apos;s contact form is emailed. Each message is also kept under
@@ -820,13 +788,13 @@ export function AdminPage({ tab: asked }: { tab: string }) {
             <option value={1}>On</option>
           </select>
         </div>
-      ) : null}
-      <AdminPricing /></> : null}
+      ) : null}</> : null}
 
 
       {tab === "corpus" ? <CorpusTab /> : null}
       {tab === "pipeline" ? <PipelineTab /> : null}
       {tab === "latency" ? <LatencyTab /> : null}
+      {tab === "subscriptions" ? <AdminSubscriptions /> : null}
       {tab === "outcomes" ? <OutcomesTab /> : null}
       {tab === "messages" ? <MessagesTab /> : null}
 

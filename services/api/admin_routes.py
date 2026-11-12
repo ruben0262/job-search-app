@@ -35,7 +35,7 @@ from libs.documents.read import LANGUAGE_NAMES
 from libs.limits import all_for, describe, set_limit
 from libs.llm.accounts import listing as ai_listing
 from libs.matching import green_words, norm, scan_for, their_jobs
-from libs.membership import admin_emails, is_admin, is_member
+from libs.membership import ONGOING, admin_emails, choosing, is_admin, is_member, members
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
 from libs.ops.countries import RANGES_HOURS, by_country
@@ -62,7 +62,8 @@ from libs.settings import (
 )
 from libs.tenant import applications
 from libs.tenant.repository import TenantRepository
-from services.api.billing_routes import _stripe_answers, end_membership, hold_billing
+from services.api.billing_routes import Plan, _stripe_answers, end_membership, hold_billing
+from services.api.billing_routes import plan as billing_plan
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,98 @@ def outcomes(db: Database = Depends(get_db), admin: User = Depends(require_admin
     return [OutcomeRow(**row) for row in applications.outcomes(db)]
 
 
+# Where an account's plan stands, one word each, in the order the Subscriptions tab draws them: every account
+# counted once (`_plan_of`).
+PLAN_KINDS = ("paying", "trial", "payment_failed", "paused", "free_access", "admin", "choosing", "free")
+
+
+# Stripe's word for a subscription that runs, as the tab groups it. Ended or never begun is the free plan.
+BY_STATUS = {"active": "paying", "trialing": "trial", "past_due": "payment_failed",
+             "unpaid": "payment_failed", "paused": "paused"}
+# The list's order: what needs looking at first.
+LISTED = ("payment_failed", "trial", "paying", "paused", "free_access", "admin", "free", "choosing")
+
+
+def _plan_of(user: User) -> str:
+    """One account's place among `PLAN_KINDS`: an admin or free access first, whatever Stripe says, then
+    Stripe's word for their subscription, then the plan page not yet passed, then the free plan."""
+    if is_admin(user):
+        return "admin"
+    if user.free_access_at is not None:
+        return "free_access"
+    if user.subscription_status in BY_STATUS:
+        return BY_STATUS[user.subscription_status]
+    return "choosing" if choosing(user, False) else "free"
+
+
+class SubscriptionRow(BaseModel):
+    """An account with a subscription or free access, as its row stores it."""
+    id: str
+    email: str
+    plan: str
+    subscription_status: str | None
+    trial_ends_at: datetime | None
+    period_ends_at: datetime | None
+    cancels_at: datetime | None
+    last_paid_at: datetime | None
+    last_paid_amount: int | None
+    currency: str | None
+    free_access_at: datetime | None
+
+
+class Subscriptions(BaseModel):
+    accounts: int
+    # Members as the site lets them in (`libs.membership.members`): paying, in a trial, free access, admins.
+    members: int
+    # Every account once, by `PLAN_KINDS`.
+    plans: dict[str, int]
+    # Trials that end in the next seven days, and so are about to be charged unless cancelled.
+    trials_ending: int
+    # Running, and set to end at the period's end.
+    cancelling: int
+    # The accounts made in the last 30 days, and how many of them are members now.
+    joined_30d: int
+    joined_30d_members: int
+    # What paying members bring a month at the membership's price, in its smallest unit and currency: None
+    # without Stripe's price.
+    monthly: int | None
+    # The membership as Stripe has it, its trial and the free plan's delay (`billing_routes.plan`).
+    plan: Plan | None
+    rows: list[SubscriptionRow]
+
+
+@router.get("/subscriptions")
+def subscriptions(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> Subscriptions:
+    """Who is on which plan, what is about to change, and what the membership brings in: Admin's Subscriptions
+    tab (owner, 2026-11-12)."""
+    users = find(db, User, {})
+    kinds = {user.id: _plan_of(user) for user in users}
+    soon, month_ago = now() + timedelta(days=7), now() - timedelta(days=30)
+    member_ids = set(db[User.COLLECTION].distinct("_id", members()))
+    price = billing_plan(db)
+    held = [user for user in users if user.subscription_status is not None or user.free_access_at is not None]
+    # Payment failed first, then trials by when they end, then paying, paused and the rest.
+    held.sort(key=lambda user: (LISTED.index(kinds[user.id]),
+                                user.trial_ends_at or user.period_ends_at or now()))
+    joined = [user for user in users if user.created_at and user.created_at >= month_ago]
+    audit(logger, "admin.subscriptions", user=admin.id)
+    return Subscriptions(
+        accounts=len(users), members=len(member_ids),
+        plans={kind: sum(1 for each in kinds.values() if each == kind) for kind in PLAN_KINDS},
+        trials_ending=sum(1 for user in users if user.subscription_status == "trialing" and user.trial_ends_at
+                          and user.trial_ends_at <= soon),
+        cancelling=sum(1 for user in users if user.subscription_status in ONGOING and user.cancels_at),
+        joined_30d=len(joined), joined_30d_members=sum(1 for user in joined if user.id in member_ids),
+        monthly=price.amount * sum(1 for kind in kinds.values() if kind == "paying") if price else None,
+        plan=price,
+        rows=[SubscriptionRow(id=str(user.id), email=user.email, plan=kinds[user.id],
+                              subscription_status=user.subscription_status, trial_ends_at=user.trial_ends_at,
+                              period_ends_at=user.period_ends_at, cancels_at=user.cancels_at,
+                              last_paid_at=user.last_paid_at, last_paid_amount=user.last_paid_amount,
+                              currency=user.currency, free_access_at=user.free_access_at)
+              for user in held[:500]])
+
+
 @router.get("/users")
 def users(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
     """The account list, with no credential material of any kind."""
@@ -165,7 +258,10 @@ class AdminAccount(BaseModel):
     member: bool
     free_access_at: datetime | None
     stripe_customer_id: str | None
+    subscription_id: str | None
     subscription_status: str | None
+    # When they picked the free plan on the page after the email link (`POST /billing/free`).
+    plan_chosen_at: datetime | None
     trial_ends_at: datetime | None
     period_ends_at: datetime | None
     cancels_at: datetime | None
@@ -244,7 +340,8 @@ def user_detail(user_id: _uuid.UUID, db: Database = Depends(get_db),
             email_verified_at=user.email_verified_at, onboarding_completed_at=user.onboarding_completed_at,
             last_active_at=user.last_active_at, member=is_member(db, user.id),
             free_access_at=user.free_access_at, stripe_customer_id=user.stripe_customer_id,
-            subscription_status=user.subscription_status, trial_ends_at=user.trial_ends_at,
+            subscription_id=user.subscription_id, subscription_status=user.subscription_status,
+            plan_chosen_at=user.plan_chosen_at, trial_ends_at=user.trial_ends_at,
             period_ends_at=user.period_ends_at, cancels_at=user.cancels_at, last_paid_at=user.last_paid_at,
             last_paid_amount=user.last_paid_amount, currency=user.currency,
             billing_synced_at=user.billing_synced_at),

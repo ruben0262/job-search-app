@@ -402,6 +402,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Subscriptions
+         * @description Who is on which plan, what is about to change, and what the membership brings in: Admin's Subscriptions
+         *     tab (owner, 2026-11-12).
+         */
+        get: operations["subscriptions_admin_subscriptions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -1944,10 +1965,14 @@ export interface components {
             onboarding_completed_at: string | null;
             /** Period Ends At */
             period_ends_at: string | null;
+            /** Plan Chosen At */
+            plan_chosen_at: string | null;
             /** Status */
             status: string;
             /** Stripe Customer Id */
             stripe_customer_id: string | null;
+            /** Subscription Id */
+            subscription_id: string | null;
             /** Subscription Status */
             subscription_status: string | null;
             /** Telegram */
@@ -3194,6 +3219,58 @@ export interface components {
             /** Truncated */
             truncated: boolean;
         };
+        /**
+         * SubscriptionRow
+         * @description An account with a subscription or free access, as its row stores it.
+         */
+        SubscriptionRow: {
+            /** Cancels At */
+            cancels_at: string | null;
+            /** Currency */
+            currency: string | null;
+            /** Email */
+            email: string;
+            /** Free Access At */
+            free_access_at: string | null;
+            /** Id */
+            id: string;
+            /** Last Paid Amount */
+            last_paid_amount: number | null;
+            /** Last Paid At */
+            last_paid_at: string | null;
+            /** Period Ends At */
+            period_ends_at: string | null;
+            /** Plan */
+            plan: string;
+            /** Subscription Status */
+            subscription_status: string | null;
+            /** Trial Ends At */
+            trial_ends_at: string | null;
+        };
+        /** Subscriptions */
+        Subscriptions: {
+            /** Accounts */
+            accounts: number;
+            /** Cancelling */
+            cancelling: number;
+            /** Joined 30D */
+            joined_30d: number;
+            /** Joined 30D Members */
+            joined_30d_members: number;
+            /** Members */
+            members: number;
+            /** Monthly */
+            monthly: number | null;
+            plan: components["schemas"]["Plan"] | null;
+            /** Plans */
+            plans: {
+                [key: string]: number;
+            };
+            /** Rows */
+            rows: components["schemas"]["SubscriptionRow"][];
+            /** Trials Ending */
+            trials_ending: number;
+        };
         /** SupportAi */
         SupportAi: {
             /** Left */
@@ -4071,6 +4148,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    subscriptions_admin_subscriptions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Subscriptions"];
                 };
             };
         };

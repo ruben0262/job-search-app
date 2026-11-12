@@ -106,6 +106,27 @@ export function AdminUserPage({ userId }: { userId: string }) {
   const [membership, paying] = standingWord(user.subscription_status, Boolean(user.free_access_at), user.is_admin);
   const ended = user.subscription_status === "canceled" || user.subscription_status === "incomplete_expired";
   const renews = !user.cancels_at && (user.subscription_status === "trialing" || user.subscription_status === "active");
+  // Where it stands, in a line.
+  const nowLine = user.free_access_at ? `Free access, given ${day(user.free_access_at)}.`
+    : user.subscription_status === "trialing" && user.trial_ends_at
+      ? `In a trial until ${day(user.trial_ends_at)}${user.cancels_at ? ", then it ends." : ", then it renews."}`
+      : user.subscription_status === "active"
+        ? (user.cancels_at ? `Paying until ${day(user.cancels_at)}, then it ends.`
+          : `Paying. Next payment ${user.period_ends_at ? day(user.period_ends_at) : "due"}.`)
+        : user.subscription_status === "past_due" || user.subscription_status === "unpaid"
+          ? "Their last payment failed: on the free plan until they pay."
+          : ended ? `Their membership ended${user.cancels_at ? ` ${day(user.cancels_at)}` : ""}: on the free plan.`
+            : user.is_admin ? "An admin: everything, without a membership."
+              : user.plan_chosen_at ? `On the free plan, picked ${day(user.plan_chosen_at)}.`
+                : user.onboarded ? "On the free plan." : "Not picked a plan yet.";
+  // Every field of theirs that the membership keeps, by its name in the database.
+  const stored: [string, string | number | null][] = [
+    ["subscription_status", user.subscription_status], ["subscription_id", user.subscription_id],
+    ["stripe_customer_id", user.stripe_customer_id], ["trial_ends_at", user.trial_ends_at],
+    ["period_ends_at", user.period_ends_at], ["cancels_at", user.cancels_at], ["last_paid_at", user.last_paid_at],
+    ["last_paid_amount", user.last_paid_amount], ["currency", user.currency], ["free_access_at", user.free_access_at],
+    ["plan_chosen_at", user.plan_chosen_at], ["billing_synced_at", user.billing_synced_at],
+  ];
   const most = Math.max(1, ...usage.sources.map((each) => each.jobs));
   // What they did, newest first: only what has happened.
   const story = ([
@@ -159,43 +180,37 @@ export function AdminUserPage({ userId }: { userId: string }) {
         </div>
       </dl>
 
-      <section className="card">
-        <h2>Membership</h2>
-        <dl className="facts-list">
-          <dt>The site</dt>
-          <dd>{user.member ? "Open to them" : <span className="verdict down">Closed: they see the page that asks them to pay</span>}</dd>
-          {user.trial_ends_at ? (
-            <>
-              <dt>Free trial</dt>
-              <dd>{user.subscription_status === "trialing" ? "until" : "ended"} {day(user.trial_ends_at)}</dd>
-            </>
-          ) : null}
-          {renews && user.period_ends_at ? (
-            <>
-              <dt>Next payment</dt>
-              <dd>{day(user.period_ends_at)}</dd>
-            </>
-          ) : null}
-          {user.cancels_at ? (
-            <>
-              <dt>{ended ? "Ended" : "Ends, cancelled"}</dt>
-              <dd>{day(user.cancels_at)}</dd>
-            </>
-          ) : null}
-          <dt>Last payment</dt>
-          <dd>
-            {user.last_paid_at && user.last_paid_amount !== null && user.currency
-              ? `${money(user.last_paid_amount, user.currency)} on ${day(user.last_paid_at)}` : "none yet"}
-          </dd>
-          <dt>Stripe customer</dt>
-          <dd>{user.stripe_customer_id ?? <span className="muted">none yet</span>}</dd>
-          {user.billing_synced_at ? (
-            <>
-              <dt>Read from Stripe</dt>
-              <dd>{ago(user.billing_synced_at)}</dd>
-            </>
-          ) : null}
+      {/* Their subscription: where it stands in a line, its dates, and every field as the account stores it
+          (owner, 2026-11-12: "just like they are in db"). */}
+      <section className="card sub-card">
+        <div className="sub-head">
+          <h2>Subscription</h2>
+          <span className={`verdict ${user.member ? paying : "unknown"}`}>{user.member ? membership : "Free plan"}</span>
+        </div>
+        <p className="sub-now">{nowLine}</p>
+        <dl className="sub-dates">
+          <div><dt>Trial ends</dt><dd>{user.trial_ends_at ? day(user.trial_ends_at) : "—"}</dd></div>
+          <div><dt>Next payment</dt><dd>{renews && user.period_ends_at ? day(user.period_ends_at) : "—"}</dd></div>
+          <div><dt>{ended ? "Ended" : "Ends"}</dt><dd>{user.cancels_at ? day(user.cancels_at) : "—"}</dd></div>
+          <div>
+            <dt>Last payment</dt>
+            <dd>
+              {user.last_paid_at && user.last_paid_amount !== null && user.currency
+                ? <>{money(user.last_paid_amount, user.currency)}<small>{day(user.last_paid_at)}</small></> : "—"}
+            </dd>
+          </div>
         </dl>
+        <details className="sub-raw" open>
+          <summary>As stored</summary>
+          <dl>
+            {stored.map(([field, value]) => (
+              <div key={field}>
+                <dt><code>{field}</code></dt>
+                <dd>{value === null || value === undefined ? <span className="muted">null</span> : <code>{String(value)}</code>}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
         <label className="switch" title="The whole site without a membership">
           <input type="checkbox" role="switch" checked={Boolean(user.free_access_at)}
                  disabled={saving === "free_access"} onChange={() => void toggleFree()} />

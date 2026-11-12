@@ -3260,6 +3260,192 @@ button.ai-provider {
   font-size: 0.85rem;
 }
 
+/* An account's subscription (`AdminUserPage`): its plan, a line of where it stands, four dates as tiles, and
+   every field as stored, its name and value in the code font. */
+.sub-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.9rem;
+}
+
+.account .sub-head h2 {
+  margin: 0;
+}
+
+.sub-now {
+  margin: 0.6rem 0 1rem;
+  font-size: 1.05rem;
+}
+
+.sub-dates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+}
+
+.sub-dates > div {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: rgba(var(--ink-rgb), 0.025);
+}
+
+.sub-dates dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.sub-dates dd {
+  display: grid;
+  margin: 0.2rem 0 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.sub-dates small {
+  color: var(--dim);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.sub-raw {
+  margin: 0 0 1.25rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+
+.sub-raw summary {
+  padding: 0.6rem 0.9rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.sub-raw dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr));
+  margin: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.sub-raw dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0.9rem;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 0.8125rem;
+}
+
+.sub-raw dt code {
+  color: var(--muted);
+}
+
+.sub-raw dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: end;
+}
+
+/* Admin → Subscriptions: the plans as one bar, a part each, and under it each plan's count, name and line. */
+.subs > h2 {
+  margin-top: 0;
+}
+
+.plan-bar {
+  display: flex;
+  gap: 3px;
+  height: 0.9rem;
+  margin: 0 0 1.1rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(var(--ink-rgb), 0.05);
+}
+
+.plan-bar i {
+  min-width: 4px;
+}
+
+.plan-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+  gap: 0.75rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-kinds li {
+  display: grid;
+  grid-template-columns: 0.7rem auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.plan-kinds li.none {
+  opacity: 0.45;
+}
+
+.plan-kinds i,
+.plan-dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+}
+
+.plan-kinds strong {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-kinds span {
+  display: grid;
+  font-weight: 600;
+}
+
+.plan-kinds small {
+  color: var(--dim);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.plan-dot {
+  margin-right: 0.5rem;
+}
+
+/* The membership: its price, large, beside the two settings that come with the plans. */
+.plan-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+  gap: 1.25rem 2rem;
+}
+
+.plan-facts > * {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+}
+
+.plan-facts strong {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+}
+
+.plan-facts .hint {
+  margin: 0;
+}
+
+.subs-table code {
+  font-size: 0.8125rem;
+}
+
 /* Jobs by country, through time (`AdminCountries.tsx`): a hue a country, in this order, kept while it is
    drawn. The reference data-viz palette, checked 2026-11-05 against this site's two backgrounds (#060606,
    #f7f7f5): every neighbouring pair apart, for colour-blind readers too. In light, four are under 3:1
