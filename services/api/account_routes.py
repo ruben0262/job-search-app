@@ -31,11 +31,18 @@ class DisclosedProcessor(BaseModel):
     location: str
 
 
+class DisclosedCookie(BaseModel):
+    name: str
+    purpose: str
+    kept: str
+
+
 class Disclosure(BaseModel):
     version: str
     headline: str
     body: str
     processors: list[DisclosedProcessor]
+    cookies: list[DisclosedCookie]
 
 
 @router.get("/legal/privacy", response_model=Disclosure)

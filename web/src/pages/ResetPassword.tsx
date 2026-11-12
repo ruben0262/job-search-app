@@ -2,7 +2,7 @@
 import { useState } from "react";
 
 import { api } from "../api";
-import { Error, Field, useAction } from "../ui";
+import { Error, Field, useAction, useNewPassword } from "../ui";
 import { AuthShell } from "./SignIn";
 
 export function ForgotPassword() {
@@ -59,13 +59,13 @@ export function ForgotPassword() {
 }
 
 export function ResetPassword({ onDone }: { onDone: () => void }) {
-  const [password, setPassword] = useState("");
+  const chosen = useNewPassword("New password");
   const [done, setDone] = useState(false);
 
   const submit = useAction(async () => {
     const query = window.location.hash.split("?")[1] ?? "";
     const token = new URLSearchParams(query).get("token") ?? "";
-    await api.post("/auth/reset", { token, new_password: password });
+    await api.post("/auth/reset", { token, new_password: chosen.check() });
     setDone(true);
     // The reset revoked every session, so any signed-in state this app still holds is stale.
     onDone();
@@ -92,18 +92,9 @@ export function ResetPassword({ onDone }: { onDone: () => void }) {
           void submit.run();
         }}
       >
-        <Field label="New password" hint="At least 9 characters. Longer beats complicated.">
-          <input
-            type="password"
-            value={password}
-            autoComplete="new-password"
-            required
-            autoFocus
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </Field>
+        {chosen.fields}
         <Error>{submit.error}</Error>
-        <button type="submit" disabled={submit.busy || !password}>
+        <button type="submit" disabled={submit.busy || !chosen.filled}>
           {submit.busy ? "Setting…" : "Set password"}
         </button>
       </form>

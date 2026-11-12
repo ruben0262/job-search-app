@@ -5,7 +5,7 @@ import { AiAccounts } from "../aiaccounts";
 import { Alerts } from "../alerts";
 import { api, type Ready, type Schema } from "../api";
 import { useKept } from "../kept";
-import { Card, Error, Field, Prompt, useAction } from "../ui";
+import { Card, Error, Field, Prompt, useAction, useNewPassword } from "../ui";
 
 type Account = Schema<"AccountOut">;
 
@@ -103,10 +103,10 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
 
 function Password({ onChanged }: { onChanged: () => void }) {
   const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
+  const chosen = useNewPassword("New password");
   const [done, setDone] = useState(false);
   const change = useAction(async () => {
-    await api.put("/account/password", { current_password: current, new_password: next });
+    await api.put("/account/password", { current_password: current, new_password: chosen.check() });
     setDone(true);
     // A beat to read the sentence before the reload lands on the sign-in page.
     window.setTimeout(onChanged, 1500);
@@ -126,13 +126,10 @@ function Password({ onChanged }: { onChanged: () => void }) {
           <input type="password" value={current} autoComplete="current-password"
                  onChange={(event) => setCurrent(event.target.value)} />
         </Field>
-        <Field label="New password" hint="At least 9 characters. Longer beats complicated.">
-          <input type="password" value={next} autoComplete="new-password"
-                 onChange={(event) => setNext(event.target.value)} />
-        </Field>
+        {chosen.fields}
         <Error>{change.error}</Error>
         <p className="small muted">This signs you out everywhere, here too.</p>
-        <button type="submit" className="secondary" disabled={change.busy || !current || !next}>
+        <button type="submit" className="secondary" disabled={change.busy || !current || !chosen.filled}>
           {change.busy ? "Changing…" : "Change password"}
         </button>
       </form>

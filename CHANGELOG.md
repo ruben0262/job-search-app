@@ -14,6 +14,31 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12 — Sign-up: the password typed twice, and the privacy policy and its cookies agreed to first
+
+The owner asked for "a confirmation password as well, not just one password entry on signup", and "a box to
+confirm the privacy policy and cookis of the site before signing up so people accept it, that's the only way
+they can sign up".
+
+- **The password twice.** On sign-up, on the reset link's page and in Settings' *Change your password*
+  (`ui.useNewPassword`). Two that differ are said so before anything is sent.
+- **The box.** Sign-up sends the policy's version the page showed. Sent without one, it is refused with 400
+  ("Tick the box…"); an older one gets 409, because the policy changed since the page opened. The account
+  keeps it as `processing_consent_at` and `processing_consent_version`.
+- **The AI-documents agreement too** (decided here, the owner's to revisit). It is the same policy page, so a
+  new account no longer meets the separate "Read what is sent, and agree" step. *Withdraw* in Settings brings
+  it back.
+- **The cookies, listed** on the privacy page (`libs.legal.COOKIES`): the two sign-in cookies, and what the
+  browser keeps (the theme, a mark waiting to be sent). Nothing measures or advertises.
+  `DISCLOSURE_VERSION` is 2026-11-12, so everybody agrees again.
+
+**Raised:** the policy's consent text, which this box now agrees to, still describes "instant CVs" and the
+platform's own AI key, both removed earlier. It is legal wording, and the owner's to change.
+
+**Gates:** lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db --prune` built the schema on an empty
+database; the contract regenerated (the box's version, the cookies); the site built; pytest 1,382 passed, 2
+skipped (a Postgres copy, the reference instance). The three new sign-up tests fail on the commit before.
+
 ## 2026-11-12 — Jobs shown and kept thirty days, for everybody
 
 The owner asked, through the landing page's session: "we should show jobs as old as 30 days and retire them

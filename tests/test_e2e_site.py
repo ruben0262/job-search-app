@@ -957,8 +957,10 @@ def test_an_ai_account_linked_in_settings_is_what_the_make_buttons_were_missing(
         expect(accounts.get_by_text("Turning on…")).to_be_visible()
         expect(rows).to_have_text([re.compile("^Gemini API key.*Off"), re.compile("^Claude API key.*In use")])
 
-        # Their account is no longer what is missing: the next step is agreeing to what is sent; and a cover
-        # letter still needs one of theirs, said with the one way to it.
+        # Their account is no longer what is missing. What is sent was agreed to with the box at sign-up,
+        # and taken back, the next press asks for it again; and a cover letter still needs one of theirs,
+        # said with the one way to it.
+        _withdraw(page)
         page.goto(f"{base}/#/")
         cards.first.get_by_role("button", name="Make my CV").click()
         expect(cards.first.get_by_text("needs your agreement first")).to_be_visible()
@@ -974,6 +976,15 @@ def test_an_ai_account_linked_in_settings_is_what_the_make_buttons_were_missing(
         expect(accounts.get_by_text("Turning off…")).to_be_visible()
         expect(rows).to_have_text([re.compile("^Gemini API key.*Off"), re.compile("^Claude API key.*Off")])
         browser.close()
+
+
+def _withdraw(page) -> None:
+    """Settings says the box at sign-up agreed to what an AI-written document sends (owner, 2026-11-12), and
+    takes it back."""
+    agreed = page.get_by_text("You agreed that AI-written documents may use your profile.")
+    expect(agreed).to_be_visible()
+    page.get_by_role("button", name="Withdraw").click()
+    expect(agreed).to_have_count(0)
 
 
 def _said_over_the_open_job(view) -> None:
@@ -1317,13 +1328,24 @@ def _emailed(capsys, route: str) -> str:
     pytest.fail(f"no {route} link was emailed")
 
 
+PASSWORD = "correct-horse-battery-9"
+
+
+def _fill_sign_up(page, email: str, password: str = PASSWORD) -> None:
+    """The sign-up form as a person fills it: the password twice, and the box ticked that agrees to the
+    privacy policy and its cookies, without which there is no account (owner, 2026-11-12)."""
+    page.get_by_label("Email").fill(email)
+    page.get_by_label("Password").fill(password)
+    page.get_by_label("Type it again").fill(password)
+    page.get_by_label("I agree to the privacy policy and cookies.").check()
+    page.get_by_role("button", name="Create account").click()
+    expect(page.get_by_role("heading", name="Check your email")).to_be_visible()
+
+
 def _sign_up(page, base: str, email: str, capsys) -> None:
     """Sign up, and open the link from the email, which is printed rather than sent."""
     page.goto(f"{base}/#/signup")
-    page.get_by_label("Email").fill(email)
-    page.get_by_label("Password").fill("correct-horse-battery-9")
-    page.get_by_role("button", name="Create account").click()
-    expect(page.get_by_role("heading", name="Check your email")).to_be_visible()
+    _fill_sign_up(page, email)
     page.goto(_emailed(capsys, "verify"))
 
 
@@ -1354,9 +1376,7 @@ def test_sign_up_confirm_sign_in_and_reset_the_password_each_step_at_once(site, 
             page.get_by_role("button", name="Sign in").click()
 
         page.goto(f"{base}/#/signup")
-        page.get_by_label("Email").fill(email)
-        page.get_by_label("Password").fill(old)
-        step("sign up", lambda: page.get_by_role("button", name="Create account").click(),
+        step("sign up", lambda: _fill_sign_up(page, email, old),
              page.get_by_role("heading", name="Check your email"))
         step("confirm", lambda: page.goto(_emailed(capsys, "verify")), mine)
 
@@ -1375,6 +1395,7 @@ def test_sign_up_confirm_sign_in_and_reset_the_password_each_step_at_once(site, 
              page.get_by_text("a reset link is on its way"))
         page.goto(_emailed(capsys, "reset"))
         page.get_by_label("New password").fill(new)
+        page.get_by_label("Type it again").fill(new)
         step("reset", lambda: page.get_by_role("button", name="Set password").click(),
              page.get_by_role("heading", name="Password reset"))
 

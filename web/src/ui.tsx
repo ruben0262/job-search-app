@@ -37,6 +37,30 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
+/** A new password and the same again, for each form that sets one (owner, 2026-11-12): a slip in a field
+ * nobody can read would lock its owner out. `check` is the password, or throws for `useAction` to show. */
+export function useNewPassword(label = "Password") {
+  const [value, setValue] = useState("");
+  const [again, setAgain] = useState("");
+  const fields = (
+    <>
+      <Field label={label} hint="At least 9 characters. Longer beats complicated.">
+        <input type="password" value={value} autoComplete="new-password" required
+               onChange={(event) => setValue(event.target.value)} />
+      </Field>
+      <Field label="Type it again">
+        <input type="password" value={again} autoComplete="new-password" required
+               onChange={(event) => setAgain(event.target.value)} />
+      </Field>
+    </>
+  );
+  const check = () => {
+    if (value !== again) throw new ApiError(0, "The two passwords aren't the same.");
+    return value;
+  };
+  return { fields, check, filled: value !== "" && again !== "" };
+}
+
 export function Card({ title, children }: { title?: string; children: ReactNode }) {
   return (
     <section className="card">

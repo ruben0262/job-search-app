@@ -2059,6 +2059,15 @@ export interface components {
             /** Ids */
             ids?: number[] | null;
         };
+        /** DisclosedCookie */
+        DisclosedCookie: {
+            /** Kept */
+            kept: string;
+            /** Name */
+            name: string;
+            /** Purpose */
+            purpose: string;
+        };
         /** DisclosedProcessor */
         DisclosedProcessor: {
             /** Data */
@@ -2076,6 +2085,8 @@ export interface components {
         Disclosure: {
             /** Body */
             body: string;
+            /** Cookies */
+            cookies: components["schemas"]["DisclosedCookie"][];
             /** Headline */
             headline: string;
             /** Processors */
@@ -2781,6 +2792,8 @@ export interface components {
         };
         /** SignupRequest */
         SignupRequest: {
+            /** Consent Version */
+            consent_version?: string | null;
             /**
              * Email
              * Format: email

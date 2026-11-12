@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from libs.db import find_one
 from libs.db.models import AuthToken, User, UserSession
+from libs.legal import DISCLOSURE_VERSION
 from libs.mail import ConsoleSender
 
 PASSWORD = "a-perfectly-fine-passphrase"
@@ -43,8 +44,10 @@ def _email() -> str:
     return f"{uuid.uuid4()}@example.com"
 
 
-def _signup(http, email: str, password: str = PASSWORD):
-    return http.post("/auth/signup", json={"email": email, "password": password})
+def _signup(http, email: str, password: str = PASSWORD, **more):
+    """Signing up as the page does: the box ticked beside the policy it showed."""
+    return http.post("/auth/signup", json={"email": email, "password": password,
+                                           "consent_version": DISCLOSURE_VERSION, **more})
 
 
 def _verify_token(db, email: str) -> str | None:
@@ -71,6 +74,42 @@ def test_signup_answers_identically_for_a_new_and_an_existing_address(client):
 
     assert first.status_code == second.status_code == 202
     assert first.json() == second.json()
+
+
+def test_no_account_is_made_without_the_box_ticked(client):
+    """The privacy policy and its cookies are agreed to at sign-up, or there is no account (owner,
+    2026-11-12)."""
+    http, db, mailer = client
+    email = _email()
+
+    refused = http.post("/auth/signup", json={"email": email, "password": PASSWORD})
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == "Tick the box to agree to the privacy policy and cookies."
+    assert find_one(db, User, {"email": email}) is None and not mailer.sent
+
+
+def test_a_policy_changed_since_the_page_opened_is_read_again_first(client):
+    """Agreeing to the words a page showed an hour ago is not agreeing to the ones in force."""
+    http, db, _ = client
+    email = _email()
+
+    stale = _signup(http, email, consent_version="2020-01-01")
+
+    assert stale.status_code == 409
+    assert find_one(db, User, {"email": email}) is None
+
+
+def test_the_account_holds_what_was_agreed_to_and_when(client):
+    """The box ticked is the consent the documents and the cookies run on, recorded with its version."""
+    http, db, _ = client
+    email = _email()
+
+    assert _signup(http, email).status_code == 202
+
+    user = find_one(db, User, {"email": email})
+    assert user.processing_consent_version == DISCLOSURE_VERSION
+    assert user.processing_consent_at is not None
 
 
 def test_a_login_for_an_unknown_address_looks_like_a_wrong_password(client):
@@ -481,7 +520,8 @@ def test_signup_and_forgot_answer_before_the_email_is_sent(db, monkeypatch):
             time.sleep(0.05)
         email = _email()
         with httpx.Client(base_url=f"http://127.0.0.1:{port}") as http:
-            for path, body in (("/auth/signup", {"email": email, "password": PASSWORD}),
+            for path, body in (("/auth/signup", {"email": email, "password": PASSWORD,
+                                                 "consent_version": DISCLOSURE_VERSION}),
                                ("/auth/forgot", {"email": email})):
                 started = time.monotonic()
                 assert http.post(path, json=body).status_code == 202

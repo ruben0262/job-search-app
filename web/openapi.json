@@ -1111,6 +1111,29 @@
         "title": "Discard",
         "type": "object"
       },
+      "DisclosedCookie": {
+        "properties": {
+          "kept": {
+            "title": "Kept",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "purpose": {
+            "title": "Purpose",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "purpose",
+          "kept"
+        ],
+        "title": "DisclosedCookie",
+        "type": "object"
+      },
       "DisclosedProcessor": {
         "properties": {
           "data": {
@@ -1150,6 +1173,13 @@
             "title": "Body",
             "type": "string"
           },
+          "cookies": {
+            "items": {
+              "$ref": "#/components/schemas/DisclosedCookie"
+            },
+            "title": "Cookies",
+            "type": "array"
+          },
           "headline": {
             "title": "Headline",
             "type": "string"
@@ -1170,7 +1200,8 @@
           "version",
           "headline",
           "body",
-          "processors"
+          "processors",
+          "cookies"
         ],
         "title": "Disclosure",
         "type": "object"
@@ -3130,6 +3161,18 @@
       },
       "SignupRequest": {
         "properties": {
+          "consent_version": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consent Version"
+          },
           "email": {
             "format": "email",
             "title": "Email",

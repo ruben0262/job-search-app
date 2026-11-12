@@ -1,8 +1,9 @@
-/** Sign in and sign up, on one screen — the first thing behind the landing page's CTAs. */
-import { useState } from "react";
+/** Sign in and sign up, on one screen — the first thing behind the landing page's CTAs. Signing up agrees to the
+ * privacy policy and its cookies, the only way to an account (owner, 2026-11-12). */
+import { useEffect, useState } from "react";
 
-import { api } from "../api";
-import { Error, Field, useAction } from "../ui";
+import { ApiError, api, type Schema } from "../api";
+import { Error, Field, useAction, useNewPassword } from "../ui";
 import { ThemeToggle } from "../theme";
 import { Brand, Wheel } from "../wheel";
 
@@ -17,11 +18,21 @@ export function SignIn({
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const chosen = useNewPassword();
+  const [agreed, setAgreed] = useState(false);
   const [sent, setSent] = useState(false);
+  // What the box agrees to (`/legal/privacy`).
+  const [policy, setPolicy] = useState<string | null>(null);
+  useEffect(() => {
+    if (mode !== "up") return;
+    void api.get<Schema<"Disclosure">>("/legal/privacy").then((body) => setPolicy(body.version)).catch(() => undefined);
+  }, [mode]);
 
   const submit = useAction(async () => {
     if (mode === "up") {
-      await api.post("/auth/signup", { email, password });
+      if (!agreed) throw new ApiError(0, "Tick the box to agree to the privacy policy and cookies.");
+      if (!policy) throw new ApiError(0, "The privacy policy didn't load. Reload the page and try again.");
+      await api.post("/auth/signup", { email, password: chosen.check(), consent_version: policy });
       setSent(true);
       return;
     }
@@ -49,7 +60,6 @@ export function SignIn({
 
   return (
     <AuthShell title={mode === "in" ? "Sign in" : "Create your account"}>
-
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -66,18 +76,25 @@ export function SignIn({
             onChange={(event) => setEmail(event.target.value)}
           />
         </Field>
-        <Field
-          label="Password"
-          hint={mode === "up" ? "At least 9 characters. Longer beats complicated." : undefined}
-        >
-          <input
-            type="password"
-            value={password}
-            autoComplete={mode === "in" ? "current-password" : "new-password"}
-            required
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </Field>
+        {mode === "up" ? chosen.fields : (
+          <Field label="Password">
+            <input
+              type="password"
+              value={password}
+              autoComplete="current-password"
+              required
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </Field>
+        )}
+        {mode === "up" ? (
+          <label className="agree">
+            <input type="checkbox" checked={agreed} required onChange={(event) => setAgreed(event.target.checked)} />
+            <span>
+              I agree to the <a href="#/privacy" target="_blank" rel="noreferrer">privacy policy and cookies</a>.
+            </span>
+          </label>
+        ) : null}
 
         <Error>{submit.error}</Error>
         <div className="row" style={{ marginTop: "1.5rem" }}>

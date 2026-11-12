@@ -68,6 +68,17 @@ export function PrivacyPage() {
           </Card>
         ))}
 
+        <Card title="Cookies, and what your browser keeps">
+          <p className="small muted">
+            Each one is needed for the site to work. Nothing measures you or shows you adverts.
+          </p>
+          {disclosure.cookies.map((cookie) => (
+            <p key={cookie.name} className="small">
+              <strong>{cookie.name}</strong>: {cookie.purpose} <span className="muted">Kept: {cookie.kept}.</span>
+            </p>
+          ))}
+        </Card>
+
         <p>
           <a href="#/">Back</a>
         </p>

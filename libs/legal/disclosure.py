@@ -9,7 +9,9 @@ from dataclasses import dataclass
 # key. A new processor asks everyone again.
 # 2026-11-01: the proxy is the site's one provider now, not a person's own, and LinkedIn is searched
 # for everyone's words through it — so it reaches people it did not reach before.
-DISCLOSURE_VERSION = "2026-11-01"
+# 2026-11-12: the cookies, now agreed to with the rest at sign-up (owner: "a box to confirm the privacy policy
+# and cookies of the site before signing up").
+DISCLOSURE_VERSION = "2026-11-12"
 
 
 @dataclass(frozen=True)
@@ -72,6 +74,27 @@ PROCESSORS = (
     ),
 )
 
+@dataclass(frozen=True)
+class Cookie:
+    name: str
+    purpose: str
+    # How long it stays.
+    kept: str
+
+
+# What the site keeps in a browser, every one of them needed for it to work: nothing measures or advertises.
+# Its cookies are the two `services/api/auth_routes.py` sets; the rest is the browser's own storage.
+COOKIES = (
+    Cookie(name="access_token", purpose="Keeps you signed in while you use the site.", kept="15 minutes"),
+    Cookie(name="refresh_token", purpose="Signs you in again when the one above runs out. Only ever sent to "
+                                         "the address that renews it.", kept="30 days"),
+    Cookie(name="theme, in your browser's storage", purpose="Light or dark, as you chose it.",
+           kept="Until you clear it"),
+    Cookie(name="job-marks, in your browser's storage", purpose="A Skip or Mark as applied pressed while the "
+                                                                "connection was lost, until it is sent.",
+           kept="Until it is sent"),
+)
+
 # What the consent screen says above the list.
 CONSENT_HEADLINE = "An AI-written CV or cover letter sends your profile to the AI that writes it."
 
@@ -97,4 +120,5 @@ def disclosure() -> dict:
             {"name": p.name, "purpose": p.purpose, "data": p.data,
              "on_your_credential": p.on_your_credential, "location": p.location}
             for p in PROCESSORS],
+        "cookies": [{"name": c.name, "purpose": c.purpose, "kept": c.kept} for c in COOKIES],
     }
