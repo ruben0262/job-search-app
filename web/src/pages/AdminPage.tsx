@@ -520,7 +520,9 @@ export function AdminPage({ tab: asked }: { tab: string }) {
             onChange={(event) => void saveMaxAge.run(Number(event.target.value))}
             style={{ maxWidth: "18rem" }}
           >
-            {[6, 12, 24, 36, 48, 72, 96, 168].map((hours) => (
+            {/* Whatever is set is offered, so a value chosen before these options still shows. */}
+            {[...new Set([6, 12, 24, 36, 48, 72, 96, 168, 336, 504, 720, settings.job_max_age_hours])]
+              .sort((a, b) => a - b).map((hours) => (
               <option key={hours} value={hours}>
                 {hours < 48 ? `${hours} hours` : `${hours / 24} days`}
               </option>
@@ -668,10 +670,10 @@ export function AdminPage({ tab: asked }: { tab: string }) {
 
           <p className="label" style={{ marginTop: "1.5rem" }}>Jobs kept for</p>
           <span className="hint">
-            How long a job stays before it is moved to the archive file, compressed. Nobody&apos;s jobs
-            list shows a job older than eight days, so this decides the database&apos;s size, not what
-            people see. A job somebody applied to, or wrote a cover letter for, stays in their Applied
-            list whatever this says.
+            How long a job stays before it is moved to the archive file, compressed. Keep it at least
+            the job shelf life above: a job archived sooner leaves everybody&apos;s list then. A job
+            somebody applied to, or wrote a cover letter for, stays in their Applied list whatever this
+            says.
           </span>
           <select
             value={settings.corpus_retention_days}

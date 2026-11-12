@@ -118,13 +118,13 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
 }
 
 # How long a posting stays in the corpus before it is archived to a file and deleted
-# (`libs.corpus.archive`). Fifteen days, set by the owner 2026-11-05 (thirty since 2026-08-11): no job
-# older than eight days is anybody's match any more (`freshness.candidate_since`), so the rest is the
-# disk, the indexes and the backups. A setting since 2026-10-30, in Admin → Settings.
+# (`libs.corpus.archive`). Thirty days, the job shelf life (owner, 2026-11-12: "show jobs as old as 30 days
+# and retire them afterwards from corpus too"); fifteen from 2026-11-05, thirty from 2026-08-11. A setting
+# since 2026-10-30, in Admin → Settings.
 #
 # One definition, because the number this replaced had two: `CORPUS_HOT_DAYS = 90` in the corpus
 # repository against the 30 the owner had stated twice, and the code wins that argument silently.
-DEFAULT_CORPUS_RETENTION_DAYS = 15
+DEFAULT_CORPUS_RETENTION_DAYS = 30
 
 # Where the Help page's contact form is emailed, with the person's own address to reply to. The
 # FlowSolutions inbox the owner's marketplace app already sends its support mail to.
@@ -165,9 +165,9 @@ HARVEST_CYCLE_WARN_FRACTION = 0.75
 # How old a posting may be and still be worth scoring and sending. A different question from the
 # freshness windows above, which say how far back to *ask* a source: this one is how long a posting
 # already in the corpus stays a candidate, and it is the only age check between the corpus and a
-# user's feed. A week (owner, 2026-11-07; a day before): the Jobs page opens on the last 24 hours, and
-# "Posted" reaches back the rest.
-DEFAULT_JOB_MAX_AGE_HOURS = 168
+# user's feed. Thirty days (owner, 2026-11-12: "instead of 15 days its 30 days now"); a week from
+# 2026-11-07, a day before. The Jobs page opens on the last 24 hours, and "Posted" reaches back the rest.
+DEFAULT_JOB_MAX_AGE_HOURS = 720
 
 # The floor a source's delivery window may not go below, because below it that source stops
 # existing rather than getting stricter.

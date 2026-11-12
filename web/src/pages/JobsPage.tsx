@@ -32,7 +32,7 @@ const UNDO_MS = 6000;
 
 /** "Posted": hours back, as the server's `since_hours` takes them. */
 const POSTED: [string, number | null][] = [["Any time", null], ["Last 24 hours", 24], ["Last 3 days", 72],
-                                           ["Last week", 168]];
+                                           ["Last week", 168], ["Last 2 weeks", 336]];
 
 /** The pictures on a job's own buttons, in each button's colour: out to the site it was posted on, the tick
  * that is Applied's picture, and an eye shut on a job not shown again. The landing page's card has them too. */

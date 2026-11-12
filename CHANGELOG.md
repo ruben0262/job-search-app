@@ -14,6 +14,45 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12 — Jobs shown and kept thirty days, for everybody
+
+The owner asked, through the landing page's session: "we should show jobs as old as 30 days and retire them
+afterwards from corpus too so archive. make sure filters also add these numbers too. instead of 15 days its 30
+days now".
+
+- **Thirty days.** The job shelf life is now 720 hours (168 before), and jobs are kept 30 days (15 before), in
+  `libs.settings`. Admin offers 2 weeks, 3 weeks and 30 days, as well as whatever is set already. Its *Jobs
+  kept for* hint used to say that no list shows a job older than eight days; it now says to keep it at least
+  as long as the shelf life.
+- **Jobs → Posted** gains *Last 2 weeks*.
+- **Defaults only.** A value saved in Admin on the server stays as saved, so look at Admin → Settings after
+  the deploy.
+- **The tests that assumed a week** now age their postings past thirty days: the archive's default and its
+  health check, the words search's window, a match's reads, and the Jobs page's shelf line.
+
+**Measured: a Jobs page read on the laptop's copy.** 31,513 postings over 13 days, the owner's account,
+median of 5 reads:
+
+| Shelf | Any time | Last 24 hours |
+|---|---|---|
+| a week | 1,096 jobs, 198 ms | 122 ms |
+| thirty days | 4,274 jobs, 685 ms | 99 ms |
+
+With a full thirty days of postings, Any time will be slower again. The 300 ms target holds for the page as
+it opens (the last 24 hours), not for Any time. Nothing was changed for it here.
+
+**Raised (CLAUDE.md §5):**
+- **Retention equals the shelf.** A job its board dates up to a day after it was found can be archived up to
+  a day before it leaves the list (`candidate_since` allows the day). 31 days would avoid it.
+- **A new word takes longer.** `terms.STRETCH` (6 h) over a thirty-day window is up to 124 stretches, at
+  90 s a run, before the word is searched for in full.
+- **The scan budget.** `SCAN` (2,000 a day) reaches 60,000 at thirty days.
+
+**Gates:** lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db --prune` built the schema on an empty
+database; the contract unchanged; the site built; pytest 1,379 passed, 2 skipped (a Postgres copy, the
+reference instance). The archive's, the health check's and the Jobs page's changed tests fail on the
+commit before.
+
 ## 2026-11-12 — The landing page's selling points: be first, be seen, each figure with its source
 
 The owner asked for:

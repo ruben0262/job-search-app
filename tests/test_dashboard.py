@@ -345,9 +345,9 @@ def test_the_new_jobs_count_is_what_a_refresh_adds_less_the_jobs_that_left_meanw
 
 def test_the_page_says_how_long_a_job_stays_and_shows_exactly_that(api):
     """A job leaving the list is no surprise when the page says how long jobs stay (owner, 2026-11-06). The
-    numbers are Admin's job shelf life, a week unless Admin says otherwise (owner, 2026-11-07), and the
+    numbers are Admin's job shelf life, thirty days unless Admin says otherwise (owner, 2026-11-12), and the
     longest a slower board keeps its jobs, and the jobs shown are the ones they describe: LinkedIn's for
-    the shelf life, Workday's for a week."""
+    the shelf life, Workday's for a week at least."""
     from libs import settings
 
     http, db, _, _ = api
@@ -355,14 +355,15 @@ def test_the_page_says_how_long_a_job_stays_and_shows_exactly_that(api):
         url=f"https://example.com/{uuid.uuid4()}", source=source, title="Backend Engineer", description="x",
         first_seen_at=now() - timedelta(hours=hours), described_at=now() - timedelta(hours=hours))).id
         for source, hours in (("linkedin", 23), ("linkedin", 25), ("workday", 160), ("workday", 170),
-                              ("linkedin", 47))}
+                              ("linkedin", 47), ("linkedin", 700), ("linkedin", 730))}
 
     def shown() -> tuple[tuple[int, int], set]:
         body = http.get("/feed").json()
         return (body["shelf_hours"], body["shelf_longest_hours"]), {
             key for key, job_id in found.items() if job_id in _ids(body)}
 
-    assert shown() == ((168, 168), {("linkedin", 23), ("linkedin", 25), ("linkedin", 47), ("workday", 160)})
+    assert shown() == ((720, 720), {("linkedin", 23), ("linkedin", 25), ("linkedin", 47), ("workday", 160),
+                                    ("workday", 170), ("linkedin", 700)})
     settings.put(db, "job_max_age_hours", 24)
     assert shown() == ((24, 168), {("linkedin", 23), ("workday", 160)})
     settings.put(db, "job_max_age_hours", 48)

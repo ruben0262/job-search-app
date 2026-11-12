@@ -128,13 +128,14 @@ def test_jobs_left_a_day_past_their_keep_warn_that_the_archive_pass_is_behind(db
         return insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Nurse",
                                     first_seen_at=moment)).id
 
+    # Kept thirty days by default (owner, 2026-11-12), and a day's grace.
     job(3)
-    job(15.5)
-    applied = job(40)
+    job(30.5)
+    applied = job(45)
     insert(db, UserJobState(user_id=uuid.uuid4(), job_id=applied, applied_at=datetime.now(UTC)))
     assert "archive_overdue" not in keys(evaluate(platform_health(db))), "inside its keep, or a day's grace"
 
-    job(17)
+    job(32)
     state = platform_health(db)
     assert state.archive_overdue == 1 and "archive_overdue" in keys(evaluate(state))
 

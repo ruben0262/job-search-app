@@ -150,10 +150,13 @@ def test_a_new_word_is_searched_for_a_stretch_at_a_time_and_its_jobs_found_meanw
     time, keeps where it got to, and its jobs are found the slow way until it is done."""
     from datetime import timedelta
 
+    from libs import settings
     from libs.db import get, now
     from libs.db.models import CorpusJob, Word
 
     db, user, search = account
+    # A week's shelf, so the walk back to the oldest that can be shown is a few dozen stretches.
+    settings.put(db, "job_max_age_hours", 168)
     jobs = [_stored(db, "Developer") for _ in range(3)]
     # Three of the stretches it searches in, each one hour inside them.
     for hours, job in zip((1, 8, 14), jobs, strict=True):
@@ -210,7 +213,8 @@ def test_a_new_word_is_not_searched_for_in_postings_too_old_to_be_shown(account)
 
     db, _, search = account
     recent, old = _stored(db, "Developer"), _stored(db, "Developer")
-    db[CorpusJob.COLLECTION].update_one({"_id": old}, {"$set": {"first_seen_at": now() - timedelta(days=25)}})
+    # Older than any job stays: thirty days (owner, 2026-11-12), and a day to spare.
+    db[CorpusJob.COLLECTION].update_one({"_id": old}, {"$set": {"first_seen_at": now() - timedelta(days=35)}})
     catch_up(db)
 
     search("python", "postgres")

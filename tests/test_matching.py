@@ -222,7 +222,8 @@ def test_a_match_reads_the_newest_postings_with_the_words_and_never_the_older_on
     from libs.matching import matching_jobs
 
     db, user = account
-    old, recent = now() - timedelta(days=20), now() - timedelta(hours=1)
+    # Older than any job stays (thirty days, owner 2026-11-12), and recent.
+    old, recent = now() - timedelta(days=35), now() - timedelta(hours=1)
     db[CorpusJob.COLLECTION].insert_many([
         {"_id": 900_000 + n, "url": f"https://example.com/old/{n}", "source": "test",
          "title": "Backend Engineer", "description": "Build APIs", "first_seen_at": old,

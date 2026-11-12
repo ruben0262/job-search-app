@@ -101,8 +101,8 @@ def test_a_new_person_goes_from_sign_up_to_their_jobs(site, capsys):
 
         # Their jobs: the two that match, each saying why, and not the one that does not.
         expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
-        # And how long a job stays, as Admin sets it: a week, unless Admin says otherwise.
-        expect(page.get_by_text("Jobs stay here for 7 days.")).to_be_visible()
+        # And how long a job stays, as Admin sets it: thirty days, unless Admin says otherwise.
+        expect(page.get_by_text("Jobs stay here for 30 days.")).to_be_visible()
         cards = page.locator("article.job-card")
         expect(cards).to_have_count(2)
         for title in TITLES[:2]:

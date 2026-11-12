@@ -54,11 +54,12 @@ def _state(s, user, job_id) -> UserJobState | None:
 
 # ── what leaves ───────────────────────────────────────────────────────────────────────────────
 
-def test_by_default_a_job_leaves_after_fifteen_days_and_one_somebody_applied_to_stays(ctx, tmp_path):
-    """No job older than eight days is anybody's match, so the rest only fills the disk (owner,
-    2026-11-05). A job somebody applied to stays, whole, for their Applied page: interviews go on after."""
+def test_by_default_a_job_leaves_after_thirty_days_and_one_somebody_applied_to_stays(ctx, tmp_path):
+    """A job leaves the corpus when it leaves the Jobs pages, at thirty days (owner, 2026-11-12: "show jobs
+    as old as 30 days and retire them afterwards from corpus too"). A job somebody applied to stays, whole,
+    for their Applied page: interviews go on after."""
     r, s = ctx
-    fresh, due, applied = _aged(r, s, days=14), _aged(r, s, days=16), _aged(r, s, days=40)
+    fresh, due, applied = _aged(r, s, days=29), _aged(r, s, days=31), _aged(r, s, days=40)
     record_state(s, _user(s).id, applied, applied_at=now())
 
     archive_expired(s, directory=tmp_path)
