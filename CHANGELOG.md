@@ -14,6 +14,31 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12, late night — Every new page checked light and on a phone; an admin named once; the subscriptions table a row a line
+
+The owner asked: "lets make sure light mode suits all the new additions on all the pages, and that it all fits
+the mobile screen as well, since users will mainly be on there."
+
+**Checked, in light and in dark, at 390 and 320 px.**
+- **The pages:**
+  - the landing page;
+  - sign-up;
+  - the plan page and Stripe's checkout;
+  - Jobs, Applied, My search, My documents and Settings;
+  - Help;
+  - the upgrade page as it plays;
+  - Admin → Subscriptions, Accounts and Corpus, and an account's page.
+- **The method:** a screenshot each, and the browser suite's own check for anything off the screen or over
+  something else (`FAULTS`). Nothing was.
+
+**What it found, and fixed:**
+- **The landing page's CV picture:** on the light page its white paper sat on a white box. It has a hairline edge
+  now (in the landing page's commit).
+- **An admin's account page** said "Admin" twice: once as the membership badge, once as the role. It says it
+  once.
+- **Admin → Subscriptions' table** on a phone put "In a trial" down three lines. Its cells keep to one line, and
+  the table scrolls in its box, as every wide table here does.
+
 ## 2026-11-12, late night — The emails in the site's look: confirming the address, resetting the password, the daily list
 
 The owner asked for better designs for the email confirming an address, the password reset, and the daily email
@@ -43,6 +68,7 @@ in by sign-up and reset. The text had a second copy of each.
 - **The account emails:** their link as a button and in full, and how long it works.
 - **An email with HTML** goes as text then HTML.
 - **The daily email's HTML:** lists each job linked with its words, and a title that is markup shown as words.
+
 ## 2026-11-12, late night — The landing page: Why it works read at a scroll, the phone shows itself, ATS said
 
 The owner asked for:
@@ -94,6 +120,7 @@ height. It had sat 6 px low, 1 px above the bar's line.
 **The CV picture's paper** has a hairline edge on the light page, where it sat white on white.
 
 **Test:** the phone tours until touched, and the alerts push down; still with reduced motion.
+
 ## 2026-11-12, late night — Stripe's checkout ready before the tap; the upgrade page from free to member
 
 The owner asked for:
@@ -131,6 +158,7 @@ The owner asked for:
   all there at once.
 
 **Test:** the free plan's walk presses "← Back" and lands on Jobs.
+
 ## 2026-11-12, late night — The development site learns the API's new paths
 
 The owner saw the plan page say "Loading…" after signing up.

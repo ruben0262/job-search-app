@@ -3555,6 +3555,11 @@ button.ai-provider {
   font-size: 0.8125rem;
 }
 
+/* A row a line: on a phone the table scrolls in its box, rather than "In a trial" going down in three. */
+.subs-table :is(th, td) {
+  white-space: nowrap;
+}
+
 /* Jobs by country, through time (`AdminCountries.tsx`): a hue a country, in this order, kept while it is
    drawn. The reference data-viz palette, checked 2026-11-05 against this site's two backgrounds (#060606,
    #f7f7f5): every neighbouring pair apart, for colour-blind readers too. In light, four are under 3:1

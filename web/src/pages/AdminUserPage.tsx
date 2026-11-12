@@ -149,7 +149,8 @@ export function AdminUserPage({ userId }: { userId: string }) {
             <li className={`verdict ${user.member ? paying : "down"}`}>{membership}</li>
             {user.onboarded ? null : <li className="verdict warn">Still setting up</li>}
             {user.active ? null : <li className="verdict warn">Alerts paused</li>}
-            {user.is_admin ? <li className="verdict unknown">Admin</li> : null}
+            {/* An admin without a membership is named "Admin" by the badge before: said once. */}
+            {user.is_admin && membership !== "Admin" ? <li className="verdict unknown">Admin</li> : null}
           </ul>
         </div>
         <p className="account-seen">
