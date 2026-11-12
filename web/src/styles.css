@@ -3959,35 +3959,179 @@ input[type="checkbox"]:disabled {
 
 /* ── Help ───────────────────────────────────────────────────────────────────────────────────── */
 
-.answers {
-  margin: 0 0 2rem;
+.help-intro {
+  margin: 0 0 1.25rem;
+  color: var(--muted);
 }
 
-.answers details {
-  padding: 0.85rem 0;
-  border-bottom: 1px solid var(--hairline);
+.help-head {
+  margin: 0 0 0.6rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+/* The answers: one rounded list, a question a row, an arrow that turns as it opens. */
+.answers {
+  margin: 0 0 1.75rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+
+.answers details + details {
+  border-top: 1px solid var(--hairline);
 }
 
 .answers summary {
-  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  font-size: 0.9375rem;
   font-weight: 600;
+  list-style: none;
   cursor: pointer;
 }
 
+.answers summary::-webkit-details-marker {
+  display: none;
+}
+
+.answers summary:hover {
+  background: rgba(var(--ink-rgb), 0.03);
+}
+
+.answers summary::after {
+  content: "";
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.2rem;
+  border-right: 2px solid var(--dim);
+  border-bottom: 2px solid var(--dim);
+  rotate: 45deg;
+  translate: 0 -2px;
+}
+
+.answers details[open] summary::after {
+  rotate: 225deg;
+  translate: 0 2px;
+}
+
 .answers details p {
-  margin: 0.6rem 0 0;
+  margin: 0;
+  padding: 0 1rem 1rem;
   color: var(--muted);
   font-size: 0.9375rem;
   line-height: 1.6;
 }
 
-.contact h2 {
-  margin-top: 0;
+/* Writing to a person: a card of its own, lit at its top edge in the purple, its icon, its title and the line
+   that says who reads it; once sent, a tick, where the reply goes and the reference. */
+.contact {
+  padding: 1.25rem;
+  border: 1px solid var(--hairline);
+  border-top: 2px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: 0 18px 40px -28px rgba(var(--accent-rgb), 0.55);
+}
+
+.contact-head {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.contact-head h3,
+.contact-sent h3 {
+  margin: 0;
   font-size: 1.15rem;
+}
+
+.contact-head p {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.contact-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent-text);
+}
+
+.contact-icon.ok {
+  background: color-mix(in srgb, var(--score) 18%, transparent);
+  color: var(--score);
+}
+
+.contact-icon svg,
+.contact-mail svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .contact textarea {
   resize: vertical;
+}
+
+.contact-send {
+  width: 100%;
+}
+
+.contact-sent {
+  display: grid;
+  justify-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  text-align: center;
+}
+
+.contact-sent p {
+  margin: 0;
+}
+
+.contact-ref {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.contact-ref code {
+  margin-left: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(var(--ink-rgb), 0.06);
+  color: var(--ink);
+  font-family: var(--font-mono);
+}
+
+.contact-mail {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1rem 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.contact-mail svg {
+  flex: none;
+  color: var(--dim);
 }
 
 /* ── documents made for a job ─────────────────────────────────────────────────────────────────

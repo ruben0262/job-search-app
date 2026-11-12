@@ -13,7 +13,11 @@ type Review = Schema<"ReviewPage">;
 type Section = Config["sections"][number];
 
 /** What the words are for: My search's title, and in onboarding the heading of their part of the form. */
-const WANTED = { title: "The jobs you want", lede: "Green words find jobs. Red words hide them." };
+const WANTED = {
+  title: "The jobs you want",
+  // What the words do, said so they are chosen with care (owner, 2026-11-12).
+  lede: "Green words are what we search for: a job shows up only if it has one. Red words hide jobs. Choose them carefully.",
+};
 
 export function WordsPage() {
   const [saved, setSaved] = useState(false);

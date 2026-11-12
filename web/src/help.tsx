@@ -67,24 +67,28 @@ function HelpAndContact() {
 
   return (
     <>
-      <p className="small muted">The quick answers first. If yours is not here, write to us and a person replies.</p>
+      <p className="help-intro">The quick answers first. If yours is not here, write to us and a person replies.</p>
 
+      <h3 className="help-head">Quick answers</h3>
       <section className="answers">
         {ANSWERS.map(([question, answer]) => (
-          <details key={question} className="fold-plain">
+          <details key={question}>
             <summary>{question}</summary>
             <p>{answer}</p>
           </details>
         ))}
       </section>
 
+      {/* Its own card: a person at the other end, said so, and a receipt once it is sent. */}
       <section className="contact">
         {sent ? (
-          <div role="status">
+          <div className="contact-sent" role="status">
+            <span className="contact-icon ok" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M6 12.5l4 4 8-8.5" /></svg>
+            </span>
             <h3>Message received</h3>
-            <p>
-              Your reference is <strong>{sent.reference}</strong>. We will reply to {sent.email}.
-            </p>
+            <p>We will reply to {sent.email}.</p>
+            <p className="contact-ref">Your reference <code>{sent.reference}</code></p>
             <button type="button" className="secondary" onClick={() => setSent(null)}>Write another</button>
           </div>
         ) : (
@@ -92,7 +96,15 @@ function HelpAndContact() {
             event.preventDefault();
             if (ready) void send.run();
           }}>
-            <h3>Write to us</h3>
+            <div className="contact-head">
+              <span className="contact-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 6.5h16v11H4zM4.5 7l7.5 6 7.5-6" /></svg>
+              </span>
+              <div>
+                <h3>Write to us</h3>
+                <p>A person reads every message and replies by email.</p>
+              </div>
+            </div>
             <Field label="Subject" hint="A few words about what it is.">
               <input value={subject} maxLength={120} onChange={(event) => setSubject(event.target.value)} />
             </Field>
@@ -102,17 +114,18 @@ function HelpAndContact() {
                         onChange={(event) => setMessage(event.target.value)} />
             </Field>
             <Error>{send.error}</Error>
-            <button type="submit" className="main" disabled={!ready || send.busy}>
+            <button type="submit" className="main contact-send" disabled={!ready || send.busy}>
               {send.busy ? "Sending…" : "Send message"}
             </button>
           </form>
         )}
-        {address ? (
-          <p className="small muted">
-            Prefer your own email app? Write to <a href={`mailto:${address}`}>{address}</a>.
-          </p>
-        ) : null}
       </section>
+      {address ? (
+        <p className="contact-mail">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16v11H4zM4.5 7l7.5 6 7.5-6" /></svg>
+          <span>Prefer your own email app? Write to <a href={`mailto:${address}`}>{address}</a>.</span>
+        </p>
+      ) : null}
     </>
   );
 }

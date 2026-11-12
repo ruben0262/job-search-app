@@ -1405,8 +1405,8 @@ def _fill_sign_up(page, email: str, password: str = PASSWORD) -> None:
     """The sign-up form as a person fills it: the password twice, and the box ticked that agrees to the
     privacy policy and its cookies, without which there is no account (owner, 2026-11-12)."""
     page.get_by_label("Email").fill(email)
-    page.get_by_label("Password").fill(password)
-    page.get_by_label("Type it again").fill(password)
+    page.get_by_label(re.compile(r"^Password")).fill(password)
+    page.get_by_label("Confirm password").fill(password)
     page.get_by_label("I agree to the privacy policy and cookies.").check()
     page.get_by_role("button", name="Create account").click()
     expect(page.get_by_role("heading", name="Check your email")).to_be_visible()
@@ -1576,8 +1576,8 @@ def test_sign_up_confirm_sign_in_and_reset_the_password_each_step_at_once(site, 
         step("forgot", lambda: page.get_by_role("button", name="Send reset link").click(),
              page.get_by_text("a reset link is on its way"))
         page.goto(_emailed(capsys, "reset"))
-        page.get_by_label("New password").fill(new)
-        page.get_by_label("Type it again").fill(new)
+        page.get_by_label(re.compile(r"^New password")).fill(new)
+        page.get_by_label("Confirm new password").fill(new)
         step("reset", lambda: page.get_by_role("button", name="Set password").click(),
              page.get_by_role("heading", name="Password reset"))
 

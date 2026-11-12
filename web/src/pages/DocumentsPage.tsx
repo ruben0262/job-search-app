@@ -53,7 +53,6 @@ export function DocumentsPage() {
   return (
     <>
       <h1>Your CV and the rest</h1>
-      <p className="lede">We read them to find your words and to make your CVs and cover letters.</p>
 
       {/* In the owner's order (2026-11-08): who you are, how your documents look, what was made, then
           the files they are made from. */}
@@ -71,6 +70,7 @@ export function DocumentsPage() {
         <Made />
       </Card>
       <Card title="Your CV">
+        <p className="small muted">Used to find your words and to make your CVs and cover letters.</p>
         <Files kind="cv" list={list} onChanged={saved} />
       </Card>
       <Card title="Cover letters and other files">

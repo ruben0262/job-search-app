@@ -44,11 +44,11 @@ export function useNewPassword(label = "Password") {
   const [again, setAgain] = useState("");
   const fields = (
     <>
-      <Field label={label} hint="At least 9 characters. Longer beats complicated.">
+      <Field label={label} hint="At least 9 characters.">
         <input type="password" value={value} autoComplete="new-password" required
                onChange={(event) => setValue(event.target.value)} />
       </Field>
-      <Field label="Type it again">
+      <Field label={`Confirm ${label.toLowerCase()}`}>
         <input type="password" value={again} autoComplete="new-password" required
                onChange={(event) => setAgain(event.target.value)} />
       </Field>

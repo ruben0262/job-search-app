@@ -14,6 +14,36 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12, night — "Confirm password"; My search and My documents say what the words and the CV are for; Help redesigned
+
+The owner asked for:
+- **The password fields:** remove "Longer beats complicated." and say "confirm password" in place of "Type
+  it again".
+- **My search:** keep or reword "Green words find jobs. Red words hide them.", telling people the words are
+  what jobs appear for, so they choose them well.
+- **My documents:** add "used to find your words and to make your CVs and cover letters".
+- **The contact page:** "simple but make it looks good and professional".
+
+**Passwords:** "At least 9 characters.", then "Confirm password" (or "Confirm new password", in Settings and
+on the reset page).
+
+**My search:** "Green words are what we search for: a job shows up only if it has one. Red words hide jobs.
+Choose them carefully."
+
+**My documents:** "Used to find your words and to make your CVs and cover letters." is on the "Your CV" card.
+The page's own line said the same ("We read them to find your words and to make your CVs and cover
+letters"), so it is removed rather than said twice.
+
+**Help and contact.**
+- **The quick answers** are one rounded list, a question a row, an arrow that turns as it opens.
+- **"Write to us"** is a card of its own, lit at its top edge in the purple, with a mail icon and the line "A
+  person reads every message and replies by email". Its button is full width.
+- **Once sent:** a green tick, where the reply goes, and the reference.
+- **The email address** sits under the card for anybody who prefers their own app.
+
+The sign-up and reset walks in the browser tests fill "Confirm password", the fields found by the start of
+their label: a hint inside a label makes it part of the field's name.
+
 ## 2026-11-12, night — The menu in words alone; an application's progress on one exact track
 
 The owner asked for:
