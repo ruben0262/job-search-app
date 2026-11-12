@@ -159,13 +159,12 @@ export function App() {
       <div className="app">
         <nav>
           <Brand href="#/" />
-          {/* A row of links up top on a laptop; a tab bar along the bottom on a phone, each picture over its
-              short name. */}
+          {/* A row of links up top on a laptop; a tab bar along the bottom on a phone, in words alone: its short
+              name each (owner, 2026-11-12: no pictures, on any screen). */}
           <div className="places">
-            {PLACES.filter(([key]) => key !== "admin" || dashboard.is_admin).map(([key, label, icon, short]) => (
+            {PLACES.filter(([key]) => key !== "admin" || dashboard.is_admin).map(([key, label, , short]) => (
               <a key={key} href={key === "jobs" ? "#/" : `#/${key}`} className={section === key ? "on" : ""}
                  aria-current={section === key ? "page" : undefined}>
-                <svg viewBox="0 0 24 24" aria-hidden="true">{icon}</svg>
                 <span className="place-name">{label}</span>
                 <span className="place-short">{short}</span>
               </a>

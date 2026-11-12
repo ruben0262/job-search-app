@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 
 /** The places, in tab-bar order, Settings last. `#/feed` is Jobs too: every alert links there. Admin is
- * only listed for an admin; the API refuses `/admin/*` to anybody else on its own. Each picture is the
- * thing its page holds: a briefcase of jobs, a tick for applied, a magnifier for the search, a page, a
- * shield, a gear. On a phone the bar shows it over its short name (owner, 2026-11-07), the one word that
- * fits a sixth of a 320px screen. The landing page's picture of the app draws the same bar. */
+ * only listed for an admin; the API refuses `/admin/*` to anybody else on its own. The bar is words alone, on
+ * every screen (owner, 2026-11-12); on a phone the short name, the one word that fits a sixth of a 320px
+ * screen. The landing page's picture of the app draws the same bar. Each picture is the thing its page holds
+ * (a briefcase of jobs, a tick for applied…), for the places that show one: the Jobs page's Applied mark and
+ * the landing page's dock. */
 export const PLACES: [key: string, label: string, icon: ReactNode, short: string][] = [
   ["jobs", "Jobs", <path key="i" d="M5.5 7.5h13a2 2 0 012 2v8a2 2 0 01-2 2h-13a2 2 0 01-2-2v-8a2 2 0 012-2zM9 7.5v-2a1 1 0 011-1h4a1 1 0 011 1v2M3.5 12.5h17" />, "Jobs"],
   ["applied", "Applied", <path key="i" d="M12 3.5a8.5 8.5 0 110 17 8.5 8.5 0 010-17zM8.3 12.3l2.6 2.6 4.9-5.1" />, "Applied"],

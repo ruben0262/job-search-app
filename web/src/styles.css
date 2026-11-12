@@ -269,8 +269,8 @@ body {
   transform: rotate(45deg);
 }
 
-/* The places: a pill each, the one you are on lit in the purple. Words on a laptop, and the pictures
-   beside them once there is room for both. */
+/* The places: a pill each, the one you are on lit in the purple. Words alone, on every screen (owner,
+   2026-11-12). */
 .places {
   display: flex;
   gap: 0.25rem;
@@ -302,29 +302,8 @@ body {
   box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.45);
 }
 
-.places svg {
-  display: none;
-  width: 1.15rem;
-  height: 1.15rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.places a.on svg {
-  color: var(--accent-text);
-}
-
 .place-short {
   display: none;
-}
-
-@media (min-width: 1100px) {
-  .places svg {
-    display: block;
-  }
 }
 
 /* A circle on every page: square sides, and nothing (a flex row, the button defaults) allowed to
@@ -2107,7 +2086,7 @@ button.toast-close:hover:not([disabled]) {
 /* ── the tab bar: phones and tablets ─────────────────────────────────────────────────────────── */
 
 /* The places become a tab bar along the bottom: where every phone app keeps them, in reach of the thumb.
-   A picture and a word each (owner, 2026-11-07; pictures alone were not enough), the one you are on lit
+   A word each (owner, 2026-11-12: no pictures; before, a picture over the word), the one you are on lit
    in the purple; frosted, and clear of the edges, as the landing page's dock is. Up to a tablet held
    upright too: five or six words and three buttons do not fit a bar narrower than about 900px, and they
    overran it there. Never wider than a phone's, so a tablet's is not a strip of far-apart pictures. */
@@ -2138,18 +2117,16 @@ button.toast-close:hover:not([disabled]) {
     box-shadow: 0 16px 30px -16px rgb(0 0 0 / 60%);
   }
 
-  /* An admin's six fit a 320px phone: its widest word, "Settings", is 40px at 10px, and a tab is 46px.
-     The words grow to 12px by a 390px one. */
+  /* An admin's six fit a 320px phone: its widest word, "Settings", is about 44px at 11px, and a tab is
+     46px. The words grow to 13px by a 390px one. */
   .places a {
     position: relative;
-    flex-direction: column;
     justify-content: center;
-    gap: 0.15rem;
-    min-height: 3rem;
+    min-height: 2.75rem;
     padding: 0.3rem 0;
     border-radius: 16px;
     color: var(--dim);
-    font-size: clamp(0.625rem, 3.1vw, 0.75rem);
+    font-size: clamp(0.6875rem, 3.35vw, 0.8125rem);
     line-height: 1.2;
   }
 
@@ -2168,12 +2145,6 @@ button.toast-close:hover:not([disabled]) {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .places svg {
-    display: block;
-    width: 22px;
-    height: 22px;
   }
 
   .toasts {
@@ -4392,58 +4363,87 @@ button.toggle[aria-pressed="true"]::before {
 
 /* ── how far an application got (Applied) ───────────────────────────────────────────────────── */
 
-/* Four steps in a row, joined by a line: green as far as it got, a ring where it stands now. */
+/* Four steps in four equal columns, each dot at its column's centre, on one track drawn from the first dot's
+   centre to the last's (12.5% in from each side), filled in green as far as it got (`--done`, 0 to 1). A
+   tick in each step reached, a ring of light around where it stands now, and the steps ahead hollow, in the
+   card's own colour so the track does not show through them. */
 .progress ol {
-  list-style: none;
+  --dot: 1.5rem;
+  position: relative;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  margin: 1rem 0 0.75rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 1.1rem 0 0.9rem;
   padding: 0;
+  list-style: none;
+}
+
+.progress ol::before,
+.progress ol::after {
+  content: "";
+  position: absolute;
+  top: calc(var(--dot) / 2 - 1.5px);
+  left: 12.5%;
+  height: 3px;
+  border-radius: 3px;
+}
+
+.progress ol::before {
+  right: 12.5%;
+  background: var(--faint);
+}
+
+.progress ol::after {
+  width: calc(75% * var(--done, 0));
+  background: var(--score);
 }
 
 .progress li {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-  text-align: center;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 0.45rem;
   color: var(--dim);
-}
-
-/* The line from the step before, drawn behind the dot. */
-.progress li + li::before {
-  content: "";
-  position: absolute;
-  top: 0.45rem;
-  right: 50%;
-  width: 100%;
-  height: 2px;
-  background: var(--faint);
+  font-size: 0.8rem;
+  line-height: 1.25;
+  text-align: center;
 }
 
 .progress .dot {
-  position: relative;
-  width: 0.95rem;
-  height: 0.95rem;
+  display: grid;
+  place-items: center;
+  width: var(--dot);
+  height: var(--dot);
   border: 2px solid var(--faint);
   border-radius: 50%;
   background: var(--bg-raised);
+}
+
+.progress .dot svg {
+  width: 0.8rem;
+  height: 0.8rem;
+  fill: none;
+  stroke: var(--bg);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .progress li.done {
   color: var(--ink);
 }
 
-.progress li.done .dot,
-.progress li.done::before {
-  background: var(--score);
+.progress li.done .dot {
   border-color: var(--score);
+  background: var(--score);
+}
+
+.progress li[aria-current="step"] {
+  font-weight: 600;
 }
 
 .progress li[aria-current="step"] .dot {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--score) 25%, transparent);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--score) 22%, transparent);
 }
 
 /* Ended without the job: the steps it never reached fade, and the note says so in red. */

@@ -14,6 +14,36 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12, night — The menu in words alone; an application's progress on one exact track
+
+The owner asked for:
+- **"Remove the icons in the nav bar… on all screen types",** keeping the words.
+- **On Applied, a progress bar** that "looks much better: right now the circles and the lines are all over
+  the place".
+
+**The menu, words alone.**
+- **A laptop** shows the full names.
+- **A phone** shows its short ones ("Search", "Docs"): an admin's six fit a 320 px screen at 11 px, 13 px
+  by 390.
+- **The landing page's picture of the app** draws the same bar.
+- **Still drawn elsewhere:** the pictures stay in `places.tsx` for the Jobs page's Applied mark and the
+  landing page's dock.
+
+**Applied's progress: one track, four dots on it.**
+- **Before:** each step drew its own line from the step before, placed by hand, so lines and dots did not
+  meet.
+- **Now:** one track runs from the first dot's centre to the last's, filled in green as far as the
+  application got (`--done`).
+- **Done steps** have a tick, and the step it stands at is bold with a ring of light. The steps ahead are
+  hollow, in the card's own colour, so the track does not show through them.
+- **An application that ended** fades the steps it never reached.
+- **The line under the title** shows only the tally ("4 interviews · 2 offers"). "Heard back from one? Say
+  so on it…" is removed, as asked.
+
+Checked at 320, 390 and 1,280 px with an application at each stage: nothing past the screen's edge.
+
+Tests: the phone's menu has no pictures and still fits at 320 px.
+
 ## 2026-11-12, night — Admin's Subscriptions tab, and each account's subscription as it is stored
 
 The owner asked for:

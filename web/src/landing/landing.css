@@ -1504,10 +1504,10 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  height: 48px;
+  height: 40px;
   border-radius: 16px;
   color: var(--dim);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
 }
 
@@ -1517,15 +1517,6 @@
   color: var(--accent-text);
 }
 
-.landing .phone-tabs svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
 
 /* The CV, written on its page while you watch (`Demo.tsx`). Paper is white in either theme. */
 .landing .paper {

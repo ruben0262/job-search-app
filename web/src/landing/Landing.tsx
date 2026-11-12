@@ -803,10 +803,8 @@ function Phone() {
           <Demo />
         </div>
         <div className="phone-tabs" aria-hidden="true">
-          {PLACES.filter(([key]) => key !== "admin").map(([key, , icon, short], i) => (
-            <span key={key} className={i === 0 ? "on" : undefined}>
-              <svg viewBox="0 0 24 24">{icon}</svg>{short}
-            </span>
+          {PLACES.filter(([key]) => key !== "admin").map(([key, , , short], i) => (
+            <span key={key} className={i === 0 ? "on" : undefined}>{short}</span>
           ))}
         </div>
       </div>

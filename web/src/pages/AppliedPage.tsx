@@ -2,7 +2,7 @@
  * search included — with the way back to each, and a tap on one shows all of it. Each says how far it
  * got, in your words (owner, 2026-11-03): an interview, an offer, the job, or not this time. */
 import { useState } from "react";
-import type { MouseEvent } from "react";
+import type { CSSProperties, MouseEvent } from "react";
 
 import { api, type Schema } from "../api";
 import { JobView } from "../jobview";
@@ -59,11 +59,7 @@ export function AppliedPage() {
         {jobs === null ? "Your applications…"
           : `You applied to ${jobs.length} ${jobs.length === 1 ? "job" : "jobs"}`}
       </h1>
-      {jobs?.length ? (
-        <p className="lede">
-          {summary || "Heard back from one? Say so on it: it shows us which CVs and searches work, and we make yours better."}
-        </p>
-      ) : null}
+      {summary ? <p className="lede">{summary}</p> : null}
       {failed ? <p className="error">Your applications did not load. Refresh the page to try again.</p> : null}
       {jobs?.length === 0 ? (
         <p className="muted">
@@ -132,8 +128,8 @@ function AppliedCard({ job, busy, onUndo, onProgress }: {
   );
 }
 
-/** Where the application stands, as a row of steps, and the one question that moves it on: two
- * answers, the good one first, and Undo for a tap made by mistake. */
+/** Where the application stands, as a row of steps on one track filled as far as it got, and the one
+ * question that moves it on: two answers, the good one first, and Undo for a tap made by mistake. */
 function Progress({ job, onChange }: { job: Applied; onChange: (progress: Step[]) => void }) {
   const stage = job.progress.at(-1)?.stage ?? "applied";
   const reached = furthest(job.progress);
@@ -143,11 +139,14 @@ function Progress({ job, onChange }: { job: Applied; onChange: (progress: Step[]
   const busy = answer.busy || back.busy;
   return (
     <div className={stage === "rejected" ? "progress ended" : "progress"}>
-      <ol aria-label="Where this application stands">
+      <ol aria-label="Where this application stands"
+          style={{ "--done": reached / (STEPS.length - 1) } as CSSProperties}>
         {STEPS.map(([key, label], index) => (
           <li key={key} className={index <= reached ? "done" : undefined}
               aria-current={index === reached && stage !== "rejected" ? "step" : undefined}>
-            <span className="dot" aria-hidden="true" />
+            <span className="dot" aria-hidden="true">
+              {index <= reached ? <svg viewBox="0 0 16 16"><path d="M3.5 8.4l2.9 2.9 6-6.3" /></svg> : null}
+            </span>
             {label}
           </li>
         ))}

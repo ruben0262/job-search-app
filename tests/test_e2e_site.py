@@ -197,8 +197,8 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
     after that was true. A big one is said as the round number it is at least, so it reads at a glance
     and stays true (owner, 2026-11-07). The selling points come second, each figure behind them linked to
     its source (owner, 2026-11-12). Sign in and sign up follow the address, going back included. And
-    on a phone each tab is a picture over a word (owner, 2026-11-07; pictures alone, 2026-11-06, were not
-    enough), each opening its page. Its card says where people apply: on the job's own site, never here
+    on a phone each tab is a word, with no picture (owner, 2026-11-12; a picture over the word from
+    2026-11-07), each opening its page. Its card says where people apply: on the job's own site, never here
     (owner, 2026-11-06)."""
     from libs.db import database, insert
     from libs.db.models import AtsToken, CountryCount
@@ -245,8 +245,7 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         _onboard(page)
         places = page.locator("nav .places a")
         expect(places).to_have_text(["Jobs", "Applied", "Search", "Docs", "Settings"], use_inner_text=True)
-        for place in places.all():
-            expect(place.locator("svg")).to_be_visible()
+        expect(places.locator("svg")).to_have_count(0)
         page.get_by_role("link", name="Search", exact=True).click()
         expect(page.get_by_role("heading", name="The jobs you want", level=1)).to_be_visible()
         expect(page.get_by_role("link", name="Search", exact=True)).to_have_attribute("aria-current", "page")
@@ -823,7 +822,7 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         if shot := os.environ.get("E2E_SHOT"):
             page.screenshot(path=shot, full_page=True)
 
-        # The smallest phone: an admin's six tabs still fit, each a picture over a whole word, and the bar is
+        # The smallest phone: an admin's six tabs still fit, each a whole word, and the bar is
         # at the very top of the screen (owner, 2026-11-07). Admin was hidden there, and a phone's page began
         # 16px down.
         page.set_viewport_size({"width": 320, "height": 640})
