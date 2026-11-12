@@ -14,6 +14,16 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-12, late night — The development site learns the API's new paths
+
+The owner saw the plan page say "Loading…" after signing up.
+- **Cause:** it was the development server. Vite read the API's paths from `openapi.json` once, as it started.
+  `/pricing` was added after the running one started, so it answered the plans with the page itself.
+- **Fix:** the config imports the contract. Vite restarts when a file its config imports changes: a path added
+  to a test copy reached the proxy, with "openapi.json changed, restarting server".
+- **Production** was never affected: there the API serves the site and its own paths are matched first.
+- **Measured afterwards:** from the email link to the cards in 0.4–0.6 s, every API call under 50 ms.
+
 ## 2026-11-12, night — "Confirm password"; My search and My documents say what the words and the CV are for; Help redesigned
 
 The owner asked for:
