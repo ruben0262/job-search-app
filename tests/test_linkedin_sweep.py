@@ -230,10 +230,11 @@ def test_a_pass_costs_the_same_however_many_people_and_words_there_are(db, site)
 
 def test_a_region_is_read_as_its_countries_each_once(db, site):
     """LinkedIn lists no further than 1,000 jobs, and the EU's 30 minutes held ~1,300 (2026-11-04): read
-    as one list, its oldest were lost every run. Germany picked as well is still read once."""
-    from libs.corpus.geo import EU_COUNTRIES
+    as one list, ~300 were lost every run. Germany picked as well is still read once. A job in each,
+    since an empty first page is asked again (`test_a_refused_first_page_is_asked_again…`)."""
+    from libs.corpus.geo import COUNTRY_LABELS, EU_COUNTRIES
 
-    linkedin_site = site({"Germany": ["Nurse"], "France": ["Nurse"], "United Kingdom": ["Nurse"]})
+    linkedin_site = site({COUNTRY_LABELS[code]: ["Nurse"] for code in (*EU_COUNTRIES, "GB")})
     _user(db, _config("nurse", "carer", "midwife", places=("germany",)))
     _user(db, _config("nurse", "carer", "midwife", places=("europe", "united_kingdom")))
 
@@ -300,23 +301,88 @@ def test_no_two_runs_ask_linkedin_for_the_same_window_nor_a_whole_number_of_minu
     assert all(0 < each - 1800 < 120 for each in seconds[1:]), "to the last run and one more, and under 2 min"
 
 
-def test_a_country_whose_sweep_ended_on_refusals_is_read_further_back_next_time(db, site):
+@pytest.mark.parametrize("refused", [0, 10], ids=["first page", "a later page"])
+def test_a_country_whose_sweep_ended_on_refusals_is_read_further_back_next_time(db, site, monkeypatch,
+                                                                                refused):
+    """On its first page too: refused there, a country read as a window with nothing in it, its sweep counted
+    as read to the end, and two such runs in a row lost the jobs listed between (2026-11-13)."""
     from libs.settings import PLATFORM_TICK_MIN
 
-    linkedin_site = site({"Germany": ["Nurse"] * 15}, refuse_once={10})
+    linkedin_site = site({"Germany": ["Nurse"] * 15}, refuse_once={refused})
     _user(db, _config("nurse", "carer", "midwife"))
     _pass(db)
-    linkedin_site.refuse_once = {10}
-    linkedin.EMPTY_RETRIES, retries = 0, linkedin.EMPTY_RETRIES
-    try:
-        _pass(db, now=NOW + timedelta(minutes=15))
-        linkedin_site.asked.clear()
-        _pass(db, now=NOW + timedelta(minutes=30))
-    finally:
-        linkedin.EMPTY_RETRIES = retries
+    linkedin_site.refuse_once = {refused}
+    monkeypatch.setattr(linkedin, "EMPTY_RETRIES", 0)
+    _pass(db, now=NOW + timedelta(minutes=15))
+    linkedin_site.asked.clear()
+    _pass(db, now=NOW + timedelta(minutes=30))
 
     assert 0 < int(linkedin_site.asked[0]["f_TPR"][1:]) - (30 + PLATFORM_TICK_MIN) * 60 < 120, (
         "back to the last sweep read to its end, not the one LinkedIn cut short")
+
+
+def test_a_refused_first_page_is_asked_again_and_the_country_read_in_the_same_run(db, site):
+    """LinkedIn refuses with the empty page that also means a window with no job in it. On the first page it
+    was taken for that: Germany's run read nothing, and the run said nothing (2026-11-13)."""
+    linkedin_site = site({"Germany": GERMANY}, refuse_once={0})
+    _user(db, _config("python developer", "golang", "sql"))
+
+    report = _pass(db)
+
+    assert report.new_jobs == 25
+    assert [asked["start"] for asked in linkedin_site.asked] == [0, 0, 10, 20]
+    assert db[SweptPlace.COLLECTION].count_documents({"_id": "Germany"}) == 1, "read to its end"
+
+
+def test_after_a_stoppage_a_country_is_read_back_to_its_last_full_read_as_far_as_a_job_is_shown(db, site):
+    """A sweep reached back at most the operator's 4 hours, so a stoppage longer than that (the harvester
+    down, the proxy out) lost every job listed before its last 4 hours, unsaid (2026-11-13). A job stays on
+    Jobs pages for the job shelf life, so a sweep reaches back to its last full read, as far as that."""
+    from libs.corpus.freshness import candidate_since, platform_windows
+    from libs.settings import PLATFORM_TICK_MIN
+
+    linkedin_site = site({"Germany": ["Nurse"]})
+    _user(db, _config("nurse", "carer", "midwife"))
+    later, much_later = NOW + timedelta(hours=10), NOW + timedelta(days=60)
+
+    for when in (NOW, later, much_later):
+        _pass(db, now=when)
+
+    seconds = [int(asked["f_TPR"][1:]) for asked in linkedin_site.asked]
+    windows = platform_windows(db)
+    shelf = much_later - candidate_since(windows.max_age_hours, windows.source_min_ages, now=much_later)
+    assert 0 < seconds[1] - (10 * 60 + PLATFORM_TICK_MIN) * 60 < 120, "ten hours back, and one run more"
+    assert 0 < seconds[2] - shelf.total_seconds() < 120, "no further back than a job can still be shown"
+
+
+def test_a_pass_out_of_time_stores_what_it_read_and_the_next_run_reads_the_rest(db, site, monkeypatch,
+                                                                                caplog):
+    """The run's unit is stopped at 14 minutes (`deploy/harvester.service`), and a sweep stores nothing until
+    every country is read: a long one, after a stoppage, was stopped with nothing stored, and the next one,
+    reaching further back, likewise. A pass stops reading when its time is spent and stores what it read."""
+    clock, per_page = [0.0], [60.0]
+    monkeypatch.setattr(linkedin, "monotonic", lambda: clock[0], raising=False)
+    linkedin_site = site({"Germany": ["Nurse"] * 195})
+    listing = linkedin_site.get
+
+    def slow(url, params=None, **kwargs):
+        clock[0] += per_page[0]
+        return listing(url, params, **kwargs)
+
+    monkeypatch.setattr(linkedin_site, "get", slow)
+    _user(db, _config("nurse", "carer", "midwife"))
+
+    with caplog.at_level(logging.WARNING, logger=linkedin.logger.name):
+        late = _pass(db)
+    read = linkedin.PASS_BUDGET_SECONDS // 60 * linkedin.SWEEP_PAGE
+    assert (late.swept, late.new_jobs) == (read, read), "a minute a page, until the pass's time was spent"
+    assert "ran out" in caplog.text
+    assert db[SweptPlace.COLLECTION].count_documents({"_id": "Germany"}) == 0, "not read to its end"
+
+    per_page[0] = 0
+    _pass(db, now=NOW + timedelta(minutes=15))
+    assert db[CorpusJob.COLLECTION].count_documents({"source": "linkedin"}) == 195
+    assert db[SweptPlace.COLLECTION].count_documents({"_id": "Germany"}) == 1
 
 
 def test_a_country_listing_more_than_linkedin_shows_says_so(db, site, caplog, monkeypatch):

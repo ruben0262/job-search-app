@@ -14,10 +14,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from time import monotonic
 
 import httpx
 from bs4 import BeautifulSoup
 
+from libs.corpus.freshness import candidate_since, platform_windows
 from libs.corpus.geo import COUNTRIES, COUNTRY_LABELS
 from libs.corpus.postings import LI_BACKOFF, LI_RETRIES, posted_from
 from libs.corpus.repository import CorpusRepository
@@ -36,15 +38,16 @@ from services.harvester.sources.base import JobLink
 
 logger = logging.getLogger(__name__)
 
-# How long a pass may run, sweeping and describing together: the shared cycle's budget, since the two run
-# side by side on one tick (`services.harvester.__main__`), and the tick's words come after both.
+# How long a pass may read LinkedIn: the shared cycle's budget, since the two run side by side on one tick
+# (`services.harvester.__main__`), and the tick's words come after both. The sweep stops reading at it
+# (`sweep_places`), inside the unit's timeout, which stopped a longer one with nothing stored.
 PASS_BUDGET_SECONDS = HARVEST_CYCLE_BUDGET_SECONDS
 
 # LinkedIn's guest job list: ten jobs a page, and nothing past the thousandth.
 SWEEP_URL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
 SWEEP_PAGE, SWEEP_DEPTH = 10, 1000
 # LinkedIn answers a refusal with the same empty page as the end of its list: a sweep of Germany's last
-# hour stopped at 20 of ~300 jobs that way (2026-11-03). After a full page, an empty one is asked again,
+# hour stopped at 20 of ~300 jobs that way (2026-11-03). An empty page, the first too, is asked again,
 # each time from another of the proxy's addresses, before it counts as the end.
 EMPTY_RETRIES = 3
 
@@ -71,8 +74,11 @@ class Sweep:
     jobs: list[JobLink] = field(default_factory=list)
     # Stopped at LinkedIn's thousandth job: the window held more than one list can be read to.
     truncated: bool = False
-    # Stopped on empty pages after a full one, the retries spent: the end, or LinkedIn refusing.
+    # Not known to be read to its end, so the next sweep reaches back to the last one that was: stopped on
+    # empty pages, the retries spent (the end, a window with no job, or LinkedIn refusing), or out of time.
     unsure_end: bool = False
+    # Stopped because the pass's time was spent (`PASS_BUDGET_SECONDS`).
+    out_of_time: bool = False
     # Connections the proxy could not open (a 503 from one of its addresses), each asked again.
     refused_connections: int = 0
 
@@ -80,22 +86,24 @@ class Sweep:
 def wanted_places(configs: dict) -> list[str]:
     """LinkedIn's name for every country somebody picked, each once; a region is read as its countries.
     LinkedIn lists no further than 1,000 jobs, and the EU lists ~660 in 15 minutes (2026-11-04), so the
-    30 minutes a sweep reaches back would lose its oldest ~300 every run. Its biggest country lists ~110."""
+    30 minutes a sweep reaches back would lose ~300 every run. Its biggest country lists ~110."""
     codes = {code for slug in union_locations(configs) if slug in COUNTRIES
              for code in COUNTRIES[slug].countries}
     return sorted(COUNTRY_LABELS[code] for code in codes if code in COUNTRY_LABELS)
 
 
-def sweep_window(swept_at: datetime | None, *, now: datetime, most: int) -> int:
-    """How far back, in seconds, a sweep of a place reaches: to its previous sweep and one run before it,
-    so a job listed at the edge of one window is inside the next; at most `most` hours, the operator's
-    window, which is also how far a place nobody has swept yet reaches. Measured 2026-11-03: a sweep missed
-    8 of 20 jobs listed exactly an hour before, and a wider window held all 8. Then a few seconds more, a
-    number LinkedIn has not been asked lately (`unasked`)."""
+def sweep_window(swept_at: datetime | None, *, now: datetime, most: int, oldest: datetime) -> int:
+    """How far back, in seconds, a sweep of a place reaches: to its last sweep read to the end and one run
+    before it, so a job listed at the edge of one window is inside the next, however long ago that was, as
+    far as `oldest`, the oldest a job can be and still be shown (`freshness.candidate_since`). A place
+    never read to its end reaches `most` hours, the operator's window. Measured 2026-11-03: a sweep missed 8
+    of 20 jobs listed exactly an hour before, and a wider window held all 8. At most `most` hours before
+    2026-11-13, so a stoppage longer than that lost the jobs listed before its last `most` hours. Then a few
+    seconds more, a number LinkedIn has not been asked lately (`unasked`)."""
     if swept_at is None:
         return unasked(most * 3600, now)
     since = (now - swept_at.replace(tzinfo=swept_at.tzinfo or UTC)).total_seconds()
-    return unasked(int(min(most * 3600, since + PLATFORM_TICK_MIN * 60)), now)
+    return unasked(int(min((now - oldest).total_seconds(), since + PLATFORM_TICK_MIN * 60)), now)
 
 
 def unasked(seconds: int, now: datetime) -> int:
@@ -112,24 +120,31 @@ def unasked(seconds: int, now: datetime) -> int:
 
 
 def sweep_places(places: dict[str, int], *, proxy: str, readers: int) -> list[Sweep]:
-    """Every job each place listed in its window (seconds), newest first, with no search word: `readers`
-    places at once, each read a page after the other."""
+    """Every job each place listed in its window (seconds), with no search word: `readers` places at once,
+    each read a page after the other, until the pass's time is spent. LinkedIn's list is in no order of
+    time, whatever `sortBy` asks (2026-11-13), so a place cut short is read whole again next run."""
+    deadline = monotonic() + PASS_BUDGET_SECONDS
     with redacting(proxy), make_site_client(proxy) as client, ThreadPoolExecutor(readers) as pool:
-        return list(pool.map(lambda place: _sweep(client, place, places[place]), places))
+        return list(pool.map(lambda place: _sweep(client, place, places[place], deadline), places))
 
 
-def _sweep(client, place: str, seconds: int) -> Sweep:
+def _sweep(client, place: str, seconds: int, deadline: float = float("inf")) -> Sweep:
     sweep = Sweep(place)
     params = {"keywords": "", "location": place, "f_TPR": f"r{seconds}", "sortBy": "DD"}
     start = empty = 0
     while start < SWEEP_DEPTH:
-        response = _page(client, {**params, "start": start}, sweep)
+        if monotonic() >= deadline:
+            sweep.unsure_end = sweep.out_of_time = True
+            return sweep
+        response = _page(client, {**params, "start": start}, sweep, deadline)
         cards = _cards(response.text) if response is not None and response.status_code == 200 else []
         if not cards:
-            if start and empty < EMPTY_RETRIES:
+            # The first page too: taken as a window with no job, a refused one marked the place read to its
+            # end, and two such runs in a row lost the jobs listed between (2026-11-13).
+            if empty < EMPTY_RETRIES:
                 empty += 1
                 continue
-            sweep.unsure_end = bool(start)
+            sweep.unsure_end = True
             return sweep
         empty = 0
         sweep.jobs += cards
@@ -140,11 +155,13 @@ def _sweep(client, place: str, seconds: int) -> Sweep:
     return sweep
 
 
-def _page(client, params: dict, sweep: Sweep) -> httpx.Response | None:
+def _page(client, params: dict, sweep: Sweep, deadline: float = float("inf")) -> httpx.Response | None:
     """One page of the list, asked again after a 429 or a connection the proxy could not open, each time
-    from the proxy's next address."""
+    from the proxy's next address, while the pass has time."""
     response = None
     for attempt in range(LI_RETRIES):
+        if monotonic() >= deadline:
+            break
         sweep.requests += 1
         try:
             response = client.get(SWEEP_URL, params=params)
@@ -224,11 +241,12 @@ def _swept(db, corpus: CorpusRepository, report: LinkedInReport, *, now: datetim
     if not places:
         logger.warning("linkedin: nobody active has picked a country, so no place was read")
         return
-    most = freshness_hours(db, "linkedin")
+    most, windows = freshness_hours(db, "linkedin"), platform_windows(db)
+    oldest = candidate_since(windows.max_age_hours, windows.source_min_ages, now=now)
     last = {row["_id"]: row["swept_at"] for row in db[SweptPlace.COLLECTION].find({"_id": {"$in": places}})}
     try:
-        sweeps = sweep({place: sweep_window(last.get(place), now=now, most=most) for place in places},
-                       proxy=proxy, readers=readers)
+        sweeps = sweep({place: sweep_window(last.get(place), now=now, most=most, oldest=oldest)
+                        for place in places}, proxy=proxy, readers=readers)
     except Exception as exc:                                        # noqa: BLE001
         # Said, and the pass ends: what earlier passes stored is still read by the describer.
         report.failures["sweep"] = f"{type(exc).__name__}: {exc}"
@@ -249,10 +267,14 @@ def _swept(db, corpus: CorpusRepository, report: LinkedInReport, *, now: datetim
                 "the proxy could not open, each asked again; ended on empty pages: %s", len(sweeps),
                 report.sweep_requests, len(jobs), report.new_jobs,
                 sum(each.refused_connections for each in sweeps),
-                [each.place for each in sweeps if each.unsure_end] or "none")
+                [each.place for each in sweeps if each.unsure_end and not each.out_of_time] or "none")
+    if late := [each.place for each in sweeps if each.out_of_time]:
+        logger.warning("linkedin: the pass's %d minutes ran out before %s were read to their end; what they "
+                       "listed so far is stored, and the next run reads them back to their last full read",
+                       PASS_BUDGET_SECONDS // 60, late)
     if truncated := [each.place for each in sweeps if each.truncated]:
-        logger.warning("linkedin: the sweep of %s reached LinkedIn's 1,000th job, so the oldest of its "
-                       "window went unread", truncated)
+        logger.warning("linkedin: the sweep of %s reached LinkedIn's 1,000th job, so the rest of its window, "
+                       "jobs of any age, went unread", truncated)
 
 
 def _ingest(corpus: CorpusRepository, links) -> int:

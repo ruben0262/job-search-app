@@ -14,6 +14,56 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-13 — Every LinkedIn job kept: a refused first page, a long stoppage and an overlong pass lost them
+
+The owner found LinkedIn jobs missing in production: MET Group's "Python Developer" in Budapest (4488208161),
+and the LEGO Group's engineering jobs in Nyíregyháza. They asked whether every job in every town of a country is
+pulled every 15 minutes.
+
+**The method holds.** Measured from the laptop, direct (95 requests): Hungary's one no-word list for the 3 hours
+to 13:32 UTC held 161 jobs, and 156 of the 159 that nine city lists (Nyíregyháza among them) and five word searches
+showed; two of the three were listed after it was read. No card was lost on a page, and no short page came before
+the end. Both examples are on the guest list, and their pages read whole. Through the platform's own store,
+describe and match, on a throwaway database with the dev copy of the owner's search, the MET job is listed; the
+LEGO ones are not, by that search's words and its red word "senior". Also measured: `sortBy=DD` is ignored on a
+no-word list (jobs 6 minutes old on its 16th page), and 74 of the 161 had ids a week to months old: LinkedIn
+re-lists old postings as new, and the guest card never says "Reposted".
+
+**Where jobs were lost, all in the sweep (`services/harvester/linkedin.py`), none of it logged:**
+- **A refused first page.** LinkedIn's refusal is the same empty page as a window with no job. After a full page
+  an empty one was asked again, but on the first page it was taken for the end: the country counted as read to its
+  end with nothing in it, and two such runs in a row lost the jobs listed between. A first page refused with 429s
+  or by the proxy went the same way. Now every page is asked again (`EMPTY_RETRIES`), and a country still empty is
+  not stamped, so the next run reaches back to its last full read. It costs up to three requests a run for a
+  country with no new job.
+- **A stoppage longer than 4 hours.** A sweep reached back to its last full read, but at most
+  `source_freshness_hours.linkedin` (4): a longer stoppage, the harvester down or the proxy out, lost every job
+  listed before its last 4 hours. Now it reaches as far as a job is still shown (`freshness.candidate_since`, 31
+  days at the 30-day shelf). The 4 hours stay the first sweep's reach for a newly picked country.
+- **A pass longer than its unit.** `deploy/harvester.service` stops the run at 14 minutes, and a sweep stores
+  nothing until every country is read: a long sweep, as the first after a stoppage would be, was stopped with
+  nothing stored, and the next, reaching further, likewise. `test_schedules` asserted that `PASS_BUDGET_SECONDS`
+  (11 min) fits inside the unit, but nothing kept to it. The sweep now stops reading when it is spent, stores what
+  it read, says which countries it did not finish (WARNING), and the next run reads them back to their last full
+  read.
+
+The 1,000th-job warning said the oldest of a window went unread; LinkedIn's list is in no order of time, so it
+now says jobs of any age.
+
+**Not changed: the describer's give-ups.** Proposed as a third loss (a blank job page, LinkedIn's refusal,
+counted as a failed read, and two of those dropping the job for good) and measured not to be one: the 10 LinkedIn
+jobs the dev copy gave up on, of 18,965, re-read today as whole job pages (~50 KB) with descriptions of 1–198
+characters. None was a refusal. What does drop them is that a whole description under `MIN_DESCRIPTION` (200)
+never sets `described_at`, so no Jobs page shows the job. That is left for the owner.
+
+Tests, each failing before: `test_a_refused_first_page_is_asked_again_and_the_country_read_in_the_same_run` (0 of
+25 stored), `test_a_country_whose_sweep_ended_on_refusals_is_read_further_back_next_time[first page]` (30 minutes
+back, not 45), `test_after_a_stoppage_a_country_is_read_back_to_its_last_full_read_as_far_as_a_job_is_shown` (4
+hours back, not 10¼), and `test_a_pass_out_of_time_stores_what_it_read_and_the_next_run_reads_the_rest` (all 195
+read, not 110). `test_a_region_is_read_as_its_countries_each_once` now lists a job in each country, as an empty
+first page is asked again. Whether production lost the examples this way is for a read-only check on the server:
+it compares what was stored against the 164 Hungarian ids measured above.
+
 ## 2026-11-13 — A free account's Jobs page could never fill; one answer to "which jobs are theirs"
 
 The owner made a free account (developer, java, python; the UK and Hungary) and its Jobs page said "0 jobs match

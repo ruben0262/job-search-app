@@ -11,7 +11,8 @@ PLATFORM_TICK_MIN = 15
 
 # How fresh a posting must be, per source, in hours.
 DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
-    # The furthest a sweep of a place reaches back: a place nobody has swept yet, or one not swept since
+    # How far back the first sweep of a place reaches. After that a sweep reaches back to the place's last
+    # full read, however long ago, as far as a job is still shown
     # (`services.harvester.linkedin.sweep_window`).
     "linkedin": 4,
     "indeed": 6,
