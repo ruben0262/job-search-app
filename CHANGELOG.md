@@ -14,6 +14,42 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-13 — Membership asks as buttons; the upgrade page goes Free to Member and back until touched
+
+The owner asked for the membership's calls to action to be buttons rather than links in a sentence ("that looks
+quite unprofessional on a site"), and for the upgrade page's animation to keep going, slower, switching back to
+Free "to show differences constantly", and to stop when the person interrupts it.
+
+**Buttons, not links:**
+- **The Jobs page's banners** carry a small button: "Become a member" on the free plan's banner, and the fix on the
+  alert banners. The banner's words take the room, so on a laptop the button sits at the right; on a phone it goes
+  under the words. The stylesheet already said a banner "carries the button that fixes what it says"; the markup
+  had a plain link.
+- **"Alerts come with a membership"** (Settings, and onboarding's last step) has a quiet, outlined button. A
+  purple one was as loud as onboarding's own "See my jobs", and a page has one main button.
+- The toast after a Make button and Settings' membership card were buttons already.
+
+**The upgrade page loops:**
+- **Free:** nothing ticked, words grey.
+- **Member:** the switch slides over, then each thing a membership adds is ticked in turn, half a second apart.
+- **Then** 3.5 s to read them, and back to Free (2.2 s); about 9 s a round with five lines.
+- **It stops** on Member, ticked, at the first tap or key on the page, or when focus moves into Stripe's form. A
+  tap on either side of the switch shows that side and stays there.
+- **With less motion asked for,** it is Member, ticked, from the start, and never moves.
+- **One clock:** the page's constants (`TICK_FIRST_MS`, `TICK_MS`) give each line its delay as `--delay`, so the
+  stylesheet and the loop's timer cannot drift apart. The once-only keyframes are gone; the switch and the ticks
+  are transitions between the `free` and `member` states.
+
+**Found while checking:** the "Free" label never turned bright on Free. The switch's first child is its thumb,
+so `span:first-child` matched nothing; `span:first-of-type` does.
+
+**Checked** in light and dark, at 390 and 1280 px: Jobs, Settings, onboarding's last step and the upgrade page
+through a round. The browser suite's `FAULTS` check found nothing off the screen or overlapping.
+
+**Tests:** the free-account browser test now waits for Member, then Free again. It taps the page and finds Member
+still there 4 s later, taps "Free" and finds Free, and with reduced motion finds Member from the start and still
+there 3 s later. Against the old page it fails at the first of these.
+
 ## 2026-11-12, late night — Every new page checked light and on a phone; an admin named once; the subscriptions table a row a line
 
 The owner asked: "lets make sure light mode suits all the new additions on all the pages, and that it all fits

@@ -2,7 +2,7 @@
  * page. Where the jobs page's banner, a Make button and Settings send a free account. Somebody whose payment
  * failed is sent on to Stripe's portal to pay it instead, since their membership is still there. A page of its
  * own, laid out as the plan page's checkout is, with the way back at its top. */
-import type { CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 import { api, type Membership } from "../api";
 import { useKept } from "../kept";
@@ -11,6 +11,50 @@ import { MEMBERSHIP, StripeCheckout, openPortal, price, standing } from "../memb
 import { ThemeToggle } from "../theme";
 import { Error, useAction } from "../ui";
 import { Brand } from "../wheel";
+
+/** Free to member, shown over and over (owner, 2026-11-13: "switch back to free to show differences constantly"):
+ * Free with nothing ticked, then Member with each thing it adds ticked in turn, a while to read them, and back.
+ * It rests on Member once they touch the page or step into Stripe's form ("if the user interrupts it stops"),
+ * or from the start when they ask for less motion. A tap on either side of the switch shows that side. */
+const TICK_FIRST_MS = 600;
+const TICK_MS = 500;
+const FREE_MS = 2200;
+const READ_MS = 3500;
+
+function useSwitching(count: number): ["free" | "member", (side: "free" | "member") => void] {
+  const [still] = useState(() => matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const [on, setOn] = useState<"free" | "member">(still ? "member" : "free");
+  const [touched, setTouched] = useState(still);
+  useEffect(() => {
+    if (touched) return;
+    const timer = window.setTimeout(() => setOn(on === "free" ? "member" : "free"),
+      on === "free" ? FREE_MS : TICK_FIRST_MS + count * TICK_MS + READ_MS);
+    return () => window.clearTimeout(timer);
+  }, [on, touched, count]);
+  useEffect(() => {
+    if (touched) return;
+    const stop = () => {
+      setTouched(true);
+      setOn("member");
+    };
+    // A tap in Stripe's form is not this page's: it shows as the page losing focus to Stripe's frame.
+    const left = () => {
+      if (document.activeElement instanceof HTMLIFrameElement) stop();
+    };
+    window.addEventListener("pointerdown", stop);
+    window.addEventListener("keydown", stop);
+    window.addEventListener("blur", left);
+    return () => {
+      window.removeEventListener("pointerdown", stop);
+      window.removeEventListener("keydown", stop);
+      window.removeEventListener("blur", left);
+    };
+  }, [touched]);
+  return [on, (side) => {
+    setTouched(true);
+    setOn(side);
+  }];
+}
 
 /** Back to the page they came from, or to their jobs when this page was opened on its own. */
 function back(): void {
@@ -31,6 +75,7 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
   };
   // A payment owed, or paused: the membership is still there, and is settled at Stripe.
   const owed = m?.status === "past_due" || m?.status === "unpaid";
+  const [on, show] = useSwitching(pricing.data?.cards.member.benefits.length ?? 0);
 
   return (
     <>
@@ -62,9 +107,9 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
           ) : (
             <>
               <h1>Become a member</h1>
-              {/* Free to member, shown: the switch slides over, then each thing it adds is ticked in turn
-                  (owner, 2026-11-12: "see the benefits being ticked"). */}
-              <div className="upgrade-switch" aria-hidden="true"><i /><span>Free</span><span>Member</span></div>
+              <div className={`upgrade-switch ${on}`} aria-hidden="true">
+                <i /><span onClick={() => show("free")}>Free</span><span onClick={() => show("member")}>Member</span>
+              </div>
               {m.plan ? (
                 <p className="plan-price">
                   {price(m.plan)}{m.trial_days ? <span>, after {m.trial_days} days free</span> : null}
@@ -75,9 +120,9 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
                   : "Paid securely through Stripe. Cancel any time."}
               </p>
               {pricing.data ? (
-                <ul className="adds">
+                <ul className={`adds ${on}`}>
                   {pricing.data.cards.member.benefits.map((line, i) => (
-                    <li key={line} style={{ "--i": i } as CSSProperties}>
+                    <li key={line} style={{ "--delay": `${TICK_FIRST_MS + i * TICK_MS}ms` } as CSSProperties}>
                       <svg viewBox="0 0 20 20" aria-hidden="true">
                         <circle cx="10" cy="10" r="10" /><path d="M6 10.4l2.6 2.6 5.6-5.6" pathLength={1} />
                       </svg>

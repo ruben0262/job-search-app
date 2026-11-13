@@ -1508,6 +1508,23 @@ def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_wh
         notice.get_by_role("link", name="Become a member").click()
         expect(page.get_by_role("heading", name="Become a member")).to_be_visible()
         expect(page.get_by_text("Payments aren't set up yet.")).to_be_visible()
+        # Free, then Member with what it adds ticked, and back to Free, over and over until they touch the
+        # page, when it rests on Member; a tap on a side of the switch shows that side (owner, 2026-11-13).
+        switch = page.locator(".upgrade-switch")
+        expect(switch).to_have_class(re.compile(r"\bmember\b"), timeout=5000)
+        expect(switch).to_have_class(re.compile(r"\bfree\b"), timeout=12000)
+        page.get_by_role("heading", name="Become a member").click()
+        expect(switch).to_have_class(re.compile(r"\bmember\b"))
+        page.wait_for_timeout(4000)
+        expect(switch).to_have_class(re.compile(r"\bmember\b"))
+        switch.get_by_text("Free").click()
+        expect(switch).to_have_class(re.compile(r"\bfree\b"))
+        # Less motion asked for: Member, ticked, from the start, and still.
+        page.emulate_media(reduced_motion="reduce")
+        page.reload()
+        expect(switch).to_have_class(re.compile(r"\bmember\b"))
+        page.wait_for_timeout(3000)
+        expect(switch).to_have_class(re.compile(r"\bmember\b"))
         # The way back at the top, to the page they came from (owner, 2026-11-12), not a link at the foot.
         page.get_by_role("button", name="← Back").click()
         expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()

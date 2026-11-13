@@ -204,12 +204,14 @@ export function PushButton() {
 
 /** Every channel, each with where it stands. */
 /** Where the alerts are, for an account without a membership: they come with one (owner, 2026-11-12), and a
- * channel set up without it would wait in silence, with nothing to say why. */
+ * channel set up without it would wait in silence, with nothing to say why. A button, not a link in the sentence
+ * (owner, 2026-11-13), and a quiet one: it sits under the page's own main button, as on onboarding's last step. */
 export function AlertsForMembers() {
   return (
-    <p className="small">
-      Alerts come with a membership. <a href="#/upgrade">Become a member</a>
-    </p>
+    <div className="row">
+      <span className="small">Alerts come with a membership.</span>
+      <a className="button secondary small" href="#/upgrade">Become a member</a>
+    </div>
   );
 }
 

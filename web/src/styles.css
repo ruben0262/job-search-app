@@ -603,6 +603,10 @@ button[disabled] {
   font-size: 0.9375rem;
 }
 
+.banner > span:first-child {
+  flex: 1 1 16rem;
+}
+
 .banner.error {
   border-left-color: var(--danger);
   color: var(--danger);
@@ -789,7 +793,6 @@ button[disabled] {
 }
 
 .adds circle {
-  fill: rgba(var(--accent-rgb), 0.2);
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -803,9 +806,10 @@ button[disabled] {
   stroke-dasharray: 1;
 }
 
-/* Free to member, shown (owner, 2026-11-12): the switch slides from Free to Member, then each thing a membership
-   adds is ticked in turn, its words lighting as its tick is drawn. Each rests at its end, so with less motion
-   asked for (every animation off) it is all there at once. */
+/* Free to member, shown over and over (owner, 2026-11-13): `UpgradePage` swaps `free` and `member` on the switch
+   and the list. To Member the thumb slides over and each thing a membership adds is ticked in turn, at the
+   `--delay` the page gives it, its words lighting as its tick is drawn; to Free it all goes grey at once. With
+   less motion asked for (every transition off) it rests on Member. */
 .upgrade-switch {
   position: relative;
   display: grid;
@@ -824,12 +828,16 @@ button[disabled] {
   color: var(--dim);
   font-weight: 600;
   text-align: center;
-  animation: switch-free 0.4s var(--ease) 0.7s both;
+  cursor: pointer;
+  transition: color 0.4s var(--ease) 0.2s;
 }
 
-.upgrade-switch span:last-child {
+.upgrade-switch.free span:first-of-type {
+  color: var(--ink);
+}
+
+.upgrade-switch.member span:last-child {
   color: var(--accent-ink);
-  animation-name: switch-member;
 }
 
 .upgrade-switch i {
@@ -837,61 +845,46 @@ button[disabled] {
   inset: 0.3rem auto 0.3rem 0.3rem;
   width: calc(50% - 0.3rem);
   border-radius: 999px;
+  background: rgba(var(--ink-rgb), 0.16);
+  transition: translate 0.9s var(--spring), background-color 0.5s var(--ease), box-shadow 0.5s var(--ease);
+}
+
+.upgrade-switch.member i {
+  translate: 100% 0;
   background: var(--accent);
   box-shadow: 0 8px 24px -8px rgba(var(--accent-rgb), 0.9);
-  translate: 100% 0;
-  animation: switch-thumb 0.9s var(--spring) 0.5s both;
-}
-
-@keyframes switch-thumb {
-  from {
-    translate: 0 0;
-    background: rgba(var(--ink-rgb), 0.16);
-    box-shadow: none;
-  }
-}
-
-@keyframes switch-free {
-  from {
-    color: var(--ink);
-  }
-}
-
-@keyframes switch-member {
-  from {
-    color: var(--dim);
-  }
 }
 
 .adds li {
-  animation: adds-words 0.4s var(--ease) calc(1.3s + var(--i, 0) * 0.35s) both;
+  color: var(--dim);
+  transition: color 0.4s var(--ease);
 }
 
 .adds circle {
-  animation: adds-circle 0.5s var(--spring) calc(1.3s + var(--i, 0) * 0.35s) both;
+  fill: rgba(var(--ink-rgb), 0.08);
+  scale: 0.6;
+  transition: fill 0.5s var(--ease), scale 0.5s var(--spring);
 }
 
 .adds path {
-  animation: adds-tick 0.35s var(--out) calc(1.45s + var(--i, 0) * 0.35s) both;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 0.35s var(--out);
 }
 
-@keyframes adds-words {
-  from {
-    color: var(--dim);
-  }
+.adds.member li {
+  color: var(--ink);
+  transition-delay: var(--delay);
 }
 
-@keyframes adds-circle {
-  from {
-    fill: rgba(var(--ink-rgb), 0.08);
-    scale: 0.6;
-  }
+.adds.member circle {
+  fill: rgba(var(--accent-rgb), 0.2);
+  scale: 1;
+  transition-delay: var(--delay);
 }
 
-@keyframes adds-tick {
-  from {
-    stroke-dashoffset: 1;
-  }
+.adds.member path {
+  stroke-dashoffset: 0;
+  transition-delay: calc(var(--delay) + 0.15s);
 }
 
 /* A member, or a payment to settle at Stripe: the words and the one button, centred. */
