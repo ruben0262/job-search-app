@@ -323,6 +323,40 @@ def test_the_operator_sets_how_far_behind_a_free_account_is(db, http):
         "CVs, cover letters and alerts come with a membership."
 
 
+def test_a_shelf_no_longer_than_the_free_wait_is_refused(db, http):
+    """A free account sees a job from `free_delay_hours` until it leaves everybody's list at the job shelf
+    life, so a shelf no longer than that wait lists nothing for any of them, and nothing said so: the server
+    kept 11-07's week while free accounts waited a week, and a new free account saw "0 jobs" (2026-11-13)."""
+    from libs import settings
+
+    sign_in(http, person(db, email=ADMIN))
+    for key, value in (("job_max_age_hours", 168), ("job_max_age_hours", 96), ("free_delay_hours", 720)):
+        refused = http.put(f"/admin/settings/{key}", json={"value": value})
+        assert refused.status_code == 400, (key, value)
+        assert "Free accounts would see no jobs" in refused.json()["detail"]
+    assert (settings.get(db, "job_max_age_hours"), settings.get(db, "free_delay_hours")) == (720, 168)
+
+    # Either way round, a wait shorter than the shelf is saved, and free accounts see jobs in between.
+    assert http.put("/admin/settings/free_delay_hours", json={"value": 72}).status_code == 200
+    assert http.put("/admin/settings/job_max_age_hours", json={"value": 168}).status_code == 200
+    week_old, older = (insert(db, posting(days)).id for days in (5, 8))
+    sign_in(http, searching(db))
+    assert listed(http) & {week_old, older} == {week_old}
+
+
+def test_admin_counts_a_free_accounts_jobs_as_its_jobs_page_lists_them(db, http):
+    """One answer to "which jobs are theirs": Admin's account page counted a member's list for a free account,
+    so a free list nothing could fill still read as full there. My search's suggestions and the help chat
+    ask the same question (`libs.matching.matching_jobs`)."""
+    new, week_old = (insert(db, posting(days)).id for days in (0.1, 8))
+    free = searching(db)
+    sign_in(http, free)
+    assert listed(http) & {new, week_old} == {week_old}
+
+    sign_in(http, person(db, email=ADMIN))
+    assert http.get(f"/admin/users/{free.id}").json()["usage"]["jobs"] == 1
+
+
 def test_a_new_account_picks_its_plan_first_and_free_asks_for_no_card(db, http):
     """Owner, 2026-11-12: after the email link and before setting up, the plan, "not during the initial
     signup"; free goes on to setting up "without having to give their details", and the trial comes with the

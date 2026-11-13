@@ -371,7 +371,10 @@ export interface paths {
         get?: never;
         /**
          * Write Setting
-         * @description Set one.
+         * @description Set one, unless it would leave every free account's Jobs page empty: a free account sees a job from
+         *     `free_delay_hours` until it leaves everybody's at the job shelf life, so the shelf must be the longer. The
+         *     server kept 11-07's week of shelf while free accounts waited a week, and a new one saw "0 jobs"
+         *     (2026-11-13).
          */
         put: operations["write_setting_admin_settings__key__put"];
         post?: never;

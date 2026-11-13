@@ -14,6 +14,46 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-13 — A free account's Jobs page could never fill; one answer to "which jobs are theirs"
+
+The owner made a free account (developer, java, python; the UK and Hungary) and its Jobs page said "0 jobs match
+your words" a week on, under "You see each job 7 days after members do. Jobs stay here for 7 days."
+
+**Why it was empty: two settings, not the corpus.** A free account sees a job once it is `free_delay_hours` (168)
+old, until it leaves everybody's list at the job shelf life. The server still holds the 168 hours the owner saved
+in Admin on 2026-11-07, which overrides 11-12's new default of 720, because a default only changes unsaved
+values. The shelf counts from posting and the wait from finding, and a job is posted before it is found, so a
+7-day shelf and a 7-day wait leave nothing. Measured on the dev copy (34,093 postings, 22,150 of them read more
+than 7 days ago), for the same free account with the shelf read as each value:
+
+| Shelf | Free account | Member |
+|---|---|---|
+| 7 days | **0** | 1,355 |
+| 14 days | 1,219 | 4,645 |
+| 30 days (the default) | 1,222 | 4,660 |
+
+**Admin refuses it now.** `PUT /admin/settings/{job_max_age_hours,free_delay_hours}` answers 400, "Free accounts
+would see no jobs…", when the wait would be as long as the shelf or longer, from either select. This applies
+only to the next save, so **the server's saved shelf still has to be set to 30 days in Admin → Settings**: the
+owner's step.
+
+**One answer to which jobs are a free account's.** The Jobs page applied the wait itself and passed it in.
+Three other callers didn't, and counted a member's list instead:
+- **My search's suggestions** said "In 108 of the 1237 jobs your words find" beside a Jobs page of 0, quoting
+  titles the account was not to see yet.
+- **The help chat** answered "why is this job on my list" from a member's list.
+- **Admin's account page** counted 1,489 jobs for the dev copy's free account against its list's 1,222, so it
+  could not have shown that the list was empty.
+
+`libs.matching.matching_jobs` now asks `libs.membership.jobs_as_of` itself, and the `as_of` parameter is gone.
+That is one extra lookup per match, 0.4 ms. Alerts were already members-only (`libs.queue.queue`).
+
+Tests: `test_a_shelf_no_longer_than_the_free_wait_is_refused` and
+`test_admin_counts_a_free_accounts_jobs_as_its_jobs_page_lists_them` (both failed before: 200, and 2 ≠ 1).
+`test_linkedin_gate`'s accounts are members, as conftest's `user` has been since memberships. They were
+free and so a week behind. `test_matching`'s read count watches the corpus's questions only, not the
+membership lookup on `users`.
+
 ## 2026-11-13 — Membership asks as buttons; the upgrade page goes Free to Member and back until touched
 
 The owner asked for the membership's calls to action to be buttons rather than links in a sentence ("that looks

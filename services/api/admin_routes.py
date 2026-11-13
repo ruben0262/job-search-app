@@ -64,6 +64,7 @@ from libs.tenant import applications
 from libs.tenant.repository import TenantRepository
 from services.api.billing_routes import Plan, _stripe_answers, end_membership, hold_billing
 from services.api.billing_routes import plan as billing_plan
+from services.api.dashboard_routes import _span
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -423,7 +424,17 @@ def read_settings(db: Database = Depends(get_db), admin: User = Depends(require_
 @router.put("/settings/{key}")
 def write_setting(key: str, body: SettingPatch, db: Database = Depends(get_db),
                   admin: User = Depends(require_admin)) -> dict:
-    """Set one."""
+    """Set one, unless it would leave every free account's Jobs page empty: a free account sees a job from
+    `free_delay_hours` until it leaves everybody's at the job shelf life, so the shelf must be the longer. The
+    server kept 11-07's week of shelf while free accounts waited a week, and a new one saw "0 jobs"
+    (2026-11-13)."""
+    if key in ("job_max_age_hours", "free_delay_hours"):
+        shelf, delay = (int(body.value) if name == key else int(all_settings(db)[name])
+                        for name in ("job_max_age_hours", "free_delay_hours"))
+        if delay >= shelf:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=(
+                f"Free accounts would see no jobs: they see each job {_span(delay)} after members do, and "
+                f"jobs leave after {_span(shelf)}. Keep the job shelf life longer than that wait."))
     try:
         put(db, key, body.value, by=admin.email)
     except KeyError as exc:

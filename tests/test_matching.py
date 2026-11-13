@@ -240,7 +240,8 @@ def test_a_match_reads_the_newest_postings_with_the_words_and_never_the_older_on
 
     class Aggregates(monitoring.CommandListener):
         def started(self, event):
-            if event.command_name == "aggregate":
+            # The postings' questions: who is a member (`libs.membership`) is asked of the accounts.
+            if event.command_name == "aggregate" and event.command["aggregate"] == CorpusJob.COLLECTION:
                 asked.append(event.command)
 
         def succeeded(self, event):

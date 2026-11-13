@@ -325,7 +325,7 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     shortest, longest = shelf_life(platform_windows(db))
     cutoff = now() - timedelta(hours=since_hours) if since_hours else None
     # The read reaches as far back as asked, "Any time" being the longest shelf life (`scan_for`).
-    read = their_jobs(db, user, since=cutoff, scan=scan_for(since_hours or longest), as_of=behind)
+    read = their_jobs(db, user, since=cutoff, scan=scan_for(since_hours or longest))
     # The time asked is how the list is shown, so what the filters offer is counted inside it too: "golang 5"
     # beside a list of 2 from the last day disagreed (2026-11-07).
     visible = [match for match in read if cutoff is None or _when(match) >= cutoff]

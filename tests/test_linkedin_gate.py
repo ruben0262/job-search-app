@@ -12,9 +12,11 @@ from services.harvester.governor import linkedin_enabled
 
 
 def _user(db) -> User:
-    """An account searching for "backend engineer", which every job below matches."""
+    """A member searching for "backend engineer", which every job below matches: a free account's list is a
+    week behind (`libs.membership`)."""
     user = insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x",
-                           timezone="Europe/Budapest", status="active", active=True))
+                           subscription_status="active", timezone="Europe/Budapest", status="active",
+                           active=True))
     TenantRepository(db).save_config(user.id, {"sections": [
         {"platform": "all", "keywords": ["backend engineer"]}]}, schema_version=2)
     return user
