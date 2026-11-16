@@ -8,6 +8,7 @@ import re
 import uuid as _uuid
 from collections import Counter
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response, StreamingResponse
@@ -35,7 +36,20 @@ from libs.documents.read import LANGUAGE_NAMES
 from libs.limits import all_for, describe, set_limit
 from libs.llm.accounts import listing as ai_listing
 from libs.matching import green_words, norm, scan_for, their_jobs
-from libs.membership import ONGOING, admin_emails, choosing, is_admin, is_member, members
+from libs.membership import (
+    FREE,
+    MEMBER,
+    ONGOING,
+    STARTER,
+    WAITS,
+    admin_emails,
+    choosing,
+    is_admin,
+    is_member,
+    members,
+    starters,
+    tier,
+)
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
 from libs.ops.countries import RANGES_HOURS, by_country
@@ -146,6 +160,8 @@ class SubscriptionRow(BaseModel):
     id: str
     email: str
     plan: str
+    # The plan their account is on now (`libs.membership.tier`): what the site gives them.
+    tier: Literal["free", "starter", "member"]
     subscription_status: str | None
     trial_ends_at: datetime | None
     period_ends_at: datetime | None
@@ -160,6 +176,8 @@ class Subscriptions(BaseModel):
     accounts: int
     # Members as the site lets them in (`libs.membership.members`): paying, in a trial, free access, admins.
     members: int
+    # Of them, the ones on Starter (`libs.membership.starters`).
+    starters: int
     # Every account once, by `PLAN_KINDS`.
     plans: dict[str, int]
     # Trials that end in the next seven days, and so are about to be charged unless cancelled.
@@ -169,10 +187,10 @@ class Subscriptions(BaseModel):
     # The accounts made in the last 30 days, and how many of them are members now.
     joined_30d: int
     joined_30d_members: int
-    # What paying members bring a month at the membership's price, in its smallest unit and currency: None
-    # without Stripe's price.
+    # What paying accounts bring a month, each at its own plan's price, in the smallest unit of the
+    # membership's currency: None without Stripe's price for every plan somebody pays for.
     monthly: int | None
-    # The membership as Stripe has it, its trial and the free plan's delay (`billing_routes.plan`).
+    # The membership as Stripe has it, and its trial (`billing_routes.plan`).
     plan: Plan | None
     rows: list[SubscriptionRow]
 
@@ -185,7 +203,12 @@ def subscriptions(db: Database = Depends(get_db), admin: User = Depends(require_
     kinds = {user.id: _plan_of(user) for user in users}
     soon, month_ago = now() + timedelta(days=7), now() - timedelta(days=30)
     member_ids = set(db[User.COLLECTION].distinct("_id", members()))
-    price = billing_plan(db)
+    starter_ids = set(db[User.COLLECTION].distinct("_id", starters()))
+    tiers = {user.id: STARTER if user.id in starter_ids else MEMBER if user.id in member_ids else FREE
+             for user in users}
+    price, prices = billing_plan(db), {MEMBER: billing_plan(db), STARTER: billing_plan(db, STARTER)}
+    # Each paying account at its plan's price: Starter's at the membership's overstated what came in.
+    paying = [prices[tiers[user.id]] for user in users if kinds[user.id] == "paying"]
     held = [user for user in users if user.subscription_status is not None or user.free_access_at is not None]
     # Payment failed first, then trials by when they end, then paying, paused and the rest.
     held.sort(key=lambda user: (LISTED.index(kinds[user.id]),
@@ -193,15 +216,15 @@ def subscriptions(db: Database = Depends(get_db), admin: User = Depends(require_
     joined = [user for user in users if user.created_at and user.created_at >= month_ago]
     audit(logger, "admin.subscriptions", user=admin.id)
     return Subscriptions(
-        accounts=len(users), members=len(member_ids),
+        accounts=len(users), members=len(member_ids), starters=len(starter_ids),
         plans={kind: sum(1 for each in kinds.values() if each == kind) for kind in PLAN_KINDS},
         trials_ending=sum(1 for user in users if user.subscription_status == "trialing" and user.trial_ends_at
                           and user.trial_ends_at <= soon),
         cancelling=sum(1 for user in users if user.subscription_status in ONGOING and user.cancels_at),
         joined_30d=len(joined), joined_30d_members=sum(1 for user in joined if user.id in member_ids),
-        monthly=price.amount * sum(1 for kind in kinds.values() if kind == "paying") if price else None,
+        monthly=sum(each.amount for each in paying) if price and all(paying) else None,
         plan=price,
-        rows=[SubscriptionRow(id=str(user.id), email=user.email, plan=kinds[user.id],
+        rows=[SubscriptionRow(id=str(user.id), email=user.email, plan=kinds[user.id], tier=tiers[user.id],
                               subscription_status=user.subscription_status, trial_ends_at=user.trial_ends_at,
                               period_ends_at=user.period_ends_at, cancels_at=user.cancels_at,
                               last_paid_at=user.last_paid_at, last_paid_amount=user.last_paid_amount,
@@ -257,6 +280,8 @@ class AdminAccount(BaseModel):
     last_active_at: datetime | None
     # Their membership, as Stripe said when last asked (`billing_routes.sync`), and an admin's free access.
     member: bool
+    # The plan that makes their account (`libs.membership.tier`): what the site gives them.
+    tier: Literal["free", "starter", "member"]
     free_access_at: datetime | None
     stripe_customer_id: str | None
     subscription_id: str | None
@@ -339,7 +364,7 @@ def user_detail(user_id: _uuid.UUID, db: Database = Depends(get_db),
             active=user.active, is_admin=user.is_admin, telegram=user.telegram_status,
             onboarded=user.onboarding_completed_at is not None, created_at=user.created_at,
             email_verified_at=user.email_verified_at, onboarding_completed_at=user.onboarding_completed_at,
-            last_active_at=user.last_active_at, member=is_member(db, user.id),
+            last_active_at=user.last_active_at, member=is_member(db, user.id), tier=tier(db, user.id),
             free_access_at=user.free_access_at, stripe_customer_id=user.stripe_customer_id,
             subscription_id=user.subscription_id, subscription_status=user.subscription_status,
             plan_chosen_at=user.plan_chosen_at, trial_ends_at=user.trial_ends_at,
@@ -424,17 +449,29 @@ def read_settings(db: Database = Depends(get_db), admin: User = Depends(require_
 @router.put("/settings/{key}")
 def write_setting(key: str, body: SettingPatch, db: Database = Depends(get_db),
                   admin: User = Depends(require_admin)) -> dict:
-    """Set one, unless it would leave every free account's Jobs page empty: a free account sees a job from
-    `free_delay_hours` until it leaves everybody's at the job shelf life, so the shelf must be the longer. The
-    server kept 11-07's week of shelf while free accounts waited a week, and a new one saw "0 jobs"
-    (2026-11-13)."""
-    if key in ("job_max_age_hours", "free_delay_hours"):
-        shelf, delay = (int(body.value) if name == key else int(all_settings(db)[name])
-                        for name in ("job_max_age_hours", "free_delay_hours"))
-        if delay >= shelf:
+    """Set one, unless it would leave a plan's Jobs pages empty or Starter behind Free. An account on a plan
+    that waits (`libs.membership.WAITS`) sees a job from that wait until it leaves everybody's list at the job
+    shelf life, so the shelf must be the longer: the server kept 11-07's week of shelf while free accounts
+    waited a week, and a new one saw "0 jobs" (2026-11-13). Starter has everything Free has, so it never waits
+    the longer. The members' chat is a link people open: a web address, or nothing."""
+    if key in ("job_max_age_hours", *WAITS.values()):
+        stored = all_settings(db)
+        hours = {name: int(body.value if name == key else stored[name])
+                 for name in ("job_max_age_hours", *WAITS.values())}
+        shelf = hours["job_max_age_hours"]
+        for plan, wait in ((plan, hours[name]) for plan, name in WAITS.items()):
+            if wait >= shelf:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=(
+                    f"{plan.title()} accounts would see no jobs: they see each job {_span(wait)} after we "
+                    f"find it, and jobs leave after {_span(shelf)}. Keep the job shelf life longer than that "
+                    "wait."))
+        if hours[WAITS[STARTER]] > hours[WAITS[FREE]]:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=(
-                f"Free accounts would see no jobs: they see each job {_span(delay)} after members do, and "
-                f"jobs leave after {_span(shelf)}. Keep the job shelf life longer than that wait."))
+                f"Starter would see jobs after Free does: {_span(hours[WAITS[STARTER]])} after we find them, "
+                f"against {_span(hours[WAITS[FREE]])}. Keep Starter's wait no longer than Free's."))
+    if key == "members_channel_url" and body.value and not str(body.value).startswith("https://"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail="The members' chat link must be a web address starting with https://")
     try:
         put(db, key, body.value, by=admin.email)
     except KeyError as exc:

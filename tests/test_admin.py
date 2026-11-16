@@ -139,6 +139,34 @@ def test_the_subscriptions_tab_counts_every_account_once_and_lists_the_subscript
     assert detail["plan_chosen_at"] is not None and detail["subscription_id"] is None
 
 
+def test_the_subscriptions_tab_says_which_plan_each_account_is_on_and_prices_each_at_its_own(
+        api, monkeypatch):
+    """Owner, 2026-11-16: Free, Starter and Member. Admin says which plan an account is on, and what the
+    paying ones bring in a month each at its own plan's price: Starter's counted at the membership's would
+    overstate it."""
+    from services.api import admin_routes
+    from services.api.billing_routes import Plan
+
+    http, db, operator, ordinary, sign_in = api
+    sign_in(http, operator)
+    starter = insert(db, User(email="starter@example.com", password_hash="x", status="active",
+                              subscription_status="active", subscription_plan="starter"))
+    lapsed = insert(db, User(email="lapsed@example.com", password_hash="x", status="active",
+                             subscription_status="canceled"))
+    prices = {"member": 499, "starter": 299}
+    monkeypatch.setattr(admin_routes, "billing_plan", lambda db, which="member": Plan(
+        amount=prices[which], currency="gbp", interval="month", interval_count=1, trial_days=7))
+
+    body = http.get("/admin/subscriptions").json()
+
+    assert (body["members"], body["starters"]) == (3, 1), "the admin, `ordinary` and Starter"
+    assert {row["email"]: row["tier"] for row in body["rows"]} == {
+        ADMIN: "member", ordinary.email: "member", starter.email: "starter", lapsed.email: "free"}
+    assert body["monthly"] == 499 + 299, "`ordinary` pays for the membership, and Starter for Starter"
+    assert [http.get(f"/admin/users/{each.id}").json()["user"]["tier"] for each in (starter, lapsed)] == \
+        ["starter", "free"]
+
+
 def test_opening_the_site_is_when_they_were_last_online(api):
     """It moved only when somebody signed in, and a session lasts for weeks: an account used every day
     read as last active a month ago."""

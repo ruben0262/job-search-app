@@ -289,6 +289,15 @@
             "title": "Telegram",
             "type": "string"
           },
+          "tier": {
+            "enum": [
+              "free",
+              "starter",
+              "member"
+            ],
+            "title": "Tier",
+            "type": "string"
+          },
           "trial_ends_at": {
             "anyOf": [
               {
@@ -316,6 +325,7 @@
           "onboarding_completed_at",
           "last_active_at",
           "member",
+          "tier",
           "free_access_at",
           "stripe_customer_id",
           "subscription_id",
@@ -698,30 +708,6 @@
         "title": "AppliedJob",
         "type": "object"
       },
-      "Area": {
-        "description": "One thing a membership gives (`libs.membership.AREAS`), in the words a card says it.",
-        "properties": {
-          "key": {
-            "title": "Key",
-            "type": "string"
-          },
-          "starter": {
-            "title": "Starter",
-            "type": "boolean"
-          },
-          "words": {
-            "title": "Words",
-            "type": "string"
-          }
-        },
-        "required": [
-          "key",
-          "words",
-          "starter"
-        ],
-        "title": "Area",
-        "type": "object"
-      },
       "Asked": {
         "properties": {
           "reply_id": {
@@ -1055,6 +1041,17 @@
       },
       "ContactAddress": {
         "properties": {
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -3066,7 +3063,7 @@
         "type": "object"
       },
       "Plan": {
-        "description": "A plan to pay for: its price as Stripe has it, and the free trial a new member gets; and, for the\nsign-up page's choice, how far behind a member the free plan sees each job (`libs.membership`).",
+        "description": "A plan to pay for: its price as Stripe has it, and the free trial a new member gets.",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -3075,10 +3072,6 @@
           "currency": {
             "title": "Currency",
             "type": "string"
-          },
-          "free_delay_hours": {
-            "title": "Free Delay Hours",
-            "type": "integer"
           },
           "interval": {
             "title": "Interval",
@@ -3098,8 +3091,7 @@
           "currency",
           "interval",
           "interval_count",
-          "trial_days",
-          "free_delay_hours"
+          "trial_days"
         ],
         "title": "Plan",
         "type": "object"
@@ -3129,21 +3121,58 @@
         "title": "PlanDashboard",
         "type": "object"
       },
-      "Pricing": {
+      "PlanLines": {
+        "description": "What a card says of its plan, never typed (`lines_of`).",
         "properties": {
-          "areas": {
+          "gives": {
             "items": {
-              "$ref": "#/components/schemas/Area"
+              "type": "string"
             },
-            "title": "Areas",
+            "title": "Gives",
             "type": "array"
           },
+          "lacks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lacks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "gives",
+          "lacks"
+        ],
+        "title": "PlanLines",
+        "type": "object"
+      },
+      "PlansLines": {
+        "properties": {
+          "free": {
+            "$ref": "#/components/schemas/PlanLines"
+          },
+          "member": {
+            "$ref": "#/components/schemas/PlanLines"
+          },
+          "starter": {
+            "$ref": "#/components/schemas/PlanLines"
+          }
+        },
+        "required": [
+          "free",
+          "starter",
+          "member"
+        ],
+        "title": "PlansLines",
+        "type": "object"
+      },
+      "Pricing": {
+        "properties": {
           "cards": {
             "$ref": "#/components/schemas/PricingCards"
           },
-          "free_delay_hours": {
-            "title": "Free Delay Hours",
-            "type": "integer"
+          "lines": {
+            "$ref": "#/components/schemas/PlansLines"
           },
           "plan": {
             "anyOf": [
@@ -3179,28 +3208,26 @@
         },
         "required": [
           "cards",
+          "lines",
           "trial_days",
-          "free_delay_hours",
           "plan",
           "starter",
-          "was",
-          "areas"
+          "was"
         ],
         "title": "Pricing",
         "type": "object"
       },
       "PricingCard": {
-        "description": "One card's words, each with room for what the card has room for.",
+        "description": "One card's own words, each with room for what the card has room for.",
         "properties": {
-          "benefits": {
+          "also": {
             "items": {
               "maxLength": 120,
               "minLength": 1,
               "type": "string"
             },
             "maxItems": 12,
-            "minItems": 1,
-            "title": "Benefits",
+            "title": "Also",
             "type": "array"
           },
           "button": {
@@ -3214,16 +3241,6 @@
             "maxLength": 40,
             "title": "Highlight",
             "type": "string"
-          },
-          "left_out": {
-            "items": {
-              "maxLength": 120,
-              "minLength": 1,
-              "type": "string"
-            },
-            "maxItems": 12,
-            "title": "Left Out",
-            "type": "array"
           },
           "name": {
             "maxLength": 40,
@@ -3239,8 +3256,7 @@
         },
         "required": [
           "name",
-          "benefits",
-          "left_out",
+          "also",
           "button",
           "note"
         ],
@@ -4162,6 +4178,15 @@
             ],
             "title": "Subscription Status"
           },
+          "tier": {
+            "enum": [
+              "free",
+              "starter",
+              "member"
+            ],
+            "title": "Tier",
+            "type": "string"
+          },
           "trial_ends_at": {
             "anyOf": [
               {
@@ -4179,6 +4204,7 @@
           "id",
           "email",
           "plan",
+          "tier",
           "subscription_status",
           "trial_ends_at",
           "period_ends_at",
@@ -4248,6 +4274,10 @@
             "title": "Rows",
             "type": "array"
           },
+          "starters": {
+            "title": "Starters",
+            "type": "integer"
+          },
           "trials_ending": {
             "title": "Trials Ending",
             "type": "integer"
@@ -4256,6 +4286,7 @@
         "required": [
           "accounts",
           "members",
+          "starters",
           "plans",
           "trials_ending",
           "cancelling",
@@ -4984,7 +5015,7 @@
         ]
       },
       "patch": {
-        "description": "Settings the user may change directly. Only what is named is touched.",
+        "description": "Settings the user may change directly. Only what is named is touched. The daily email is an alert, so\nit is switched on only for a plan with alerts; off, for anybody.",
         "operationId": "patch_account_account_patch",
         "requestBody": {
           "content": {
@@ -5766,7 +5797,7 @@
     },
     "/admin/settings/{key}": {
       "put": {
-        "description": "Set one, unless it would leave every free account's Jobs page empty: a free account sees a job from\n`free_delay_hours` until it leaves everybody's at the job shelf life, so the shelf must be the longer. The\nserver kept 11-07's week of shelf while free accounts waited a week, and a new one saw \"0 jobs\"\n(2026-11-13).",
+        "description": "Set one, unless it would leave a plan's Jobs pages empty or Starter behind Free. An account on a plan\nthat waits (`libs.membership.WAITS`) sees a job from that wait until it leaves everybody's list at the job\nshelf life, so the shelf must be the longer: the server kept 11-07's week of shelf while free accounts\nwaited a week, and a new one saw \"0 jobs\" (2026-11-13). Starter has everything Free has, so it never waits\nthe longer. The members' chat is a link people open: a web address, or nothing.",
         "operationId": "write_setting_admin_settings__key__put",
         "parameters": [
           {
@@ -7039,7 +7070,7 @@
     },
     "/contact": {
       "get": {
-        "description": "Where the form's messages go, for anyone who would rather use their own email app.",
+        "description": "Where the form's messages go, for anyone who would rather use their own email app, and the members'\nchat, for whoever has it.",
         "operationId": "contact_address_contact_get",
         "responses": {
           "200": {
@@ -7196,7 +7227,7 @@
     },
     "/documents/build": {
       "post": {
-        "description": "Queue one CV or cover letter for one job.\n\nAsked again while it waits, it is the same build, answered before any check: a second click must\nnot be refused for the allowance its own first click used. A free account makes none (owner,\n2026-11-12): 402, and the bell says where the membership is.",
+        "description": "Queue one CV or cover letter for one job.\n\nAsked again while it waits, it is the same build, answered before any check: a second click must\nnot be refused for the allowance its own first click used. Only a membership makes them (owner,\n2026-11-12 and 2026-11-16: not Free, not Starter): 402, and the bell says where the membership is.",
         "operationId": "build_document_documents_build_post",
         "requestBody": {
           "content": {

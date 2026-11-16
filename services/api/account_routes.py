@@ -18,7 +18,7 @@ from libs.legal import DISCLOSURE_VERSION, disclosure, has_consented
 from libs.obs import audit
 from services.api.auth_routes import _clear_session_cookies
 from services.api.billing_routes import _stripe_answers, end_membership
-from services.api.deps import current_user, get_db
+from services.api.deps import current_user, get_db, with_alerts
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["account"])
@@ -168,7 +168,10 @@ class AccountPatch(BaseModel):
 @router.patch("/account")
 def patch_account(body: AccountPatch, db: Database = Depends(get_db),
                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Settings the user may change directly. Only what is named is touched."""
+    """Settings the user may change directly. Only what is named is touched. The daily email is an alert, so
+    it is switched on only for a plan with alerts; off, for anybody."""
+    if body.email_alerts:
+        with_alerts(db, user_id)
     if body.active is not None:
         _set(db, user_id, active=body.active)
         audit(logger, "account.delivery_toggled", user=user_id, active=body.active)

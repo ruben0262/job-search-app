@@ -190,7 +190,7 @@ export function App() {
           ) : section === "words" ? (
             <WordsPage />
           ) : section === "documents" ? (
-            <DocumentsPage />
+            <DocumentsPage makes={dashboard.areas.includes("cvs")} />
           ) : section === "settings" ? (
             <SettingsPage dashboard={dashboard} onChanged={reload} onSignedOut={reload} />
           ) : section === "admin" ? (

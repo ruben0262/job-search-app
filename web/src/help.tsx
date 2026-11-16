@@ -12,18 +12,19 @@ const ANSWERS: [string, string][] = [
    "A job shows up when one of your green words is in it, and none of your red words is in its " +
    "title or company. It also has to be in a place, language and way of working you picked. You " +
    "can change all of them in My search."],
+  // What a plan gives is `libs.membership.PLANS`: said here where people look, as the cards say it.
   ["How do I make a CV or a cover letter?",
-   "Link your own AI account in Settings: sign in to Claude, ChatGPT or Google Gemini, or add an API key. " +
-   "Upload your CV in My documents, and a cover letter for cover letters. Then tap “Make my CV” or “Make " +
-   "my cover letter” under any job. It is written with that account and downloads as a PDF. If something " +
-   "is missing, the button tells you what."],
+   "CVs and cover letters come with a membership. Link your own AI account in Settings: sign in to Claude, " +
+   "ChatGPT or Google Gemini, or add an API key. Upload your CV in My documents, and a cover letter for cover " +
+   "letters. Then tap “Make my CV” or “Make my cover letter” under any job. It is written with that account " +
+   "and downloads as a PDF. If something is missing, the button tells you what."],
   // Nobody applies through the site (owner, 2026-11-06): it says so where people look first.
   ["Can I apply to jobs here?",
    "No, you apply on the job's own site, and we make that quick. Tap “Apply on …” " +
    "under the job: it opens on the site it was posted on, and you apply there. Then tap “Mark as applied”."],
   ["How do I get new jobs on my phone?",
-   "In Settings, turn on notifications in this browser, or connect Telegram. Both are optional, and " +
-   "your Jobs page fills up either way."],
+   "Alerts come with Starter and the membership. In Settings, turn on notifications in this browser, connect " +
+   "Telegram, or get one email each morning. All are optional, and your Jobs page fills up either way."],
   ["How do I stop seeing a job?",
    "Tap “Skip”, then “Skip it”. It leaves your Jobs page and does not come back, even after a refresh."],
   ["Where are the jobs I applied to?",
@@ -54,9 +55,10 @@ function HelpAndContact() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [sent, setSent] = useState<Receipt | null>(null);
-  const [address, setAddress] = useState<string | null>(null);
+  // Where to write, and the members' chat for an account whose plan has it (`team_access`), once it is set.
+  const [reach, setReach] = useState<Schema<"ContactAddress"> | null>(null);
   useEffect(() => {
-    api.get<Schema<"ContactAddress">>("/contact").then((body) => setAddress(body.email)).catch(() => undefined);
+    api.get<Schema<"ContactAddress">>("/contact").then(setReach).catch(() => undefined);
   }, []);
   const send = useAction(async () => {
     setSent(await api.post<Receipt>("/contact", { subject: subject.trim(), message: message.trim() }));
@@ -78,6 +80,24 @@ function HelpAndContact() {
           </details>
         ))}
       </section>
+
+      {/* A member's way straight to the people who build the site (owner, 2026-11-16): the chat the owner runs. */}
+      {reach?.channel ? (
+        <section className="contact team">
+          <div className="contact-head">
+            <span className="contact-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M4.5 5.5h15v10h-9l-4.5 3.8v-3.8h-1.5z" /></svg>
+            </span>
+            <div>
+              <h3>Talk to the team</h3>
+              <p>Your members' chat with the people who build Mahoraga.</p>
+            </div>
+          </div>
+          <a className="button main contact-send" href={reach.channel} target="_blank" rel="noreferrer">
+            Open the members' chat
+          </a>
+        </section>
+      ) : null}
 
       {/* Its own card: a person at the other end, said so, and a receipt once it is sent. */}
       <section className="contact">
@@ -120,10 +140,10 @@ function HelpAndContact() {
           </form>
         )}
       </section>
-      {address ? (
+      {reach ? (
         <p className="contact-mail">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16v11H4zM4.5 7l7.5 6 7.5-6" /></svg>
-          <span>Prefer your own email app? Write to <a href={`mailto:${address}`}>{address}</a>.</span>
+          <span>Prefer your own email app? Write to <a href={`mailto:${reach.email}`}>{reach.email}</a>.</span>
         </p>
       ) : null}
     </>

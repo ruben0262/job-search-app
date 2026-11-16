@@ -12,7 +12,7 @@ from pymongo.database import Database
 from libs.db import now
 from libs.db.models import PushSubscription
 from libs.obs import audit
-from services.api.deps import current_user, get_db
+from services.api.deps import current_user, get_db, with_alerts
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/push", tags=["push"])
@@ -56,7 +56,7 @@ def key() -> PushKey:
 
 @router.post("/subscribe")
 def subscribe(body: PushSubscriptionBody, db: Database = Depends(get_db),
-              user_id: _uuid.UUID = Depends(current_user)) -> PushStatus:
+              user_id: _uuid.UUID = Depends(with_alerts)) -> PushStatus:
     """Remember this browser. Subscribing it again replaces its row, whichever account it was on."""
     db[PushSubscription.COLLECTION].update_one(
         {"endpoint": body.endpoint},

@@ -302,27 +302,31 @@ def test_the_phone_goes_through_the_site_by_itself_until_a_visitor_touches_it(si
 
 
 def test_the_landing_page_offers_free_and_member_and_an_admin_words_both(site, capsys):
-    """Two cards: Free, a week behind, with what it leaves out crossed out and read out as not included, and
-    no card asked for; and Member, its free days on a tab, which signs up for the membership. The price is
-    Stripe's: none here, where Stripe is not set up, rather than a wrong one. An admin changes the words in
-    Settings, watching them as a visitor will see them, and the landing page says them, on the smallest phone
-    too (owner, 2026-11-12)."""
+    """Two cards while Starter has no price: Free, each job a week after it is found, with every paid thing
+    crossed out and read out as not included, and no card asked for; and Member, everything, its free days on
+    a tab, which signs up for the membership. The price is Stripe's: none here, where Stripe is not set up,
+    rather than a wrong one. An admin changes the card's own words, watching them as a visitor will see them,
+    and the landing page says them, on the smallest phone too (owner, 2026-11-12 and 2026-11-16)."""
     from libs.db import database
+    from libs.membership import AREAS
     from libs.settings import DEFAULT_PRICING_CARDS
 
     base, email, _ = site
     free, member = DEFAULT_PRICING_CARDS["free"], DEFAULT_PRICING_CARDS["member"]
+    paid = [AREAS[area] for area in ("alerts", "match_scores", "cvs", "covers", "add_job")]
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
         page.goto(f"{base}/#/")
         cards = page.locator(".price-card")
         expect(cards.locator(".price-name")).to_have_text([free["name"], member["name"]])
-        expect(cards.first.locator(".price-after")).to_have_text("Jobs 7 days after members see them")
+        expect(cards.first.locator(".price-list li:not(.out)")).to_have_text(
+            ["See every new job 7 days after we find it", *free["also"]])
         expect(cards.first.locator(".price-list li.out")).to_have_text(
-            [f"Not included: {line}" for line in free["left_out"]])
+            [f"Not included: {line}" for line in (AREAS["early_jobs"], *paid)])
         expect(cards.last.locator(".price-badge")).to_have_text("7 days free")
-        expect(cards.last.locator(".price-list li")).to_have_text(member["benefits"])
+        expect(cards.last.locator(".price-list li")).to_have_text(
+            [f"{AREAS['early_jobs']}, 7 days before Free accounts do", *paid, *member["also"]])
         expect(page.locator(".price-amount")).to_have_count(0)
         expect(cards.first.get_by_role("link", name=free["button"])).to_have_attribute("href", "#/signup")
         expect(cards.last.get_by_role("link", name=member["button"])).to_have_attribute(
@@ -337,7 +341,7 @@ def test_the_landing_page_offers_free_and_member_and_an_admin_words_both(site, c
         editor.get_by_role("button", name="Member", exact=True).click()
         editor.get_by_label("Name", exact=True).fill("Mahoraga Plus")
         editor.get_by_role("button", name="Add a line").first.click()
-        editor.get_by_label(f"Included, line {len(member['benefits']) + 1}").fill("Help from a person")
+        editor.get_by_label(f"Also included, line {len(member['also']) + 1}").fill("Help from a person")
         # The preview follows the typing, before anything is saved.
         expect(editor.locator(".price-name").last).to_have_text("Mahoraga Plus")
         editor.get_by_role("button", name="Save the cards").click()
@@ -844,8 +848,7 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         # Help is the "?" beside the bell, over whatever page is open, and no longer in Settings.
         tabs.filter(has_text="Settings").click()
         expect(page.get_by_role("heading", name="Help and contact")).to_have_count(0)
-        page.get_by_role("button", name="Help and contact").click()
-        expect(page.get_by_role("dialog", name="Help and contact")).to_be_visible()
+        _help_with_the_members_chat(page)
         page.get_by_text("How are my jobs chosen?").click()
         expect(page.get_by_text("A job shows up when one of your green words is in it")).to_be_visible()
         page.get_by_label("Subject").fill("My CV shows the wrong city")
@@ -1129,6 +1132,19 @@ def test_an_ai_account_linked_in_settings_is_what_the_make_buttons_were_missing(
         expect(accounts.get_by_text("Turning off…")).to_be_visible()
         expect(rows).to_have_text([re.compile("^Gemini API key.*Off"), re.compile("^Claude API key.*Off")])
         browser.close()
+
+
+def _help_with_the_members_chat(page) -> None:
+    """Help, the "?" beside the bell, over the page; for a member, with the members' chat on it once the owner
+    has given its link (owner, 2026-11-16)."""
+    from libs import settings
+    from libs.db import database
+
+    chat = "https://chat.example.com/mahoraga-members"
+    settings.put(database(), "members_channel_url", chat)
+    page.get_by_role("button", name="Help and contact").click()
+    expect(page.get_by_role("dialog", name="Help and contact")).to_be_visible()
+    expect(page.get_by_role("link", name="Open the members' chat")).to_have_attribute("href", chat)
 
 
 def _withdraw(page) -> None:
@@ -1534,8 +1550,8 @@ def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_wh
 
     base, email, _ = site
     monkeypatch.setattr(billing_routes, "plan", lambda db, which="member": billing_routes.Plan(
-        amount=499, currency="gbp", interval="month", interval_count=1, trial_days=7,
-        free_delay_hours=168) if which == "member" else None)
+        amount=499, currency="gbp", interval="month", interval_count=1, trial_days=7)
+        if which == "member" else None)
     week_old = now() - timedelta(days=8)
     insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="test", company="Acme",
                          title="Backend Engineer, a week ago", location="Berlin, Germany", country="DE",
@@ -1549,8 +1565,9 @@ def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_wh
 
         # The week-old job, and not the three found today.
         expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()
-        expect(page.get_by_text("You see jobs 7 days after members see them.")).to_be_visible()
-        expect(page.get_by_text("You see each job 7 days after members do. Jobs stay here for 30 days.")) \
+        expect(page.get_by_text("Members see it the moment we find it, and apply among the first.")) \
+            .to_be_visible()
+        expect(page.get_by_text("You see each job 7 days after we find it. Jobs stay here for 30 days.")) \
             .to_be_visible()
         expect(page.get_by_label("Posted").locator("option")).to_have_text(["Any time", "Last 2 weeks"])
         page.get_by_role("button", name="Make my CV").click()
@@ -1580,6 +1597,8 @@ def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_wh
         page.get_by_role("button", name="← Back").click()
         expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()
 
+        page.goto(f"{base}/#/documents")
+        expect(page.get_by_text("CVs and cover letters for each job come with a membership.")).to_be_visible()
         page.goto(f"{base}/#/settings")
         expect(page.get_by_text("Alerts come with a membership.")).to_be_visible()
         # And so does bringing a job in by its link (owner, 2026-11-16): the tab says so, with the way there.
@@ -1605,7 +1624,7 @@ def test_the_plan_is_picked_after_the_email_link_on_the_landing_pages_cards(site
     # 18.99 with the saving worked out (owner, 2026-11-16).
     monkeypatch.setattr(billing_routes, "plan", lambda db, which="member": billing_routes.Plan(
         amount={"member": 499, "starter": 299}[which], currency="gbp", interval="month", interval_count=1,
-        trial_days=7, free_delay_hours=168))
+        trial_days=7))
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
@@ -1617,17 +1636,18 @@ def test_the_plan_is_picked_after_the_email_link_on_the_landing_pages_cards(site
         expect(page.get_by_role("heading", name="Choose your plan")).to_be_visible()
         cards = page.locator(".price-card")
         expect(cards.locator(".price-name")).to_have_text(["Free", "Starter", "Member"])
-        expect(cards.first).to_contain_text("Jobs 7 days after members see them")
         expect(cards.last).to_contain_text("£4.99")
         expect(cards.last.locator(".price-badge")).to_have_text("7 days free")
         expect(cards.last.locator(".price-was s")).to_have_text("£29.99")
         expect(cards.last.locator(".price-was em")).to_have_text("83% off")
         expect(cards.nth(1).locator(".price-amount")).to_contain_text("£2.99")
         expect(cards.nth(1).locator(".price-was")).to_have_text("Was £18.9984% off")
-        # Starter's card ticks what is switched on for it and crosses out the rest of a membership.
-        expect(cards.nth(1).locator(".price-list li:not(.out)").first).to_have_text(
-            "New jobs the moment they're found, not a week later")
-        expect(cards.nth(1).locator(".price-list li.out")).to_have_count(3)
+        # How soon each plan sees a job leads each card, read across; Starter crosses out what Member adds.
+        expect(cards.locator(".price-list li:first-child")).to_have_text([
+            "See every new job 7 days after we find it",
+            "See every new job 3 days after we find it, 4 days before Free accounts do",
+            "See every new job the moment we find it, 7 days before Free accounts do"])
+        expect(cards.nth(1).locator(".price-list li.out")).to_have_count(4)
         expect(cards.last.locator(".price-note")).to_have_text("Card needed. Free to cancel in the trial.")
         # The price kept for life, in a band on each paid card that is read without reading.
         expect(cards.locator(".price-band")).to_have_text(["Price locked for life", "Price locked for life"])

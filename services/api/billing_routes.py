@@ -257,8 +257,7 @@ def trial_for(db: Database, user: User) -> int:
 
 
 class Plan(BaseModel):
-    """A plan to pay for: its price as Stripe has it, and the free trial a new member gets; and, for the
-    sign-up page's choice, how far behind a member the free plan sees each job (`libs.membership`)."""
+    """A plan to pay for: its price as Stripe has it, and the free trial a new member gets."""
     # In the smallest unit of `currency`: cents.
     amount: int
     currency: str
@@ -266,7 +265,6 @@ class Plan(BaseModel):
     interval: str
     interval_count: int
     trial_days: int
-    free_delay_hours: int
 
 
 @functools.cache
@@ -289,8 +287,7 @@ def plan(db: Database, which: str = "member") -> Plan | None:
                        exc_info=True)
         return None
     return Plan(amount=price.unit_amount, currency=price.currency, interval=price.recurring.interval,
-                interval_count=price.recurring.interval_count, trial_days=int(settings.get(db, "trial_days")),
-                free_delay_hours=int(settings.get(db, "free_delay_hours")))
+                interval_count=price.recurring.interval_count, trial_days=int(settings.get(db, "trial_days")))
 
 
 class Membership(BaseModel):

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, ValidationError
 from pymongo.database import Database
 
-from libs import prompts, settings
+from libs import prompts
 from libs.corpus import salary
 from libs.corpus.boards import apply_on, board_name
 from libs.corpus.freshness import platform_windows, shelf_life
@@ -61,9 +61,9 @@ class OnboardingDashboard(BaseModel):
     # `onboarding_state(...).as_dict()`, in onboarding's own model: its pages are onboarding's to define.
     onboarding: OnboardingSteps
     is_admin: bool
-    # Has a membership (`libs.membership`); without one the site is theirs a week behind, with no documents.
+    # On a paid plan, or given one (`libs.membership`); without one the site is theirs, each job a week late.
     member: bool
-    # What of a membership their plan has (`libs.membership.AREAS`): what a page shows or offers by.
+    # What their plan gives (`libs.membership.PLANS`): what a page shows or offers by.
     areas: list[str]
 
 
@@ -92,9 +92,9 @@ class ReadyDashboard(BaseModel):
     load — /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it."""
     stage: Literal["ready"]
     is_admin: bool
-    # Has a membership (`libs.membership`); without one the site is theirs a week behind, with no documents.
+    # On a paid plan, or given one (`libs.membership`); without one the site is theirs, each job a week late.
     member: bool
-    # What of a membership their plan has (`libs.membership.AREAS`): what a page shows or offers by.
+    # What their plan gives (`libs.membership.PLANS`): what a page shows or offers by.
     areas: list[str]
     # How many jobs they said they applied to — moved only by "Mark as applied".
     applied: int
@@ -183,8 +183,8 @@ class Feed(BaseModel):
     # that posts less often keeps its jobs there (`freshness.shelf_life`). Said on the page.
     shelf_hours: int
     shelf_longest_hours: int
-    # How old a job is before it reaches this list, in hours: 0 for a member, `free_delay_hours` for a free
-    # account (`libs.membership.delay_hours`). "Posted" offers only the times longer than it.
+    # How long after it is found a job reaches this list, in hours, as their plan waits
+    # (`libs.membership.delay_hours`): none for a member. "Posted" offers only the times longer than it.
     delay_hours: int = 0
     # More of their jobs matched than one read takes in (`libs.matching.scan_for`): the list is the newest
     # of them, and the page says so rather than call it all of them.
@@ -298,13 +298,13 @@ def _span(hours: int) -> str:
 def _banners(db: Database, user: User, member: bool) -> list[DashboardBanner]:
     """What the jobs page says above the list, one thing at a time. Alerts are optional, so having
     none is a quiet offer rather than a warning — and a Telegram that stopped is a button to press. A free
-    account is told first what it is looking at, and what a membership adds: alerts are members' too."""
+    account is told first what it is looking at, and what a membership adds: alerts are paid plans' too."""
     if not member:
-        delay = int(settings.get(db, "free_delay_hours"))
-        text = "CVs, cover letters and alerts come with a membership."
+        delay = delay_hours(db, user)
+        text = "Alerts, match scores, CVs and cover letters come with a membership."
         if delay:
-            text = (f"You see jobs {_span(delay)} after members see them. Members see each one the moment "
-                    "it's found, and apply among the first.")
+            text = (f"You see each job {_span(delay)} after we find it. Members see it the moment we find "
+                    "it, and apply among the first.")
         return [DashboardBanner(level="info", key="free", text=text)]
     if user.telegram_status == "broken":
         return [DashboardBanner(level="warning", key="telegram_broken",
@@ -347,8 +347,8 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     jobs" and a refresh made the list 15 longer (owner, 2026-11-06).
 
     A job they skipped or applied to is gone from it for good: Applied lists the second."""
-    # A free account sees a job `free_delay_hours` after a member does (`libs.membership`), so a "Posted"
-    # shorter than that would be empty: it is all of their list instead, which is what the page shows it as.
+    # An account on a plan that waits sees a job that long after a member does (`libs.membership`), so a
+    # "Posted" shorter than that would be empty: it is all of their list instead, as the page shows it.
     # New jobs are counted from when its list stands, the newest a job in it can have arrived.
     delay = delay_hours(db, user := get(db, User, user_id))
     behind = jobs_as_of(db, user, delay)
@@ -439,7 +439,7 @@ def job_description(job_id: int, db: Database = Depends(get_db),
     if it was stored as one line (`paragraphs`)."""
     where: dict = {"_id": job_id}
     if (behind := jobs_as_of(db, get(db, User, user_id))) is not None:
-        # Not the text of a job a free account's list does not show yet, asked for by its number.
+        # Not the text of a job a waiting account's list does not show yet, asked for by its number.
         where["$or"] = [{"source": TYPED}, {"described_at": {"$lte": behind}}]
     found = db[CorpusJob.COLLECTION].find_one(where, {"description": 1})
     if not found or not found.get("description"):
@@ -531,7 +531,7 @@ def mark_job(job_id: int, mark: Literal["applied", "hidden", "bookmarked"], requ
     """PUT records the mark, DELETE takes it back. Only ever this person's own row."""
     where: dict = {"_id": job_id}
     if request.method == "PUT" and (behind := jobs_as_of(db, get(db, User, user_id))) is not None:
-        # A free account marks only what its list shows: Applied would show the rest of a newer job.
+        # A waiting account marks only what its list shows: Applied would show the rest of a newer job.
         where["$or"] = [{"source": TYPED}, {"described_at": {"$lte": behind}}]
     if not db[CorpusJob.COLLECTION].count_documents(where, limit=1):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such job")

@@ -209,9 +209,9 @@ def _listed(db: Database, user_id: _uuid.UUID, since: str, *, why: bool = False)
 
 
 def _theirs_to_add(db: Database, user_id: _uuid.UUID) -> None:
-    """Bringing a job in by its link comes with a membership (owner, 2026-11-16), or with whatever plan has
-    it switched on (`libs.membership.AREAS`): 402 otherwise, and the page says where the membership is. The
-    jobs somebody added before stay listed for them."""
+    """Bringing a job in by its link comes with a membership (owner, 2026-11-16; `libs.membership.PLANS`):
+    402 otherwise, and the page says where the membership is. The jobs somebody added before stay listed for
+    them."""
     if not has(db, user_id, "add_job"):
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED,
                             detail="Adding a job by its link comes with a membership.")

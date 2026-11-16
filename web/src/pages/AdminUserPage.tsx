@@ -3,7 +3,7 @@ import { Fragment, useState } from "react";
 
 import { ApiError, api } from "../api";
 import { useKept } from "../kept";
-import { money, standingWord } from "../membership";
+import { PLAN_NAMES, money, standingWord } from "../membership";
 import { day } from "../time";
 import type { components } from "../api-types";
 
@@ -186,7 +186,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
       <section className="card sub-card">
         <div className="sub-head">
           <h2>Subscription</h2>
-          <span className={`verdict ${user.member ? paying : "unknown"}`}>{user.member ? membership : "Free plan"}</span>
+          <span className={`verdict ${user.member ? paying : "unknown"}`}>{user.member ? `${membership} · ${PLAN_NAMES[user.tier]}` : "Free plan"}</span>
         </div>
         <p className="sub-now">{nowLine}</p>
         <dl className="sub-dates">
@@ -219,7 +219,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
         </label>
         {freeError ? <p className="error">{freeError}</p> : null}
         <p className="muted small">
-          The whole site, CVs, cover letters and alerts included, whatever Stripe says. A membership they pay for is held
+          Everything a membership gives, whatever Stripe says. A membership they pay for is held
           meanwhile: Stripe charges nothing while this is on, a trial runs out without a charge, and the payments
           start again from the next one when it is off.
         </p>

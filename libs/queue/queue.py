@@ -99,7 +99,7 @@ def dispatch_due_notifications(db: Database) -> int:
         return 0
     # Whoever's plan has alerts (`libs.membership`): a job alert is the site's content, as the jobs page is.
     accounts = db[User.COLLECTION].distinct(
-        "_id", {"$and": [{"active": True, "status": "active"}, reachable(db), having(db, "alerts")]})
+        "_id", {"$and": [{"active": True, "status": "active"}, reachable(db), having("alerts")]})
     last_run = {row["_id"]: row["last"] for row in db[QueueJob.COLLECTION].aggregate([
         {"$match": {"lane": "notify", "state": "done", "user_id": {"$in": accounts}}},
         {"$group": {"_id": "$user_id", "last": {"$max": "$finished_at"}}}])}
@@ -118,7 +118,7 @@ def dispatch_due_digests(db: Database) -> int:
     hour = settings.get(db, "email_digest_hour")
     enqueued = 0
     for user in find(db, User, {"$and": [{"email_alerts": True, "active": True, "status": "active"},
-                                         having(db, "alerts")]}):
+                                         having("alerts")]}):
         if due(db, user, hour) and enqueue(db, "notify", user.id, payload={"digest": True},
                                            dedup_key="digest") is not None:
             enqueued += 1

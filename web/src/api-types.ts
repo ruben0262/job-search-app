@@ -28,7 +28,8 @@ export interface paths {
         head?: never;
         /**
          * Patch Account
-         * @description Settings the user may change directly. Only what is named is touched.
+         * @description Settings the user may change directly. Only what is named is touched. The daily email is an alert, so
+         *     it is switched on only for a plan with alerts; off, for anybody.
          */
         patch: operations["patch_account_account_patch"];
         trace?: never;
@@ -371,10 +372,11 @@ export interface paths {
         get?: never;
         /**
          * Write Setting
-         * @description Set one, unless it would leave every free account's Jobs page empty: a free account sees a job from
-         *     `free_delay_hours` until it leaves everybody's at the job shelf life, so the shelf must be the longer. The
-         *     server kept 11-07's week of shelf while free accounts waited a week, and a new one saw "0 jobs"
-         *     (2026-11-13).
+         * @description Set one, unless it would leave a plan's Jobs pages empty or Starter behind Free. An account on a plan
+         *     that waits (`libs.membership.WAITS`) sees a job from that wait until it leaves everybody's list at the job
+         *     shelf life, so the shelf must be the longer: the server kept 11-07's week of shelf while free accounts
+         *     waited a week, and a new one saw "0 jobs" (2026-11-13). Starter has everything Free has, so it never waits
+         *     the longer. The members' chat is a link people open: a web address, or nothing.
          */
         put: operations["write_setting_admin_settings__key__put"];
         post?: never;
@@ -1010,7 +1012,8 @@ export interface paths {
         };
         /**
          * Contact Address
-         * @description Where the form's messages go, for anyone who would rather use their own email app.
+         * @description Where the form's messages go, for anyone who would rather use their own email app, and the members'
+         *     chat, for whoever has it.
          */
         get: operations["contact_address_contact_get"];
         put?: never;
@@ -1084,8 +1087,8 @@ export interface paths {
          * @description Queue one CV or cover letter for one job.
          *
          *     Asked again while it waits, it is the same build, answered before any check: a second click must
-         *     not be refused for the allowance its own first click used. A free account makes none (owner,
-         *     2026-11-12): 402, and the bell says where the membership is.
+         *     not be refused for the allowance its own first click used. Only a membership makes them (owner,
+         *     2026-11-12 and 2026-11-16: not Free, not Starter): 402, and the bell says where the membership is.
          */
         post: operations["build_document_documents_build_post"];
         delete?: never;
@@ -2021,6 +2024,11 @@ export interface components {
             subscription_status: string | null;
             /** Telegram */
             telegram: string;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "free" | "starter" | "member";
             /** Trial Ends At */
             trial_ends_at: string | null;
         };
@@ -2138,18 +2146,6 @@ export interface components {
             title: string;
             /** Url */
             url: string;
-        };
-        /**
-         * Area
-         * @description One thing a membership gives (`libs.membership.AREAS`), in the words a card says it.
-         */
-        Area: {
-            /** Key */
-            key: string;
-            /** Starter */
-            starter: boolean;
-            /** Words */
-            words: string;
         };
         /** Asked */
         Asked: {
@@ -2273,6 +2269,8 @@ export interface components {
         };
         /** ContactAddress */
         ContactAddress: {
+            /** Channel */
+            channel?: string | null;
             /** Email */
             email: string;
         };
@@ -2970,16 +2968,13 @@ export interface components {
         };
         /**
          * Plan
-         * @description A plan to pay for: its price as Stripe has it, and the free trial a new member gets; and, for the
-         *     sign-up page's choice, how far behind a member the free plan sees each job (`libs.membership`).
+         * @description A plan to pay for: its price as Stripe has it, and the free trial a new member gets.
          */
         Plan: {
             /** Amount */
             amount: number;
             /** Currency */
             currency: string;
-            /** Free Delay Hours */
-            free_delay_hours: number;
             /** Interval */
             interval: string;
             /** Interval Count */
@@ -3003,13 +2998,26 @@ export interface components {
              */
             stage: "plan";
         };
+        /**
+         * PlanLines
+         * @description What a card says of its plan, never typed (`lines_of`).
+         */
+        PlanLines: {
+            /** Gives */
+            gives: string[];
+            /** Lacks */
+            lacks: string[];
+        };
+        /** PlansLines */
+        PlansLines: {
+            free: components["schemas"]["PlanLines"];
+            member: components["schemas"]["PlanLines"];
+            starter: components["schemas"]["PlanLines"];
+        };
         /** Pricing */
         Pricing: {
-            /** Areas */
-            areas: components["schemas"]["Area"][];
             cards: components["schemas"]["PricingCards"];
-            /** Free Delay Hours */
-            free_delay_hours: number;
+            lines: components["schemas"]["PlansLines"];
             plan: components["schemas"]["Plan"] | null;
             starter: components["schemas"]["Plan"] | null;
             /** Trial Days */
@@ -3021,11 +3029,11 @@ export interface components {
         };
         /**
          * PricingCard
-         * @description One card's words, each with room for what the card has room for.
+         * @description One card's own words, each with room for what the card has room for.
          */
         PricingCard: {
-            /** Benefits */
-            benefits: string[];
+            /** Also */
+            also: string[];
             /** Button */
             button: string;
             /**
@@ -3033,8 +3041,6 @@ export interface components {
              * @default
              */
             highlight: string;
-            /** Left Out */
-            left_out: string[];
             /** Name */
             name: string;
             /** Note */
@@ -3365,6 +3371,11 @@ export interface components {
             plan: string;
             /** Subscription Status */
             subscription_status: string | null;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "free" | "starter" | "member";
             /** Trial Ends At */
             trial_ends_at: string | null;
         };
@@ -3389,6 +3400,8 @@ export interface components {
             };
             /** Rows */
             rows: components["schemas"]["SubscriptionRow"][];
+            /** Starters */
+            starters: number;
             /** Trials Ending */
             trials_ending: number;
         };

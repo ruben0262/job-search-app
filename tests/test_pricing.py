@@ -1,5 +1,7 @@
-"""The landing page's pricing: Free and Member, the cards' words the operator's, the membership's price
-Stripe's, its free days the trial setting and Free's delay its own setting (owner, 2026-11-12)."""
+"""The landing page's pricing: Free, Starter and Member (owner, 2026-11-12 and 2026-11-16). What each card
+says of its plan is worked out from the plans fixed in code and the settings the site reads, so it is what an
+account on that plan gets; the rest of the words are the operator's; a price is Stripe's and the free days
+the trial setting."""
 from __future__ import annotations
 
 import logging
@@ -11,15 +13,16 @@ import pytest
 from libs import settings
 from libs.db import insert
 from libs.db.models import User
+from libs.membership import AREAS
 
 pytest.importorskip("fastapi")
 
 ADMIN = "operator@example.com"
-CARD = {"name": "Mahoraga Plus", "highlight": "Yours for life",
-        "benefits": ["Every job that fits you", "Alerts"],
-        "left_out": [], "button": "Try it free", "note": "Cancel any time."}
-FREE = {**CARD, "name": "Free", "left_out": ["Alerts"], "button": "Start free"}
+CARD = {"name": "Mahoraga Plus", "highlight": "Yours for life", "also": ["Every job that fits you"],
+        "button": "Try it free", "note": "Cancel any time."}
+FREE = {**CARD, "name": "Free", "highlight": "", "button": "Start free"}
 CARDS = {"free": FREE, "starter": {**CARD, "name": "First steps"}, "member": CARD}
+MOMENT = AREAS["early_jobs"]
 
 
 @pytest.fixture()
@@ -45,18 +48,105 @@ def api(db, monkeypatch):
         yield http, db, operator, ordinary, sign_in
 
 
-def test_anybody_reads_both_cards_with_the_trial_and_the_delay_before_they_have_an_account(api):
+def on(db, plan: str) -> User:
+    """An account on this plan: nothing paid, or paying for Starter or the membership."""
+    paid = {} if plan == "free" else {"subscription_status": "active", "subscription_plan": plan}
+    return insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active", **paid))
+
+
+def test_anybody_reads_the_cards_with_the_trial_before_they_have_an_account(api):
     """Public, as the landing page is. Without Stripe set up there is no price, rather than a wrong one."""
     http, db, *_ = api
 
     body = http.get("/pricing").json()
 
     assert body["cards"] == settings.DEFAULT_PRICING_CARDS
-    assert (body["trial_days"], body["free_delay_hours"], body["plan"]) == (7, 168, None)
+    assert (body["trial_days"], body["plan"], body["starter"]) == (7, None, None)
     settings.put(db, "trial_days", 14)
-    settings.put(db, "free_delay_hours", 72)
-    again = http.get("/pricing").json()
-    assert (again["trial_days"], again["free_delay_hours"]) == (14, 72), "the settings, not copies of them"
+    assert http.get("/pricing").json()["trial_days"] == 14, "the setting, not a copy of it"
+
+
+def test_each_card_says_how_soon_its_plan_sees_a_job_and_what_it_gives_and_lacks(api):
+    """Owner, 2026-11-16: Free each job once it is 7 days old, Starter once it is 3 days old with alerts and
+    match scores, Member the moment it is posted with everything; each card ticking what its plan gives and
+    crossing out what it lacks, in words that say what it does for them."""
+    http, *_ = api
+
+    lines = http.get("/pricing").json()["lines"]
+
+    assert lines["free"] == {
+        "gives": ["See every new job 7 days after we find it"],
+        "lacks": [MOMENT, AREAS["alerts"], AREAS["match_scores"], AREAS["cvs"], AREAS["covers"],
+                  AREAS["add_job"]]}
+    assert lines["starter"] == {
+        "gives": ["See every new job 3 days after we find it, 4 days before Free accounts do",
+                  AREAS["alerts"], AREAS["match_scores"]],
+        "lacks": [MOMENT, AREAS["cvs"], AREAS["covers"], AREAS["add_job"]]}
+    assert lines["member"] == {
+        "gives": [f"{MOMENT}, 7 days before Free accounts do", AREAS["alerts"], AREAS["match_scores"],
+                  AREAS["cvs"], AREAS["covers"], AREAS["add_job"]],
+        "lacks": []}
+
+
+def test_how_soon_each_card_says_follows_the_waits_set_in_admin(api):
+    """The waits are the operator's, and the cards say them as they are set: never typed into the words."""
+    http, db, *_ = api
+
+    settings.put(db, "free_delay_hours", 120)
+    settings.put(db, "starter_delay_hours", 24)
+    lines = http.get("/pricing").json()["lines"]
+    assert lines["free"]["gives"][0] == "See every new job 5 days after we find it"
+    assert lines["starter"]["gives"][0] == \
+        "See every new job 24 hours after we find it, 4 days before Free accounts do"
+    assert lines["member"]["gives"][0] == f"{MOMENT}, 5 days before Free accounts do"
+
+    # Nobody waits: no card crosses out what every plan has, and none says it is sooner than Free.
+    settings.put(db, "starter_delay_hours", 0)
+    settings.put(db, "free_delay_hours", 0)
+    lines = http.get("/pricing").json()["lines"]
+    assert [lines[plan]["gives"][0] for plan in ("free", "starter", "member")] == [MOMENT] * 3
+    assert not any(MOMENT in lines[plan]["lacks"] for plan in ("free", "starter", "member"))
+
+
+def test_the_member_card_promises_the_members_chat_only_while_it_has_a_link(api):
+    """Owner, 2026-11-16: direct access to the people who build the site is a member's, and never promised
+    while there is nothing to open."""
+    http, db, *_ = api
+    chat = AREAS["team_access"]
+    said = http.get("/pricing").json()["lines"].values()
+    assert not any(chat in lines["gives"] + lines["lacks"] for lines in said)
+
+    settings.put(db, "members_channel_url", "https://chat.example.com/mahoraga-members")
+    lines = http.get("/pricing").json()["lines"]
+    assert chat in lines["member"]["gives"]
+    assert chat in lines["starter"]["lacks"] and chat in lines["free"]["lacks"]
+
+
+@pytest.mark.parametrize("channel", ["", "https://chat.example.com/mahoraga-members"])
+@pytest.mark.parametrize("waits", [(168, 72), (120, 0), (0, 0)])
+def test_what_each_card_promises_is_what_an_account_on_that_plan_gets(api, channel, waits):
+    """The cards and the site ask the same plans: an account on each plan has every area its card ticks and
+    none its card crosses out, and sees new jobs at once exactly when its card says so. A card that promised
+    an area its plan does not give, or left out one it does, fails here."""
+    from libs.membership import delay_hours, has
+
+    http, db, *_ = api
+    settings.put(db, "members_channel_url", channel)
+    settings.put(db, "free_delay_hours", waits[0])
+    settings.put(db, "starter_delay_hours", waits[1])
+    lines = http.get("/pricing").json()["lines"]
+
+    for plan in ("free", "starter", "member"):
+        account, said = on(db, plan), lines[plan]
+        for area, words in AREAS.items():
+            if area == "early_jobs":
+                assert (words in said["lacks"]) == (delay_hours(db, account) > 0), plan
+            elif area == "team_access" and not channel:
+                assert words not in said["gives"] + said["lacks"], plan
+            else:
+                assert (words in said["gives"], words in said["lacks"]) == (has(db, account.id, area),
+                                                                          not has(db, account.id, area)), \
+                    (plan, area)
 
 
 def test_an_admin_changes_what_the_cards_say_and_the_landing_page_shows_it(api):
@@ -79,23 +169,23 @@ def test_nobody_else_can_change_it(api):
 
 
 @pytest.mark.parametrize("change", [
-    {"name": " "}, {"button": ""}, {"benefits": []}, {"benefits": ["Alerts", "  "]},
-    {"benefits": [f"Line {n}" for n in range(13)]}, {"left_out": ["  "]}, {"note": "x" * 281},
+    {"name": " "}, {"button": ""}, {"also": ["Alerts", "  "]}, {"also": [f"Line {n}" for n in range(13)]},
+    {"note": "x" * 281},
 ])
 def test_a_card_the_page_has_no_room_for_is_refused_and_the_saved_ones_kept(api, change):
     http, _, operator, _, sign_in = api
     sign_in(http, operator)
 
     assert http.put("/admin/pricing", json={**CARDS, "free": {**FREE, **change}}).status_code == 422
-    assert http.put("/admin/pricing", json={"member": CARD}).status_code == 422, "both cards, always"
+    assert http.put("/admin/pricing", json={"member": CARD}).status_code == 422, "every card, always"
     assert http.get("/pricing").json()["cards"] == settings.DEFAULT_PRICING_CARDS
 
 
 def test_saved_cards_that_no_longer_read_are_the_defaults_and_the_log_says_so(api, caplog):
     """Saved some other way: the page shows the defaults, never an error. (A card saved before a field was
-    added is completed from the defaults: the next test.)"""
+    added is completed from the defaults: the last test.)"""
     http, db, *_ = api
-    settings.put(db, "pricing_cards", {"free": {"name": "Old", "benefits": "not a list"}})
+    settings.put(db, "pricing_cards", {"free": {"name": "Old", "also": "not a list"}})
 
     with caplog.at_level(logging.WARNING, logger="services.api.pricing_routes"):
         body = http.get("/pricing").json()
@@ -110,8 +200,7 @@ def test_the_price_is_the_one_the_payment_form_charges(api, monkeypatch):
     from services.api.billing_routes import Plan
 
     http, *_ = api
-    stripe = Plan(amount=499, currency="gbp", interval="month", interval_count=1, trial_days=7,
-                  free_delay_hours=168)
+    stripe = Plan(amount=499, currency="gbp", interval="month", interval_count=1, trial_days=7)
     monkeypatch.setattr(billing_routes, "plan",
                         lambda db, which="member": stripe if which == "member" else None)
 
@@ -120,39 +209,35 @@ def test_the_price_is_the_one_the_payment_form_charges(api, monkeypatch):
     assert body["starter"] is None, "no Starter plan to offer until it has a price at Stripe"
 
 
-def test_the_cards_say_what_starter_has_and_what_each_price_is_reduced_from(api):
-    """Owner, 2026-11-16. What Starter's card ticks is the switches the site itself asks (`starter_areas`), in
-    the words of the one list of what a membership gives; the crossed-out price is the operator's figure, and
-    anything saved there that is not a price shows none rather than breaking the page."""
-    from libs.membership import AREAS
-
+def test_each_price_is_shown_reduced_from_the_operators_figure_and_nothing_else(api):
+    """Owner, 2026-11-16: the crossed-out price is the operator's figure, and anything saved there that is not
+    a price shows none rather than breaking the page."""
     http, db, *_ = api
-    body = http.get("/pricing").json()
-    assert [(area["key"], area["words"]) for area in body["areas"]] == list(AREAS.items())
-    assert [area["key"] for area in body["areas"] if area["starter"]] == ["early_jobs", "alerts"]
-    assert body["was"] == {"member": 2999, "starter": 1899}
+    assert http.get("/pricing").json()["was"] == {"member": 2999, "starter": 1899}
 
-    settings.put(db, "starter_areas", ["alerts", "covers", "no such area"])
     settings.put(db, "price_was", {"member": 0, "starter": "a lot"})
-    again = http.get("/pricing").json()
-    assert [area["key"] for area in again["areas"] if area["starter"]] == ["alerts", "covers"]
-    assert again["was"] == {}
+    assert http.get("/pricing").json()["was"] == {}
 
 
-def test_cards_saved_before_there_was_a_starter_plan_keep_their_words_and_gain_its_card(api):
-    """Saved on the live site as two cards, each with a line under its name that is no longer read: they must
-    still read after the deploy, or the landing page would fall back to the defaults and lose the operator's
-    words."""
+def test_cards_saved_before_the_plans_were_fixed_keep_their_own_words_and_lose_their_old_lists(api):
+    """Saved on the live site as two cards, each with a line under its name and its own lists of what it
+    gave and left out, written for the plans as they were: those lists would now say what the plans no
+    longer are, beside the lines each card says by itself, so they are not read. The name, the button and
+    the small print are the operator's and stay; Starter's card, and the field there was none of, are the
+    defaults'."""
     http, db, *_ = api
-    def before(card: dict, line: str) -> dict:
-        return {**{key: value for key, value in card.items() if key != "highlight"}, "tagline": line}
+    defaults = settings.DEFAULT_PRICING_CARDS
 
-    settings.put(db, "pricing_cards", {"free": before(FREE, "A line nobody reads now."),
-                                       "member": before(CARD, "Another.")})
+    def before(card: dict) -> dict:
+        return {"name": card["name"], "tagline": "A line nobody reads now.", "button": card["button"],
+                "note": card["note"], "benefits": ["New jobs the moment they're found, not a week later"],
+                "left_out": ["Alerts on your phone"]}
+
+    settings.put(db, "pricing_cards", {"free": before(FREE), "member": before(CARD)})
 
     cards = http.get("/pricing").json()["cards"]
 
-    defaults = settings.DEFAULT_PRICING_CARDS
-    assert cards["free"] == {**FREE, "highlight": defaults["free"]["highlight"]}
-    assert cards["member"] == {**CARD, "highlight": defaults["member"]["highlight"]}, "the band is new"
+    for name, own in (("free", FREE), ("member", CARD)):
+        default = defaults[name]
+        assert cards[name] == {**own, "highlight": default["highlight"], "also": default["also"]}
     assert cards["starter"] == defaults["starter"]

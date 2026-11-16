@@ -1,4 +1,4 @@
-"""Request-scoped dependencies: the database, the mailer, and the rate limiter."""
+"""Request-scoped dependencies: the database, who is calling, the mailer, and the rate limiter."""
 from __future__ import annotations
 
 import os
@@ -12,6 +12,7 @@ from pymongo.database import Database
 from libs.auth.access import InvalidAccessToken, read_access_token
 from libs.db import database
 from libs.mail import EmailSender, sender_from_env
+from libs.membership import has
 from libs.secrets import SecretStore
 
 # Process-local, fixed window, self-sweeping: with N `api` replicas the limit is N x limit.
@@ -41,6 +42,16 @@ def current_user(request: Request) -> uuid.UUID:
     except InvalidAccessToken as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED,
                             detail="your session has expired") from exc
+    return user_id
+
+
+def with_alerts(db: Database = Depends(get_db), user_id: uuid.UUID = Depends(current_user)) -> uuid.UUID:
+    """Who is calling, as `current_user`, if their plan gives alerts (`libs.membership.PLANS`): 402 if not.
+    Asked by what turns an alert on, never by what turns one off, so somebody whose plan ended can stop
+    theirs."""
+    if not has(db, user_id, "alerts"):
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED,
+                            detail="Job alerts come with Starter and the membership.")
     return user_id
 
 

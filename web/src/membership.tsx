@@ -36,6 +36,9 @@ export function price(plan: Plan): string {
   return `${money(plan.amount, plan.currency)} ${every(plan.interval, plan.interval_count)}`;
 }
 
+/** The plans as the site names them (`libs.membership.PLANS`), for the pages that say which one an account is on. */
+export const PLAN_NAMES = { free: "Free", starter: "Starter", member: "Member" } as const;
+
 type Tone = "ok" | "warn" | "down" | "unknown";
 
 /** Stripe's word for a subscription as an operator reads it, in a word and a colour (`.verdict`). */
@@ -58,12 +61,17 @@ export function standing(m: Membership): string {
     return m.can_start ? "A membership, given by the team."
       : "A membership, given by the team. Your own is on hold meanwhile, and nothing is charged for it.";
   }
+  // Starter's own name and price where it is Starter: its trial ends in Starter's price, not the membership's.
+  const starter = m.tier === "starter";
+  const then = starter ? m.starter : m.plan;
   switch (m.status) {
-    case "trialing":
-      return m.cancels_at ? `Free trial until ${day(m.cancels_at)}. It won't renew.`
-        : `Free trial${m.period_ends_at ? ` until ${day(m.period_ends_at)}` : ""}.${m.plan ? ` Then ${price(m.plan)}.` : ""}`;
+    case "trialing": {
+      const name = starter ? "Starter, free trial" : "Free trial";
+      return m.cancels_at ? `${name} until ${day(m.cancels_at)}. It won't renew.`
+        : `${name}${m.period_ends_at ? ` until ${day(m.period_ends_at)}` : ""}.${then ? ` Then ${price(then)}.` : ""}`;
+    }
     case "active": {
-      const name = m.tier === "starter" ? "Starter, active" : "Active";
+      const name = starter ? "Starter, active" : "Active";
       return m.cancels_at ? `${name} until ${day(m.cancels_at)}. It won't renew.`
         : `${name}.${m.period_ends_at ? ` Next payment on ${day(m.period_ends_at)}.` : ""}`;
     }

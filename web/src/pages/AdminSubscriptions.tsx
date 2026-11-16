@@ -1,31 +1,31 @@
-/** Admin → Subscriptions (owner, 2026-11-12): who is on which plan, what is about to change, what the membership
- * brings in, the membership itself (Stripe's price, its free days, how far behind the free plan is), what the
- * landing page says about the two plans, and every subscription as it is stored. */
+/** Admin → Subscriptions (owner, 2026-11-12): who is on which plan, what is about to change, what the plans bring
+ * in, the plans themselves (Stripe's prices, their free days, how long Free and Starter wait for a job, the
+ * members' chat), what the landing page's cards say, and every subscription as it is stored. */
 import { useState } from "react";
 
 import { api, type Schema } from "../api";
 import { useKept } from "../kept";
 import { type Pricing, saving } from "../landing/Landing";
-import { money, price } from "../membership";
+import { PLAN_NAMES, money, price } from "../membership";
 import { day } from "../time";
 import { Error, useAction } from "../ui";
 import { AdminPricing } from "./AdminPricing";
 
 type Subscriptions = Schema<"Subscriptions">;
 type Row = Subscriptions["rows"][number];
-type Settings = { trial_days: number; free_delay_hours: number; starter_areas: string[];
-                  price_was: Record<string, number> };
+type Settings = { trial_days: number; free_delay_hours: number; starter_delay_hours: number;
+                  members_channel_url: string; price_was: Record<string, number> };
 
 /** Each plan's name, colour and line, in the order the bar draws them (`admin_routes.PLAN_KINDS`). */
 const KINDS: Record<string, [name: string, colour: string, line: string]> = {
-  paying: ["Paying", "var(--score)", "Their membership's payments go through"],
+  paying: ["Paying", "var(--score)", "Their payments go through: Starter or Member"],
   trial: ["In a trial", "var(--accent)", "Their free days, a card kept by Stripe"],
   payment_failed: ["Payment failed", "var(--danger)", "Back on the free plan until they pay"],
   paused: ["Paused", "#d08a34", "Held at Stripe"],
-  free_access: ["Free access", "#8ab4ff", "Everything, given by an admin"],
+  free_access: ["Free access", "#8ab4ff", "Everything Member has, given by an admin"],
   admin: ["Admins", "var(--muted)", "Everything, as operators"],
   choosing: ["Choosing a plan", "var(--faint)", "On the page after their email link"],
-  free: ["Free plan", "var(--dim)", "Jobs a week behind, no CVs or alerts"],
+  free: ["Free plan", "var(--dim)", "Each job late, no alerts, scores or CVs"],
 };
 
 export function AdminSubscriptions() {
@@ -41,7 +41,10 @@ export function AdminSubscriptions() {
       <dl className="account-tiles">
         <div>
           <dt>Members</dt>
-          <dd><strong>{data.members.toLocaleString()}</strong>of {accounts.toLocaleString()} accounts</dd>
+          <dd>
+            <strong>{data.members.toLocaleString()}</strong>
+            of {accounts.toLocaleString()} accounts{data.starters ? ` · ${data.starters.toLocaleString()} on Starter` : ""}
+          </dd>
         </div>
         <div>
           <dt>Paying</dt>
@@ -121,7 +124,10 @@ function SubscriptionLine({ row }: { row: Row }) {
   return (
     <tr>
       <td><a href={`#/admin/users/${row.id}`}>{row.email}</a></td>
-      <td><span className="plan-dot" style={{ background: colour }} aria-hidden="true" />{name}</td>
+      <td>
+        <span className="plan-dot" style={{ background: colour }} aria-hidden="true" />{name}
+        {row.tier === "free" ? null : <span className="muted"> · {PLAN_NAMES[row.tier]}</span>}
+      </td>
       <td><code>{row.subscription_status ?? "none"}</code></td>
       <td>{next}</td>
       <td>
@@ -132,8 +138,8 @@ function SubscriptionLine({ row }: { row: Row }) {
   );
 }
 
-/** The plans: each one's price as Stripe has it and the price it is shown as reduced from, the settings that
- * come with them, and what the Starter plan includes, a switch each (owner, 2026-11-16). */
+/** The plans: each one's price as Stripe has it and the price it is shown as reduced from, and the settings that
+ * come with them. What each plan includes is fixed in code (owner, 2026-11-16), and its card says it. */
 function ThePlan({ subscriptions }: { subscriptions: Subscriptions }) {
   const kept = useKept<{ settings: Settings }>("/admin/settings");
   // What the cards will say: read again after each change, so the preview below follows it.
@@ -200,40 +206,41 @@ function ThePlan({ subscriptions }: { subscriptions: Subscriptions }) {
                 who never had a membership.
               </span>
             </label>
+            {(["free", "starter"] as const).map((plan) => {
+              const key = `${plan}_delay_hours` as const;
+              const named = `${PLAN_NAMES[plan]} accounts see a job`;
+              return (
+                <label key={key}>
+                  <span className="label">{named}</span>
+                  <select value={settings[key]} disabled={save.busy} aria-label={named}
+                          onChange={(event) => void save.run(key, Number(event.target.value))}>
+                    {[...new Set([0, 24, 72, 168, 336, settings[key]])].sort((a, b) => a - b).map((n) => (
+                      <option key={n} value={n}>{n ? `${n < 48 ? `${n} hours` : `${n / 24} days`} later` : "At once"}</option>
+                    ))}
+                  </select>
+                  <span className="hint">
+                    {saved === key ? "Saved. " : ""}How long after we find it a job reaches an account on {PLAN_NAMES[plan]}
+                    {plan === "starter" ? ", never longer than Free's" : ""}. Members see it at once. The cards say it.
+                  </span>
+                </label>
+              );
+            })}
             <label>
-              <span className="label">Free accounts see a job</span>
-              <select value={settings.free_delay_hours} disabled={save.busy} aria-label="Free accounts see a job"
-                      onChange={(event) => void save.run("free_delay_hours", Number(event.target.value))}>
-                {[...new Set([0, 24, 72, 168, 336, settings.free_delay_hours])].sort((a, b) => a - b).map((n) => (
-                  <option key={n} value={n}>{n ? `${n < 48 ? `${n} hours` : `${n / 24} days`} later` : "At once"}</option>
-                ))}
-              </select>
+              <span className="label">Members' chat</span>
+              <input type="url" inputMode="url" placeholder="https://" disabled={save.busy} aria-label="Members' chat"
+                     defaultValue={settings.members_channel_url}
+                     onBlur={(event) => {
+                       const link = event.target.value.trim();
+                       if (link !== settings.members_channel_url) void save.run("members_channel_url", link);
+                     }} />
               <span className="hint">
-                {saved === "free_delay_hours" ? "Saved. " : ""}How long after a member an account on the free plan sees
-                each job. CVs, cover letters and alerts stay members'.
+                {saved === "members_channel_url" ? "Saved. " : ""}The link to the chat you run for members, shown to them
+                on the Help page. The Member card promises it only while it is set; empty shows nothing.
               </span>
             </label>
           </>
         ) : null}
       </div>
-      {settings && pricing.data ? (
-        <fieldset className="starter-areas">
-          <legend className="label">Starter includes</legend>
-          {pricing.data.areas.map((area) => (
-            <label key={area.key}>
-              <input type="checkbox" checked={settings.starter_areas.includes(area.key)} disabled={save.busy}
-                     onChange={(event) => void save.run("starter_areas", event.target.checked
-                       ? [...settings.starter_areas, area.key]
-                       : settings.starter_areas.filter((each) => each !== area.key))} />
-              {area.words}
-            </label>
-          ))}
-          <span className="hint">
-            {saved === "starter_areas" ? "Saved. " : ""}What the Starter plan has of a membership. A switch works
-            at once for everyone on Starter, and its card says the same. Member has all of them.
-          </span>
-        </fieldset>
-      ) : null}
       <Error>{save.error}</Error>
     </section>
   );

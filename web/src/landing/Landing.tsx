@@ -43,7 +43,7 @@ const steps = (often: string): [string, ReactNode, ReactNode][] => [
   ["Upload your CV", <>We read it and suggest the words to search with. You check them, pick your countries,
     and that is it: <strong>a few minutes, once.</strong></>, <CvArt />],
   ["Get every job that fits", <>New ones {often}, in one list, the best matches first. Each says why it is
-    there. <strong>On your phone too,</strong> as a member.</>, <MatchArt />],
+    there. <strong>On your phone too,</strong> on a paid plan.</>, <MatchArt />],
   ["Make your CV in one tap", <>A CV and a cover letter <strong>made for that job,</strong> from your own CV. Ready
     in seconds, as a member. Nothing made up.</>, <TapArt />],
   ["Apply, and keep track", <>Apply on the job's own site, <strong>in minutes, not hours.</strong> Then follow each
@@ -53,8 +53,10 @@ const steps = (often: string): [string, ReactNode, ReactNode][] => [
 /** Be first and be seen: what Mahoraga does about the figures above them, a card each, stacking as How it works'
  * steps do, so a reader scrolling past still reads both (owner, 2026-11-12: "short and sweet"). */
 const edges = (often: string, ats: Reach["ats"] | undefined): [string, ReactNode, ReactNode][] => [
-  ["New jobs in minutes, not days", <>Every job site read {often}. <strong>Apply in a job's first days,</strong> when
-    hiring starts.</>, <WeekArt />],
+  // A free account sees each job a week after it is found (`libs.membership.PLANS`): the first days are a paid
+  // plan's, and the page says so rather than promise them to everybody.
+  ["New jobs in minutes, not days", <>Every job site read {often}. On a paid plan, <strong>apply in a job's first
+    days,</strong> when hiring starts.</>, <WeekArt />],
   // The figure is our own tests', served with what was tested and when, and only for the CV wording it was
   // measured on (`/stats`): without it the page claims no rate.
   ["A CV made for each job, in seconds", ats ? <>From your own CV, with a cover letter, in one tap.{" "}
@@ -94,18 +96,12 @@ function nothing(currency: string): string {
                                             maximumFractionDigits: 0 }).format(0);
 }
 
-/** "7 days", "a day", "12 hours": how far behind a free account is, as the app says it. */
-function behind(hours: number): string {
-  if (hours % 24) return `${hours} hours`;
-  return hours === 24 ? "a day" : `${hours / 24} days`;
-}
-
 /** Get started: what they do once, and what then happens every day without them. */
 const PATHS: [when: string, title: string, items: string[]][] = [
   ["A few minutes, once", "You set it up", ["Upload your CV", "Check the words we suggest",
                                            "Pick your countries and languages"]],
   ["Then every day", "It runs itself", ["New jobs that fit, every day", "A CV for any of them in one tap, as a member",
-                                        "Alerts on your phone, as a member"]],
+                                        "Alerts on your phone, on a paid plan"]],
 ];
 
 export function Landing() {
@@ -385,9 +381,10 @@ export function Landing() {
           <Reviews />
         </section>
 
-        {/* Free, a week behind; Starter, first; or a member, first and seen (owner, 2026-11-12 and
-            2026-11-16). What the cards say is set in Admin. The offer is said three ways for somebody scrolling
-            past, who reads no line: the title, a row of three marks under it, and a band on each paid card. */}
+        {/* Free, a week behind; Starter, sooner and alerted; or a member, first and seen (owner, 2026-11-12 and
+            2026-11-16). What each card says of its plan is the server's; the rest is set in Admin. The offer is
+            said three ways for somebody scrolling past, who reads no line: the title, a row of three marks under
+            it, and a band on each paid card. */}
         <section id="price" className="section">
           <div className="head center" data-reveal>
             <h2>Start free. <span className="glow">Lock in your price for life.</span></h2>
@@ -506,18 +503,19 @@ export function saving(amount: number, was: number | undefined): number | null {
 }
 
 /** The cards, Free, Starter and Member, as the landing page shows them, Admin previews them (`preview`: their
- * buttons go nowhere) and the plan page offers them (`onChoose`: their buttons pick). The words are the
- * operator's (`pricing_cards`); a price is Stripe's, the price it is reduced from `price_was`, the free days
- * `trial_days`, the delay `free_delay_hours` and what Starter has of a membership `starter_areas`, all filled
- * in here, so no wording can promise what the site does not keep. Starter is shown once it has a price at
- * Stripe (and always in Admin's preview, to be worded before it has one). */
+ * buttons go nowhere) and the plan page offers them (`onChoose`: their buttons pick). What each says of its plan
+ * is the server's (`lines`), worked out from the plans fixed in code and how long each waits for a job; the
+ * rest of the words are the operator's (`pricing_cards`); a price is Stripe's, the price it is reduced from
+ * `price_was` and the free days `trial_days`, all filled in here, so no wording can promise what the site does
+ * not keep. Starter is shown once it has a price at Stripe (and always in Admin's preview, to be worded before
+ * it has one). */
 export function PriceCards({ pricing, preview = false, onChoose, busy = false }: {
   pricing: Pricing;
   preview?: boolean;
   onChoose?: (kind: "free" | Paid) => void;
   busy?: boolean;
 }) {
-  const { cards, plan, starter, trial_days: days, free_delay_hours: delay, was, areas } = pricing;
+  const { cards, lines, plan, starter, trial_days: days, was } = pricing;
   const three = Boolean(starter) || preview;
   // What a paid card says of its price: the one it is reduced from crossed out, the saving, the price itself.
   const cost = (kind: Paid, of: Pricing["plan"]) => {
@@ -542,19 +540,17 @@ export function PriceCards({ pricing, preview = false, onChoose, busy = false }:
   return (
     <div className="price-room">
       <div className={three ? "price-cards three" : "price-cards"}>
-        <PriceCard card={cards.free} href="#/signup" preview={preview} busy={busy}
+        <PriceCard card={cards.free} said={lines.free} href="#/signup" preview={preview} busy={busy}
                    onChoose={onChoose && (() => onChoose("free"))}
                    amount={plan ? <><strong>{nothing(plan.currency)}</strong><span>for good</span></> : null}
-                   under={`Jobs ${behind(delay)} after members see them`} />
+                   under={null} />
         {three ? (
-          <PriceCard card={cards.starter} href="#/signup?plan=starter" preview={preview} busy={busy}
-                     onChoose={onChoose && (() => onChoose("starter"))}
-                     has={areas.filter((area) => area.starter).map((area) => area.words)}
-                     lacks={areas.filter((area) => !area.starter).map((area) => area.words)}
+          <PriceCard card={cards.starter} said={lines.starter} href="#/signup?plan=starter" preview={preview}
+                     busy={busy} onChoose={onChoose && (() => onChoose("starter"))}
                      amount={cost("starter", starter)} under={trial(starter)} />
         ) : null}
-        <PriceCard card={cards.member} href="#/signup?plan=member" preview={preview} lit busy={busy}
-                   onChoose={onChoose && (() => onChoose("member"))}
+        <PriceCard card={cards.member} said={lines.member} href="#/signup?plan=member" preview={preview} lit
+                   busy={busy} onChoose={onChoose && (() => onChoose("member"))}
                    badge={days ? `${days} days free` : null}
                    amount={cost("member", plan)} under={trial(plan)} />
       </div>
@@ -562,11 +558,12 @@ export function PriceCards({ pricing, preview = false, onChoose, busy = false }:
   );
 }
 
-/** One card: its name, what it costs, what it gives and leaves out, and its button at the foot. `has` and
- * `lacks` are what its plan has and lacks of a membership, said before and after the card's own lines. */
-function PriceCard({ card, href, preview, onChoose, busy, lit = false, badge = null, amount, under, has = [],
-                     lacks = [] }: {
+/** One card: its name, what it costs, what it gives and leaves out, and its button at the foot. What its plan
+ * gives comes first, how soon it sees a job leading, so the three read across at a glance; then the card's own
+ * lines; then what its plan lacks, crossed out. */
+function PriceCard({ card, said, href, preview, onChoose, busy, lit = false, badge = null, amount, under }: {
   card: Card;
+  said: Pricing["lines"]["free"];
   href: string;
   preview: boolean;
   onChoose?: () => void;
@@ -575,8 +572,6 @@ function PriceCard({ card, href, preview, onChoose, busy, lit = false, badge = n
   badge?: string | null;
   amount: ReactNode;
   under: string | null;
-  has?: string[];
-  lacks?: string[];
 }) {
   const button = lit ? "btn btn-primary price-cta" : "btn btn-glass price-cta";
   return (
@@ -592,13 +587,13 @@ function PriceCard({ card, href, preview, onChoose, busy, lit = false, badge = n
         </div>
       ) : null}
       <ul className="price-list">
-        {[...has, ...card.benefits].map((line, i) => (
+        {[...said.gives, ...card.also].map((line, i) => (
           <li key={`in${i}`}>
             <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" /><path d="M6 10.4l2.6 2.6 5.6-5.6" /></svg>
             {line}
           </li>
         ))}
-        {[...lacks, ...card.left_out].map((line, i) => (
+        {said.lacks.map((line, i) => (
           <li key={`out${i}`} className="out">
             <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" /><path d="M7 7l6 6M13 7l-6 6" /></svg>
             <span className="unseen">Not included: </span>{line}

@@ -32,7 +32,10 @@ async function suggested(): Promise<Set<string>> {
   return new Set([...body.green, ...body.red].map((each) => each.term));
 }
 
-export function DocumentsPage() {
+export function DocumentsPage({ makes }: {
+  /** Their plan makes CVs (`libs.membership.PLANS`): a membership's. Without it, where the documents are. */
+  makes: boolean;
+}) {
   const { list, reload } = useDocuments();
   const [before, setBefore] = useState<Set<string> | null>(null);
 
@@ -67,7 +70,7 @@ export function DocumentsPage() {
         <TemplatePicks />
       </Card>
       <Card title="CVs and cover letters we made for you">
-        <Made />
+        <Made makes={makes} />
       </Card>
       <Card title="Your CV">
         <p className="small muted">Used to find your words and to make your CVs and cover letters.</p>
@@ -86,8 +89,8 @@ const MADE: [string, number | null][] = [["Made any time", null], ["Made over a 
 
 /** The documents made for jobs and kept: how full the storage is, and the documents themselves, folded
  * until opened (owner, 2026-11-02). A search and an age pick some out, to download or to delete: the
- * old ones go, the newest stay. */
-function Made() {
+ * old ones go, the newest stay. Any made before stay theirs; new ones are a membership's. */
+function Made({ makes }: { makes: boolean }) {
   const { data: kept, set } = useKept<Schema<"SavedDocuments">>(SAVED);
   const [query, setQuery] = useState("");
   const [older, setOlder] = useState<number | null>(null);
@@ -129,8 +132,15 @@ function Made() {
           </span>
         </div>
       ) : null}
+      {!makes ? (
+        // What it is stays said; the way to it is one button (CLAUDE.md §0).
+        <div className="row">
+          <span className="small">CVs and cover letters for each job come with a membership.</span>
+          <a className="button secondary small" href="#/upgrade">Become a member</a>
+        </div>
+      ) : null}
       {kept.documents.length === 0 ? (
-        <p className="muted">None yet. Tap “Make my CV” under a job, and it is kept here.</p>
+        <p className="muted">None yet.{makes ? " Tap “Make my CV” under a job, and it is kept here." : ""}</p>
       ) : (
         <details className="fold-plain made">
           <summary>

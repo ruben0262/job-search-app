@@ -277,35 +277,31 @@ DEFAULT_SUPPORT_CHAT_ENABLED = 1
 # never had one; 0 is none. The price is Stripe's, picked with `STRIPE_PRICE_ID` (`billing_routes`).
 DEFAULT_TRIAL_DAYS = 7
 
-# How far behind a member a free account sees the jobs, in hours (owner, 2026-11-12: "only jobs that have
-# passed the 7 day mark should appear for them"): a job reaches its list that long after a member's, and
-# leaves it with everybody's (`libs.membership.jobs_as_of`). 0 shows free accounts the jobs as they come; the
-# documents and the alerts stay members'.
+# How long after it is found a job reaches a free account's list, in hours (owner, 2026-11-12: "only jobs
+# that have passed the 7 day mark should appear for them"), and a Starter account's (owner, 2026-11-16: "once
+# they are 3 days old"). Each leaves with everybody's, at the job shelf life, which must be the longer
+# (`services.api.admin_routes.write_setting`), and Starter's is never the longer of the two: Starter has
+# everything Free has (`libs.membership.PLANS`). 0 shows the jobs as they come.
 DEFAULT_FREE_DELAY_HOURS = 168
+DEFAULT_STARTER_DELAY_HOURS = 72
 
-# What the landing page's three pricing cards say, Free, Starter and Member (owner, 2026-11-12 and
-# 2026-11-16), the operator's to change in Admin (`services.api.pricing_routes`). A plan's price is Stripe's,
-# the price it is shown as reduced from is `price_was`, its free days `trial_days` and how far behind a free
-# account is `free_delay_hours`, each filled in where the cards are drawn, so no wording here should name
-# them. `left_out` is what the card lists as not included. What the Starter plan has of a membership is
-# `starter_areas`, and its card says those by itself (`libs.membership.AREAS`), so the lines here are only
-# what else it says. The line under each name is gone (owner, 2026-11-16: "extra words we don't need"); one
-# saved before then is no longer read. `highlight` is the band under a paid plan's price, read at a glance
-# while scrolling: the price kept for as long as they stay (owner, 2026-11-16: "lifetime").
+# What the landing page's three pricing cards say of their own, Free, Starter and Member (owner, 2026-11-12
+# and 2026-11-16), the operator's to change in Admin (`services.api.pricing_routes`). What each plan gives and
+# lacks is not here: every card says that by itself, from the plans fixed in code (`libs.membership.PLANS`)
+# and the settings they wait by, so no card can promise what its plan does not give. Neither is a price
+# (Stripe's), the price it is shown as reduced from (`price_was`) or the free days (`trial_days`), each filled
+# in where the cards are drawn. `also` is what else a card ticks, after its plan's own lines. A card's lists
+# saved before 2026-11-16's plans (`benefits`, `left_out`) and its line under the name (`tagline`) are no
+# longer read. `highlight` is the band under a paid plan's price, read at a glance while scrolling: the price
+# kept for as long as they stay (owner, 2026-11-16: "lifetime").
 DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
     "free": {
         "name": "Free",
         "highlight": "",
-        "benefits": [
-            "Every job that fits you, from every source",
-            "Every filter: your words, countries, languages and way of working",
-            "Every application followed, to the interview and the offer",
-        ],
-        "left_out": [
-            "New jobs the moment they appear",
-            "Alerts on your phone",
-            "CVs and cover letters made for each job",
-            "Any job you find elsewhere, added by its link",
+        "also": [
+            "Every job that fits you, from every job site, in one list",
+            "Every filter, and words that hide the jobs you don't want",
+            "Bookmarks, and every application tracked to the offer",
         ],
         "button": "Start free",
         "note": "No card needed. Upgrade whenever you like.",
@@ -314,37 +310,24 @@ DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
         "name": "Starter",
         # The price a plan is joined at is kept for as long as it runs (owner, 2026-11-16: "lifetime").
         "highlight": "Price locked for life",
-        "benefits": ["Everything in Free"],
-        "left_out": [],
+        "also": ["Everything in Free"],
         "button": "Start with Starter",
         "note": "Card needed. Free to cancel in the trial.",
     },
     "member": {
         "name": "Member",
         "highlight": "Price locked for life",
-        "benefits": [
-            "New jobs the moment they're found, not a week later",
-            "Alerts on Telegram, in your browser or by email",
-            "A CV and a cover letter for any job, in one tap, with your own AI account",
-            # Each one checked as it is made (`services/docgen/pdf.py`: its text, headings and contact read
-            # back as an ATS reads them; `ats_ok` kept with the document).
-            "Made to pass ATS checks, each one checked before you get it",
-            # Add a job (`link_routes`): theirs to track, with a CV and a letter for it like any other.
-            "Any job you find elsewhere, added by its link",
-            "Everything in Free",
-        ],
-        "left_out": [],
+        "also": ["Everything in Free"],
         "button": "Start your free trial",
         # One line on the card (owner, 2026-11-16).
         "note": "Card needed. Free to cancel in the trial.",
     },
 }
 
-# What the Starter plan has of what a membership gives (`libs.membership.AREAS`), each a switch in Admin →
-# Subscriptions (owner, 2026-11-16: "an on off switch that they get access to certain areas"). The half that
-# gets a person there first; the half that gets them seen, the documents, is the membership's. Limits a
-# month were tried and left for the owner to decide later (2026-11-16).
-DEFAULT_STARTER_AREAS = ["early_jobs", "alerts"]
+# The members' chat with the people who build the site, a link to a group the owner runs (owner, 2026-11-16:
+# "direct access"), shown to whoever has `team_access` on the Help page. Empty is none: nothing is shown, and
+# the Member card does not promise it.
+DEFAULT_MEMBERS_CHANNEL_URL = ""
 
 # The price each plan is shown as reduced from, in the smallest unit of the plan's currency (2999 is 29.99),
 # the operator's in Admin → Subscriptions; 0 shows none. The card crosses it out beside Stripe's price and
@@ -374,9 +357,10 @@ DEFAULTS: dict[str, object] = {
     "email_digest_hour": DEFAULT_EMAIL_DIGEST_HOUR,
     "trial_days": DEFAULT_TRIAL_DAYS,
     "free_delay_hours": DEFAULT_FREE_DELAY_HOURS,
+    "starter_delay_hours": DEFAULT_STARTER_DELAY_HOURS,
     "pricing_cards": DEFAULT_PRICING_CARDS,
-    "starter_areas": DEFAULT_STARTER_AREAS,
     "price_was": DEFAULT_PRICE_WAS,
+    "members_channel_url": DEFAULT_MEMBERS_CHANNEL_URL,
 }
 
 

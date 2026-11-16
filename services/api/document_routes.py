@@ -256,8 +256,8 @@ def build_document(body: BuildRequest, db: Database = Depends(get_db),
     """Queue one CV or cover letter for one job.
 
     Asked again while it waits, it is the same build, answered before any check: a second click must
-    not be refused for the allowance its own first click used. A free account makes none (owner,
-    2026-11-12): 402, and the bell says where the membership is.
+    not be refused for the allowance its own first click used. Only a membership makes them (owner,
+    2026-11-12 and 2026-11-16: not Free, not Starter): 402, and the bell says where the membership is.
     """
     if not has(db, user_id, "cvs" if body.kind == "cv" else "covers"):
         notify.notify(db, user_id, notify.NEEDS_MEMBERSHIP)

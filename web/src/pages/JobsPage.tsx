@@ -270,7 +270,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
 
   const total = feed ? feed.total - marked.size : 0;
   // How long the longest-kept jobs stay, once an answer says: "Any time" under "Posted" is all of it. And how
-  // old a job is before a free account sees it: a shorter time would be empty, so the server reads it as all
+  // old a job is before their plan shows it: a shorter time would be empty, so the server reads it as all
   // of their list (`/feed`), and so does "Posted" here.
   const longest = feed?.shelf_longest_hours ?? Infinity;
   const delay = feed?.delay_hours ?? 0;
@@ -316,7 +316,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       {/* How long a job stays here, as Admin sets it: a job leaving is then no surprise (owner, 2026-11-06). */}
       {feed ? (
         <p className="small muted">
-          {delay ? `You see each job ${span(delay)} after members do. ` : ""}Jobs stay here for {span(feed.shelf_hours)}
+          {delay ? `You see each job ${span(delay)} after we find it. ` : ""}Jobs stay here for {span(feed.shelf_hours)}
           {feed.shelf_longest_hours > feed.shelf_hours
             ? `, or ${span(feed.shelf_longest_hours)} from slower boards` : ""}.
           {feed.cut ? " More match your words than the page reads at once, so these are the newest." : ""}
@@ -334,7 +334,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
                onChange={(event) => set({ q: event.target.value })} />
       </div>
       <div className="filters">
-        {/* Only the times shorter than jobs stay and longer than a free account waits: "Any time" is all of them. */}
+        {/* Only the times shorter than jobs stay and longer than their plan waits: "Any time" is all of them. */}
         <select aria-label="Posted" value={within ?? ""}
                 onChange={(event) => set({ since_hours: event.target.value ? Number(event.target.value) : null })}>
           {POSTED.filter(([, hours]) => hours === null || (hours > delay && hours < longest)).map(([label, hours]) => (

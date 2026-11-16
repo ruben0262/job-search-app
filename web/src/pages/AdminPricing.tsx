@@ -1,7 +1,8 @@
-/** Admin → Subscriptions: what the landing page's pricing cards say, Free, Starter and Member (`pricing_cards`,
- * owner 2026-11-12 and 2026-11-16), saved together and shown beside the form as a visitor will see them. A
- * price is Stripe's, the price it is reduced from, the free days, the delay and what Starter includes are each
- * their own setting (above, under The plans): the cards fill them in, so nothing typed here names them. */
+/** Admin → Subscriptions: what the landing page's pricing cards say of their own, Free, Starter and Member
+ * (`pricing_cards`, owner 2026-11-12 and 2026-11-16), saved together and shown beside the form as a visitor
+ * will see them. What each plan gives and lacks the cards say by themselves, from the plans fixed in code and
+ * the waits above; a price is Stripe's, and the price it is reduced from and the free days are their own
+ * settings (above, under The plans): the cards fill them in, so nothing typed here names them. */
 import { useState } from "react";
 
 import { api } from "../api";
@@ -41,9 +42,10 @@ export function AdminPricing() {
     <div className="card pricing-admin">
       <h2 style={{ marginTop: 0 }}>Pricing on the landing page</h2>
       <p className="hint">
-        The cards visitors choose between. Prices come from Stripe, and the free days, how far behind Free is
-        and what Starter includes from their own settings above, so don&apos;t write those here: they change by
-        themselves. Starter&apos;s card shows to visitors once it has a price at Stripe.
+        The cards visitors choose between. Each card says by itself what its plan gives and lacks, and how soon
+        it sees a job, from the plans and the waits above; prices come from Stripe and the free days from their
+        own setting. So don&apos;t write those here: they change by themselves. Starter&apos;s card shows to
+        visitors once it has a price at Stripe.
       </p>
       <div className="pricing-edit">
         <form onSubmit={(event) => {
@@ -65,10 +67,8 @@ export function AdminPricing() {
             <input value={card.highlight} maxLength={40} placeholder="Price locked for life"
                    onChange={(event) => edit({ highlight: event.target.value })} />
           </label>
-          <Lines legend="Included" name="Included" lines={card.benefits} least={1}
-                 onChange={(benefits) => edit({ benefits })} />
-          <Lines legend="Not included (crossed out)" name="Not included" lines={card.left_out} least={0}
-                 onChange={(left_out) => edit({ left_out })} />
+          <Lines legend="Also included, after what the plan gives" name="Also included" lines={card.also}
+                 onChange={(also) => edit({ also })} />
           <label className="field">
             <span className="label">Button</span>
             <input value={card.button} maxLength={40} required onChange={(event) => edit({ button: event.target.value })} />
@@ -94,11 +94,10 @@ export function AdminPricing() {
 }
 
 /** A list of lines, each its own box with a ×, and a button for one more. */
-function Lines({ legend, name, lines, least, onChange }: {
+function Lines({ legend, name, lines, onChange }: {
   legend: string;
   name: string;
   lines: string[];
-  least: number;
   onChange: (lines: string[]) => void;
 }) {
   return (
@@ -109,7 +108,7 @@ function Lines({ legend, name, lines, least, onChange }: {
           <input value={each} maxLength={120} required aria-label={`${name}, line ${i + 1}`}
                  onChange={(event) => onChange(lines.map((line, j) => (j === i ? event.target.value : line)))} />
           <button type="button" className="secondary" aria-label={`Remove ${name.toLowerCase()} line ${i + 1}`}
-                  disabled={lines.length <= least} onClick={() => onChange(lines.filter((_, j) => j !== i))}>×</button>
+                  onClick={() => onChange(lines.filter((_, j) => j !== i))}>×</button>
         </div>
       ))}
       {lines.length < MOST_LINES ? (

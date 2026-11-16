@@ -64,7 +64,7 @@ function back(): void {
 
 export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | void }) {
   const { data: m, reload } = useKept<Membership>(MEMBERSHIP);
-  // What a membership adds: the landing page's Member card, as Admin words it, not a second copy here.
+  // What a membership adds: what the landing page's Member card says it gives, worked out by the server.
   const pricing = useKept<Pricing>("/pricing");
   const key = m?.publishable_key ?? null;
   const portal = useAction(openPortal);
@@ -75,7 +75,7 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
   };
   // A payment owed, or paused: the membership is still there, and is settled at Stripe.
   const owed = m?.status === "past_due" || m?.status === "unpaid";
-  const [on, show] = useSwitching(pricing.data?.cards.member.benefits.length ?? 0);
+  const [on, show] = useSwitching(pricing.data?.lines.member.gives.length ?? 0);
 
   return (
     <>
@@ -95,9 +95,9 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
             // Starter is changed for the membership where every subscription is changed: Stripe's portal.
             <div className="upgrade-done">
               <h1>Move up to Member</h1>
-              <p className="lede">
-                You're on Starter. Change your plan at Stripe, and CVs and cover letters open at once.
-              </p>
+              <p className="lede">You're on Starter. Change your plan at Stripe, and all of this opens at once.</p>
+              {/* What Starter's card crosses out: what Member adds to it. */}
+              {pricing.data ? <Adds lines={pricing.data.lines.starter.lacks} on="member" /> : null}
               <Error>{portal.error}</Error>
               <button type="button" className="main" disabled={portal.busy} onClick={() => void portal.run()}>
                 {portal.busy ? "Opening Stripe…" : "Change my plan"}
@@ -133,18 +133,7 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
                 {m.trial_days ? "Stripe keeps your card, and nothing is taken until the free days end."
                   : "Paid securely through Stripe. Cancel any time."}
               </p>
-              {pricing.data ? (
-                <ul className={`adds ${on}`}>
-                  {pricing.data.cards.member.benefits.map((line, i) => (
-                    <li key={line} style={{ "--delay": `${TICK_FIRST_MS + i * TICK_MS}ms` } as CSSProperties}>
-                      <svg viewBox="0 0 20 20" aria-hidden="true">
-                        <circle cx="10" cy="10" r="10" /><path d="M6 10.4l2.6 2.6 5.6-5.6" pathLength={1} />
-                      </svg>
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
+              {pricing.data ? <Adds lines={pricing.data.lines.member.gives} on={on} /> : null}
               {key ? <StripeCheckout publishableKey={key} onPaid={() => void paid()} />
                 : <p className="error">Payments aren't set up yet. Try again later.</p>}
             </>
@@ -152,5 +141,21 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
         </section>
       </main>
     </>
+  );
+}
+
+/** What moving up adds, a tick each: ticked in turn while `on` is "member", as the switch above shows it. */
+function Adds({ lines, on }: { lines: string[]; on: "free" | "member" }) {
+  return (
+    <ul className={`adds ${on}`}>
+      {lines.map((line, i) => (
+        <li key={line} style={{ "--delay": `${TICK_FIRST_MS + i * TICK_MS}ms` } as CSSProperties}>
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <circle cx="10" cy="10" r="10" /><path d="M6 10.4l2.6 2.6 5.6-5.6" pathLength={1} />
+          </svg>
+          {line}
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -245,17 +245,23 @@ def is_member(http) -> bool:
     return http.get("/billing").json()["member"]
 
 
+# What turns an alert on: Telegram's three steps and a browser's subscription (the daily email is a field of
+# `PATCH /account`, asked below). Each is a plan's with alerts; turning one off is anybody's.
+ALERTS_ON = {"PUT /telegram/bot", "POST /telegram/check", "POST /telegram/test", "POST /push/subscribe"}
+
+
 def test_a_free_account_reaches_every_page_of_the_site(db, http, monkeypatch):
     """The site is everybody's (owner, 2026-11-12: "users get to see the whole site for free"), checked
-    across the whole API: no page answers a free account 402 but making a document and bringing a job in by
-    its link, which need a body to be asked at all and are asked in the tests below."""
+    across the whole API: no page answers a free account 402 but what turns an alert on, which is Starter's
+    and a member's (owner, 2026-11-16), and making a document and bringing a job in by its link, which need a
+    body to be asked at all and are asked in the tests below."""
     from libs.secrets import generate_key
     from services.api.app import app
 
     # The pages that hold a credential build their store first, and it needs the platform key.
     monkeypatch.setenv("SECRETS_KEK", generate_key())
     sign_in(http, searching(db))
-    asked, closed = 0, []
+    asked, closed = 0, set()
     for path, operations in app.openapi()["paths"].items():
         # Signing in and out would end the session the walk is made in.
         if path.startswith("/auth/"):
@@ -265,8 +271,8 @@ def test_a_free_account_reaches_every_page_of_the_site(db, http, monkeypatch):
         for method in operations:
             asked += 1
             if http.request(method.upper(), concrete).status_code == 402:
-                closed.append(f"{method.upper()} {path}")
-    assert not closed, f"closed to a free account: {closed}"
+                closed.add(f"{method.upper()} {path}")
+    assert closed == ALERTS_ON, f"closed to a free account: {closed}"
     # The walk reached the site, not a handful of it.
     assert asked >= 60
 
@@ -297,47 +303,90 @@ def on_starter(db, **fields) -> User:
     return searching(db, subscription_status="active", subscription_plan="starter", **fields)
 
 
-def test_starter_has_the_areas_switched_on_for_it_and_a_switch_is_the_whole_of_the_change(db, http):
-    """Owner, 2026-11-16: a plan between Free and the membership, with "access to certain areas", each "an on
-    off switch". By default the half that gets a person there first: the jobs at once and the alerts. Not the
-    documents and not Add a job, which are the membership's. Flipping a switch moves exactly that area, at
-    once, for the page, the route and the Jobs list alike."""
-    fresh = insert(db, posting(0.5))
-    starter = on_starter(db)
+CHAT = "https://chat.example.com/mahoraga-members"
+EVERYTHING = ["early_jobs", "alerts", "match_scores", "cvs", "covers", "add_job", "team_access"]
 
-    def build(kind: str) -> int:
-        asked = {"job_id": fresh.id, "kind": kind, "mode": "ai"}
+
+def test_each_plan_gives_what_it_includes_and_refuses_the_rest(db, http, monkeypatch):
+    """Owner, 2026-11-16, the three plans "from now on". Free: each job once it is 7 days old, and the rest of
+    the site. Starter: everything in Free, each job once it is 3 days old, alerts and match scores. Member:
+    everything in Starter, each job the moment it is found, CVs and cover letters, a job added by its link and
+    the members' chat. Every page and route gives a plan exactly that, and refuses the rest."""
+    from libs.membership import has
+    from libs.secrets import generate_key
+
+    monkeypatch.setenv("SECRETS_KEK", generate_key())
+    settings.put(db, "members_channel_url", CHAT)
+    found = {days: insert(db, posting(days)).id for days in (1, 3.2, 8)}
+
+    def jobs_seen() -> set[float]:
+        shown = listed(http)
+        return {days for days, job in found.items() if job in shown}
+
+    def made(kind: str) -> int:
+        asked = {"job_id": found[8], "kind": kind, "mode": "ai"}
         return http.post("/documents/build", json=asked).status_code
 
-    sign_in(http, searching(db))
-    assert fresh.id not in listed(http), "a free account waits a week for it"
-    assert http.get("/dashboard").json()["areas"] == []
+    def gave(answer: int) -> bool:
+        """Whether a route went on to its own work: anything but the refusal of a plan without it."""
+        return answer != 402
 
-    sign_in(http, starter)
-    assert http.get("/billing").json()["tier"] == "starter" and is_member(http)
-    assert http.get("/dashboard").json()["areas"] == ["early_jobs", "alerts"]
-    assert fresh.id in listed(http)
-    assert (build("cv"), build("cover")) == (402, 402)
-    refused = http.post("/jobs/link", json={"url": "https://example.com/a-job"})
-    assert (refused.status_code, refused.json()["detail"]) == (
-        402, "Adding a job by its link comes with a membership.")
-    typed = {"url": "https://example.com/a-job", "title": "T", "company": "C", "location": "",
-             "description": "x" * 300}
-    assert http.post("/jobs/link/save", json=typed).status_code == 402
+    member_plan = searching(db, subscription_status="active", subscription_plan="member")
+    for account, plan, jobs, wait, areas in (
+            (searching(db), "free", {8}, 168, []),
+            (on_starter(db), "starter", {3.2, 8}, 72, ["alerts", "match_scores"]),
+            (member_plan, "member", {1, 3.2, 8}, 0, EVERYTHING)):
+        sign_in(http, account)
+        member = plan == "member"
+        assert http.get("/billing").json()["tier"] == plan
+        assert http.get("/dashboard").json()["areas"] == areas
+        # Starter's list holds a job found three days ago and not one found yesterday; Free's, neither.
+        assert (jobs_seen(), http.get("/feed").json()["delay_hours"]) == (jobs, wait), plan
+        assert [gave(made(kind)) for kind in ("cv", "cover")] == [member, member], plan
+        refused = http.post("/jobs/link", json={"url": "not a link"})
+        assert gave(refused.status_code) is member, plan
+        if not member:
+            assert refused.json()["detail"] == "Adding a job by its link comes with a membership."
+        # Alerts: the daily email switched on, and Telegram past its plan check to its own (no bot yet).
+        assert gave(http.patch("/account", json={"email_alerts": True}).status_code) is (plan != "free"), plan
+        assert http.post("/telegram/check").status_code == (402 if plan == "free" else 409), plan
+        assert http.patch("/account", json={"email_alerts": False}).status_code == 200, "off is anybody's"
+        assert has(db, account.id, "match_scores") is (plan != "free"), plan
+        assert http.get("/contact").json()["channel"] == (CHAT if member else None), plan
 
-    settings.put(db, "starter_areas", ["cvs", "add_job"])
-    assert http.get("/dashboard").json()["areas"] == ["cvs", "add_job"]
-    assert fresh.id not in listed(http), "the jobs at once were switched off for Starter"
-    assert build("cv") != 402 and build("cover") == 402
-    assert http.post("/jobs/link", json={"url": "not a link"}).status_code == 422, "asked, and it is no link"
-
-    # The membership has every area whatever is switched on for Starter; so does free access from an admin.
-    for whole in (searching(db, subscription_status="active", subscription_plan="member"),
-                  searching(db, subscription_status="trialing"), on_starter(db, free_access_at=now())):
+    # The membership is everything, however it is had: paid for, in its trial, given by an admin over a
+    # Starter subscription, or an admin's.
+    for whole in (searching(db, subscription_status="trialing"), on_starter(db, free_access_at=now()),
+                  searching(db, is_admin=True)):
         sign_in(http, whole)
         assert http.get("/billing").json()["tier"] == "member"
-        assert len(http.get("/dashboard").json()["areas"]) == 5
-        assert fresh.id in listed(http) and build("cover") != 402
+        assert http.get("/dashboard").json()["areas"] == EVERYTHING
+        assert jobs_seen() == {1, 3.2, 8} and gave(made("cover"))
+
+
+def test_the_members_chat_is_shown_to_members_only_while_it_has_a_link(db, http):
+    """Owner, 2026-11-16: a members-only link to the owner's chat, on the Help page; nothing while it is
+    unset, and only a web address is kept, since a link that opens nothing is worse than none."""
+    member, starter = searching(db, subscription_status="active"), on_starter(db)
+    admin = person(db, email=ADMIN)
+    sign_in(http, member)
+    assert http.get("/contact").json()["channel"] is None, "nothing to open yet"
+
+    sign_in(http, admin)
+    for wrong in ("t.me/mahoraga", "http://chat.example.com/members", "javascript:alert(1)"):
+        refused = http.put("/admin/settings/members_channel_url", json={"value": wrong})
+        assert refused.status_code == 400, wrong
+    assert http.put("/admin/settings/members_channel_url", json={"value": CHAT}).status_code == 200
+
+    sign_in(http, member)
+    assert http.get("/contact").json()["channel"] == CHAT
+    sign_in(http, starter)
+    assert http.get("/contact").json()["channel"] is None
+
+    sign_in(http, admin)
+    assert http.put("/admin/settings/members_channel_url", json={"value": ""}).status_code == 200
+    sign_in(http, member)
+    assert http.get("/contact").json()["channel"] is None
 
 
 def test_a_free_account_adds_no_job_by_its_link_and_keeps_the_ones_it_added(db, http):
@@ -389,22 +438,19 @@ def test_the_form_is_for_the_plan_asked_and_stripes_price_says_which_plan(db, ht
     assert http.get("/billing").json()["tier"] == "member"
 
 
-def test_alerts_go_to_starter_only_while_they_are_switched_on_for_it(db):
-    from libs.db.models import CorpusJob
-    from libs.queue.queue import dispatch_due_notifications
+def test_starter_is_alerted_of_a_job_when_its_own_list_has_it(db):
+    """Owner, 2026-11-16: alerts are Starter's too (who else's: the test of the lanes, below). What an alert
+    says is what reached the person's own list, so Starter hears of a job three days after a member does."""
+    from libs.notify import owed
 
-    insert(db, CorpusJob(title="Engineer", company="Acme", url="https://example.com/1", source="greenhouse"))
-    alerts = {"telegram_status": "connected", "timezone": "UTC"}
+    alerts = {"telegram_status": "connected", "created_at": now() - timedelta(days=10)}
     starter, member = on_starter(db, **alerts), searching(db, subscription_status="active", **alerts)
+    yesterday, four_days = insert(db, posting(1)).id, insert(db, posting(4)).id
 
-    def alerted() -> set:
-        db[QueueJob.COLLECTION].delete_many({})
-        dispatch_due_notifications(db)
-        return set(db[QueueJob.COLLECTION].distinct("user_id", {"lane": "notify"}))
+    def heard(user: User) -> set[int]:
+        return {match.job.id for match in owed(db, get(db, User, user.id))}
 
-    assert alerted() == {starter.id, member.id}
-    settings.put(db, "starter_areas", ["early_jobs"])
-    assert alerted() == {member.id}
+    assert (heard(starter), heard(member)) == ({four_days}, {yesterday, four_days})
 
 
 def test_a_free_account_sees_each_job_a_week_late_until_it_leaves_everybodys_list(db, http):
@@ -429,7 +475,24 @@ def test_a_free_account_sees_each_job_a_week_late_until_it_leaves_everybodys_lis
     assert http.put(f"/jobs/{week_old}/applied").status_code == 200
     [banner] = http.get("/dashboard").json()["banners"]
     assert banner["key"] == "free"
-    assert banner["text"].startswith("You see jobs 7 days after members see them.")
+    assert banner["text"].startswith("You see each job 7 days after we find it.")
+
+
+def test_starter_sees_each_job_three_days_late_and_the_operator_sets_how_late(db, http):
+    """Owner, 2026-11-16: Starter "sees jobs once they are 3 days old", `starter_delay_hours` in Admin. A job
+    its list does not have yet is not its to read or mark either, asked by its number."""
+    yesterday, three_days = (insert(db, posting(days)).id for days in (1, 3.2))
+    sign_in(http, on_starter(db))
+
+    assert listed(http) & {yesterday, three_days} == {three_days}
+    assert (http.get(f"/jobs/{yesterday}/description").status_code,
+            http.put(f"/jobs/{yesterday}/bookmarked").status_code) == (404, 404)
+    assert http.get(f"/jobs/{three_days}/description").status_code == 200
+    assert http.get("/dashboard").json()["banners"][0]["key"] != "free", "a paying account is not called free"
+
+    settings.put(db, "starter_delay_hours", 12)
+    assert listed(http) & {yesterday, three_days} == {yesterday, three_days}
+    assert http.get("/feed").json()["delay_hours"] == 12
 
 
 def test_the_operator_sets_how_far_behind_a_free_account_is(db, http):
@@ -440,26 +503,35 @@ def test_the_operator_sets_how_far_behind_a_free_account_is(db, http):
     settings.put(db, "free_delay_hours", 0)
     assert new in listed(http) and http.get("/feed").json()["delay_hours"] == 0
     assert http.get("/dashboard").json()["banners"][0]["text"] == \
-        "CVs, cover letters and alerts come with a membership."
+        "Alerts, match scores, CVs and cover letters come with a membership."
 
 
-def test_a_shelf_no_longer_than_the_free_wait_is_refused(db, http):
-    """A free account sees a job from `free_delay_hours` until it leaves everybody's list at the job shelf
-    life, so a shelf no longer than that wait lists nothing for any of them, and nothing said so: the server
-    kept 11-07's week while free accounts waited a week, and a new free account saw "0 jobs" (2026-11-13)."""
-    sign_in(http, person(db, email=ADMIN))
+def test_a_shelf_no_longer_than_a_plans_wait_is_refused_and_starter_never_waits_longer_than_free(db, http):
+    """An account on a plan that waits sees a job from that wait until it leaves everybody's list at the job
+    shelf life, so a shelf no longer than the wait lists nothing for any of them, and nothing said so: the
+    server kept 11-07's week while free accounts waited a week, and a new free account saw "0 jobs"
+    (2026-11-13). Starter has everything Free has, so it never waits the longer (owner, 2026-11-16)."""
+    sign_in(http, admin := person(db, email=ADMIN))
     for key, value in (("job_max_age_hours", 168), ("job_max_age_hours", 96), ("free_delay_hours", 720)):
         refused = http.put(f"/admin/settings/{key}", json={"value": value})
         assert refused.status_code == 400, (key, value)
         assert "Free accounts would see no jobs" in refused.json()["detail"]
-    assert (settings.get(db, "job_max_age_hours"), settings.get(db, "free_delay_hours")) == (720, 168)
+    for key, value, said in (("starter_delay_hours", 192, "Starter would see jobs after Free does"),
+                             ("free_delay_hours", 48, "Starter would see jobs after Free does")):
+        refused = http.put(f"/admin/settings/{key}", json={"value": value})
+        assert (refused.status_code, said in refused.json()["detail"]) == (400, True), (key, value)
+    kept = ("job_max_age_hours", "free_delay_hours", "starter_delay_hours")
+    assert [settings.get(db, key) for key in kept] == [720, 168, 72]
 
-    # Either way round, a wait shorter than the shelf is saved, and free accounts see jobs in between.
+    # Either way round, a wait shorter than the shelf is saved, and accounts see jobs in between.
     assert http.put("/admin/settings/free_delay_hours", json={"value": 72}).status_code == 200
     assert http.put("/admin/settings/job_max_age_hours", json={"value": 168}).status_code == 200
     week_old, older = (insert(db, posting(days)).id for days in (5, 8))
     sign_in(http, searching(db))
     assert listed(http) & {week_old, older} == {week_old}
+
+    sign_in(http, admin)
+    assert http.put("/admin/settings/starter_delay_hours", json={"value": 24}).status_code == 200
 
 
 def test_admin_counts_a_free_accounts_jobs_as_its_jobs_page_lists_them(db, http):
@@ -492,7 +564,7 @@ def test_a_new_account_picks_its_plan_first_and_free_asks_for_no_card(db, http):
     assert membership["member"] is False and membership["can_start"] is True and membership["trial_days"] == 7
     assert membership["publishable_key"] == "pk_test_fake"
     assert http.get("/billing/plan").json() == {"amount": 999, "currency": "eur", "interval": "month",
-                                                "interval_count": 1, "trial_days": 7, "free_delay_hours": 168}
+                                                "interval_count": 1, "trial_days": 7}
 
 
 def test_only_a_new_account_is_asked_for_its_plan(db, http):
@@ -590,7 +662,7 @@ def test_coming_back_from_the_form_is_a_member_at_once(db, http, fake):
     assert membership["member"] is True and membership["status"] == "trialing"
     assert http.get("/dashboard").json() | {"onboarding": None} == {
         "stage": "onboarding", "is_admin": False, "member": True, "onboarding": None,
-        "areas": ["early_jobs", "alerts", "cvs", "covers", "add_job"]}
+        "areas": EVERYTHING}
     stored = get(db, User, newcomer.id)
     assert stored.trial_ends_at.timestamp() == trial_end
     # Read off the subscription's item, where Stripe's API keeps it since 2025-03-31.
@@ -850,8 +922,8 @@ def test_an_admin_deleting_an_account_ends_its_membership_too(db, http, fake):
 
 
 def test_alerts_and_the_daily_email_are_members_and_the_harvest_is_everybodys(db, monkeypatch):
-    """Alerts come with a membership (owner, 2026-11-12: "no alerts on free"); a free account's words are
-    still searched for, or its list a week behind would have nothing in it."""
+    """Alerts come with a membership (owner, 2026-11-12: "no alerts on free") and with Starter (2026-11-16); a
+    free account's words are still searched for, or its list a week behind would have nothing in it."""
     from libs.db.models import CorpusJob
     from libs.queue.queue import dispatch_due_digests, dispatch_due_notifications
     from libs.tenant.repository import TenantRepository
@@ -862,23 +934,25 @@ def test_alerts_and_the_daily_email_are_members_and_the_harvest_is_everybodys(db
     alerts = {"telegram_status": "connected", "email_alerts": True, "timezone": "UTC",
               "email_digest_at": None}
     paying = person(db, subscription_status="active", **alerts)
+    starter = person(db, subscription_status="active", subscription_plan="starter", **alerts)
     lapsed = person(db, subscription_status="past_due", **alerts)
     let_in = person(db, free_access_at=now(), **alerts)
     operator = person(db, email=ADMIN, **alerts)
-    for each in (paying, lapsed, let_in, operator):
+    for each in (paying, starter, lapsed, let_in, operator):
         insert(db, UserConfig(user_id=each.id, config={"sections": []}))
 
     dispatch_due_notifications(db)
     notified = set(db[QueueJob.COLLECTION].distinct(
         "user_id", {"lane": "notify", "payload.digest": {"$ne": True}}))
-    assert notified == {paying.id, let_in.id, operator.id}
+    assert notified == {paying.id, starter.id, let_in.id, operator.id}
 
     monkeypatch.setattr("libs.queue.queue.due", lambda *_args, **_kwargs: True)
     dispatch_due_digests(db)
     emailed = set(db[QueueJob.COLLECTION].distinct("user_id", {"lane": "notify", "payload.digest": True}))
-    assert emailed == {paying.id, let_in.id, operator.id}
+    assert emailed == {paying.id, starter.id, let_in.id, operator.id}
 
-    assert set(TenantRepository(db).active_configs()) == {paying.id, lapsed.id, let_in.id, operator.id}
+    assert set(TenantRepository(db).active_configs()) == {paying.id, starter.id, lapsed.id, let_in.id,
+                                                          operator.id}
 
 
 def test_setup_problems_are_named(monkeypatch):

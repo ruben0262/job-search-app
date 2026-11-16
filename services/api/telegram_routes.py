@@ -3,7 +3,8 @@
 
 Three calls, in the order the page makes them: `PUT /telegram/bot` checks and keeps the token,
 `POST /telegram/check` looks for the Start (the page asks every couple of seconds until it comes),
-and `POST /telegram/test` sends one message on demand. `DELETE /telegram/bot` forgets all of it.
+and `POST /telegram/test` sends one message on demand, each for a plan with alerts (`deps.with_alerts`).
+`DELETE /telegram/bot` forgets all of it, for anybody.
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ from libs.db.models import User
 from libs.notify import site_url
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
-from services.api.deps import current_user, get_db, get_store, rate_limit
+from services.api.deps import current_user, get_db, get_store, rate_limit, with_alerts
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/telegram", tags=["telegram"])
@@ -61,7 +62,7 @@ def state(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_
 @router.put("/bot")
 def save_bot(body: BotToken, request: Request, db: Database = Depends(get_db),
              store: SecretStore = Depends(get_store),
-             user_id: _uuid.UUID = Depends(current_user)) -> TelegramState:
+             user_id: _uuid.UUID = Depends(with_alerts)) -> TelegramState:
     """Check a bot token with Telegram and keep it. Their chat comes next, from pressing Start."""
     rate_limit(request, f"telegram:{user_id}", limit=20, per_seconds=3600)
     token = body.token.strip()
@@ -83,7 +84,7 @@ def save_bot(body: BotToken, request: Request, db: Database = Depends(get_db),
 
 @router.post("/check")
 def check(db: Database = Depends(get_db), store: SecretStore = Depends(get_store),
-          user_id: _uuid.UUID = Depends(current_user)) -> TelegramState:
+          user_id: _uuid.UUID = Depends(with_alerts)) -> TelegramState:
     """Has Start been pressed in their bot? If so, that chat is theirs, and it gets a welcome."""
     user = get(db, User, user_id)
     if user.telegram_status == "connected":
@@ -107,7 +108,7 @@ def check(db: Database = Depends(get_db), store: SecretStore = Depends(get_store
 
 @router.post("/test")
 def test(db: Database = Depends(get_db), store: SecretStore = Depends(get_store),
-         user_id: _uuid.UUID = Depends(current_user)) -> TelegramState:
+         user_id: _uuid.UUID = Depends(with_alerts)) -> TelegramState:
     """Send one message, to see that it arrives."""
     user = get(db, User, user_id)
     if user.telegram_status not in ("connected", "broken") or not user.telegram_chat_id:

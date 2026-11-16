@@ -17,6 +17,7 @@ from libs import settings
 from libs.db import find, get, insert, now
 from libs.db.models import ContactMessage, User
 from libs.mail import EmailSender, MailError, send_within_cap
+from libs.membership import has
 from libs.obs import audit
 from services.api.admin_routes import require_admin
 from services.api.deps import current_user, get_db, get_mailer, rate_limit
@@ -40,13 +41,19 @@ class ContactReceipt(BaseModel):
 
 class ContactAddress(BaseModel):
     email: str
+    # The members' chat with the people who build the site (`members_channel_url`), for an account whose plan
+    # has it (`team_access`); None for the rest, and for everybody while it has no link.
+    channel: str | None = None
 
 
 @router.get("/contact")
 def contact_address(db: Database = Depends(get_db),
-                    _user_id: _uuid.UUID = Depends(current_user)) -> ContactAddress:
-    """Where the form's messages go, for anyone who would rather use their own email app."""
-    return ContactAddress(email=settings.get(db, "support_email"))
+                    user_id: _uuid.UUID = Depends(current_user)) -> ContactAddress:
+    """Where the form's messages go, for anyone who would rather use their own email app, and the members'
+    chat, for whoever has it."""
+    channel = settings.get(db, "members_channel_url")
+    return ContactAddress(email=settings.get(db, "support_email"),
+                          channel=channel if channel and has(db, user_id, "team_access") else None)
 
 
 @router.post("/contact", status_code=202)
