@@ -2,10 +2,15 @@
 from __future__ import annotations
 
 import dataclasses
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from libs.tenant.filters import UserFilters, applicant_glut
+import pytest
+
+from libs.db import insert
+from libs.db.models import CorpusJob
+from libs.tenant.filters import UserFilters, candidate_conditions
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
 
@@ -41,9 +46,22 @@ def filters(*, applicant_cap: int | None = 200, max_age_hours: int = 24,
                                    max_age_hours=max_age_hours, applicant_cap=applicant_cap)
 
 
-def drops(item, rules_=None) -> str | None:
-    """Why this account would never receive this posting, or `None`."""
-    return (rules_ or filters()).unwanted(dataclasses.asdict(item))
+@pytest.fixture()
+def drops(db):
+    """Whether this account would never receive this posting: asked of the database, as every match asks
+    (`candidate_conditions`), with the posting stored as the harvest stores one. An `Item` as it stands is
+    kept, so a test that changes one thing about it and sees it dropped has named the reason."""
+    def dropped(item, rules_=None) -> bool:
+        row = {name: value for name, value in dataclasses.asdict(item).items()
+               if name not in ("job_id", "score")}
+        found = item.posted_at or NOW - timedelta(hours=1)
+        job = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", first_seen_at=found,
+                                   described_at=found, **row))
+        return not db[CorpusJob.COLLECTION].count_documents(
+            {"$and": [{"_id": job.id}, *candidate_conditions(rules_ or filters(), now=NOW)]})
+
+    assert not dropped(Item()), "the posting every test starts from must be one this account receives"
+    return dropped
 
 
 # ── the buckets ───────────────────────────────────────────────────────────────────────────────
@@ -54,73 +72,66 @@ def drops(item, rules_=None) -> str | None:
 
 # ── the filters, and what they refuse to drop ─────────────────────────────────────────────────
 
-def test_a_job_in_a_language_the_user_does_not_write_is_dropped():
-    assert drops(Item(language="de")) == "language"
+def test_a_job_in_a_language_the_user_does_not_write_is_dropped(drops):
+    assert drops(Item(language="de"))
 
 
-def test_the_filter_reads_the_stored_code_and_never_runs_a_detector():
-    """Detection is a property of the posting: once at describe time, not per reader per pass."""
-    import inspect
-
-    from libs.tenant import filters as module
-
-    body = inspect.getsource(module.UserFilters.unwanted)
-    assert "detect_language" not in body, (
-        "the same posting was detected again for every account and again on every retrain")
-    # A German description with the stored code saying English is judged by the column.
+def test_the_filter_reads_the_stored_code_and_never_runs_a_detector(drops):
+    """Detection is a property of the posting: once at describe time, not per reader per pass. A German
+    description with the stored code saying English is judged by the column."""
     german_text = Item(language="en", description="Wir suchen einen Softwareentwickler. " * 5)
-    assert drops(german_text) is None
+    assert not drops(german_text)
 
 
-def test_a_posting_whose_language_could_not_be_read_is_kept():
+def test_a_posting_whose_language_could_not_be_read_is_kept(drops):
     """Fails open. Unknown is not evidence of anything."""
-    assert drops(Item(language=None)) is None
+    assert not drops(Item(language=None))
 
 
-def test_an_account_that_never_stated_a_language_keeps_everything():
+def test_an_account_that_never_stated_a_language_keeps_everything(drops):
     """Otherwise a user who skipped one onboarding question would have their entire feed silently emptied."""
-    assert drops(Item(language="de"), UserFilters.from_config({}, max_age_hours=24)) is None
+    assert not drops(Item(language="de"), UserFilters.from_config({}, max_age_hours=24))
 
 
 def switched(*ways: str) -> UserFilters:
     return filters(sections=[{"keywords": ["backend engineer"], "workplaces": list(ways)}])
 
 
-def test_remote_and_hybrid_drop_an_explicit_onsite_job_wherever_it_is():
+def test_remote_and_hybrid_drop_an_explicit_onsite_job_wherever_it_is(drops):
     """Was: on-site allowed only in Hungary, the reference owner's default, for every account."""
     for place in ("Budapest, Hungary", "Dublin, Ireland"):
-        assert drops(Item(workplace="onsite", location=place), switched("remote", "hybrid")) == "workplace"
+        assert drops(Item(workplace="onsite", location=place), switched("remote", "hybrid"))
 
 
-def test_every_switch_on_keeps_an_onsite_job_anywhere_and_place_is_the_country_filter_s_job():
-    assert drops(Item(workplace="onsite", location="Dublin, Ireland"),
-                 switched("remote", "hybrid", "onsite")) is None
+def test_every_switch_on_keeps_an_onsite_job_anywhere_and_place_is_the_country_filter_s_job(drops):
+    assert not drops(Item(workplace="onsite", location="Dublin, Ireland"),
+                     switched("remote", "hybrid", "onsite"))
 
 
-def test_remote_alone_drops_hybrid_but_never_a_job_whose_workplace_is_unknown():
+def test_remote_alone_drops_hybrid_but_never_a_job_whose_workplace_is_unknown(drops):
     """The filter only ever drops an *explicit* signal. Everything else fails open."""
-    assert drops(Item(workplace="hybrid"), switched("remote")) == "workplace"
-    assert drops(Item(workplace=None), switched("remote")) is None
+    assert drops(Item(workplace="hybrid"), switched("remote"))
+    assert not drops(Item(workplace=None), switched("remote"))
 
 
-def test_two_switches_on_keep_a_job_that_is_either_and_drop_the_third():
+def test_two_switches_on_keep_a_job_that_is_either_and_drop_the_third(drops):
     """Switches are an "or": hybrid and on-site on is a job that is hybrid or on site, never remote."""
     rules = switched("hybrid", "onsite")
-    kept = {way for way in ("remote", "hybrid", "onsite") if drops(Item(workplace=way), rules) is None}
+    kept = {way for way in ("remote", "hybrid", "onsite") if not drops(Item(workplace=way), rules)}
     assert kept == {"hybrid", "onsite"}
 
 
-def test_no_switch_on_narrows_nothing():
+def test_no_switch_on_narrows_nothing(drops):
     """Like an empty country or language list: nothing picked is nothing ruled out."""
-    assert all(drops(Item(workplace=way), switched()) is None for way in ("remote", "hybrid", "onsite"))
+    assert all(not drops(Item(workplace=way), switched()) for way in ("remote", "hybrid", "onsite"))
 
 
-def test_a_search_saved_before_the_switches_admits_the_same_jobs():
+def test_a_search_saved_before_the_switches_admits_the_same_jobs(drops):
     """Its stored answer is read as the switches that admit what it did, and no answer was remote or
     hybrid. Nobody's feed changes on the day the question did."""
     def kept(section: dict) -> set[str]:
         rules = filters(sections=[{"keywords": ["backend engineer"], **section}])
-        return {way for way in ("remote", "hybrid", "onsite") if drops(Item(workplace=way), rules) is None}
+        return {way for way in ("remote", "hybrid", "onsite") if not drops(Item(workplace=way), rules)}
 
     assert kept({"remote_policy": "remote_only"}) == {"remote"}
     assert kept({"remote_policy": "remote_or_hybrid"}) == {"remote", "hybrid"}
@@ -128,66 +139,71 @@ def test_a_search_saved_before_the_switches_admits_the_same_jobs():
     assert kept({}) == {"remote", "hybrid"}
 
 
-def test_each_sections_switches_add_up_rather_than_narrow_each_other():
+def test_each_sections_switches_add_up_rather_than_narrow_each_other(drops):
     rules = filters(sections=[{"platform": "linkedin", "keywords": ["go"], "workplaces": ["remote"]},
                               {"platform": "all", "keywords": ["rust"], "workplaces": ["onsite"]}])
-    assert drops(Item(workplace="onsite"), rules) is None
-    assert drops(Item(workplace="hybrid"), rules) == "workplace"
+    assert not drops(Item(workplace="onsite"), rules)
+    assert drops(Item(workplace="hybrid"), rules)
 
 
-def test_a_job_site_s_own_words_for_a_way_of_working_are_read_as_it():
+def test_a_job_site_s_own_words_for_a_way_of_working_are_read_as_it(db):
     """Boards name them in their own words and languages. A job titled in Spanish as hybrid is hybrid,
     and a remote one remote, for someone who switched on only on-site work — and a word that also
-    names something else ("Front Office") is not read as one."""
+    names something else ("Front Office") is not read as one. Read once, when the posting's text is
+    stored, and asked of the database after that: the reading at list time was a second one."""
+    from libs.corpus.repository import CorpusRepository
+
+    def dropped(title: str, location: str, rules: UserFilters) -> bool:
+        corpus = CorpusRepository(db)
+        job_id = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin", title=title,
+                            location=location)
+        corpus.set_description(job_id, "We are hiring for this role and would like to hear from you. " * 5)
+        return not db[CorpusJob.COLLECTION].count_documents(
+            {"$and": [{"_id": job_id}, *candidate_conditions(rules)]})
+
     rules = switched("onsite")
-    assert drops(Item(title=".NET Developer – Madrid (Híbrido)", location="Spain"), rules) == "workplace"  # noqa: RUF001
-    assert drops(Item(title="Backend Engineer (100% remoto)", location="Spain"), rules) == "workplace"
-    assert drops(Item(title="Android Developer (praca zdalna)", location="Wrocław"), rules) == "workplace"
-    assert drops(Item(title="Front Office Supervisor", location="Sligo, Ireland"), switched("remote")) is None
+    assert dropped(".NET Developer – Madrid (Híbrido)", "Spain", rules)  # noqa: RUF001
+    assert dropped("Backend Engineer (100% remoto)", "Spain", rules)
+    assert dropped("Android Developer (praca zdalna)", "Wrocław", rules)
+    assert not dropped("Front Office Supervisor", "Sligo, Ireland", switched("remote"))
+    assert not dropped("Front Office Supervisor", "Sligo, Ireland", rules)
 
 
-def test_a_linkedin_listing_at_the_display_cap_is_dropped_as_stale():
-    assert drops(Item(applicants=200)) == "applicant_glut"
+def test_a_linkedin_listing_at_the_display_cap_is_dropped_as_stale(drops):
+    assert drops(Item(applicants=200))
 
 
-def test_the_same_count_on_another_source_is_not():
+def test_the_same_count_on_another_source_is_not(drops):
     """Only LinkedIn reports a count worth trusting."""
-    assert drops(Item(source="greenhouse", applicants=200)) is None
+    assert not drops(Item(source="greenhouse", applicants=200))
 
 
-def test_a_user_who_disabled_the_cap_sees_them():
-    assert drops(Item(applicants=500), filters(applicant_cap=0)) is None
+def test_a_user_who_disabled_the_cap_sees_them(drops):
+    assert not drops(Item(applicants=500), filters(applicant_cap=0))
 
 
-def test_applicant_glut_needs_a_count_to_act_on():
-    assert applicant_glut(source="linkedin", applicants=None, cap=200) is False
+def test_applicant_glut_needs_a_count_to_act_on(drops):
+    assert not drops(Item(applicants=None))
 
 
 # ── the age window the user asked for ─────────────────────────────────────────────────────────
 
-def test_the_age_window_is_enforced_in_sql_before_anything_is_scored():
+def test_the_age_window_is_enforced_in_the_one_question_every_match_asks(drops):
     """The harvester fetches at the widest window any account asked for."""
     tight = filters(max_age_hours=6)
     assert tight.max_age_hours == 6
-    # And that it is not silently one of the checks that moved into `unwanted`.
-    assert drops(Item(posted_at=NOW - timedelta(hours=300)), tight) is None
+    assert drops(Item(posted_at=NOW - timedelta(hours=300)), tight)
 
 
-def test_a_posting_inside_the_window_is_kept():
+def test_a_posting_inside_the_window_is_kept(drops):
     fresh = Item(posted_at=NOW - timedelta(hours=3))
-    assert drops(fresh, filters(max_age_hours=24)) is None
+    assert not drops(fresh, filters(max_age_hours=24))
 
 
-def test_the_window_is_not_one_of_the_checks_that_moved_into_unwanted():
-    """It is a SQL condition, so `unwanted` must not answer for it a second time."""
-    item = Item(posted_at=NOW - timedelta(hours=100))
-    assert drops(item, filters(max_age_hours=6)) is None
-
-
-def test_a_posting_with_no_dates_at_all_is_kept():
-    """Unknown means keep."""
+def test_a_posting_with_no_dates_at_all_is_kept(drops):
+    """No date is judged on when it was found, and this one was found an hour ago."""
     item = Item(posted_at=None)
-    assert drops(item, filters(max_age_hours=6)) is None
+    assert not drops(item, filters(max_age_hours=6))
 
 
 def test_the_window_is_the_operators_and_is_never_defaulted_in_the_filter():
@@ -219,26 +235,26 @@ def test_the_age_window_is_not_the_notification_interval():
 
 # ── the terms the user asked never to see ─────────────────────────────────────────────────────
 
-def test_an_excluded_keyword_is_a_hard_no_before_scoring():
+def test_an_excluded_keyword_is_a_hard_no_before_scoring(drops):
     """They were honoured only by the cold-start keyword scorer."""
     item = Item(title="Contract Backend Engineer")
-    assert drops(item, filters(sections=[{"exclude_keywords": ["contract"]}])) == "excluded_keyword"
+    assert drops(item, filters(sections=[{"exclude_keywords": ["contract"]}]))
 
 
-def test_an_excluded_keyword_matches_the_company_too():
+def test_an_excluded_keyword_matches_the_company_too(drops):
     item = Item(title="Backend Engineer", company="Hays Recruitment")
-    assert drops(item, filters(sections=[{"exclude_keywords": ["hays"]}])) == "excluded_keyword"
+    assert drops(item, filters(sections=[{"exclude_keywords": ["hays"]}]))
 
 
-def test_an_excluded_term_in_the_description_does_not_drop_the_job():
+def test_an_excluded_term_in_the_description_does_not_drop_the_job(drops):
     """A posting that merely mentions the term in a benefits paragraph is not the job being excluded."""
     item = Item(title="Backend Engineer",
                 description="We work with contract staff occasionally. " * 10)
-    assert drops(item, filters(sections=[{"exclude_keywords": ["contract"]}])) is None
+    assert not drops(item, filters(sections=[{"exclude_keywords": ["contract"]}]))
 
 
-def test_no_excluded_keywords_drops_nothing():
-    assert drops(Item(), filters(sections=[{"exclude_keywords": []}])) is None
+def test_no_excluded_keywords_drops_nothing(drops):
+    assert not drops(Item(), filters(sections=[{"exclude_keywords": []}]))
 
 
 # ── dating the feed before filtering it ───────────────────────────────────────────────────────

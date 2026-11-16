@@ -1,4 +1,4 @@
-"""What one account will accept, as a set of cheap conditions applied before scoring."""
+"""What one account will accept, as conditions the database applies: one question, asked in one place."""
 from __future__ import annotations
 
 import re
@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from libs.contracts.config import migrate_config
-from libs.corpus import langfilter, workfilter
 from libs.corpus.freshness import PlatformWindows, platform_windows, showable
 from libs.corpus.geo import wanted_countries
 from libs.corpus.repository import TYPED
@@ -24,16 +23,9 @@ def _workplaces(sections: list[dict]) -> frozenset[str]:
     return frozenset().union(*switched) if switched else frozenset(WORKPLACES)
 
 
-def applicant_glut(*, source: str | None, applicants: int | None, cap: int) -> bool:
-    """Whether to drop a listing as over-subscribed. Only LinkedIn reports a count worth trusting."""
-    if cap <= 0 or not isinstance(applicants, int):
-        return False
-    return (source or "").lower() == "linkedin" and applicants >= cap
-
-
 @dataclass(frozen=True)
 class UserFilters:
-    """One account's pre-score conditions, read from their config once per batch."""
+    """What one account asked for, read from their config once: `candidate_conditions` makes it a query."""
 
     # `None` means no country selection and admits everywhere; an empty set must not look the same.
     countries: frozenset[str] | None = None
@@ -51,13 +43,6 @@ class UserFilters:
     # settings, with the measured map as the default — `filters_for` resolves it. Held here rather
     # than read inside `candidate_conditions` so the SQL builder stays free of a session.
     source_min_ages: tuple[tuple[str, int], ...] = ()
-
-    def __post_init__(self) -> None:
-        # Compiled once per batch: one pass over title and company against every term at once.
-        pattern = "|".join(re.escape(term) for term in self.exclude if term)
-        object.__setattr__(
-            self, "_matcher",
-            re.compile(rf"(?<!\w)({pattern})(?!\w)", re.I) if pattern else None)
 
     @classmethod
     def from_config(cls, config: dict | None, *, max_age_hours: int,
@@ -85,39 +70,6 @@ class UserFilters:
             languages=frozenset(str(code).lower() for code in config.get("languages") or []),
             source_min_ages=source_min_ages,
         )
-
-    def excluded(self, title: str | None, company: str | None) -> str | None:
-        """The term that rules this posting out, or `None`."""
-        if self._matcher is None:
-            return None
-        found = self._matcher.search(f"{title or ''} {company or ''}")
-        return found.group(0).lower() if found else None
-
-
-    def unwanted(self, row) -> str | None:
-        """Why this account can never receive this posting, or `None`."""
-        # Title and company only, never the description.
-        if self.excluded(row.get("title"), row.get("company")):
-            return "excluded_keyword"
-
-        if applicant_glut(source=row.get("source"), applicants=row.get("applicants"),
-                          cap=self.applicant_cap):
-            return "applicant_glut"
-
-        # All three switched on accepts every mode, so the classifier — the costliest check here — is
-        # skipped. `explicit=` is the tag parsed off the posting's own page, and it beats every heuristic.
-        mode = None if self.workplaces >= set(WORKPLACES) else workfilter.classify(
-            row.get("title") or "", row.get("location") or "", row.get("description"),
-            row.get("is_remote"), explicit=row.get("workplace"))
-        # Unknown is kept whatever is switched on: absence of a signal is not evidence of on-site.
-        if mode and mode not in self.workplaces:
-            return "workplace"
-
-        # The stored code, detected once at describe time rather than per reader per pass.
-        if not langfilter.is_allowed(row.get("language"), set(self.languages)):
-            return "language"
-
-        return None
 
 
 def filters_for(session, user, *, windows: PlatformWindows | None = None) -> UserFilters:
@@ -161,4 +113,32 @@ def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -
         {"described_at": {"$ne": None}},
         # A job somebody wrote in themselves is theirs alone, reached through their own mark (Add a job).
         {"source": {"$ne": TYPED}},
+        *_their_own(filters),
     ]
+
+
+def _their_own(filters: UserFilters) -> list[dict]:
+    """What this person said they do not want, each as a condition; one that is off is no condition.
+
+    These were Python, run over every candidate after it was read: of the 11,218 postings a month held for
+    one account's words, 6,418 were read, sent and decoded only to be dropped here (2026-11-15). Asked of
+    the database they are never sent, and there is one place that decides, not a query and a function
+    after it. Unknown is always kept: no language read, no way of working stated, no applicant count.
+    """
+    asked = []
+    if red := "|".join(re.escape(term) for term in filters.exclude if term):
+        # Whole words: "sr" is a reasonable thing to type and a disastrous substring ("Israel"). The title
+        # and the company only, never the description, which mentions a word without being about it.
+        named = {"$regex": rf"(*UCP)(?<!\w)(?:{red})(?!\w)", "$options": "i"}
+        asked.append({"$nor": [{"title": named}, {"company": named}]})
+    if filters.applicant_cap > 0:
+        # Over-subscribed. Only LinkedIn reports a count worth trusting.
+        asked.append({"$nor": [{"source": "linkedin", "applicants": {"$gte": filters.applicant_cap}}]})
+    if not filters.workplaces >= set(WORKPLACES):
+        # The way of working read when the posting's text was stored (`CorpusRepository.set_description`),
+        # from the board's own tag, its title, its place and its text.
+        asked.append({"workplace": {"$in": [None, *sorted(filters.workplaces)]}})
+    if filters.languages:
+        # The stored code, detected once when the text was stored, never per reader.
+        asked.append({"language": {"$in": [None, *sorted(filters.languages)]}})
+    return asked

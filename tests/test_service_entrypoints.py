@@ -41,7 +41,7 @@ def test_the_image_that_detects_a_language_declares_the_library_that_detects_it(
     `langdetect` was declared only in the notifier's `requirements.txt`. The code that calls
     `detect_language` is `libs/corpus/repository` — `set_description` and `fill_missing_languages` —
     which runs in the **harvester**, and that image never carried it. The `ImportError` was caught by
-    the same blind `except` as an unreadable posting and returned `None`; `is_allowed` keeps `None`
+    the same blind `except` as an unreadable posting and returned `None`; the filter keeps `None`
     on purpose; so every posting passed every account's language filter.
 
     Measured on the live platform: one account went from 608 postings with a detected language on

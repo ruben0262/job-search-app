@@ -23,39 +23,49 @@ def built(config_: dict | None, *, max_age_hours: int = WINDOW, **kwargs) -> Use
 # ── excluded terms ────────────────────────────────────────────────────────────────────────────
 
 
-def test_a_short_exclusion_matches_the_word_and_not_the_inside_of_another():
+def _kept(db, filters: UserFilters, title: str, company: str | None) -> bool:
+    return _row(db, title=title, company=company).id in _survivors(db, filters)
+
+
+def test_a_short_exclusion_matches_the_word_and_not_the_inside_of_another(db):
     """**The live defect.** `"sr"` is a reasonable thing to type and a disastrous substring."""
     filters = UserFilters(exclude=("sr",))
 
-    assert filters.excluded("Sr Backend Engineer", "Acme") == "sr"
-    assert filters.excluded("Engineer", "Sr. Consulting") == "sr"
-    assert filters.excluded("Backend Engineer", "Israel Tech") is None
-    assert filters.excluded("Engineer", "Disraeli Ltd") is None
-    assert filters.excluded("SRE Platform Engineer", "Acme") is None
+    assert not _kept(db, filters, "Sr Backend Engineer", "Acme")
+    assert not _kept(db, filters, "Engineer", "Sr. Consulting")
+    assert _kept(db, filters, "Backend Engineer", "Israel Tech")
+    assert _kept(db, filters, "Engineer", "Disraeli Ltd")
+    assert _kept(db, filters, "SRE Platform Engineer", "Acme")
 
 
-def test_a_multi_word_exclusion_still_works():
+def test_a_multi_word_exclusion_still_works(db):
     """Word boundaries must not break the ordinary case — a recruiter's name is several words."""
     filters = UserFilters(exclude=("quick hire staffing", "jack & jill"))
 
-    assert filters.excluded("Engineer", "Quick Hire Staffing") == "quick hire staffing"
-    assert filters.excluded("Engineer", "Jack & Jill Ltd") == "jack & jill"
-    assert filters.excluded("Engineer", "Quick Hire") is None
+    assert not _kept(db, filters, "Engineer", "Quick Hire Staffing")
+    assert not _kept(db, filters, "Engineer", "Jack & Jill Ltd")
+    assert _kept(db, filters, "Engineer", "Quick Hire")
 
 
-def test_the_term_is_returned_rather_than_a_boolean():
-    """So the caller can log which word is emptying a feed."""
-    assert UserFilters(exclude=("senior",)).excluded("Senior Engineer", None) == "senior"
+def test_a_word_is_excluded_however_it_is_capitalised_and_in_any_alphabet(db):
+    """The database compares as Python did: without regard to case, and a letter with an accent is a
+    letter, so a word ends where the word ends."""
+    filters = UserFilters(exclude=("senior", "főnök"))
+
+    assert not _kept(db, filters, "SENIOR Engineer", None)
+    assert not _kept(db, filters, "Engineer", "Főnök Kft")
+    assert _kept(db, filters, "Seniority Analyst", "Főnökség Zrt")
 
 
-def test_an_account_that_excluded_nothing_excludes_nothing():
-    assert UserFilters().excluded("Senior Engineer", "Anything") is None
+def test_an_account_that_excluded_nothing_excludes_nothing(db):
+    assert _kept(db, UserFilters(), "Senior Engineer", "Anything")
 
 
-def test_only_the_title_and_company_are_searched():
+def test_only_the_title_and_company_are_searched(db):
     """Never the description."""
     filters = UserFilters(exclude=("agency",))
-    assert filters.excluded("Backend Engineer", "Acme") is None
+    row = _row(db, title="Backend Engineer", company="Acme", description="We are not an agency. " * 20)
+    assert row.id in _survivors(db, filters)
 
 
 # ── countries ─────────────────────────────────────────────────────────────────────────────────
@@ -108,7 +118,7 @@ def test_a_v1_config_is_migrated_before_it_is_read():
     filters = built({"keywords": ["engineer"], "exclude_keywords": ["senior"]}, max_age_hours=72)
 
     assert filters.max_age_hours == 72
-    assert filters.excluded("Senior Engineer", None) == "senior"
+    assert filters.exclude == ("senior",)
 
 
 # ── one definition of "candidate", for three callers (ROADMAP 6az) ────────────────────────────
@@ -171,9 +181,10 @@ def _row(db, **kwargs):
     from libs.db.models import CorpusJob
 
     kwargs.setdefault("source", "test")
+    kwargs.setdefault("title", "Engineer")
     # Its text read, as a candidate's always is (`candidate_conditions`).
     kwargs.setdefault("described_at", kwargs.get("first_seen_at") or now())
-    return insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", title="Engineer", **kwargs))
+    return insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", **kwargs))
 
 
 def _survivors(db, filters):
@@ -226,14 +237,6 @@ def test_the_filters_do_not_gate_on_source(db):
     kept = _survivors(db, _filters_for_account_without_a_proxy(db))
 
     assert {linkedin.id, open_board.id} <= set(kept)
-
-
-def test_no_source_is_a_reason_for_unwanted_to_refuse_a_posting(db):
-    """The other half of the same rule: `unwanted` judges what a person said, never the source."""
-    filters = _filters_for_account_without_a_proxy(db)
-
-    assert filters.unwanted({"source": "linkedin", "title": "Engineer"}) is None
-    assert filters.unwanted({"source": "himalayas", "title": "Engineer"}) is None
 
 
 def _filters_for_account_without_a_proxy(db):

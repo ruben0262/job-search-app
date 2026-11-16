@@ -96,7 +96,15 @@ def test_remote_only_drops_jobs_known_to_be_on_site_but_keeps_unknown_ones(accou
     db, user = account
     _search(db, user, {"sections": [{"platform": "all", "keywords": ["backend engineer"],
                                      "workplaces": ["remote"]}]})
-    _jobs(db, ("Backend Engineer A", "", False, 1), ("Backend Engineer B", "", None, 2))
+    # Stored as the harvest stores them: the way of working is read once, when the text is, and a board
+    # saying "not remote" with nothing else to go on is on site (`CorpusRepository.set_description`).
+    from libs.corpus.repository import CorpusRepository
+
+    corpus = CorpusRepository(db)
+    for title, remote in (("Backend Engineer A", False), ("Backend Engineer B", None)):
+        job_id = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title,
+                            is_remote=remote)
+        corpus.set_description(job_id, "We build services for shops and the people who run them. " * 5)
 
     assert [m.job.title for m in matching_jobs(db, user)] == ["Backend Engineer B"]
 

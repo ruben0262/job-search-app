@@ -1,8 +1,8 @@
 """Which jobs a person sees: their green words pick them, their red words veto them. Nothing learns.
 
 The one definition behind the jobs page and the alerts (CLAUDE.md §1): both ask `matching_jobs`. Red
-words, language, place and the freshness window are `libs.tenant.filters`, unchanged; this module adds
-the green words, the minimum salary and the order.
+words, language, place, the way of working and the freshness window are `libs.tenant.filters`, asked of
+the database; this module adds the green words, the minimum salary and the order.
 """
 from __future__ import annotations
 
@@ -23,11 +23,8 @@ from libs.tenant.repository import TenantRepository
 
 logger = logging.getLogger(__name__)
 
-# How many of the newest candidates one call examines, for a day of postings asked for (`scan_for`).
+# How many of a person's newest jobs one call reads, for a day of postings asked for (`scan_for`).
 SCAN = 2_000
-# What `UserFilters.unwanted` reads off a row. Not the description: the working arrangement it would
-# read there was read once already, when the text was stored (`CorpusRepository.set_description`).
-_ROW = ("title", "company", "source", "applicants", "location", "is_remote", "workplace", "language")
 # PCRE's `\w` is ASCII unless told otherwise; this makes a word boundary mean what Python's does.
 _UNICODE = "(*UCP)"
 
@@ -136,8 +133,7 @@ def matching_jobs(db: Database, user: User, *, described_since: datetime | None 
     if not mine:
         return Matches()
 
-    filters = filters_for(db, user)
-    where = candidate_conditions(filters)
+    where = candidate_conditions(filters_for(db, user))
     if (as_of := jobs_as_of(db, user)) is not None:
         # Found by then, which the words index reads by and stops at; and read by then, the rule itself.
         where += [{"first_seen_at": {"$lte": as_of}}, {"described_at": {"$lte": as_of}}]
@@ -189,10 +185,8 @@ def matching_jobs(db: Database, user: User, *, described_since: datetime | None 
             set(row.get("title_terms") or ()) & mine_set if searched else set())
         words = in_title | {norm(hit) for hit in row.pop("_in_text")} | (
             set(row.get("terms") or ()) & mine_set if searched else set())
-        job = CorpusJob.from_doc(row)
-        if (words and not filters.unwanted({name: getattr(job, name) for name in _ROW})
-                and not underpaid(config, job.description)):
-            matches.append(Match(job, tuple(sorted(words)), tuple(sorted(in_title))))
+        if words and not underpaid(config, row.get("description")):
+            matches.append(Match(CorpusJob.from_doc(row), tuple(sorted(words)), tuple(sorted(in_title))))
     # A stable sort, so equal ranks keep the query's newest-first order.
     matches.sort(key=lambda match: match.rank, reverse=True)
     return matches

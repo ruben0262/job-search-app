@@ -123,19 +123,28 @@ def test_the_applicant_ceiling_is_the_operators_and_unlimited_shows_everything()
     # A config that carries the old field cannot override the operator.
     assert UserFilters.from_config({"applicant_cap": 999}, max_age_hours=24,
                                    applicant_cap=50).applicant_cap == 50
-    # Unlimited means show everything: `applicant_glut` reads 0 as "do not drop".
+    # Unlimited means show everything: `candidate_conditions` reads 0 as "do not drop".
     assert UserFilters.from_config({}, max_age_hours=24, applicant_cap=None).applicant_cap == 0
 
 
-def test_unlimited_applicants_actually_lets_a_busy_posting_through():
+def test_unlimited_applicants_actually_lets_a_busy_posting_through(db):
     """The limit has to reach the decision, not just the dataclass."""
-    from libs.tenant.filters import UserFilters, applicant_glut
+    import uuid
 
-    capped = UserFilters.from_config({}, max_age_hours=24, applicant_cap=200)
-    unlimited = UserFilters.from_config({}, max_age_hours=24, applicant_cap=None)
+    from libs.db import insert, now
+    from libs.db.models import CorpusJob
+    from libs.tenant.filters import UserFilters, candidate_conditions
 
-    assert applicant_glut(source="linkedin", applicants=200, cap=capped.applicant_cap) is True
-    assert applicant_glut(source="linkedin", applicants=200, cap=unlimited.applicant_cap) is False
+    busy = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", title="Engineer",
+                                source="linkedin", applicants=200, described_at=now()))
+
+    def kept(cap: int | None) -> bool:
+        asked = UserFilters.from_config({}, max_age_hours=24, applicant_cap=cap)
+        return bool(db[CorpusJob.COLLECTION].count_documents({"$and": [{"_id": busy.id},
+                                                                      *candidate_conditions(asked)]}))
+
+    assert not kept(200)
+    assert kept(None)
 
 
 def test_the_applicant_cap_default_is_not_written_twice():

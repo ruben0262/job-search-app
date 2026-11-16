@@ -50,6 +50,8 @@ class CatchUp:
     new_words: int = 0
     # Postings that already had their terms and turned out to have a word being searched for.
     backfilled: int = 0
+    # Postings whose text was stored without their words, given them now.
+    searched: int = 0
 
 
 def catch_up(db: Database, *, budget_seconds: float = TERMS_BUDGET_SECONDS) -> CatchUp:
@@ -66,17 +68,40 @@ def catch_up(db: Database, *, budget_seconds: float = TERMS_BUDGET_SECONDS) -> C
             "indexed_at": None, "searched_to": None}}, upsert=True) for word in new], ordered=False)
         vocabulary.update({word: {"indexed_at": None, "searched_to": None} for word in new})
     report.new_words = len(new)
+    report.searched = _unsearched(db, sorted(vocabulary), deadline=deadline)
     windows = platform_windows(db)
     since = candidate_since(windows.max_age_hours, windows.source_min_ages, now=started)
     for word, row in sorted(vocabulary.items()):
         if row.get("indexed_at") is None:
             report.backfilled += _backfill(db, word, since=since, upto=row.get("searched_to"),
                                            deadline=deadline)
-    if report.new_words or report.backfilled:
-        logger.info("terms: %d new word(s); %d posting(s) found to have a word being searched for",
-                    report.new_words, report.backfilled)
-    audit(logger, "terms.catch_up", new_words=report.new_words, backfilled=report.backfilled)
+    if report.new_words or report.backfilled or report.searched:
+        logger.info("terms: %d new word(s); %d posting(s) found to have a word being searched for; %d "
+                    "stored without their words and given them", report.new_words, report.backfilled,
+                    report.searched)
+    audit(logger, "terms.catch_up", new_words=report.new_words, backfilled=report.backfilled,
+          searched=report.searched)
     return report
+
+
+def _unsearched(db: Database, vocabulary: list[str], *, deadline: float) -> int:
+    """The postings whose text is stored and whose words are not, given their words. None is written that
+    way now (`CorpusRepository.set_description` finds them in the same write), and until one has them
+    every match reads its text with a regex: 375 stored the day before that write existed (2026-11-05) were
+    still read so ten days on, 35 to 50 ms of every Jobs page (2026-11-15). A column nothing writes is the
+    feature missing (CLAUDE.md §6), so this is its second producer, for whatever stores a text another way."""
+    corpus, given = db[CorpusJob.COLLECTION], 0
+    while monotonic() < deadline:
+        rows = list(corpus.find({"terms_at": None, "described_at": {"$ne": None}, "closed_at": None},
+                                {"title": 1, "description": 1}).limit(BATCH))
+        if not rows:
+            break
+        # Only while it still has none: a text stored meanwhile found its own.
+        corpus.bulk_write([UpdateOne({"_id": row["_id"], "terms_at": None}, {"$set": {
+            **terms_of(row.get("title"), row.get("description"), vocabulary), "terms_at": now()}})
+            for row in rows], ordered=False)
+        given += len(rows)
+    return given
 
 
 def _backfill(db: Database, word: str, *, since, upto, deadline: float) -> int:

@@ -80,6 +80,27 @@ def test_a_searched_posting_is_matched_on_its_stored_words_not_read_again(accoun
 
 
 @needs_db
+def test_a_posting_stored_without_its_words_is_given_them_on_the_next_pass(account):
+    """375 postings stored the day before a text and its words were written together were still read with
+    a regex by every match ten days later (2026-11-15). The pass after each harvest finds any such posting."""
+    from libs.db.models import CorpusJob
+
+    db, user, _ = account
+    job = _stored(db, "Developer")
+    catch_up(db)
+    db[CorpusJob.COLLECTION].update_one({"_id": job}, {"$set": {"terms_at": None, "terms": [],
+                                                                "title_terms": []}})
+
+    assert catch_up(db).searched == 1
+    row = db[CorpusJob.COLLECTION].find_one({"_id": job})
+    assert row["terms_at"] is not None and row["terms"] == ["python"]
+    # Matched on its stored words from here: the text is not read again.
+    db[CorpusJob.COLLECTION].update_one({"_id": job}, {"$set": {"description": "Nothing of theirs here."}})
+    assert _found(db, user) == {job: (("python",), ())}
+    assert catch_up(db).searched == 0
+
+
+@needs_db
 def test_a_job_s_words_are_found_the_moment_its_text_is_stored(account):
     """In the same write (owner, 2026-11-06). Found at the end of each run before, a text read just after
     one waited up to 15 minutes, and the Jobs page read every such job with a regex: 171 ms with 2,000

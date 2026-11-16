@@ -35,8 +35,8 @@ def detect_language(text: str) -> str | None:
     silently disabled this filter for the whole platform.** `langdetect` was declared only in the
     notifier's image; the code that calls this moved to the harvester and the dependency did not
     follow. Every `ImportError` was caught by the same blind `except` as a genuine detection failure
-    and returned `None`, `is_allowed` keeps `None` on purpose, and so every posting passed every
-    account's language filter.
+    and returned `None`, the filter keeps `None` on purpose (`libs.tenant.filters`), and so every posting
+    passed every account's language filter.
 
     Measured on the live platform 2026-08-11: on 2026-08-06, 608 of one account's delivered jobs had
     a detected language and 2 did not. By 2026-08-10 it was 1 and 544. Nothing raised, nothing was
@@ -57,14 +57,6 @@ def detect_language(text: str) -> str | None:
             DetectorFactory.seed = 0
             return detect(text)
     except Exception:
-        # A posting this cannot read is data, not an error: `is_allowed` keeps an unknown language
+        # A posting this cannot read is data, not an error: the filter keeps an unknown language
         # deliberately, because hiding a job somebody wanted is worse than showing one they did not.
         return None
-
-
-def is_allowed(language: str | None, allowed: set[str] | None) -> bool:
-    """True to keep the job. `language` is the stored code, read once at describe time."""
-    if not allowed:
-        return True
-    # Unknown keeps: a wrong language hides a job somebody wanted, an unknown one costs nothing.
-    return language is None or language in allowed
