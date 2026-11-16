@@ -3200,6 +3200,31 @@ work, or opening and closing sessions faster, would help):
     *2026-11-06:* a job's words are now found as its text is stored, so the page no longer reads the jobs
     read since the last run with a regex (84 ms with none waiting against 171 with 2,000, on the laptop).
     The baseline above is unchanged.
+    *2026-11-15 (owner: "incredibly fast" with "30K plus" jobs; searching, filtering, "maybe paging"):*
+    measured on the laptop, the owner's account, a month of jobs: 726 ms to 380 (a week 258 to 171, a day
+    87 to 74), the same list in the same order. What a person does not want (red words, language, way of
+    working, applicant cap) is now asked of the database: 6,418 of the 11,218 postings a month held were
+    being read to be dropped. And 375 postings with a text and no words were still read with a regex.
+    **The proposal above is withdrawn, measured**: the same 15,921 rows from a copy without the text come
+    in 385 ms against 403. The text is not what costs.
+    **Still open, and the owner's choice.** The cost grows with the list, and a search or a second page
+    costs the whole list: 15,554 jobs (seven broad words, no filters) take 1,025 ms. The steps, each
+    measured at 16,000 rows: (a) the page and the counts made by the database, one `$facet`, 276 ms (145
+    at 4,800): needs a posting's salary stored as a figure, so a minimum salary is a condition, and the
+    page's filters written as conditions; (b) on top, the counts beside the filters asked only when the
+    time shown changes, so a search, a filter and a page read only what they show; (c) a list kept per
+    person, the only way to make 30,000 jobs cost what 30 do, which is the score lane removed on
+    2026-10-28 and comes back only on the owner's word. A shorter shelf life helps in proportion (a week
+    is 171 ms where a month is 380). Recommended: (a), then (b).
+    *2026-11-16, the owner's question: which is efficient, fast, accurate and "doesn't scale with users"?*
+    **(a) with (b): the page and its counts made by the database, from the words already stored on each
+    posting.** Nothing is kept per person, so a thousand accounts store what one does and a request costs
+    the same whoever else is on the site; it reads the jobs as they are, so it is never out of date; and
+    it is 145 ms at 4,800 jobs and 276 at 16,000 where today is 380 and 1,025. (c), a list kept per person,
+    is the one that grows with users: every new job written once for every account it fits, every changed
+    word a rebuild. To build (a) and (b): a posting's salary stored as a figure when its text is; the
+    page's own filters as conditions; the 60-second "new jobs" poll as a count over the index, not a read
+    of the list; then the counts beside the filters asked once a time window. Not started.
 35. **server_db's VM: 8 GB of memory, 3.5 GB of it MongoDB's cache.** The jobs a match reads, the last 8
     days, are ~1.9 GB: in a 1.5 GB cache they are read from disk every time (median ~550 ms against
     ~450). `~/projects/server_db/DESIGN.md`, "Speed".
@@ -3287,7 +3312,320 @@ work, or opening and closing sessions faster, would help):
     headings in any language. The owner approved both prompts' wording the same day, with the
     measurements (CHANGELOG 2026-11-11). Still to do: a CV takes ~42 s against the 20 s target (letters
     ~20 s); the same prompts measured on the GPT and Gemini models; a judge prompt for cover letters; the
-    sign-up tickbox.
+    sign-up tickbox. **2026-11-14 (owner): the speed and the GPT and Gemini measurement are parked**, Claude only
+    for now; the prompts are judged by checkers that are not ours (item 50).
+
+50. **Prompts judged by checkers that are not ours** (owner, 2026-11-14). The platforms gave their permission to
+    script them, and Hiring Cafe too. Built (CHANGELOG 2026-11-14): `scripts/cvlab/checkers.py` and the bench's
+    `--checkers` and `--kind cover`. ResyMatch reads CVs and ATS Verification's cover letter checker reads letters,
+    and their numbers are paired by posting beside ours. First finding, fixed: five CV looks and the default letter
+    look had no character between the contact line's parts, and ResyMatch read a phone and an email as one address.
+    Open:
+    - **Jobscan** answers a script with a Cloudflare challenge. The owner deals with it (2026-11-14). When a login
+      or a key is in `certificates/`, a `jobscan` checker for CVs and letters.
+    - **A parser ATSs use: done for Affinda** (2026-11-14, evening; the owner gave the key). `--checkers affinda`
+      reads each CV with Affinda's resume parser and compares what it read with what the CV says. Over 44 CVs
+      written for the panel below: the name 44 of 44, the email 44 of 44, 85% of jobs and qualifications with
+      their title and employer, 97% of those with the right dates. It read no phone number after a place (4 of
+      4), so the header is now written phone, email, place. A job with no dates is not read as a job of its own.
+      It ran no two words together at a line's end (0 of 44). ResyMatch's reader did, and counted a
+      posting's word the CV has as missing, so every look now keeps a real space at each block's start and
+      each wrapped line's end (2026-11-15: 2,538 words run together over 18 CVs in eight looks before, 74
+      after; ResyMatch's ATS mark for the same nine CVs 78.0 to 82.9). About 165 of the trial's reads are
+      used. Open: Textkernel's trial (500 credits, a score against the posting); a pass rate for the site
+      needs real people's CVs and more than one parser.
+    - **Hiring Cafe comes back as a job source** (owner, 2026-11-14), read by country rather than by word (it was
+      removed with the per-word searches, f924318): one pass per country reaching 7 days back, so what was missed
+      lands in the corpus, then the shortest window (a day), with a marker per country as LinkedIn's sweep keeps,
+      read to the last page, the 7 days a named setting, and a test per country that jobs arrive. **Blocked:**
+      `hiringcafe.com` answered 403 `cf-mitigated: challenge` on every address but `robots.txt`, twice that day
+      (last at 15:40). With their permission the way in is theirs to open: a token their wall lets through, our
+      addresses allowlisted, or a key. Nothing is built on a page nobody here could read.
+    - **The owner's own CVs** went to ResyMatch on their say (2026-11-14): their two-page CV and 12 written by the
+      live prompt, over 4 postings, paired by posting. Ours against theirs: ATS practice 92.7 against 91.8 (did
+      not move), the contact details read right in 12 of 12, match rate 40.5 against 48.2 (−7.7 ± 1.8), hard skills
+      34.2 against 40.5 (−6.2 ± 1.5), skills left out 8.1 against 6.5 (did not move). The match rate counts words:
+      its reader counted 747 in the owner's CV and 315 to 404 in ours, its "sales" mark is 50 from 400 words and 25
+      under (40 answers), and it found no "measurable terms" in any CV, the owner's included ("10k+", "AUC 0.82").
+      Kept for what it reads (contact, dates, headings, skills found, skills that are not theirs), never as a
+      target.
+    - **A fault in the live CV prompt, found by reading the 12** (not blind): 3 wrote a job the person still holds
+      in the third person ("Leads", "Manages": 24 of 102 bullets). Two bench wordings of the one sentence (rule 3,
+      Bullets), 12 CVs each on claude-haiku-5-5 at medium over the same 4 postings: third person in 0 of 24 CVs
+      (Fisher p = 0.03). Not shown either way: present tense in an ended job in 2 of 24 against 0 of 12
+      (p = 0.54), past tense in a held job in 1 of 24 against 0 of 12. Did not move: words, bullets, entries,
+      invented numbers, first drafts sent back, and every ResyMatch mark for the second wording (match −0.6 ± 0.9,
+      hard −1.4 ± 1.2; the first was not scanned). **Proposed, not applied (§3a)**, the second wording: `Each
+      bullet reads as the person describing their own work with the "I" left off: past tense for finished work
+      ("Managed the stockroom"), present tense in every bullet of a job they still hold ("Manage the stockroom",
+      never "Manages the stockroom").` in place of `Past tense for finished work; present tense in every bullet of
+      a job they still hold.` The first wording kept that sentence and added `, written as they would say it of
+      their own work with the "I" left off ("Manage the stockroom", never "Manages the stockroom")`. The CHANGELOG
+      entry goes with the owner's answer, whichever it is.
+    - **A few lines on a second page: taken up by the look, done** (owner, 2026-11-14, evening). `pdf.fitted`
+      draws the page at 98%, 96% or 94% and keeps the first that ends a page sooner. All 19 spills in Meridian,
+      Kestrel and Ledger were taken up, and 111 of 177 over the eight looks, each read by pypdf and pdfminer as
+      before. What is left is said back as it was.
+    - **The reviewer prompt: replaced** (owner, 2026-11-14, evening: "good to go"), after 48 reads on
+      claude-sonnet-5-5: 12 CVs, old and new prompt, twice each. A skill and a duty planted in four CVs cost
+      0.50 ± 0.20 of the old one's honesty mark and 4.62 ± 0.55 of the new one's, which listed all 16. Two reads
+      of one CV differ by 3.4 points in 100 with the new one (2.6 with the old one's seven marks averaged), so
+      a CV is read twice before two wordings are compared on it. The old prompt is in `libs/scaffolds/history/`.
+    - The bench spends the owner's plan. 2026-11-14: 32 CVs and 1 letter in the day; in the evening 44 CVs, 4
+      second calls and 16 letters on claude-haiku-5-5, 48 reads on claude-sonnet-5-5, and 48 Affinda reads.
+      2026-11-15, night and morning: 200 CVs on claude-haiku-5-5 (72 for the look's page number, 18 at low
+      effort, 110 for seven wordings), after which the plan stood at 33% of its 5-hour window and 30% of its
+      week; 45 Affinda reads; about 50 ResyMatch scans, after which its scanner page slowed to over 30
+      seconds and scanning stopped. The reads of the CVs were by Claude in the session (154), not on the plan.
+
+    **The panel: eleven made-up people who are not in IT** (owner, 2026-11-14: "a wide variety of different CVs
+    from different industries"). `scripts/cvlab/panel` (its README lists them): a warehouse operative, a nurse,
+    a sales assistant, a school leaver, a Hungarian bookkeeper, a German electrician, a chef, a teacher changing
+    field, a lorry driver, an office manager of 26 years and a marketer with two CVs; documents of low, medium
+    and good quality; two real postings each. First run, live prompts, claude-haiku-5-5 (CHANGELOG 2026-11-14,
+    second entry). Fixed that day: a quoted line taken for the whole CV, "since March 23" read as a job that
+    ended, "dynamic remarketing" as filler, a German CV headed in English, an employer as the person's place,
+    and a named term found in neither their documents nor the posting ("ROAS bidding") now said back as an
+    invented number is. Open, each the owner's to decide:
+    - **"Describes a task" is no longer said back** (owner, 2026-11-14, night). The bench counts such bullets.
+    - **The local Claude sign-in: mended** (the owner signed in again that night). What broke it: a probe for
+      the plan limits ran the Claude tool on the stored sign-in and did not save the session it renewed. The
+      limits are read over HTTP since, and the bench writes one document at a time on a linked account.
+    - **English CVs first, other languages after** (owner, 2026-11-14). For English the CV reader now finds the
+      town in 8 of the panel's 9 (a town written with its postcode) and reads a CV typed in lower case. Still to
+      do, in order: German and Hungarian headings and addresses in the reader; bullets in those languages, which
+      come out as conjugated verbs ("Führt … durch", "Vezetem") where their CVs use noun phrases.
+    - **The look's own page in the prompt: measured, not adopted** (2026-11-15). Halcyon and Quill, the same
+      18 people and postings: told the look's number a CV was 6.9 ± 4.5 words shorter over 36 pairs (no
+      move), and 6 of 36 ran to a second page against 8. The model does not count words as it writes.
+      `write_cv.md` still says 400; `templates.PAGE_WORDS` and the `{{page_words}}` slot stay.
+    - **`write_cv.md`: a wording that reads better, proposed and not applied** (2026-11-15; the owner asked
+      for a loop that measures every iteration). Wordings v5 to v8 each wrote the same 18 CVs (nine English
+      speakers, two postings) and v9 and v10 ten, each measured by our checks, Affinda, ResyMatch and a read
+      against the person's documents (CHANGELOG 2026-11-15 has every number). `scripts/cvlab/variants/v8.md`
+      against the live wording, read twice, the second time crossed so that no reviewer's own level favours
+      either: **+2.5 ± 0.8 of 100** with both reads averaged (75.6 against 73.1). The crossed read alone:
+      +2.3 ± 0.9; voice +1.06 ± 0.25; said that is not theirs 0.67 a CV against 1.61; evidence left out 2.61
+      against 3.44. The profile is in the person's own voice in 17 of 18 where it was 8. Did not move: the profile's mark, the angle for the job, coverage, what came of the work,
+      keywords, "would this reader reply", and every outside checker (Affinda jobs read 91% against 88%;
+      ResyMatch ATS 85.3 against 82.9, +2.4 ± 2.4, the one CV that rose being the chef's, whose dates are now
+      in a form it reads). Worse: about 4 s and 1,000 tokens out
+      more a CV, and 4 of 18 sent back by our own check against 2, each for an abbreviation of the model's
+      ("AGMs", "KPIs", "CRM"). **The owner's to decide:** v8 as `write_cv.md`, yes or no.
+      **The loop stopped at v8.** v11 (v8 and four more sentences on the profile, long careers and tool
+      lists) read crossed against it: +0.00 ± 1.32, nothing moved. A crossed read of 18 pairs shows a wording
+      about 2.5 points better and nothing finer, and costs about 720,000 tokens of the session that reads.
+      **Taken up again that afternoon** (owner: "v8 looks good", iterate from it one measured point at a
+      time, steer by what does not depend on the person, keep what was won, do not over-optimise). v12
+      names the job by the posting's title: ATS checks 89.6 to 99.3 of 100, nothing else moved (item 51,
+      CHANGELOG 2026-11-15 afternoon). v13 (nothing said twice in the same words) did that and cost
+      length, proof in the profile and the reviewer's score: not adopted. v14 (Skills carries every
+      posting term their documents show) moved no keyword count and doubled what the reviewer found
+      that is not theirs: not adopted. The two failures say the writer's own measures are about where
+      wording can put them. **v12 is live** (owner, 2026-11-15, evening: `write_cv.md` version
+      `6fcbbabfca70`; the prompt it replaced and every draft are in `libs/scaffolds/history/`).
+      Next, as the owner asked that evening: less time and fewer tokens where the measures hold (the
+      live wording at low effort is being measured), and the same wording on GPT and Gemini.
+      Open after it:
+      - **A key's ceiling: raised to 32,000** (owner, 2026-11-15, afternoon). v8's largest CV took 15,457
+        tokens out, thinking included, and 11 of 164 bench CVs more than 16,000, none more than 22,275. A
+        sign-in's tool sets its own ceiling, so only a key would have been cut off, and none was tried on
+        a key.
+      - **Abbreviations are allowed** (owner, 2026-11-15, afternoon): capitals alone pass the name check,
+        which had sent 12 of 108 panel CVs back over "AGM", "KPIs" or "CRM". **The check itself is kept
+        and out of play** (owner, that evening: `build.NAMES_SAID_BACK = False`).
+      - **A Gemini sign-in cannot write** (found 2026-11-15, evening): Google answers the Gemini CLI
+        "This client is no longer supported for Gemini Code Assist for individuals… migrate to the
+        Antigravity suite". The person is now told to link an API key. To decide: take the Gemini
+        sign-in off Settings, or find what replaces it. Measuring the wording on Gemini needs a Gemini
+        API key in the local account.
+      - **A ChatGPT sign-in writes with `gpt-6.1-sol`**, the model Codex takes for a Plus plan, at no
+        reasoning effort (2026-11-15). The live wording on it, 18 CVs against Haiku's: the ATS checks,
+        the voice, the send-backs and the reviewer's score the same; 28 s a CV against 42; said that is
+        not theirs 1.11 a CV against 0.56 and "what came of the work" half a mark lower. Open: whether a
+        sentence or two for GPT closes those two without touching the rest.
+      - **Low effort on the live wording: 25 s against 42, and not adopted** (2026-11-15, evening): 5 of
+        18 sent back by our own checks (four say "I" or "my"), the voice mark −0.56. **Without its
+        final self-check** (12% of the wording): no time or tokens saved, and 3 of 18 sent back. On
+        Haiku 5.5 a CV is about 42 s and about 0.6 of a cent at API prices; wording and effort do not
+        make it cheaper without cost. What might: telling a ChatGPT sign-in how hard to think (Codex
+        runs `gpt-6.1-sol` at no reasoning effort and is already 14 s quicker), the owner's to ask for.
+      - **People with a lot to say** still lose about three relevant things a CV to the page (3.1 left out
+        for the five with fuller documents, 1.4 for the four with thin ones). More bullets on one page (v10)
+        and a second page for a long career (v9) were
+        tried on them and neither is shown better: v10 needs a crossed read, v9 wrote one two-page CV of
+        ten, with a few lines on page two.
+      - **People with little to say**: "what came of the work" is marked 5.2 to 5.8 of 10 under every
+        wording, because their documents hold duties and no results. The way up is asking the person, not
+        the wording: one question at upload ("what are you proud of at this job?") is a product change.
+    - **Speed: measured, medium stays** (2026-11-15). The live wording at `low`: 22.1 s and 5.3k tokens out
+      against about 37 s and 9.1k, and 3.4 things a CV that are not theirs against 2.2 (+1.28 ± 0.39),
+      honesty −0.72 ± 0.25. Most of a CV's time is thinking, and the thinking is what keeps it honest.
+    - **A Claude plan's limits in Settings: seen on a real account** (2026-11-15: "5-hour limit 18%, Weekly
+      limit 15%"; nothing once the token has run out, as designed). ChatGPT's and Gemini's are not built; the
+      owner asked for them if possible. Reading them means their tools or their private addresses with a
+      stored sign-in, which is what broke the Claude one: to be tried only through the one place that saves
+      a renewed sign-in (`libs.llm.cli.CliClient`).
+    - **Tokens are logged, not yet shown.** `docgen.built` carries the seconds and tokens of every document.
+      A count by wording in Admin's Outcomes would need them kept on the document as well.
+    - **Later (owner, 2026-11-14): small models of our own** for parts of writing or checking, to use less AI.
+      They need data first. Each document now keeps the prompt's version and the model that wrote it
+      (`BuiltDocument.prompt_version`, `model`), and Admin's Outcomes counts interviews by wording: that, the
+      checks' own verdicts and the reviewer's lists are what such a model would learn from.
+    - GPT and Gemini come after Claude's prompting is settled (owner, 2026-11-14, night); the local account
+      has both sign-ins linked. **Begun 2026-11-15, evening**, on the owner's word once v12 was live.
+
+51. **ATS checks passed perfectly, a figure for the site, and a check people can run** (owner, 2026-11-15,
+    afternoon: "passing ATS checks perfectly at least, so the CV can be seen by a real person"; "a
+    confirmation of 90% for ATS checks so we can add that to our site, ideally 95%"; "a manual ATS check
+    on our site that any number of users can use instantly", perhaps a member's perk).
+    - **What an ATS check is, here** (built in the bench, `scripts/cvlab/run.py::ats_checks`): eight yes-or-no
+      checks that do not depend on the person. Every word read whole by two readers; the name first; the
+      headings in order; Experience and Education sections; email and phone read as written; job dates in
+      one form; the posting's job title in the CV; one or two pages, nothing stranded. The live wording
+      passes 86.8 of 100 and 2 of 18 CVs pass all eight; v8 89.6 and 3; v12 99.3 and 17 (CHANGELOG
+      2026-11-15, afternoon).
+    - **Confirmed from outside, so far.** Affinda over 170 CVs in all eight looks: name 100%, email and
+      phone 97.6%, dated jobs with title and employer 91.5%, their dates 99.0%. ResyMatch's ATS mark on
+      nine CVs: 82.9 live, 85.3 v8, 90.2 v12; it cannot pass 89 for somebody with no LinkedIn link (7 of
+      the panel's 9), so 95 there means asking people for theirs.
+    - **The figure for the site: the owner's to settle, when the wording is done.** Proposed: "CVs written
+      here pass N% of our ATS checks", N the mean of the eight over a fixed set (the nine English panel
+      people, two postings, eight looks: 144 CVs), with the list of checks a click away; and beside it
+      what an outside parser read back, with its n and date. Not "passes ATS": no one list is every
+      employer's system. Still needed: the 144 measured on the final wording; about 30 Affinda reads, which
+      is more than the trial may have left (178 used; its limit is not shown to us), so a paid month or
+      Textkernel's trial; and a second parser, since one is one.
+    - **A check people can run: proposed, not built.** Rules only, so it costs nothing a use and answers at
+      once (CLAUDE.md §0). For a CV we wrote or one they upload, against a job from their list or pasted:
+      the eight checks, each with what to change; the posting's own words found and missing in the CV;
+      a score. It needs the checks moved from the bench into `libs` (one mechanism for the worker, the
+      bench and the site), a reader for uploaded PDFs that tells a scan from text (`libs/documents/read.py`
+      reads the text already), one route, one page, and for members only, a line in `libs/membership`.
+      Honest limit to say on the page: it is our list, not the employer's system.
+    - **2026-11-15, night: measured on the final wording, all eight looks** (owner: on the site if "above
+      95.3%"). 36 CVs (nine people, two postings; 18 by Claude Haiku 5.5, 18 by GPT) drawn in each look, 288
+      in all: **99.0 of 100 of the eight checks passed; 265 of 288 CVs (92.0%) pass all eight**, 34 of 36
+      in the look each was written for. What fails: the posting's title for "Bank Staff Nurse/ODP" in all
+      its CVs (16; they say "Staff Nurse – Ward"), the name not first for pdfminer in Ledger for the one
+      person with a long line of links (4), a line stranded on a second page (3, in Ledger and Halcyon).
+      **Not on the site yet.** "99%" is true of checks and would be read as 99 CVs in 100; that figure is
+      92. Proposed sentence: "In our tests, CVs made here passed 99% of the checks an applicant tracking
+      system makes when it reads a CV", with "8 checks, 36 CVs in 8 looks, November 2026" under it. The
+      owner's to say yes to, or to wait until the three failures are fixed and the second figure is over
+      95.3 too.
+    - **2026-11-16: the three fixed, and the figure on the site** (owner: "fix the 3 failures… push them on
+      the landing page"). 99.9 of 100 checks, **285 of 288 CVs (99.0%) pass all eight**; 288 of 288 with
+      each look drawing the CV written for it. Ledger's name-first was a defect in the look; the title was
+      the check's; the stranded lines the measurement's (CHANGELOG 2026-11-16). The landing page says "99%
+      passed all 8 ATS checks. 288 CVs in 8 looks, our own tests, November 2026", from `/stats`, only
+      while the live CV prompt is the one measured. Still to do when wanted: an outside parser's reading
+      of the same CVs beside it, and the check people can run.
+
+52. **A match score on every job, by rules** (owner, 2026-11-15, night: how well a job suits the person,
+    from their details, CV, cover letter and About, worked out again when any of them changes, "realistic
+    and a bit generous", shown on the job and a filter on the Jobs page; "fast, and not an ai prompt call").
+    Not the learned model (tag `model-on-postgres`): a direct comparison of a person's documents with a
+    posting's text.
+    - **Tried offline** (CHANGELOG 2026-11-15, night): the panel's 11 people against 42 postings. The share
+      of a posting's words the person's documents have, rarer words counting more: AUC 0.92, their own
+      postings in their top two for 18 of 22. Their 120 most telling words found in the posting: 0.95 and
+      19. Both: 0.98. Job titles held and Skills entries are weak (0.61, 0.55) because the reader finds no
+      title for 6 of 11 CVs and no skills for 8.
+    - **Not shown by that**: ranking inside one trade (a senior role against a fitting one), since the
+      other postings are mostly other trades. Needs a second set: several postings of one trade a person,
+      marked by hand as fitting or not.
+    - **Decisions that are the owner's.** (1) *On the card only*, worked out for the 25 jobs shown from
+      their text: nothing stored, nothing to go stale, a day's work; or *on the whole list*, to filter and
+      sort by: every posting holds which of everyone's telling words it has, as it holds their green words
+      (`libs.corpus.terms`), about 120 words a person in the vocabulary, searched for in every posting as
+      a green word is. One rule for both, so a card and a filter never disagree: the score is a function
+      of the words found. (2) *The scale*: where "a bit generous" puts a fitting job (proposed: a person's
+      own kind of job reads 75 to 95, another trade under 30), set on the second set above. (3) *What it
+      is called on the card* ("Match 82%").
+    - **A producer on every profile change** (CLAUDE.md §6): a person's telling words are worked out where
+      their suggestions are (`libs.suggestions.refresh`: an upload, a document used or deleted, About you,
+      a saved search), and `put_identity` joins them. A test that a new CV changes a job's score.
+    - **2026-11-16, the owner: later, and what it must be.** From everything an account holds (CVs, cover
+      letters, About you, its details), the more of it the better the score. **Deterministic. So fast that
+      a changed profile rescoring every job is no wait**, newest jobs and the page being shown first, in the
+      background if there is any work at all; the filter by score must not go down meanwhile. Accurate, and
+      validated. Synonyms and what is implied should count ("done a lot of projects" is competent), with
+      experience in years and seniority. A small model run by us is acceptable (an embedder that compares
+      two texts, or one trained here) if it is extremely fast; never an AI prompt call. And it must not
+      grow with the number of users.
+    - **The shape that meets that, to be measured before it is built.**
+      (1) *Worked out when a list is read, never stored per person.* A posting holds which telling words
+      it has (shared, written once when its text is read, as `terms` is); a person holds their weighted
+      words (one small list, rewritten when their profile changes). The score is those two put together
+      in the same database read that makes the page (item 34), so a changed profile changes every score
+      on the next request and **there is nothing to rescore**, no queue, and no time the filter is down.
+      (2) *Meaning, if words alone fall short inside one trade:* one vector a posting from a small
+      sentence-embedding model on our own server, made once when the text is read (the embedding step
+      under the tag `model-on-postgres` is the place to start, ported with its tests, CLAUDE.md §3), one
+      vector a person, and their closeness added to (1). 30,000 postings against one person is one matrix
+      product, a few milliseconds. Synonyms come from this, not from a word list kept by hand.
+      (3) *Years and seniority by rules:* the years a posting asks ("5+ years") against the years the
+      reader finds, and the level in its title against the titles held. The reader must first find a
+      title in more than 5 of 11 CVs.
+      (4) *Validated before anybody sees a number:* postings of one trade a person, marked fitting or not
+      by hand, since yesterday's set only shows it tells a nurse's job from a driver's.
+
+53. **The cover letter prompt** (owner, 2026-11-15, night: "some research on the company might need to be
+    done too… motivation and so on, for it to be a great cover letter").
+    - **Where the live prompt stands**: 18 letters on Haiku 5.5, none sent back, 24 s and 5,200 tokens out
+      each; the outside letter checker 72 of 100 over the nine it read (63 to 78), its keyword mark 25 to 60.
+    - **Needed before a wording is tried.** (1) *A reviewer for letters.* The bench's reviewer reads CVs;
+      a letter needs its own questions (is the opening about this company and this job; is the motivation
+      the person's; does each claim stand in their documents; would the reader go on to the CV). A bench
+      prompt, shown to the owner before it judges anything. (2) *Only four of the panel's 11 uploaded a
+      letter of their own*, so "sounds like them" can be judged for four.
+    - **Where company facts come from: the owner's choice.** Today the prompt allows only what the posting
+      says, so that nothing about a company is made up. (a) *The posting and the person* (recommended
+      first): one optional line asked when a letter is made, "Why this company?", kept with their About;
+      motivation is theirs to give and costs no call. (b) *The company's own page*, read once by the
+      server when a letter is first made for that company and kept: a new hop, slower, wrong when a name
+      is two companies', and never past a bot wall. (c) *The AI's own web search*: works on an API key
+      only, not on a sign-in as we run it; slower and dearer; needs every company fact to carry where it
+      came from. Each would be measured against the live wording on the same postings before it is used.
+    - **2026-11-16, the owner: go ahead.** "Why this company?" as proposed; and research: "look at the
+      company site, search it thoroughly, linkedin and other trustable sources, which do not need citing in
+      the cover letter", everything used being positive and "something the writer of the cover letter wants
+      in the company or the job".
+    - **Measured that day** (CHANGELOG): what is stored never leads to a company's own site (8% of jobs
+      have an application address, all of them applicant-tracking hosts). LinkedIn's public company page,
+      linked from the job's page, read for 2 of 4 companies at the first try (about text, industry, size,
+      headquarters, website) and was refused or lost for the other two.
+    - **Design, to build next.** A `companies` collection, one row a company, nobody's name in it: its
+      LinkedIn page's about text and facts, its website, the text of that site's front and about pages,
+      when it was read, how often it was refused. Read by rules through the reader a pasted link uses (so
+      never into a private network, never past a bot wall, LinkedIn through the site's proxy inside its
+      budget), the first time somebody makes a letter for that company, shown as a step ("Reading about
+      Screwfix…"), given a few seconds and never waited on: a letter is written from the posting alone
+      when it is not back, and the next one has it. The prompt gets it in a slot of its own with the
+      person's "Why this company?" line, and is told to take from it one or two true things this person
+      would want, said as their reason, with no source named and nothing unkind. That wording is a bench
+      variant first, measured against the live letter on the same 18 postings, with a reviewer for letters
+      shown to the owner before it judges (CLAUDE.md §3a).
+    - **The owner's to answer.** (1) *"Search it thoroughly" needs a search service*: the site has none.
+      A search API with a key (Brave's or the like, a few pounds a thousand searches), or none and the
+      company's own pages only. (2) *"Why this company?"* asked once a letter in a box that can be left
+      empty, before the letter is made: one more tap on the way to a letter. Or asked once in About you,
+      as what they look for in an employer, and used for every letter.
+
+54. **Plans and the landing page: what waits for the owner** (2026-11-16, CHANGELOG).
+    - At Stripe, live: a Starter product with a recurring monthly price of £2.99; its id as
+      `STRIPE_STARTER_PRICE_ID` on the server; the portal set to switch between the two prices. Until then
+      the live site has no Starter plan. (The sandbox has one since 2026-11-16, `price_1UcNvz…`, set on the
+      owner's laptop only, and a Starter checkout opened on it.)
+    - What Starter includes beyond the jobs at once and alerts, and whether any area is given as a number a
+      month: the owner's, later ("for another chat", 2026-11-16).
+    - 29.99 and 18.99 as crossed-out prices: confirmed by the owner as the plans' prices before the offer
+      (2026-11-16). The offer is what Stripe charges, and a subscriber keeps it for as long as they stay.
+    - Reviews: the section and 18 stand-ins are built; a stand-in is never shown on the live site. The
+      real ones go in `web/src/landing/reviews.ts`, or tell Claude to move them to Admin.
+    - If the pricing cards were ever saved in Admin on the live site, the Member and Free cards keep those
+      words: add "Any job you find elsewhere, added by its link" and the one-line small print there.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 
