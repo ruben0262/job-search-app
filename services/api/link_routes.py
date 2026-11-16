@@ -32,6 +32,7 @@ from libs.db.models import CorpusJob, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
 from libs.matching import Match, green_words
+from libs.membership import has
 from libs.obs import audit
 from libs.proxy import site_proxy
 from libs.secrets import redacting
@@ -122,6 +123,7 @@ def find_by_link(body: LinkRequest, request: Request, db: Database = Depends(get
                  user_id: _uuid.UUID = Depends(current_user)) -> LinkAnswer:
     """A pasted link: the job, if it is here; else read from its page and kept, if the page said all of
     it; else what the page did say, for the person to finish and keep (`POST /jobs/link/save`)."""
+    _theirs_to_add(db, user_id)
     url = _address(body.url)
     corpus = CorpusRepository(db)
     if (known := corpus.find_duplicate(url)) is not None:
@@ -163,6 +165,7 @@ def save_typed(body: TypedJob, request: Request, db: Database = Depends(get_db),
                user_id: _uuid.UUID = Depends(current_user)) -> LinkAnswer:
     """A job the person wrote in, kept for them alone (`CorpusRepository.add_typed`); or the public one,
     if it is here already under this address or this title, company and place."""
+    _theirs_to_add(db, user_id)
     url = _address(body.url)
     if len(body.description.strip()) < MIN_DESCRIPTION:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -203,6 +206,16 @@ def _listed(db: Database, user_id: _uuid.UUID, since: str, *, why: bool = False)
         {"user_id": user_id, since: {"$ne": None}, "applied_at": None, "dismissed_at": None},
         {"job_id": 1}, sort=[(since, -1)], limit=MARKED_SHOWN)
     return _jobs(db, user_id, [row["job_id"] for row in rows], open_only=True, why=why)
+
+
+def _theirs_to_add(db: Database, user_id: _uuid.UUID) -> None:
+    """Bringing a job in by its link comes with a membership (owner, 2026-11-16), or with whatever plan has
+    it switched on (`libs.membership.AREAS`): 402 otherwise, and the page says where the membership is. The
+    jobs somebody added before stay listed for them."""
+    if not has(db, user_id, "add_job"):
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED,
+                            detail="Adding a job by its link comes with a membership.")
+
 
 
 def _address(pasted: str) -> str:

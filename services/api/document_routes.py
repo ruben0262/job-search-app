@@ -37,7 +37,7 @@ from libs.documents import (
 )
 from libs.legal import has_consented
 from libs.llm import own
-from libs.membership import is_member
+from libs.membership import has
 from libs.obs import audit
 from libs.queue import enqueue
 from services.api.deps import current_user, get_db, rate_limit
@@ -259,7 +259,7 @@ def build_document(body: BuildRequest, db: Database = Depends(get_db),
     not be refused for the allowance its own first click used. A free account makes none (owner,
     2026-11-12): 402, and the bell says where the membership is.
     """
-    if not is_member(db, user_id):
+    if not has(db, user_id, "cvs" if body.kind == "cv" else "covers"):
         notify.notify(db, user_id, notify.NEEDS_MEMBERSHIP)
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED,
                             detail="Making CVs and cover letters comes with a membership.")

@@ -52,7 +52,7 @@ OPAQUE_LOGIN_ERROR = "email or password is incorrect"
 # What the sign-up page was left on (owner, 2026-11-12: "an option to do the free membership without any
 # credit card info being asked after, or the only sub which gives a free 7 day trial"). The account is the
 # same either way, and free: "member" only sends the confirmation link on to the payment form.
-Plan = Literal["free", "member"]
+Plan = Literal["free", "starter", "member"]
 
 
 class SignupRequest(BaseModel):
@@ -316,7 +316,7 @@ def logout_everywhere(request: Request, response: Response,
 def _send_verification(db: Database, mailer: EmailSender, email: str, token: str, plan: Plan) -> None:
     """Send the link, and treat any delivery failure as recoverable."""
     # The SPA's hash route, not the API's path; for a membership, on to the payment form once it is opened.
-    url = site_url(f"/#/verify?token={token}" + ("&plan=member" if plan == "member" else ""))
+    url = site_url(f"/#/verify?token={token}" + ("" if plan == "free" else f"&plan={plan}"))
     subject, body, html = verification_email(url, VERIFICATION_TTL)
     # The token grants access to the account, so it is scrubbed from anything logged in flight.
     with redacting(token):

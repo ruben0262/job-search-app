@@ -62,9 +62,11 @@ export function standing(m: Membership): string {
     case "trialing":
       return m.cancels_at ? `Free trial until ${day(m.cancels_at)}. It won't renew.`
         : `Free trial${m.period_ends_at ? ` until ${day(m.period_ends_at)}` : ""}.${m.plan ? ` Then ${price(m.plan)}.` : ""}`;
-    case "active":
-      return m.cancels_at ? `Active until ${day(m.cancels_at)}. It won't renew.`
-        : `Active.${m.period_ends_at ? ` Next payment on ${day(m.period_ends_at)}.` : ""}`;
+    case "active": {
+      const name = m.tier === "starter" ? "Starter, active" : "Active";
+      return m.cancels_at ? `${name} until ${day(m.cancels_at)}. It won't renew.`
+        : `${name}.${m.period_ends_at ? ` Next payment on ${day(m.period_ends_at)}.` : ""}`;
+    }
     case "past_due":
     case "unpaid":
       return "Your last payment didn't go through, so your account is on the free plan until it does.";
@@ -107,7 +109,12 @@ let showing: Promise<unknown> = Promise.resolve();
  * Stripe's currency switch and its button, as Stripe draws them for every shop (its look is Stripe's: Dashboard
  * → Settings → Branding). The card goes to Stripe and never reaches this site. `onPaid` when Stripe says it is
  * done, and the site reads Stripe again then, so it opens on Stripe's word rather than the webhook's timing. */
-export function StripeCheckout({ publishableKey, onPaid }: { publishableKey: string; onPaid: () => void }) {
+export function StripeCheckout({ publishableKey, onPaid, plan = "member" }: {
+  publishableKey: string;
+  onPaid: () => void;
+  /** Which plan the form is for: a change of it is a new form, the one before it ended. */
+  plan?: "member" | "starter";
+}) {
   const box = useRef<HTMLDivElement>(null);
   const [drawn, setDrawn] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +127,8 @@ export function StripeCheckout({ publishableKey, onPaid }: { publishableKey: str
       const stripe = await stripeFor(publishableKey);
       if (gone || !box.current) return null;
       const checkout = await stripe.createEmbeddedCheckoutPage({
-        fetchClientSecret: () => api.post<{ client_secret: string }>("/billing/checkout").then((body) => body.client_secret),
+        fetchClientSecret: () => api.post<{ client_secret: string }>(`/billing/checkout?plan=${plan}`)
+          .then((body) => body.client_secret),
         onComplete: () => paid.current(),
         onAnalyticsEvent: (event) => {
           if (event.eventType === "checkoutRendered" && !gone) setDrawn(true);
@@ -145,7 +153,7 @@ export function StripeCheckout({ publishableKey, onPaid }: { publishableKey: str
       // Destroyed once it is made, and the next one waits for that.
       showing = mine.then((checkout) => checkout?.destroy(), () => undefined);
     };
-  }, [publishableKey]);
+  }, [publishableKey, plan]);
 
   return (
     <div className="stripe-checkout">
@@ -178,6 +186,7 @@ export function MembershipCard() {
       ) : null}
       <div className="row">
         {!data.member && data.can_start ? <a className="button" href="#/upgrade">Become a member</a> : null}
+        {data.tier === "starter" ? <a className="button" href="#/upgrade">Move up to Member</a> : null}
         {data.can_manage ? (
           <button type="button" className="secondary" disabled={manage.busy} onClick={() => void manage.run()}>
             {manage.busy ? "Opening Stripe…" : data.can_start ? "Your invoices" : "Manage membership"}

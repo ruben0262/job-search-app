@@ -267,6 +267,10 @@ other products; and the webhook also hears about your other customers, which the
    (the sandbox's first price was one, and a monthly one was added beside it). To change the price later,
    add a new price and change the id: Stripe never edits a price, and people already paying stay on
    theirs. The free trial's length is the site's: Admin → Settings → *Free trial*.
+   **The Starter plan** (2026-11-16) is a second product, "Mahoraga - Starter", with its own recurring
+   monthly price of £2.99: its id is `STRIPE_STARTER_PRICE_ID`. Left unset, the site has no Starter plan.
+   What Starter includes, and the price each plan is shown as reduced from (£29.99, £18.99), are set in
+   Admin → Subscriptions, not at Stripe. A crossed-out price must be one people do or will pay.
 2. **The keys.** Developers → API keys: the publishable key (`pk_live_…`) is `STRIPE_PUBLISHABLE_KEY`; for
    `STRIPE_SECRET_KEY` a **restricted key** (`rk_live_…`) with write access to Customers, Checkout Sessions,
    Customer portal, Subscriptions and **Invoices** (free access voids what is owed), and read access to
@@ -279,7 +283,9 @@ other products; and the webhook also hears about your other customers, which the
    Stripe could not be read back, and it sends it again.
 4. **The portal**, where people pay what is owed, change their card or cancel: Settings → Billing → Customer
    portal → *Activate*, with payment methods and invoice history on, cancelling **at the end of the billing
-   period**, and switching plans off; its redirect link `https://mahoraga.rubenlekli.com`. The site opens
+   period**, and switching plans **between the membership's and Starter's prices only** (off, if there is no
+   Starter plan, or in an account that sells other things): it is how somebody on Starter moves up to
+   Member, the site's "Change my plan" button opens it; its redirect link `https://mahoraga.rubenlekli.com`. The site opens
    this portal for each person already signed in to it (Settings → *Manage membership*, and *Pay now*); the
    login link Stripe shows on that page opens the same portal for somebody arriving from Stripe's emails,
    after a code by email, and the site does not need it.

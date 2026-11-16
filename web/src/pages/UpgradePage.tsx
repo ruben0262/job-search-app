@@ -85,10 +85,24 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
           <Brand href="#/" />
           <ThemeToggle />
         </header>
-        {m?.member ? null : <button type="button" className="back" onClick={back}>← Back</button>}
+        {m?.member && m.tier !== "starter" ? null : (
+          <button type="button" className="back" onClick={back}>← Back</button>
+        )}
         <section className="page-in">
           {!m ? (
             <p className="muted">Loading…</p>
+          ) : m.tier === "starter" && !m.free_access ? (
+            // Starter is changed for the membership where every subscription is changed: Stripe's portal.
+            <div className="upgrade-done">
+              <h1>Move up to Member</h1>
+              <p className="lede">
+                You're on Starter. Change your plan at Stripe, and CVs and cover letters open at once.
+              </p>
+              <Error>{portal.error}</Error>
+              <button type="button" className="main" disabled={portal.busy} onClick={() => void portal.run()}>
+                {portal.busy ? "Opening Stripe…" : "Change my plan"}
+              </button>
+            </div>
           ) : m.member ? (
             <div className="upgrade-done">
               <h1>You're a member</h1>

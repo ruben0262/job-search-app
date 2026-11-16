@@ -283,14 +283,19 @@ DEFAULT_TRIAL_DAYS = 7
 # documents and the alerts stay members'.
 DEFAULT_FREE_DELAY_HOURS = 168
 
-# What the landing page's two pricing cards say, Free and Member (owner, 2026-11-12), the operator's to change
-# in Admin (`services.api.pricing_routes`). The membership's price is Stripe's, its free days `trial_days` and
-# how far behind a free account is `free_delay_hours`, each filled in where the cards are drawn, so no wording
-# here should name them. `left_out` is what the card lists as not included.
+# What the landing page's three pricing cards say, Free, Starter and Member (owner, 2026-11-12 and
+# 2026-11-16), the operator's to change in Admin (`services.api.pricing_routes`). A plan's price is Stripe's,
+# the price it is shown as reduced from is `price_was`, its free days `trial_days` and how far behind a free
+# account is `free_delay_hours`, each filled in where the cards are drawn, so no wording here should name
+# them. `left_out` is what the card lists as not included. What the Starter plan has of a membership is
+# `starter_areas`, and its card says those by itself (`libs.membership.AREAS`), so the lines here are only
+# what else it says. The line under each name is gone (owner, 2026-11-16: "extra words we don't need"); one
+# saved before then is no longer read. `highlight` is the band under a paid plan's price, read at a glance
+# while scrolling: the price kept for as long as they stay (owner, 2026-11-16: "lifetime").
 DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
     "free": {
         "name": "Free",
-        "tagline": "Every job that fits you, to look around as long as you like.",
+        "highlight": "",
         "benefits": [
             "Every job that fits you, from every source",
             "Every filter: your words, countries, languages and way of working",
@@ -300,29 +305,51 @@ DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
             "New jobs the moment they appear",
             "Alerts on your phone",
             "CVs and cover letters made for each job",
-            "Made to pass ATS checks",
+            "Any job you find elsewhere, added by its link",
         ],
         "button": "Start free",
         "note": "No card needed. Upgrade whenever you like.",
     },
+    "starter": {
+        "name": "Starter",
+        # The price a plan is joined at is kept for as long as it runs (owner, 2026-11-16: "lifetime").
+        "highlight": "Price locked for life",
+        "benefits": ["Everything in Free"],
+        "left_out": [],
+        "button": "Start with Starter",
+        "note": "Card needed. Free to cancel in the trial.",
+    },
     "member": {
         "name": "Member",
-        "tagline": "Every job the moment it appears, and an ATS-ready CV for each.",
+        "highlight": "Price locked for life",
         "benefits": [
             "New jobs the moment they're found, not a week later",
             "Alerts on Telegram, in your browser or by email",
             "A CV and a cover letter for any job, in one tap, with your own AI account",
             # Each one checked as it is made (`services/docgen/pdf.py`: its text, headings and contact read
-            # back as an ATS reads them; `ats_ok` kept with the document). No pass rate until one is measured.
+            # back as an ATS reads them; `ats_ok` kept with the document).
             "Made to pass ATS checks, each one checked before you get it",
+            # Add a job (`link_routes`): theirs to track, with a CV and a letter for it like any other.
+            "Any job you find elsewhere, added by its link",
             "Everything in Free",
         ],
         "left_out": [],
         "button": "Start your free trial",
-        "note": "A card is needed to start the trial. Nothing is taken until it ends, and if you cancel "
-                "before then you pay nothing.",
+        # One line on the card (owner, 2026-11-16).
+        "note": "Card needed. Free to cancel in the trial.",
     },
 }
+
+# What the Starter plan has of what a membership gives (`libs.membership.AREAS`), each a switch in Admin →
+# Subscriptions (owner, 2026-11-16: "an on off switch that they get access to certain areas"). The half that
+# gets a person there first; the half that gets them seen, the documents, is the membership's. Limits a
+# month were tried and left for the owner to decide later (2026-11-16).
+DEFAULT_STARTER_AREAS = ["early_jobs", "alerts"]
+
+# The price each plan is shown as reduced from, in the smallest unit of the plan's currency (2999 is 29.99),
+# the operator's in Admin → Subscriptions; 0 shows none. The card crosses it out beside Stripe's price and
+# works out the saving, so the two cannot disagree (owner, 2026-11-16: 4.99 from 29.99, 2.99 from 18.99).
+DEFAULT_PRICE_WAS = {"member": 2999, "starter": 1899}
 
 
 DEFAULTS: dict[str, object] = {
@@ -348,6 +375,8 @@ DEFAULTS: dict[str, object] = {
     "trial_days": DEFAULT_TRIAL_DAYS,
     "free_delay_hours": DEFAULT_FREE_DELAY_HOURS,
     "pricing_cards": DEFAULT_PRICING_CARDS,
+    "starter_areas": DEFAULT_STARTER_AREAS,
+    "price_was": DEFAULT_PRICE_WAS,
 }
 
 

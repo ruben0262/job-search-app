@@ -53,7 +53,7 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
         <p className="small muted">
           Optional. New jobs that match your search reach you as they are found, or in one email each morning.
         </p>
-        {dashboard.member ? (
+        {dashboard.areas.includes("alerts") ? (
           <>
             <Alerts />
             <div className="channel">

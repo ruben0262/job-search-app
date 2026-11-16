@@ -232,7 +232,10 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         # What it is comes first, since a visitor needs that before why it works (owner, 2026-11-16).
         expect(page.locator("main section h2")).to_have_text([
             "Every job site. One list for you.", "Be first. Be seen.", "From sign\u2011up to applied.",
-            "See it working.", "Start free. Upgrade to be first.", "Start in a few minutes."])
+            "See it working.", "Start free. Lock in your price for life.", "Start in a few minutes."])
+        # The offer at a glance under the pricing's title (owner, 2026-11-16: "users don't read text").
+        # Without a price at Stripe there is no saving to say, so it says the rest.
+        expect(page.locator(".price-offer li")).to_have_text(["Price locked for life", "7 days free"])
         # Our own figure, with what was tested and when, beside the other reasons it works.
         expect(page.locator("#edge")).to_contain_text("99% passed all 8 ATS checks.")
         expect(page.locator("#edge .sourced")).to_have_text(
@@ -337,7 +340,7 @@ def test_the_landing_page_offers_free_and_member_and_an_admin_words_both(site, c
         editor.get_by_label(f"Included, line {len(member['benefits']) + 1}").fill("Help from a person")
         # The preview follows the typing, before anything is saved.
         expect(editor.locator(".price-name").last).to_have_text("Mahoraga Plus")
-        editor.get_by_role("button", name="Save both cards").click()
+        editor.get_by_role("button", name="Save the cards").click()
         expect(editor.get_by_role("status")).to_have_text("Saved. The landing page shows it now.")
 
         visitor = browser.new_context(viewport={"width": 320, "height": 640}).new_page()
@@ -1530,8 +1533,9 @@ def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_wh
     from services.api import billing_routes
 
     base, email, _ = site
-    monkeypatch.setattr(billing_routes, "plan", lambda db: billing_routes.Plan(
-        amount=499, currency="gbp", interval="month", interval_count=1, trial_days=7, free_delay_hours=168))
+    monkeypatch.setattr(billing_routes, "plan", lambda db, which="member": billing_routes.Plan(
+        amount=499, currency="gbp", interval="month", interval_count=1, trial_days=7,
+        free_delay_hours=168) if which == "member" else None)
     week_old = now() - timedelta(days=8)
     insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="test", company="Acme",
                          title="Backend Engineer, a week ago", location="Berlin, Germany", country="DE",
@@ -1578,6 +1582,11 @@ def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_wh
 
         page.goto(f"{base}/#/settings")
         expect(page.get_by_text("Alerts come with a membership.")).to_be_visible()
+        # And so does bringing a job in by its link (owner, 2026-11-16): the tab says so, with the way there.
+        page.goto(f"{base}/#/add")
+        expect(page.get_by_text("Adding a job by its link comes with a membership.")).to_be_visible()
+        expect(page.get_by_label("The job's link")).to_have_count(0)
+        page.go_back()
         expect(page.get_by_role("button", name="Pause alerts")).to_have_count(0)
         expect(page.get_by_text("The free plan.")).to_be_visible()
 
@@ -1592,8 +1601,11 @@ def test_the_plan_is_picked_after_the_email_link_on_the_landing_pages_cards(site
     from services.api import billing_routes
 
     base, email, _ = site
-    monkeypatch.setattr(billing_routes, "plan", lambda db: billing_routes.Plan(
-        amount=499, currency="gbp", interval="month", interval_count=1, trial_days=7, free_delay_hours=168))
+    # Both paid plans have a price at Stripe: 4.99 and 2.99, shown as reduced from the operator's 29.99 and
+    # 18.99 with the saving worked out (owner, 2026-11-16).
+    monkeypatch.setattr(billing_routes, "plan", lambda db, which="member": billing_routes.Plan(
+        amount={"member": 499, "starter": 299}[which], currency="gbp", interval="month", interval_count=1,
+        trial_days=7, free_delay_hours=168))
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
@@ -1604,10 +1616,25 @@ def test_the_plan_is_picked_after_the_email_link_on_the_landing_pages_cards(site
         page.goto(_emailed(capsys, "verify"))
         expect(page.get_by_role("heading", name="Choose your plan")).to_be_visible()
         cards = page.locator(".price-card")
-        expect(cards.locator(".price-name")).to_have_text(["Free", "Member"])
+        expect(cards.locator(".price-name")).to_have_text(["Free", "Starter", "Member"])
         expect(cards.first).to_contain_text("Jobs 7 days after members see them")
         expect(cards.last).to_contain_text("£4.99")
         expect(cards.last.locator(".price-badge")).to_have_text("7 days free")
+        expect(cards.last.locator(".price-was s")).to_have_text("£29.99")
+        expect(cards.last.locator(".price-was em")).to_have_text("83% off")
+        expect(cards.nth(1).locator(".price-amount")).to_contain_text("£2.99")
+        expect(cards.nth(1).locator(".price-was")).to_have_text("Was £18.9984% off")
+        # Starter's card ticks what is switched on for it and crosses out the rest of a membership.
+        expect(cards.nth(1).locator(".price-list li:not(.out)").first).to_have_text(
+            "New jobs the moment they're found, not a week later")
+        expect(cards.nth(1).locator(".price-list li.out")).to_have_count(3)
+        expect(cards.last.locator(".price-note")).to_have_text("Card needed. Free to cancel in the trial.")
+        # The price kept for life, in a band on each paid card that is read without reading.
+        expect(cards.locator(".price-band")).to_have_text(["Price locked for life", "Price locked for life"])
+        # On a phone the offer comes first: Member, then Starter, then Free.
+        tops = cards.evaluate_all("cards => cards.map((card) => card.getBoundingClientRect().top)")
+        assert tops[2] < tops[1] < tops[0], tops
+        assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         page.goto(f"{base}/#/settings")
         expect(page.get_by_role("heading", name="Choose your plan")).to_be_visible()
         _pick_free(page)

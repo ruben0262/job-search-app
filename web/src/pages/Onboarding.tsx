@@ -15,7 +15,7 @@ const STEPS = [["documents", "Your CV"], ["review", "Your search"], ["done", "Do
 
 export function Onboarding({ state, member, onChanged }: {
   state: Schema<"OnboardingSteps">;
-  /** Has a membership: alerts are a member's (`AlertsForMembers`). */
+  /** Their plan has alerts (`libs.membership.AREAS`); without them, `AlertsForMembers`. */
   member: boolean;
   onChanged: () => void;
 }) {

@@ -220,6 +220,8 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
       STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-}
+      # Optional: the Starter plan's price. Unset, there is no Starter plan on the site.
+      STRIPE_STARTER_PRICE_ID: ${STRIPE_STARTER_PRICE_ID:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       LOG_DIR: /var/log/jobsearch
     volumes:

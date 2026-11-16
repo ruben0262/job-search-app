@@ -20,8 +20,10 @@ from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 
+from libs import settings
 from libs.db import get, insert, now
 from libs.db.models import CorpusJob, QueueJob, User, UserConfig, UserNotification
+from libs.db.models.tenant import record_state
 
 stripe = pytest.importorskip("stripe")
 pytest.importorskip("fastapi")
@@ -50,8 +52,9 @@ class FakeStripe(stripe.HTTPClient):
 
     def subscribe(self, customer: str, status: str, *, period_end: int | None = None,
                   trial_end: int | None = None, cancel_at: int | None = None, ended_at: int | None = None,
-                  invoice: dict | None = None, created: int | None = None) -> dict:
-        """A subscription as Stripe holds it once a payment form has finished."""
+                  invoice: dict | None = None, created: int | None = None,
+                  price: str = "price_test") -> dict:
+        """A subscription as Stripe holds it once a payment form has finished, for the plan of that price."""
         subscription = {
             "id": f"sub_{len(self.subscriptions) + 1}", "object": "subscription", "customer": customer,
             "status": status, "created": created or int(time.time()) + len(self.subscriptions),
@@ -59,7 +62,8 @@ class FakeStripe(stripe.HTTPClient):
             "trial_end": trial_end, "cancel_at": cancel_at, "cancel_at_period_end": cancel_at is not None,
             "ended_at": ended_at, "latest_invoice": invoice, "pause_collection": None,
             "items": {"object": "list", "url": "/v1/subscription_items", "has_more": False, "data": [
-                {"id": "si_1", "object": "subscription_item", "current_period_end": period_end}]},
+                {"id": "si_1", "object": "subscription_item", "current_period_end": period_end,
+                 "price": {"id": price, "object": "price"}}]},
         }
         self.subscriptions.append(subscription)
         return subscription
@@ -243,8 +247,8 @@ def is_member(http) -> bool:
 
 def test_a_free_account_reaches_every_page_of_the_site(db, http, monkeypatch):
     """The site is everybody's (owner, 2026-11-12: "users get to see the whole site for free"), checked
-    across the whole API: no page answers a free account 402 but making a document, which needs a body to be
-    asked at all and is asked in the next test."""
+    across the whole API: no page answers a free account 402 but making a document and bringing a job in by
+    its link, which need a body to be asked at all and are asked in the tests below."""
     from libs.secrets import generate_key
     from services.api.app import app
 
@@ -285,6 +289,124 @@ def test_a_free_account_makes_no_documents_and_is_told_where_the_membership_is(d
     assert pressed.status_code != 402
 
 
+STARTER_PRICE = "price_starter"
+
+
+def on_starter(db, **fields) -> User:
+    """Somebody paying for the Starter plan, their search set up."""
+    return searching(db, subscription_status="active", subscription_plan="starter", **fields)
+
+
+def test_starter_has_the_areas_switched_on_for_it_and_a_switch_is_the_whole_of_the_change(db, http):
+    """Owner, 2026-11-16: a plan between Free and the membership, with "access to certain areas", each "an on
+    off switch". By default the half that gets a person there first: the jobs at once and the alerts. Not the
+    documents and not Add a job, which are the membership's. Flipping a switch moves exactly that area, at
+    once, for the page, the route and the Jobs list alike."""
+    fresh = insert(db, posting(0.5))
+    starter = on_starter(db)
+
+    def build(kind: str) -> int:
+        asked = {"job_id": fresh.id, "kind": kind, "mode": "ai"}
+        return http.post("/documents/build", json=asked).status_code
+
+    sign_in(http, searching(db))
+    assert fresh.id not in listed(http), "a free account waits a week for it"
+    assert http.get("/dashboard").json()["areas"] == []
+
+    sign_in(http, starter)
+    assert http.get("/billing").json()["tier"] == "starter" and is_member(http)
+    assert http.get("/dashboard").json()["areas"] == ["early_jobs", "alerts"]
+    assert fresh.id in listed(http)
+    assert (build("cv"), build("cover")) == (402, 402)
+    refused = http.post("/jobs/link", json={"url": "https://example.com/a-job"})
+    assert (refused.status_code, refused.json()["detail"]) == (
+        402, "Adding a job by its link comes with a membership.")
+    typed = {"url": "https://example.com/a-job", "title": "T", "company": "C", "location": "",
+             "description": "x" * 300}
+    assert http.post("/jobs/link/save", json=typed).status_code == 402
+
+    settings.put(db, "starter_areas", ["cvs", "add_job"])
+    assert http.get("/dashboard").json()["areas"] == ["cvs", "add_job"]
+    assert fresh.id not in listed(http), "the jobs at once were switched off for Starter"
+    assert build("cv") != 402 and build("cover") == 402
+    assert http.post("/jobs/link", json={"url": "not a link"}).status_code == 422, "asked, and it is no link"
+
+    # The membership has every area whatever is switched on for Starter; so does free access from an admin.
+    for whole in (searching(db, subscription_status="active", subscription_plan="member"),
+                  searching(db, subscription_status="trialing"), on_starter(db, free_access_at=now())):
+        sign_in(http, whole)
+        assert http.get("/billing").json()["tier"] == "member"
+        assert len(http.get("/dashboard").json()["areas"]) == 5
+        assert fresh.id in listed(http) and build("cover") != 402
+
+
+def test_a_free_account_adds_no_job_by_its_link_and_keeps_the_ones_it_added(db, http):
+    """Owner, 2026-11-16: bringing a job in by its link is a membership's. One added before stays listed."""
+    job = insert(db, posting(8))
+    free = searching(db)
+    record_state(db, free.id, job.id, added_at=now())
+    sign_in(http, free)
+
+    assert http.post("/jobs/link", json={"url": job.url}).status_code == 402
+    assert [row["id"] for row in http.get("/jobs/added").json()] == [job.id]
+
+    sign_in(http, searching(db, subscription_status="active"))
+    assert http.post("/jobs/link", json={"url": job.url}).json()["outcome"] == "known"
+
+
+def test_the_form_is_for_the_plan_asked_and_stripes_price_says_which_plan(db, http, fake, monkeypatch):
+    """Two prices at Stripe, one a plan. The form opens for the one asked; which plan a subscription is for is
+    read off its price, never taken from the page; and a price this site does not know is the membership's,
+    as every subscription was before there were two."""
+    newcomer = person(db)
+    sign_in(http, newcomer)
+    assert http.post("/billing/checkout?plan=starter").status_code == 404, "no Starter plan without its price"
+    assert http.get("/billing").json()["starter"] is None
+
+    monkeypatch.setenv("STRIPE_STARTER_PRICE_ID", STARTER_PRICE)
+    assert http.get("/billing").json()["starter"]["amount"] == 999
+    assert http.post("/billing/checkout?plan=starter").status_code == 200
+    form = fake.calls("POST", "/v1/checkout/sessions")[-1]
+    assert form["line_items[0][price]"] == STARTER_PRICE
+    assert form["subscription_data[metadata][plan]"] == "starter"
+    assert form["subscription_data[trial_period_days]"] == "7"
+    assert http.post("/billing/checkout").status_code == 200
+    assert fake.calls("POST", "/v1/checkout/sessions")[-1]["line_items[0][price]"] == "price_test"
+
+    customer = get(db, User, newcomer.id).stripe_customer_id
+    bought = fake.subscribe(customer, "trialing", price=STARTER_PRICE)
+    http.post("/billing/refresh")
+    assert get(db, User, newcomer.id).subscription_plan == "starter"
+    assert http.get("/billing").json()["tier"] == "starter"
+
+    # Changed for the membership at Stripe's portal: the same subscription, the other price.
+    bought["items"]["data"][0]["price"]["id"] = "price_test"
+    http.post("/billing/refresh")
+    assert get(db, User, newcomer.id).subscription_plan == "member"
+    assert http.get("/billing").json()["tier"] == "member"
+    bought["items"]["data"][0]["price"]["id"] = "price_from_before"
+    http.post("/billing/refresh")
+    assert http.get("/billing").json()["tier"] == "member"
+
+
+def test_alerts_go_to_starter_only_while_they_are_switched_on_for_it(db):
+    from libs.db.models import CorpusJob
+    from libs.queue.queue import dispatch_due_notifications
+
+    insert(db, CorpusJob(title="Engineer", company="Acme", url="https://example.com/1", source="greenhouse"))
+    alerts = {"telegram_status": "connected", "timezone": "UTC"}
+    starter, member = on_starter(db, **alerts), searching(db, subscription_status="active", **alerts)
+
+    def alerted() -> set:
+        db[QueueJob.COLLECTION].delete_many({})
+        dispatch_due_notifications(db)
+        return set(db[QueueJob.COLLECTION].distinct("user_id", {"lane": "notify"}))
+
+    assert alerted() == {starter.id, member.id}
+    settings.put(db, "starter_areas", ["early_jobs"])
+    assert alerted() == {member.id}
+
+
 def test_a_free_account_sees_each_job_a_week_late_until_it_leaves_everybodys_list(db, http):
     """Owner, 2026-11-12: "only jobs that have passed the 7 day mark should appear for them", and jobs stay
     30 days for everybody. A newer job's text and its marks are not theirs yet either, asked by its number."""
@@ -312,8 +434,6 @@ def test_a_free_account_sees_each_job_a_week_late_until_it_leaves_everybodys_lis
 
 def test_the_operator_sets_how_far_behind_a_free_account_is(db, http):
     """`free_delay_hours`, in Admin: 0 shows a free account every job at once; the documents stay members'."""
-    from libs import settings
-
     new = insert(db, posting(0.1)).id
     sign_in(http, searching(db))
     assert new not in listed(http)
@@ -327,8 +447,6 @@ def test_a_shelf_no_longer_than_the_free_wait_is_refused(db, http):
     """A free account sees a job from `free_delay_hours` until it leaves everybody's list at the job shelf
     life, so a shelf no longer than that wait lists nothing for any of them, and nothing said so: the server
     kept 11-07's week while free accounts waited a week, and a new free account saw "0 jobs" (2026-11-13)."""
-    from libs import settings
-
     sign_in(http, person(db, email=ADMIN))
     for key, value in (("job_max_age_hours", 168), ("job_max_age_hours", 96), ("free_delay_hours", 720)):
         refused = http.put(f"/admin/settings/{key}", json={"value": value})
@@ -428,8 +546,6 @@ def test_the_form_starts_the_trial_with_a_card_and_only_for_somebody_who_never_h
 
 
 def test_no_free_trial_when_the_operator_turns_it_off(db, http, fake):
-    from libs import settings
-
     settings.put(db, "trial_days", 0)
     sign_in(http, person(db))
     assert http.get("/billing/plan").json()["trial_days"] == 0
@@ -473,7 +589,8 @@ def test_coming_back_from_the_form_is_a_member_at_once(db, http, fake):
     membership = http.post("/billing/refresh").json()
     assert membership["member"] is True and membership["status"] == "trialing"
     assert http.get("/dashboard").json() | {"onboarding": None} == {
-        "stage": "onboarding", "is_admin": False, "member": True, "onboarding": None}
+        "stage": "onboarding", "is_admin": False, "member": True, "onboarding": None,
+        "areas": ["early_jobs", "alerts", "cvs", "covers", "add_job"]}
     stored = get(db, User, newcomer.id)
     assert stored.trial_ends_at.timestamp() == trial_end
     # Read off the subscription's item, where Stripe's API keeps it since 2025-03-31.

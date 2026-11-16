@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { api, type Schema } from "../api";
 import { useKept } from "../kept";
+import { type Pricing, saving } from "../landing/Landing";
 import { money, price } from "../membership";
 import { day } from "../time";
 import { Error, useAction } from "../ui";
@@ -12,7 +13,8 @@ import { AdminPricing } from "./AdminPricing";
 
 type Subscriptions = Schema<"Subscriptions">;
 type Row = Subscriptions["rows"][number];
-type Settings = { trial_days: number; free_delay_hours: number };
+type Settings = { trial_days: number; free_delay_hours: number; starter_areas: string[];
+                  price_was: Record<string, number> };
 
 /** Each plan's name, colour and line, in the order the bar draws them (`admin_routes.PLAN_KINDS`). */
 const KINDS: Record<string, [name: string, colour: string, line: string]> = {
@@ -130,26 +132,61 @@ function SubscriptionLine({ row }: { row: Row }) {
   );
 }
 
-/** The membership: its price as Stripe has it, and the two settings that come with the plans. */
+/** The plans: each one's price as Stripe has it and the price it is shown as reduced from, the settings that
+ * come with them, and what the Starter plan includes, a switch each (owner, 2026-11-16). */
 function ThePlan({ subscriptions }: { subscriptions: Subscriptions }) {
   const kept = useKept<{ settings: Settings }>("/admin/settings");
+  // What the cards will say: read again after each change, so the preview below follows it.
+  const pricing = useKept<Pricing>("/pricing");
   const [saved, setSaved] = useState<string | null>(null);
-  const save = useAction(async (key: keyof Settings, value: number) => {
+  const save = useAction(async (key: keyof Settings, value: Settings[keyof Settings]) => {
     const body = await api.put<{ settings: Settings }>(`/admin/settings/${key}`, { value });
     kept.set(() => body);
     setSaved(key);
+    await pricing.reload();
   });
   const settings = kept.data?.settings;
   const plan = subscriptions.plan;
+  const starter = pricing.data?.starter ?? null;
+  // "29.99" typed is 2999 kept, Stripe's unit; nothing typed shows no reduced-from price.
+  const was = (kind: "member" | "starter", of: Pricing["plan"]) => settings ? (
+    <label>
+      <span className="label">{kind === "member" ? "Member" : "Starter"} is reduced from</span>
+      <input type="number" min={0} step={0.01} inputMode="decimal" disabled={save.busy}
+             aria-label={`${kind === "member" ? "Member" : "Starter"} is reduced from`}
+             defaultValue={settings.price_was[kind] ? (settings.price_was[kind] / 100).toFixed(2) : ""}
+             onBlur={(event) => {
+               const amount = Math.round(Number(event.target.value || 0) * 100);
+               if (amount !== (settings.price_was[kind] ?? 0)) {
+                 void save.run("price_was", { ...settings.price_was, [kind]: amount });
+               }
+             }} />
+      <span className="hint">
+        {saved === "price_was" ? "Saved. " : ""}Crossed out on its card beside{" "}
+        {of ? `${price(of)}, with ${saving(of.amount, settings.price_was[kind]) ?? 0}% off` : "Stripe's price"}.
+        Empty shows none. It must be a price people do pay, or will: a made-up one is against the law.
+      </span>
+    </label>
+  ) : null;
   return (
     <section className="card">
-      <h2>The membership</h2>
+      <h2>The plans</h2>
       <div className="plan-facts">
         <div>
-          <span className="label">Price</span>
+          <span className="label">Member</span>
           <strong>{plan ? price(plan) : "Not set up"}</strong>
           <span className="hint">Set at Stripe: a new price is a new STRIPE_PRICE_ID.</span>
         </div>
+        <div>
+          <span className="label">Starter</span>
+          <strong>{starter ? price(starter) : "Not on offer"}</strong>
+          <span className="hint">
+            {starter ? "Set at Stripe: STRIPE_STARTER_PRICE_ID." : "Give it a price at Stripe and set "
+              + "STRIPE_STARTER_PRICE_ID: its card and its checkout appear by themselves."}
+          </span>
+        </div>
+        {was("member", plan)}
+        {was("starter", starter)}
         {settings ? (
           <>
             <label>
@@ -179,6 +216,24 @@ function ThePlan({ subscriptions }: { subscriptions: Subscriptions }) {
           </>
         ) : null}
       </div>
+      {settings && pricing.data ? (
+        <fieldset className="starter-areas">
+          <legend className="label">Starter includes</legend>
+          {pricing.data.areas.map((area) => (
+            <label key={area.key}>
+              <input type="checkbox" checked={settings.starter_areas.includes(area.key)} disabled={save.busy}
+                     onChange={(event) => void save.run("starter_areas", event.target.checked
+                       ? [...settings.starter_areas, area.key]
+                       : settings.starter_areas.filter((each) => each !== area.key))} />
+              {area.words}
+            </label>
+          ))}
+          <span className="hint">
+            {saved === "starter_areas" ? "Saved. " : ""}What the Starter plan has of a membership. A switch works
+            at once for everyone on Starter, and its card says the same. Member has all of them.
+          </span>
+        </fieldset>
+      ) : null}
       <Error>{save.error}</Error>
     </section>
   );

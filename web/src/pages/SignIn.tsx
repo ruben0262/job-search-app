@@ -9,12 +9,14 @@ import { Error, Field, useAction, useNewPassword } from "../ui";
 import { ThemeToggle } from "../theme";
 import { Brand, Wheel } from "../wheel";
 
-type Picked = "free" | "member";
+type Picked = "free" | "starter" | "member";
 
-/** The plan the address asks for: the landing page's Member card is `#/signup?plan=member`; anything else is
- * free. Carried by the email link (`Verify`) to the plan page, which opens on the membership for it. */
+/** The plan the address asks for: the landing page's Member card is `#/signup?plan=member`, its Starter card
+ * `?plan=starter`; anything else is free. Carried by the email link (`Verify`) to the plan page, which opens
+ * on that plan's checkout. */
 export function planAsked(): Picked {
-  return new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("plan") === "member" ? "member" : "free";
+  const asked = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("plan");
+  return asked === "member" || asked === "starter" ? asked : "free";
 }
 
 export function SignIn({

@@ -2501,8 +2501,44 @@
 }
 
 @container (min-width: 700px) {
-  .landing .price-cards {
+  .landing .price-cards:not(.three) {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Three plans: side by side where each has room for its lines, and one under another before that, the
+   membership first, since it is the offer and a phone shows one card at a time. */
+.landing .price-cards.three {
+  max-width: 1120px;
+}
+
+@container (min-width: 900px) {
+  .landing .price-cards.three {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .landing .price-cards.three .price-card {
+    padding-inline: 26px;
+  }
+
+  /* The offer stands a little forward of the two beside it. */
+  .landing .price-cards.three .price-card.lit {
+    z-index: 1;
+    scale: 1.045;
+  }
+}
+
+@container (max-width: 899.98px) {
+  .landing .price-cards.three {
+    max-width: 480px;
+  }
+
+  .landing .price-cards.three .price-card.lit {
+    order: -2;
+  }
+
+  .landing .price-cards.three .price-card:nth-child(2) {
+    order: -1;
   }
 }
 
@@ -2559,16 +2595,125 @@
   letter-spacing: -0.03em;
 }
 
-.landing .price-card .price-tagline {
-  margin-top: 6px;
-  font-size: 16.5px;
-}
-
 .landing .price-card .price-amount {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
+  gap: 4px 8px;
   color: var(--ink);
+}
+
+/* The price a plan is reduced from, crossed out, and the saving beside it: a line of its own over the price,
+   so the eye goes from what it was, to how much is off, to what it is. The old price in full ink and large,
+   struck by one thin slanting line that leaves every figure readable (owner, 2026-11-16: "29.99 is not
+   seeable really"), where a grey figure under a red line could not be read. */
+.landing .price-amount .price-was {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 2px;
+}
+
+.landing .price-was s {
+  position: relative;
+  color: var(--ink);
+  font: 600 24px/1.1 var(--font-display);
+  letter-spacing: -0.02em;
+  text-decoration: none;
+  opacity: 0.82;
+}
+
+.landing .price-was s::after {
+  content: "";
+  position: absolute;
+  inset: 50% -4px auto;
+  height: 2.5px;
+  border-radius: 2px;
+  background: #ff4d4f;
+  rotate: -12deg;
+}
+
+.landing .price-was em {
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: #1f9d63;
+  color: #fff;
+  font: 700 15px/1 var(--font-body);
+  font-style: normal;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  box-shadow: 0 8px 22px -10px rgba(31, 157, 99, 0.9);
+}
+
+/* What the price is for, in a band under it that is read without reading: a lock and the operator's words
+   ("Price locked for life"). Solid on the offer, tinted on the others. */
+.landing .price-card .price-band {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  border-radius: 14px;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--ink);
+  font: 700 16.5px/1.2 var(--font-body);
+}
+
+.landing .price-card.lit .price-band {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), #b07bff);
+  color: var(--accent-ink);
+  box-shadow: 0 12px 30px -14px rgba(var(--accent-rgb), 0.95);
+}
+
+.landing .price-band svg,
+.landing .price-offer svg {
+  flex: none;
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The offer under the pricing's title: three marks, big enough to read at a scroll. */
+.landing .price-offer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 12px;
+  margin: 26px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.landing .price-offer li {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 18px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--tile);
+  color: var(--ink);
+  font: 700 17px/1 var(--font-body);
+  white-space: nowrap;
+}
+
+.landing .price-offer li.hot {
+  border-color: transparent;
+  background: #1f9d63;
+  color: #fff;
+}
+
+.landing .price-offer li.lock {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
 .landing .price-amount strong {
@@ -2652,6 +2797,12 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* Every card's button at its foot, in a line across the cards, however many lines each has above it. */
+.landing .price-card .price-list {
+  flex: 1;
+  align-content: start;
 }
 
 .landing .price-cta {

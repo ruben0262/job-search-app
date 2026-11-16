@@ -15,9 +15,11 @@ export const ADDED = "/jobs/added";
 type Answer = Schema<"LinkAnswer">;
 type Draft = Schema<"Draft">;
 
-export function AddJobPage({ onChanged }: {
+export function AddJobPage({ onChanged, can }: {
   /** "Mark as applied" changed the count the dashboard keeps. */
   onChanged: () => void;
+  /** Their plan has Add a job (`libs.membership.AREAS`): a membership's, since 2026-11-16 (owner). */
+  can: boolean;
 }) {
   const [link, setLink] = useState("");
   const [answer, setAnswer] = useState<Answer | null>(null);
@@ -42,11 +44,19 @@ export function AddJobPage({ onChanged }: {
       <h1>Found a job somewhere else?</h1>
       <p className="lede">Paste its link here. We show it if we have it, or read it from its page and add it.</p>
 
-      <form className="toolbar" onSubmit={(event) => void find.run(event)}>
-        <input type="url" required placeholder="https://…" aria-label="The job's link"
-               value={link} onChange={(event) => setLink(event.target.value)} />
-        <button type="submit" disabled={find.busy}>{find.busy ? "Reading the job…" : "Find this job"}</button>
-      </form>
+      {can ? (
+        <form className="toolbar" onSubmit={(event) => void find.run(event)}>
+          <input type="url" required placeholder="https://…" aria-label="The job's link"
+                 value={link} onChange={(event) => setLink(event.target.value)} />
+          <button type="submit" disabled={find.busy}>{find.busy ? "Reading the job…" : "Find this job"}</button>
+        </form>
+      ) : (
+        // What it is stays said; the way to it is one button (CLAUDE.md §0).
+        <div className="row">
+          <span className="small">Adding a job by its link comes with a membership.</span>
+          <a className="button secondary small" href="#/upgrade">Become a member</a>
+        </div>
+      )}
       <Error>{find.error}</Error>
 
       {answer ? <Said answer={answer} /> : null}

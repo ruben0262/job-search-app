@@ -1,7 +1,7 @@
-/** Admin → Settings: what the landing page's two pricing cards say, Free and Member (`pricing_cards`, owner
- * 2026-11-12), saved together and shown beside the form as a visitor will see them. The price is Stripe's, the
- * free days are Free trial and the delay is the free accounts' setting: the cards fill them in, so nothing
- * typed here names them. */
+/** Admin → Subscriptions: what the landing page's pricing cards say, Free, Starter and Member (`pricing_cards`,
+ * owner 2026-11-12 and 2026-11-16), saved together and shown beside the form as a visitor will see them. A
+ * price is Stripe's, the price it is reduced from, the free days, the delay and what Starter includes are each
+ * their own setting (above, under The plans): the cards fill them in, so nothing typed here names them. */
 import { useState } from "react";
 
 import { api } from "../api";
@@ -41,8 +41,9 @@ export function AdminPricing() {
     <div className="card pricing-admin">
       <h2 style={{ marginTop: 0 }}>Pricing on the landing page</h2>
       <p className="hint">
-        The two cards visitors choose between. The price comes from Stripe, the free days from Free trial and
-        how far behind Free is from its own setting, so don&apos;t write those here: they change by themselves.
+        The cards visitors choose between. Prices come from Stripe, and the free days, how far behind Free is
+        and what Starter includes from their own settings above, so don&apos;t write those here: they change by
+        themselves. Starter&apos;s card shows to visitors once it has a price at Stripe.
       </p>
       <div className="pricing-edit">
         <form onSubmit={(event) => {
@@ -50,9 +51,9 @@ export function AdminPricing() {
           void save.run(cards);
         }}>
           <div className="toggles" role="group" aria-label="Card" style={{ marginBottom: "1rem" }}>
-            {(["free", "member"] as const).map((each) => (
+            {(["free", "starter", "member"] as const).map((each) => (
               <button key={each} type="button" className="toggle" aria-pressed={kind === each}
-                      onClick={() => setKind(each)}>{each === "free" ? "Free" : "Member"}</button>
+                      onClick={() => setKind(each)}>{each[0]!.toUpperCase() + each.slice(1)}</button>
             ))}
           </div>
           <label className="field">
@@ -60,8 +61,9 @@ export function AdminPricing() {
             <input value={card.name} maxLength={40} required onChange={(event) => edit({ name: event.target.value })} />
           </label>
           <label className="field">
-            <span className="label">Line under the name</span>
-            <input value={card.tagline} maxLength={120} onChange={(event) => edit({ tagline: event.target.value })} />
+            <span className="label">Band under the price</span>
+            <input value={card.highlight} maxLength={40} placeholder="Price locked for life"
+                   onChange={(event) => edit({ highlight: event.target.value })} />
           </label>
           <Lines legend="Included" name="Included" lines={card.benefits} least={1}
                  onChange={(benefits) => edit({ benefits })} />
@@ -76,7 +78,7 @@ export function AdminPricing() {
             <textarea value={card.note} maxLength={280} rows={3} onChange={(event) => edit({ note: event.target.value })} />
           </label>
           <div className="pricing-save">
-            <button type="submit" disabled={!draft || save.busy}>{save.busy ? "Saving…" : "Save both cards"}</button>
+            <button type="submit" disabled={!draft || save.busy}>{save.busy ? "Saving…" : "Save the cards"}</button>
             {draft ? <button type="button" className="secondary" onClick={() => setDraft(null)}>Undo changes</button> : null}
             {saved ? <span className="muted small" role="status">Saved. The landing page shows it now.</span> : null}
           </div>

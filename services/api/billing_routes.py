@@ -21,9 +21,10 @@ import uuid as _uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from typing import Literal
 
 import stripe
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from pymongo.database import Database
 from starlette.concurrency import run_in_threadpool
@@ -31,7 +32,7 @@ from starlette.concurrency import run_in_threadpool
 from libs import settings
 from libs.db import find, find_one, get, now
 from libs.db.models import User
-from libs.membership import ONGOING, PAID, is_member
+from libs.membership import ONGOING, PAID, STARTER, is_member, tier
 from libs.notify import site_url
 from libs.obs import audit
 from services.api.deps import current_user, get_db, rate_limit
@@ -58,8 +59,14 @@ EVENTS = frozenset({
 BACK = "stripe=back"
 
 # What an account holds of Stripe's (`sync`): forgotten together when Stripe has no such customer.
-STRIPE_COPY = ("stripe_customer_id", "subscription_id", "subscription_status", "trial_ends_at",
-               "period_ends_at", "cancels_at", "last_paid_at", "last_paid_amount", "currency")
+STRIPE_COPY = ("stripe_customer_id", "subscription_id", "subscription_status", "subscription_plan",
+               "trial_ends_at", "period_ends_at", "cancels_at", "last_paid_at", "last_paid_amount",
+               "currency")
+
+# The price at Stripe of each plan a person can pay for (`libs.membership`). The membership's is needed for
+# billing to be set up at all (`STRIPE_ENV`); Starter's is optional, and without it there is no Starter plan
+# anywhere on the site: no card, no checkout.
+PRICE_ENV = {"member": "STRIPE_PRICE_ID", STARTER: "STRIPE_STARTER_PRICE_ID"}
 
 # What a membership needs from the environment (deploy/server.env.example).
 STRIPE_ENV = ("STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "STRIPE_PRICE_ID", "STRIPE_WEBHOOK_SECRET")
@@ -148,6 +155,7 @@ def sync(db: Database, user: User) -> User:
         items = current.items.data
         fields.update(
             subscription_id=current.id, subscription_status=current.status, currency=current.currency,
+            subscription_plan=_plan_of(items),
             trial_ends_at=_time(current.trial_end),
             # On the item since Stripe's 2025-03-31 API (leadops read it off the subscription and got 0).
             period_ends_at=_time(items[0].current_period_end if items else None),
@@ -173,6 +181,20 @@ def sync(db: Database, user: User) -> User:
         audit(logger, "billing.status_changed", user=user.id, was=was.get("subscription_status"),
               now=fields["subscription_status"])
     return get(db, User, user.id)
+
+
+def price_id(which: str) -> str:
+    """The price at Stripe of this plan, or "" where none is set."""
+    return os.environ.get(PRICE_ENV[which], "").strip()
+
+
+def _plan_of(items: list) -> str:
+    """Which plan a subscription is for: Starter if its price is Starter's, else the membership. A price this
+    site does not know (one the operator replaced) is the membership's, as every subscription was before
+    there were two."""
+    price = getattr(items[0], "price", None) if items else None
+    starter = price_id(STARTER)
+    return STARTER if starter and getattr(price, "id", None) == starter else "member"
 
 
 def end_membership(user: User) -> None:
@@ -235,7 +257,7 @@ def trial_for(db: Database, user: User) -> int:
 
 
 class Plan(BaseModel):
-    """The one membership: its price as Stripe has it, and the free trial a new member gets; and, for the
+    """A plan to pay for: its price as Stripe has it, and the free trial a new member gets; and, for the
     sign-up page's choice, how far behind a member the free plan sees each job (`libs.membership`)."""
     # In the smallest unit of `currency`: cents.
     amount: int
@@ -248,22 +270,22 @@ class Plan(BaseModel):
 
 
 @functools.cache
-def _price(price_id: str) -> stripe.Price:
+def _price(price: str) -> stripe.Price:
     """Read once a process: a price at Stripe never changes. A new one is a new `STRIPE_PRICE_ID` and a
     restart."""
-    return _stripe().v1.prices.retrieve(price_id)
+    return _stripe().v1.prices.retrieve(price)
 
 
-def plan(db: Database) -> Plan | None:
-    """What a membership costs, or None when Stripe is not set up or cannot be read: the page then says
-    nothing of a price rather than a wrong one."""
-    price_id, key = os.environ.get("STRIPE_PRICE_ID", "").strip(), os.environ.get("STRIPE_SECRET_KEY")
-    if not (price_id and key):
+def plan(db: Database, which: str = "member") -> Plan | None:
+    """What this plan costs, or None when Stripe is not set up, has no price for it or cannot be read: the
+    page then says nothing of a price rather than a wrong one, and offers no Starter plan without one."""
+    wanted, key = price_id(which), os.environ.get("STRIPE_SECRET_KEY")
+    if not (wanted and key):
         return None
     try:
-        price = _price(price_id)
+        price = _price(wanted)
     except stripe.StripeError:
-        logger.warning("billing: Stripe did not answer for the price %s; the page goes without it", price_id,
+        logger.warning("billing: Stripe did not answer for the price %s; the page goes without it", wanted,
                        exc_info=True)
         return None
     return Plan(amount=price.unit_amount, currency=price.currency, interval=price.recurring.interval,
@@ -273,8 +295,12 @@ def plan(db: Database) -> Plan | None:
 
 class Membership(BaseModel):
     """Where a person's membership stands, for the page that asks them to pay and for Settings."""
-    # May use the site (`libs.membership`): paying, in the trial, let in by an admin, or an admin.
+    # Has a plan it pays for, or the like (`libs.membership`): paying, in the trial, let in by an admin, or
+    # an admin.
     member: bool
+    # Which: "free", "starter" or "member" (`libs.membership.tier`). Starter is changed for the membership
+    # at Stripe's portal, where every subscription is managed.
+    tier: Literal["free", "starter", "member"]
     free_access: bool
     # Stripe's word for their subscription; None if they never had one.
     status: str | None
@@ -291,17 +317,20 @@ class Membership(BaseModel):
     # They have a customer at Stripe, so the portal opens for them.
     can_manage: bool
     plan: Plan | None
+    # The Starter plan's price; None while there is none to offer (`PRICE_ENV`).
+    starter: Plan | None
     # Stripe's public key, for the payment form; None until it is set.
     publishable_key: str | None
 
 
 def membership_of(db: Database, user: User) -> Membership:
     return Membership(
-        member=is_member(db, user.id), free_access=user.free_access_at is not None,
+        member=is_member(db, user.id), tier=tier(db, user.id), free_access=user.free_access_at is not None,
         status=user.subscription_status, can_start=user.subscription_status not in ONGOING,
         trial_days=trial_for(db, user), trial_ends_at=user.trial_ends_at, period_ends_at=user.period_ends_at,
         cancels_at=user.cancels_at, last_paid_at=user.last_paid_at, last_paid_amount=user.last_paid_amount,
         currency=user.currency, can_manage=user.stripe_customer_id is not None, plan=plan(db),
+        starter=plan(db, STARTER),
         publishable_key=os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip() or None)
 
 
@@ -323,11 +352,13 @@ class Checkout(BaseModel):
 
 
 @router.post("/checkout")
-def checkout(request: Request, db: Database = Depends(get_db),
-             user_id: _uuid.UUID = Depends(current_user)) -> Checkout:
-    """Open the payment form: a new membership, with the free trial if they never had one. Opening it ends
-    any form opened before, so two tabs cannot become two memberships."""
+def checkout(request: Request, which: Literal["member", "starter"] = Query("member", alias="plan"),
+             db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> Checkout:
+    """Open the payment form for a plan: a new subscription, with the free trial if they never had one.
+    Opening it ends any form opened before, so two tabs cannot become two memberships."""
     rate_limit(request, f"checkout:{user_id}", limit=30, per_seconds=3600)
+    if which == STARTER and not price_id(STARTER):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="That plan is not on offer.")
     with _stripe_answers("open the payment form"):
         # Stripe read first: what it says decides the trial, and a customer it no longer has is replaced.
         user = _customer(db, sync(db, get(db, User, user_id)))
@@ -345,17 +376,17 @@ def checkout(request: Request, db: Database = Depends(get_db),
             # site-drawn form "doesn't look official").
             "mode": "subscription", "ui_mode": "embedded_page",
             "customer": user.stripe_customer_id, "client_reference_id": str(user.id),
-            "line_items": [{"price": _env("STRIPE_PRICE_ID"), "quantity": 1}],
+            "line_items": [{"price": _env(PRICE_ENV[which]), "quantity": 1}],
             # A card even for a free trial, so the first payment is taken by itself when the trial ends.
             "payment_method_collection": "always",
-            "subscription_data": {"metadata": {"user_id": str(user.id)},
+            "subscription_data": {"metadata": {"user_id": str(user.id), "plan": which},
                                   **({"trial_period_days": days} if days else {})},
             # A card finishes in the page (`onComplete`); a payment that goes to a bank's page comes back
             # here. The mark is in the query, not after the `#`, which is the app's own address.
             "redirect_on_completion": "if_required",
             "return_url": site_url(f"/?{BACK}#/"),
         })
-    audit(logger, "billing.checkout", user=user.id, trial_days=days)
+    audit(logger, "billing.checkout", user=user.id, plan=which, trial_days=days)
     return Checkout(client_secret=session.client_secret)
 
 

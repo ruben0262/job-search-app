@@ -83,6 +83,10 @@ class User(Document):
     # Stripe's, and one it adds must still be copied, where it reads as not paying.
     subscription_id: str | None = None
     subscription_status: str | None = None
+    # Which plan that subscription is for, by its price at Stripe (`billing_routes.sync`): "starter", or
+    # "member" for the whole membership. None: no subscription, or one from before there were two plans,
+    # which is the whole membership (`libs.membership`).
+    subscription_plan: str | None = None
     trial_ends_at: datetime | None = None
     # The end of the period paid for, or of the trial: when the next payment is taken, unless it ends.
     period_ends_at: datetime | None = None

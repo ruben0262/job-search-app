@@ -23,7 +23,7 @@ from libs.db.models import AtsToken, BuiltDocument, CorpusJob, CountryCount, Use
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
 from libs.matching import Match, marks, norm, scan_for, their_jobs
-from libs.membership import choosing, delay_hours, is_admin, is_member, jobs_as_of
+from libs.membership import areas_of, choosing, delay_hours, is_admin, is_member, jobs_as_of
 from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
@@ -63,6 +63,8 @@ class OnboardingDashboard(BaseModel):
     is_admin: bool
     # Has a membership (`libs.membership`); without one the site is theirs a week behind, with no documents.
     member: bool
+    # What of a membership their plan has (`libs.membership.AREAS`): what a page shows or offers by.
+    areas: list[str]
 
 
 class JobFilters(BaseModel):
@@ -92,6 +94,8 @@ class ReadyDashboard(BaseModel):
     is_admin: bool
     # Has a membership (`libs.membership`); without one the site is theirs a week behind, with no documents.
     member: bool
+    # What of a membership their plan has (`libs.membership.AREAS`): what a page shows or offers by.
+    areas: list[str]
     # How many jobs they said they applied to — moved only by "Mark as applied".
     applied: int
     banners: list[DashboardBanner]
@@ -207,11 +211,12 @@ def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curr
     if user.onboarding_completed_at is None or "review" in unfinished:
         # Nothing below is meaningful yet, and empty panels read as a broken product.
         return OnboardingDashboard(stage="onboarding", is_admin=is_admin(user), member=member,
-                                   onboarding=OnboardingSteps(**state.as_dict()))
+                                   areas=areas_of(db, user_id), onboarding=OnboardingSteps(**state.as_dict()))
 
     _, applied = marks(db, user_id)
-    return ReadyDashboard(stage="ready", is_admin=is_admin(user), member=member, applied=len(applied),
-                          banners=_banners(db, user, member), job_filters=_job_filters(user))
+    return ReadyDashboard(stage="ready", is_admin=is_admin(user), member=member, areas=areas_of(db, user_id),
+                          applied=len(applied), banners=_banners(db, user, member),
+                          job_filters=_job_filters(user))
 
 
 def _job_filters(user: User) -> JobFilters:

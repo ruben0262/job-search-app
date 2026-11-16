@@ -146,7 +146,7 @@ export function App() {
   if (hash.startsWith("/upgrade")) return <UpgradePage onChanged={reload} />;
   if (dashboard.stage === "onboarding") {
     // Deliberately not routable past: a half-configured account produces a bad feed and the user concludes.
-    return <Onboarding state={dashboard.onboarding} member={dashboard.member} onChanged={reload} />;
+    return <Onboarding state={dashboard.onboarding} member={dashboard.areas.includes("alerts")} onChanged={reload} />;
   }
 
   const [path, query = ""] = hash.split("?");
@@ -182,7 +182,7 @@ export function App() {
         <main className={section === "admin" ? "admin" : undefined}>
           {path?.startsWith("/add") ? (
             // A tab of Jobs, not a place of its own; and so is the next.
-            <AddJobPage onChanged={reload} />
+            <AddJobPage onChanged={reload} can={dashboard.areas.includes("add_job")} />
           ) : path?.startsWith("/bookmarks") ? (
             <BookmarksPage onChanged={reload} />
           ) : section === "applied" ? (

@@ -385,10 +385,13 @@ export function Landing() {
           <Reviews />
         </section>
 
-        {/* Free, a week behind; or a member, first (owner, 2026-11-12). What the cards say is set in Admin. */}
+        {/* Free, a week behind; Starter, first; or a member, first and seen (owner, 2026-11-12 and
+            2026-11-16). What the cards say is set in Admin. The offer is said three ways for somebody scrolling
+            past, who reads no line: the title, a row of three marks under it, and a band on each paid card. */}
         <section id="price" className="section">
           <div className="head center" data-reveal>
-            <h2>Start free. <span className="glow">Upgrade to be first.</span></h2>
+            <h2>Start free. <span className="glow">Lock in your price for life.</span></h2>
+            {pricing ? <Offer pricing={pricing} /> : null}
           </div>
           {pricing ? <PriceCards pricing={pricing} /> : null}
         </section>
@@ -465,38 +468,105 @@ function Dock({ at, jump }: { at: number; jump: (id: string) => (event: MouseEve
   );
 }
 
-/** The two cards, Free and Member, as the landing page shows them, Admin previews them (`preview`: their buttons
- * go nowhere) and the plan page offers them (`onChoose`: their buttons pick). The words are the operator's
- * (`pricing_cards`); the price is Stripe's, the free days `trial_days` and the delay `free_delay_hours`, filled
- * in here, so no wording can promise what the site does not keep. */
+type Paid = "starter" | "member";
+type Card = Pricing["cards"]["free"];
+
+const LOCK = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10.5V8a5 5 0 0110 0v2.5M5.5 10.5h13v10h-13z" /></svg>;
+
+/** The offer at a glance, under the pricing's title: the most a plan is reduced by, the band the membership's
+ * card carries ("Price locked for life") and the free days, each worked out from what the cards themselves
+ * say, so the row cannot promise what they do not. */
+function Offer({ pricing }: { pricing: Pricing }) {
+  const { plan, starter, was, cards, trial_days: days } = pricing;
+  const offs = [saving(plan?.amount ?? 0, plan ? was.member : undefined),
+                saving(starter?.amount ?? 0, starter ? was.starter : undefined)].filter((off) => off !== null);
+  const most = offs.length ? Math.max(...offs) : null;
+  const marks: [string, ReactNode, string][] = [
+    ...(most ? [["hot", <Percent key="i" />, `${offs.length > 1 ? "Up to " : ""}${most}% off`] as [string, ReactNode, string]] : []),
+    ...(cards.member.highlight ? [["lock", LOCK, cards.member.highlight] as [string, ReactNode, string]] : []),
+    ...(days ? [["gift", <Gift key="i" />, `${days} days free`] as [string, ReactNode, string]] : []),
+  ];
+  return marks.length ? (
+    <ul className="price-offer">
+      {marks.map(([kind, icon, words]) => <li key={kind} className={kind}>{icon}{words}</li>)}
+    </ul>
+  ) : null;
+}
+
+/** A per cent sign, for the saving. */
+function Percent() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5L5 19M7.5 9.5a2 2 0 100-4 2 2 0 000 4zM16.5 18.5a2 2 0 100-4 2 2 0 000 4z" /></svg>;
+}
+
+/** How much less a plan costs than the price it is shown as reduced from, in whole per cent; null with no
+ * such price, or one that is not higher. Worked out here from the two prices, so the card cannot say a saving
+ * its own figures do not make. */
+export function saving(amount: number, was: number | undefined): number | null {
+  return was && was > amount ? Math.round((1 - amount / was) * 100) : null;
+}
+
+/** The cards, Free, Starter and Member, as the landing page shows them, Admin previews them (`preview`: their
+ * buttons go nowhere) and the plan page offers them (`onChoose`: their buttons pick). The words are the
+ * operator's (`pricing_cards`); a price is Stripe's, the price it is reduced from `price_was`, the free days
+ * `trial_days`, the delay `free_delay_hours` and what Starter has of a membership `starter_areas`, all filled
+ * in here, so no wording can promise what the site does not keep. Starter is shown once it has a price at
+ * Stripe (and always in Admin's preview, to be worded before it has one). */
 export function PriceCards({ pricing, preview = false, onChoose, busy = false }: {
   pricing: Pricing;
   preview?: boolean;
-  onChoose?: (kind: "free" | "member") => void;
+  onChoose?: (kind: "free" | Paid) => void;
   busy?: boolean;
 }) {
-  const { cards, plan, trial_days: days, free_delay_hours: delay } = pricing;
-  const per = plan && (plan.interval_count === 1 ? plan.interval : `${plan.interval_count} ${plan.interval}s`);
+  const { cards, plan, starter, trial_days: days, free_delay_hours: delay, was, areas } = pricing;
+  const three = Boolean(starter) || preview;
+  // What a paid card says of its price: the one it is reduced from crossed out, the saving, the price itself.
+  const cost = (kind: Paid, of: Pricing["plan"]) => {
+    if (!of) return null;
+    const before = was[kind];
+    const off = saving(of.amount, before);
+    const per = of.interval_count === 1 ? of.interval : `${of.interval_count} ${of.interval}s`;
+    return (
+      <>
+        {off && before ? (
+          <span className="price-was">
+            <span className="unseen">Was </span><s>{money(before, of.currency)}</s>
+            <em>{off}% off</em>
+          </span>
+        ) : null}
+        <strong>{money(of.amount, of.currency)}</strong><span>/{per}</span>
+      </>
+    );
+  };
+  const trial = (of: Pricing["plan"]) =>
+    (days ? (of ? `after your ${days}-day free trial` : `The first ${days} days free`) : null);
   return (
     <div className="price-room">
-      <div className="price-cards">
+      <div className={three ? "price-cards three" : "price-cards"}>
         <PriceCard card={cards.free} href="#/signup" preview={preview} busy={busy}
                    onChoose={onChoose && (() => onChoose("free"))}
                    amount={plan ? <><strong>{nothing(plan.currency)}</strong><span>for good</span></> : null}
                    under={`Jobs ${behind(delay)} after members see them`} />
+        {three ? (
+          <PriceCard card={cards.starter} href="#/signup?plan=starter" preview={preview} busy={busy}
+                     onChoose={onChoose && (() => onChoose("starter"))}
+                     has={areas.filter((area) => area.starter).map((area) => area.words)}
+                     lacks={areas.filter((area) => !area.starter).map((area) => area.words)}
+                     amount={cost("starter", starter)} under={trial(starter)} />
+        ) : null}
         <PriceCard card={cards.member} href="#/signup?plan=member" preview={preview} lit busy={busy}
                    onChoose={onChoose && (() => onChoose("member"))}
                    badge={days ? `${days} days free` : null}
-                   amount={plan ? <><strong>{money(plan.amount, plan.currency)}</strong><span>/{per}</span></> : null}
-                   under={days ? (plan ? `after your ${days}-day free trial` : `The first ${days} days free`) : null} />
+                   amount={cost("member", plan)} under={trial(plan)} />
       </div>
     </div>
   );
 }
 
-/** One card: its name, what it costs, what it gives and leaves out, and its button at the foot. */
-function PriceCard({ card, href, preview, onChoose, busy, lit = false, badge = null, amount, under }: {
-  card: Pricing["cards"]["free"];
+/** One card: its name, what it costs, what it gives and leaves out, and its button at the foot. `has` and
+ * `lacks` are what its plan has and lacks of a membership, said before and after the card's own lines. */
+function PriceCard({ card, href, preview, onChoose, busy, lit = false, badge = null, amount, under, has = [],
+                     lacks = [] }: {
+  card: Card;
   href: string;
   preview: boolean;
   onChoose?: () => void;
@@ -505,29 +575,30 @@ function PriceCard({ card, href, preview, onChoose, busy, lit = false, badge = n
   badge?: string | null;
   amount: ReactNode;
   under: string | null;
+  has?: string[];
+  lacks?: string[];
 }) {
   const button = lit ? "btn btn-primary price-cta" : "btn btn-glass price-cta";
   return (
     <article className={lit ? "tile price-card lit" : "tile price-card"} data-spot>
       {badge ? <span className="price-badge"><Gift />{badge}</span> : null}
-      <div>
-        <h3 className="price-name">{card.name}</h3>
-        {card.tagline ? <p className="price-tagline">{card.tagline}</p> : null}
-      </div>
+      <h3 className="price-name">{card.name}</h3>
       {amount || under ? (
         <div>
           {amount ? <p className="price-amount">{amount}</p> : null}
+          {/* What the price is for, in a band read at a glance: "Price locked for life" (`highlight`). */}
+          {card.highlight && amount ? <p className="price-band">{LOCK}{card.highlight}</p> : null}
           {under ? <p className="price-after">{under}</p> : null}
         </div>
       ) : null}
       <ul className="price-list">
-        {card.benefits.map((line, i) => (
+        {[...has, ...card.benefits].map((line, i) => (
           <li key={`in${i}`}>
             <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" /><path d="M6 10.4l2.6 2.6 5.6-5.6" /></svg>
             {line}
           </li>
         ))}
-        {card.left_out.map((line, i) => (
+        {[...lacks, ...card.left_out].map((line, i) => (
           <li key={`out${i}`} className="out">
             <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" /><path d="M7 7l6 6M13 7l-6 6" /></svg>
             <span className="unseen">Not included: </span>{line}

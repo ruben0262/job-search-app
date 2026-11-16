@@ -311,7 +311,7 @@ export interface paths {
         get?: never;
         /**
          * Set Pricing
-         * @description Both cards' words, saved together, as the landing page will show them.
+         * @description Every card's words, saved together, as the landing page will show them.
          */
         put: operations["set_pricing_admin_pricing_put"];
         post?: never;
@@ -908,8 +908,8 @@ export interface paths {
         put?: never;
         /**
          * Checkout
-         * @description Open the payment form: a new membership, with the free trial if they never had one. Opening it ends
-         *     any form opened before, so two tabs cannot become two memberships.
+         * @description Open the payment form for a plan: a new subscription, with the free trial if they never had one.
+         *     Opening it ends any form opened before, so two tabs cannot become two memberships.
          */
         post: operations["checkout_billing_checkout_post"];
         delete?: never;
@@ -2139,6 +2139,18 @@ export interface components {
             /** Url */
             url: string;
         };
+        /**
+         * Area
+         * @description One thing a membership gives (`libs.membership.AREAS`), in the words a card says it.
+         */
+        Area: {
+            /** Key */
+            key: string;
+            /** Starter */
+            starter: boolean;
+            /** Words */
+            words: string;
+        };
         /** Asked */
         Asked: {
             /** Reply Id */
@@ -2848,8 +2860,14 @@ export interface components {
             plan: components["schemas"]["Plan"] | null;
             /** Publishable Key */
             publishable_key: string | null;
+            starter: components["schemas"]["Plan"] | null;
             /** Status */
             status: string | null;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "free" | "starter" | "member";
             /** Trial Days */
             trial_days: number;
             /** Trial Ends At */
@@ -2890,6 +2908,8 @@ export interface components {
         };
         /** OnboardingDashboard */
         OnboardingDashboard: {
+            /** Areas */
+            areas: string[];
             /** Is Admin */
             is_admin: boolean;
             /** Member */
@@ -2950,7 +2970,7 @@ export interface components {
         };
         /**
          * Plan
-         * @description The one membership: its price as Stripe has it, and the free trial a new member gets; and, for the
+         * @description A plan to pay for: its price as Stripe has it, and the free trial a new member gets; and, for the
          *     sign-up page's choice, how far behind a member the free plan sees each job (`libs.membership`).
          */
         Plan: {
@@ -2985,12 +3005,19 @@ export interface components {
         };
         /** Pricing */
         Pricing: {
+            /** Areas */
+            areas: components["schemas"]["Area"][];
             cards: components["schemas"]["PricingCards"];
             /** Free Delay Hours */
             free_delay_hours: number;
             plan: components["schemas"]["Plan"] | null;
+            starter: components["schemas"]["Plan"] | null;
             /** Trial Days */
             trial_days: number;
+            /** Was */
+            was: {
+                [key: string]: number;
+            };
         };
         /**
          * PricingCard
@@ -3001,19 +3028,23 @@ export interface components {
             benefits: string[];
             /** Button */
             button: string;
+            /**
+             * Highlight
+             * @default
+             */
+            highlight: string;
             /** Left Out */
             left_out: string[];
             /** Name */
             name: string;
             /** Note */
             note: string;
-            /** Tagline */
-            tagline: string;
         };
         /** PricingCards */
         PricingCards: {
             free: components["schemas"]["PricingCard"];
             member: components["schemas"]["PricingCard"];
+            starter: components["schemas"]["PricingCard"];
         };
         /** ProfileLink */
         ProfileLink: {
@@ -3082,6 +3113,8 @@ export interface components {
         ReadyDashboard: {
             /** Applied */
             applied: number;
+            /** Areas */
+            areas: string[];
             /** Banners */
             banners: components["schemas"]["DashboardBanner"][];
             /** Is Admin */
@@ -3107,7 +3140,7 @@ export interface components {
              * @default free
              * @enum {string}
              */
-            plan: "free" | "member";
+            plan: "free" | "starter" | "member";
         };
         /** ResetRequest */
         ResetRequest: {
@@ -3257,7 +3290,7 @@ export interface components {
              * @default free
              * @enum {string}
              */
-            plan: "free" | "member";
+            plan: "free" | "starter" | "member";
         };
         /** SourceSeries */
         SourceSeries: {
@@ -5025,7 +5058,9 @@ export interface operations {
     };
     checkout_billing_checkout_post: {
         parameters: {
-            query?: never;
+            query?: {
+                plan?: "member" | "starter";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5039,6 +5074,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Checkout"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

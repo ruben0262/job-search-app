@@ -15,10 +15,11 @@ from libs.db.models import User
 pytest.importorskip("fastapi")
 
 ADMIN = "operator@example.com"
-CARD = {"name": "Mahoraga Plus", "tagline": "All of it.", "benefits": ["Every job that fits you", "Alerts"],
+CARD = {"name": "Mahoraga Plus", "highlight": "Yours for life",
+        "benefits": ["Every job that fits you", "Alerts"],
         "left_out": [], "button": "Try it free", "note": "Cancel any time."}
 FREE = {**CARD, "name": "Free", "left_out": ["Alerts"], "button": "Start free"}
-CARDS = {"free": FREE, "member": CARD}
+CARDS = {"free": FREE, "starter": {**CARD, "name": "First steps"}, "member": CARD}
 
 
 @pytest.fixture()
@@ -79,7 +80,7 @@ def test_nobody_else_can_change_it(api):
 
 @pytest.mark.parametrize("change", [
     {"name": " "}, {"button": ""}, {"benefits": []}, {"benefits": ["Alerts", "  "]},
-    {"benefits": [f"Line {n}" for n in range(13)]}, {"left_out": ["  "]}, {"tagline": "x" * 121},
+    {"benefits": [f"Line {n}" for n in range(13)]}, {"left_out": ["  "]}, {"note": "x" * 281},
 ])
 def test_a_card_the_page_has_no_room_for_is_refused_and_the_saved_ones_kept(api, change):
     http, _, operator, _, sign_in = api
@@ -91,9 +92,10 @@ def test_a_card_the_page_has_no_room_for_is_refused_and_the_saved_ones_kept(api,
 
 
 def test_saved_cards_that_no_longer_read_are_the_defaults_and_the_log_says_so(api, caplog):
-    """Saved some other way, or before a field was added: the page shows the defaults, never an error."""
+    """Saved some other way: the page shows the defaults, never an error. (A card saved before a field was
+    added is completed from the defaults: the next test.)"""
     http, db, *_ = api
-    settings.put(db, "pricing_cards", {"free": {"name": "Old"}})
+    settings.put(db, "pricing_cards", {"free": {"name": "Old", "benefits": "not a list"}})
 
     with caplog.at_level(logging.WARNING, logger="services.api.pricing_routes"):
         body = http.get("/pricing").json()
@@ -110,6 +112,47 @@ def test_the_price_is_the_one_the_payment_form_charges(api, monkeypatch):
     http, *_ = api
     stripe = Plan(amount=499, currency="gbp", interval="month", interval_count=1, trial_days=7,
                   free_delay_hours=168)
-    monkeypatch.setattr(billing_routes, "plan", lambda db: stripe)
+    monkeypatch.setattr(billing_routes, "plan",
+                        lambda db, which="member": stripe if which == "member" else None)
 
-    assert http.get("/pricing").json()["plan"] == stripe.model_dump()
+    body = http.get("/pricing").json()
+    assert body["plan"] == stripe.model_dump()
+    assert body["starter"] is None, "no Starter plan to offer until it has a price at Stripe"
+
+
+def test_the_cards_say_what_starter_has_and_what_each_price_is_reduced_from(api):
+    """Owner, 2026-11-16. What Starter's card ticks is the switches the site itself asks (`starter_areas`), in
+    the words of the one list of what a membership gives; the crossed-out price is the operator's figure, and
+    anything saved there that is not a price shows none rather than breaking the page."""
+    from libs.membership import AREAS
+
+    http, db, *_ = api
+    body = http.get("/pricing").json()
+    assert [(area["key"], area["words"]) for area in body["areas"]] == list(AREAS.items())
+    assert [area["key"] for area in body["areas"] if area["starter"]] == ["early_jobs", "alerts"]
+    assert body["was"] == {"member": 2999, "starter": 1899}
+
+    settings.put(db, "starter_areas", ["alerts", "covers", "no such area"])
+    settings.put(db, "price_was", {"member": 0, "starter": "a lot"})
+    again = http.get("/pricing").json()
+    assert [area["key"] for area in again["areas"] if area["starter"]] == ["alerts", "covers"]
+    assert again["was"] == {}
+
+
+def test_cards_saved_before_there_was_a_starter_plan_keep_their_words_and_gain_its_card(api):
+    """Saved on the live site as two cards, each with a line under its name that is no longer read: they must
+    still read after the deploy, or the landing page would fall back to the defaults and lose the operator's
+    words."""
+    http, db, *_ = api
+    def before(card: dict, line: str) -> dict:
+        return {**{key: value for key, value in card.items() if key != "highlight"}, "tagline": line}
+
+    settings.put(db, "pricing_cards", {"free": before(FREE, "A line nobody reads now."),
+                                       "member": before(CARD, "Another.")})
+
+    cards = http.get("/pricing").json()["cards"]
+
+    defaults = settings.DEFAULT_PRICING_CARDS
+    assert cards["free"] == {**FREE, "highlight": defaults["free"]["highlight"]}
+    assert cards["member"] == {**CARD, "highlight": defaults["member"]["highlight"]}, "the band is new"
+    assert cards["starter"] == defaults["starter"]
