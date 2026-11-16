@@ -88,17 +88,18 @@ def fitted(x: dict, truth: dict, keys: list) -> dict:
          for i in range(k)]
     w = _solve(a, [sum(r[i] * truth[key] for r, key in zip(rows, keys, strict=True)) for i in range(k)])
     weights = {**dict(zip(fit.SIGNALS, (round(v, 4) for v in w), strict=False)), "const": round(w[-1], 4)}
-    raw = sorted((sum(weights[n] * v for n, v in zip(fit.SIGNALS, x[key], strict=True)) + weights["const"],
-                  truth[key]) for key in keys)
-    blocks: list[list[float]] = []  # lowest sum of the step, sum of labels, count
-    for value, label in raw:
-        blocks.append([value, label, 1])
-        while len(blocks) > 1 and blocks[-2][1] / blocks[-2][2] >= blocks[-1][1] / blocks[-1][2]:
-            low, total, n = blocks[-2]
-            blocks[-2:] = [[low, total + blocks[-1][1], n + blocks[-1][2]]]
-    steps = [[round(blocks[i + 1][0], 4), round(blocks[i][1] / blocks[i][2], 3)]
-             for i in range(len(blocks) - 1)]
-    return {"weights": weights, "steps": [*steps, [None, round(blocks[-1][1] / blocks[-1][2], 3)]]}
+    raws = sorted(sum(weights[n] * v for n, v in zip(fit.SIGNALS, x[key], strict=True)) + weights["const"]
+                  for key in keys)
+    # By rank: the sum at a posting's place among the readings shows the label the readers gave that place, so
+    # the numbers spread over the scale as the readers' do. The mean label at each sum (isotonic) showed a 9
+    # or 10 as 6 or 7 and a 1 or 2 as 3 or 4; by rank it is 1.9 and 1.1 off, a 7+ given to 66% of the jobs
+    # readers put there against 38%, the order the same and the mean error 1.76 against 1.68 (2026-11-16).
+    steps: list[list] = []
+    for raw, label in zip(raws, sorted(truth[key] for key in keys), strict=True):
+        if not steps or label > steps[-1][1]:
+            steps.append([round(raw, 4), label])
+    return {"weights": weights,
+            "steps": [[steps[i + 1][0], steps[i][1]] for i in range(len(steps) - 1)] + [[None, steps[-1][1]]]}
 
 
 def scores(db, made: dict, truth: dict, model: dict, names: list[str]) -> dict:
