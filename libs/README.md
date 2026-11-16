@@ -29,6 +29,7 @@ What is here is what runs: what the platform no longer uses is in [`retired/`](.
 | [`credentials/`](credentials/) | Checking an API key with its provider the moment it is linked |
 | [`db/`](db/) | MongoDB: one client per process, and every collection's fields and indexes |
 | [`documents/`](documents/) | Uploaded documents as text, and the CVs and cover letters kept |
+| [`fit/`](fit/) | The match score, 1 to 10, by rules: a job's features, a person's profile from their documents, the database comparing the two; the scores kept per person and job so a filter over a whole list is quick |
 | [`harvest/`](harvest/) | Vocabulary the harvest and the admin panel both need |
 | [`legal/`](legal/) | The disclosures, and whether a person agreed to them |
 | [`limits/`](limits/) | Every ceiling on one account, and who may change it |

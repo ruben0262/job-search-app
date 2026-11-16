@@ -14,6 +14,105 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-16, late evening — Match scores on the Jobs page for Starter and Member: a number out of 10 on each card, red to green, and a filter by it over the whole list
+
+The owner, after the evaluation below: "ship the score to them now" (Starter and Member, the plans entry above);
+then "the user should be able to filter all the jobs in their jobs page based on the score as well, so we would
+have to somehow store this and use it as filter and try to make the relabelling speedy too if details of the user
+are changed. there can be exceptions that don't affect scoring like the users name, or links"; and on the card "a
+gradient … between a nice red and nice green for each score we give, next to a number out of 10 … minimal and easy
+to see".
+
+### The crash it began with
+
+`GET /feed` answered 500, `KeyError: unknown area 'match_scores'`: the cards' code, not yet committed, asked
+`has(..., "match_scores")` while the area existed only on the plans' branch. The plans (commit above) define it in
+`libs.membership.PLANS`; the two were merged before anything else here.
+
+### On the page
+
+- **"Match 8/10"** first among a card's badges (`FeedJob.fit`), the same pill as "New" and "CV made". Its colour
+  runs from red at 1 to green at 10 (OKLCH, hue 25 to 145, one lightness, so every score reads as clearly as the
+  next), lighter on the dark theme; the number is always in the words, and its title says what it is.
+- **A "Match 5+" to "Match 9+" filter** beside "Posted", saved with the others (`JobFilters.min_fit`), offered only
+  to an account whose plan has match scores and which has documents to compare with (`Feed.match_scores`). A plan
+  without them has `min_fit` ignored, not refused, so a saved filter from a lapsed plan cannot empty the page.
+- Not on Bookmarks, Add a job or the alerts yet: they draw their cards another way.
+
+### How it stays right: a kept score only ever makes it quicker
+
+- **The score is one function**: the database comparing a job's features (written with its text,
+  `CorpusRepository.set_description`; older postings by `libs.fit.catch_up` in the harvest's words step, one clock
+  for the step) with a person's profile (made from their documents the first time it is wanted after they change,
+  `documents_changed_at`).
+- **The cards** are worked out with the page, 25 jobs whatever the list holds (`libs.fit.scored`).
+- **The filter** reads the scores kept for them (`fit_scores`, one row a person and job) in one query, and hands
+  the database two lists of job numbers: those at or above the floor, and all those kept. A job with no score kept
+  is worked out in the same query (`libs.fit.at_least`). So the answer is the same kept or not; keeping only makes
+  it quick.
+- **Kept scores are keyed by what made them** (`libs.fit.key`: a hash of the profile, the model and `VERSION`). A
+  new CV or About you makes a new profile, so the old scores are read as missing at once: the very next page
+  filters by the new CV. A new name or link makes no new profile and changes no key, so nothing is scored again.
+  Nothing has to find and delete an old score; they expire after 40 days.
+- **Keeping** (`libs.fit.fill`) runs after the answer is sent (a FastAPI background task) when the page found
+  nothing kept for their profile, or a filter found jobs not kept: one aggregation over their list, only the jobs
+  without a score (by difference), `$merge`d into `fit_scores`. One run a person at a time (`users.fit_scoring_at`,
+  a run left 10 minutes taken to have died); logged with its time; a failure is logged and the pages go on working
+  the scores out.
+- A filter shows a job exactly when its card shows that number or more: the card rounds half up (`libs.fit.shown`)
+  and the filter's floor is half a point under the number.
+
+### Measured (local, the owner's account; median of 5)
+
+| | last 24 hours (272 jobs) | any time (5,139 jobs) |
+|---|---|---|
+| the page with no score | 83 ms | 745 ms |
+| with the score on the cards | 88 ms | 759 ms |
+| filter "Match 7+", scores kept | 146 ms | 851 to 911 ms |
+| filter "Match 7+", nothing kept yet | 156 ms | 1,776 ms |
+| keeping a whole list (after the answer) | 2.4 s | 2.4 s |
+| keeping it again with nothing new | 0.7 s | 0.7 s |
+
+The same 1,529 jobs at 7+ kept or not, in the same order. "Any time" was over the Jobs page's 300 ms before the
+score and still is; the default view, a day, is not.
+
+### Tried the same evening and not taken
+
+| | filtered page, 5,139 jobs, all kept | why not |
+|---|---|---|
+| each job's kept score looked up by `$lookup` | 1,936 ms | 1.2 s of lookups |
+| the kept scores sent as a table read with `$getField` | 1,038 ms | 300 ms over the lists of numbers |
+| an index holding all four fields for the read | 29 ms against 33 ms to read them | within the noise; most of it is Python reading 5,139 rows |
+| a "scored up to" time per person, the harvest scoring what reached each list since | — | a Starter list gets a job 72 hours after its text is read, so "read since the last run" found none of them; and a changed search brought jobs it never scored. Removed before it was committed |
+
+### The number, spread by rank
+
+The mean label at each raw score showed a 9 or 10 as 6 or 7. Now a raw score's place among the readings shows the
+label the readers gave that place: the order the same; on the 12 held-out people a 7+ is given to 57% of the jobs
+readers put there (was 28%) and is right 77% of the time (was 81%); mean error 1.67 (was 1.66).
+
+### Accuracy, tried the same day and not taken
+
+| | seen 27, left out one at a time | against |
+|---|---|---|
+| job titles read beside dates in a CV, any language | 0.655 | 0.661 |
+| how much of a posting's requirements section the person has | 0.640 | 0.661 |
+
+Between a neighbouring role (readers' 5-6) and their own job (9-10) the four signals overlap: title match 0.40
+against 0.59, text 0.117 against 0.175, each with a spread as wide as the gap. What separates them is whether the
+requirements are met, written in other words than a CV's; no word-level signal tried here sees it.
+
+### Tests
+
+`tests/test_fit.py`, 18: a posting gets its features with its text and older ones from the catch-up; a plan with
+match scores sees one on every job, its own trade highest; Starter too; none, and no filter, without match scores
+or without documents; a new CV changes the score on the next read; **"Match N+" lists a job exactly when its card
+shows N or more, for every N from 1 to 10, with nothing kept and with all kept**; **the filter and the card agree
+just under, at and just over every half point, kept or worked out**; **a new CV changes what the filter keeps on
+the very next page**; **a new name and link score nothing again**. Each was run against a broken copy and failed:
+the floor a half point off, the card rounding half to even, a key that ignores the profile, kept scores never
+read, jobs not kept let through unscored, and a rename that changes the profile.
+
 ## 2026-11-16, evening — Free, Starter and Member fixed in code; every route and page by plan; each card says what its plan gives
 
 The owner's final definition, "make sure this remains from now on": **Free** sees each job once it is at least

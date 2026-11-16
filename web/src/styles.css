@@ -4385,6 +4385,17 @@ input[type="checkbox"]:disabled {
 .made-badge.cv { color: var(--made-cv); }
 .made-badge.cover { color: var(--made-cover); }
 .made-badge.new { color: var(--accent-text); }
+/* How well the job fits them (`FeedJob.fit`, 1 to 10, set as --fit): the number says it, and its colour runs
+   from red at 1 to green at 10, at one lightness, so every score reads as clearly as the next. */
+.made-badge.match {
+  --fit-hue: calc(25 + (var(--fit) - 1) * 13.3);
+  color: oklch(0.8 0.13 var(--fit-hue));
+  font-variant-numeric: tabular-nums;
+}
+
+[data-theme="light"] .made-badge.match {
+  color: oklch(0.5 0.14 var(--fit-hue));
+}
 
 .storage {
   display: grid;

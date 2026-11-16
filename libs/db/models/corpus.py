@@ -74,6 +74,10 @@ class CorpusJob(Document):
     terms: list[str] = field(default_factory=list)
     title_terms: list[str] = field(default_factory=list)
     terms_at: datetime | None = None
+    # What the fit score reads of it (`libs.fit.job`), written with its text, and by which `libs.fit.VERSION`:
+    # one stored before, or by an older version, is given them by `libs.fit.catch_up`.
+    fit: dict | None = None
+    fit_version: int | None = None
     discovered_via: str | None = None
     describe_failures: int = 0
     applicants: int | None = None

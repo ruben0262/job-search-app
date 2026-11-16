@@ -2,7 +2,7 @@
  * for it with their own AI account, and a tap on one shows all of it. New ones are announced, never
  * pushed in under the reader. Every alert lands here, on `#/feed?job=<id>`. */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MouseEvent, ReactNode } from "react";
+import type { CSSProperties, MouseEvent, ReactNode } from "react";
 
 import { api, request, type Ready, type Schema } from "../api";
 import { useBuild } from "../documents";
@@ -59,7 +59,7 @@ const FILTERS = "/feed/filters";
 /** The feed's question for these filters: each one that is on, by the name `/feed` takes it. Its answer is
  * kept under it, so the page comes back drawn at once, whatever they had chosen. */
 function asked(filters: Filters, offset = 0): URLSearchParams {
-  const { q, remote, since_hours, source, country, city, sort, made, word = [], min_words } = filters;
+  const { q, remote, since_hours, source, country, city, sort, made, word = [], min_words, min_fit } = filters;
   const params = new URLSearchParams({ offset: `${offset}` });
   if (q.trim()) params.set("q", q.trim());
   if (remote) params.set("remote", "true");
@@ -71,6 +71,7 @@ function asked(filters: Filters, offset = 0): URLSearchParams {
   if (made === false) params.set("made", "false");
   for (const each of word) params.append("word", each);
   if (min_words > 1) params.set("min_words", `${min_words}`);
+  if (min_fit) params.set("min_fit", `${min_fit}`);
   return params;
 }
 
@@ -150,12 +151,15 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   const [news, setNews] = useState({ arrived: 0, total: 0 });
   const [seenUntil, setSeenUntil] = useState<string | null>(null);
   const shown = (id: number) => !gone.has(id);
+  // Their plan has match scores and they have documents to compare with: the filter by it is offered.
+  const scoring = feed?.match_scores ?? false;
+  const fitFloor = scoring ? filters.min_fit ?? null : null;
   // Narrowed past their words. The time chosen under "Posted" and the order are how the list is shown, not
   // what is in it, so they stay when the rest is cleared.
   const filtered = query.trim() !== "" || remote || source !== "" || country !== "" || city !== "" || noCv
-    || picked.length > 0 || atLeast > 1;
+    || picked.length > 0 || atLeast > 1 || fitFloor !== null;
   const clear = () => set({ q: "", remote: false, source: "", country: "", city: "", made: null, word: [],
-                            min_words: 1 });
+                            min_words: 1, min_fit: null });
 
   // Saved as they change, for the next time Jobs opens: a moment after the last change, and at once on
   // leaving, for another page or by closing the tab (`keepalive`). One that fails is sent again with the
@@ -341,6 +345,13 @@ export function JobsPage({ dashboard, focus, onChanged }: {
             <option key={label} value={hours ?? ""}>{label}</option>
           ))}
         </select>
+        {scoring ? (
+          <select aria-label="Match score" value={fitFloor ?? ""}
+                  onChange={(event) => set({ min_fit: event.target.value ? Number(event.target.value) : null })}>
+            <option value="">Any match</option>
+            {[5, 6, 7, 8, 9].map((score) => <option key={score} value={score}>Match {score}+</option>)}
+          </select>
+        ) : null}
         <select aria-label="Job board" value={source} onChange={(event) => set({ source: event.target.value })}>
           <option value="">All boards</option>
           {boards.map((each) => (
@@ -540,8 +551,15 @@ export function JobCard({ job, focus, done, fresh, onMark }: {
   );
   const head = (
     <>
-      {made.size || fresh ? (
+      {made.size || fresh || job.fit != null ? (
         <p className="made-badges">
+          {job.fit != null ? (
+            <span className="made-badge match" style={{ "--fit": job.fit } as CSSProperties}
+                  title="How well this job fits your CV, cover letter and About you, from 1 to 10"
+                  aria-label={`Match score: ${job.fit} out of 10`}>
+              Match {job.fit}/10
+            </span>
+          ) : null}
           {fresh ? <span className="made-badge new">New</span> : null}
           {made.has("cv") ? <span className="made-badge cv">CV made</span> : null}
           {made.has("cover") ? <span className="made-badge cover">Cover letter made</span> : null}

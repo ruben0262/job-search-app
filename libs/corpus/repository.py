@@ -9,6 +9,7 @@ from pymongo import ReturnDocument
 from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
+from libs import fit
 from libs.corpus import langfilter, pay, workfilter
 from libs.corpus.freshness import DATE_ONLY, PlatformWindows, showable
 from libs.corpus.geo import posting_country, read_city
@@ -229,12 +230,15 @@ class CorpusRepository:
             return False
 
         vocabulary = self._vocabulary()
+        language = langfilter.detect_language(description)
         changes = {"description": description, "description_fetched_at": now(),
                    # Read once here rather than per reader per pass: the language is a fact about the posting,
                    # and so is the pay it states, which a minimum salary is compared with (`libs.corpus.pay`).
-                   "language": langfilter.detect_language(description),
+                   "language": language,
                    "salary_top_eur": pay.top_eur(description),
-                   **terms_of(row["title"], description, vocabulary), "terms_at": now()}
+                   **terms_of(row["title"], description, vocabulary), "terms_at": now(),
+                   # What the fit score reads of it (`libs.fit`), with the text it is read from.
+                   "fit": fit.job(row["title"], description, language), "fit_version": fit.VERSION}
         if len(description) >= MIN_DESCRIPTION and not row.get("described_at"):
             # A whole job from now: alerts wait for this, not for the posting to be found.
             changes["described_at"] = now()

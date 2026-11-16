@@ -3589,6 +3589,15 @@ work, or opening and closing sessions faster, would help):
       built on the 27 people seen and judged on the fresh 12, paired, once. Then the filter: a lean read-time
       score (about 250 ms on a 5,000-job list) or scores stored per person and job, kept up to date in the
       background.
+    - **2026-11-16, late evening: on the site for Starter and Member** (owner: "ship the score to them now";
+      then a filter over the whole list, kept up to date quickly when their documents change, but not for a new
+      name or link; a number out of 10, red to green). CHANGELOG 2026-11-16, late evening. "Match 8/10" on each
+      card, worked out with the page; "Match 5+" to "9+" as a filter, read from scores kept per person and job
+      (`fit_scores`, keyed by a hash of the profile) with any job not kept worked out in the same query, so a new
+      CV is the answer on the very next page and a kept score only makes it quicker. Filtered day 146 ms (83 with
+      no score); kept after the answer, 2.4 s a 5,000-job list.
+    - **Still open**: the score on Bookmarks, Add a job and the alerts; an order by match; what would move the
+      accuracy (above). A latency figure for keeping scores is not kept: a page never waits on it.
 
 53. **The cover letter prompt** (owner, 2026-11-15, night: "some research on the company might need to be
     done too… motivation and so on, for it to be a great cover letter").
@@ -3651,8 +3660,8 @@ work, or opening and closing sessions faster, would help):
     - **Saved pricing cards**: the lists saved on the live site are no longer read (each card now says what
       its plan gives by itself); a name, button and small print saved there are kept. To have the small
       print of 2026-11-16 ("Card needed. Free to cancel in the trial."), type it on each paid card and save.
-    - **Match scores are promised** on Starter's and Member's cards from the commit that fixed the plans: the
-      score on the job cards (`libs/fit`, the main session's) must reach the live site with them, not after.
+    - **Match scores are promised** on Starter's and Member's cards from the commit that fixed the plans, and
+      the score and its filter (item 52) are committed with them: they reach the live site in one deploy.
     - **A free account cannot pick Starter after signing up**: the Upgrade page sells the membership, and
       Starter is offered only on the plan page after the email link. Whether Upgrade offers it too is the
       owner's.

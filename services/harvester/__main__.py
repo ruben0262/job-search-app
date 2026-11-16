@@ -5,13 +5,16 @@ import argparse
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from time import monotonic
 
+from libs import fit
 from libs.corpus.terms import catch_up
 from libs.db import database, ensure_schema
 from libs.obs import configure
 from libs.secrets import install
 from libs.settings import (
     HARVEST_SOURCES,
+    TERMS_BUDGET_SECONDS,
     ats_companies_per_cycle,
     describe_per_cycle,
     freshness_hours,
@@ -110,12 +113,15 @@ def _find_words() -> None:
     """Each account's new words into the vocabulary, and looked for in the postings already stored
     (`libs.corpus.terms`), under the harvest's lock so one pass at a time writes them. A new posting's words
     are found as its text is stored. A failure costs speed, not jobs: matching reads a word not looked for
-    yet with a regex."""
+    yet with a regex. Then, in what is left of the same budget, the fit score's features for postings stored
+    without them (`libs.fit.catch_up`): one clock for the step, not two."""
     try:
         db = database()
         with harvest_lock(db) as acquired:
             if acquired:
+                deadline = monotonic() + TERMS_BUDGET_SECONDS
                 catch_up(db)
+                fit.catch_up(db, deadline=deadline)
             else:
                 logger.info("terms: another harvest holds the lock; its own pass will find the words")
     except Exception:

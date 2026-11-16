@@ -7,11 +7,11 @@ import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, ValidationError
 from pymongo.database import Database
 
-from libs import prompts
+from libs import fit, prompts
 from libs.corpus import salary
 from libs.corpus.boards import apply_on, board_name
 from libs.corpus.freshness import platform_windows, shelf_life
@@ -23,7 +23,7 @@ from libs.db.models import AtsToken, BuiltDocument, CorpusJob, CountryCount, Use
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
 from libs.matching import Match, marks, norm, page, scan_for
-from libs.membership import areas_of, choosing, delay_hours, is_admin, is_member, jobs_as_of
+from libs.membership import areas_of, choosing, delay_hours, has, is_admin, is_member, jobs_as_of
 from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
@@ -84,6 +84,8 @@ class JobFilters(BaseModel):
     made: bool | None = None
     word: list[str] = Field(default_factory=list, max_length=50)
     min_words: int = Field(1, ge=1, le=50)
+    # Only the jobs whose match score shows this or more (`libs.fit`); None: every job.
+    min_fit: int | None = Field(None, ge=1, le=10)
 
 
 class ReadyDashboard(BaseModel):
@@ -140,6 +142,9 @@ class FeedJob(BaseModel):
     documents: list[JobDocument]
     # They bookmarked it: it is under Bookmarks too.
     bookmarked: bool
+    # How well it fits them, 1 to 10 (`libs.fit`), for a plan with match scores and documents to compare with;
+    # None otherwise.
+    fit: int | None = None
 
 
 class FeedSource(BaseModel):
@@ -189,6 +194,8 @@ class Feed(BaseModel):
     # More of their jobs matched than one read takes in (`libs.matching.scan_for`): the list is the newest
     # of them, and the page says so rather than call it all of them.
     cut: bool
+    # This account has match scores: its plan has them, and it has documents to compare with.
+    match_scores: bool = False
 
 
 @router.get("/dashboard")
@@ -331,6 +338,8 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
          made: bool | None = None,
          word: list[str] = Query([], max_length=50),
          min_words: int = Query(1, ge=1, le=50),
+         min_fit: int | None = Query(None, ge=1, le=10),
+         background: BackgroundTasks,
          found_after: datetime | None = None,
          sort: Literal["best", "newest", "arrived"] = "best") -> Feed:
     """This person's matches, a page at a time: the most of their words first, the newest posted
@@ -378,9 +387,21 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
         (min_words > 1, {"nwords": {"$gte": min_words}})) if on]
     # A time without a zone is UTC, as the database reads one when it does the comparing.
     since = found_after.replace(tzinfo=found_after.tzinfo or UTC) if found_after else None
+    # Their match score, for a plan that has it (owner, 2026-11-16: Starter and Member): on each card, worked
+    # out with the page; and a filter over the whole list, read from the scores kept for their profile as it
+    # is, worked out there and then for a job with none (`libs.fit.at_least`). So it is right the moment their
+    # documents change. With nothing kept for their profile, or a filter that found jobs not kept, their list
+    # is kept after this answer (`fill`), which makes the next filter quick.
+    mine = fit.profile(db, user) if has(db, user.id, "match_scores") else None
+    kept = fit.kept(db, user_id, mine) if mine is not None and min_fit is not None else None
+    if kept is not None:
+        wanted.append(fit.at_least(mine, kept, min_fit))
     found = page(db, user, since=cutoff, scan=scan_for(since_hours or longest),
                  wanted={"$and": wanted} if wanted else {}, order=sort, offset=offset, limit=limit,
-                 found_after=since)
+                 found_after=since, fit=None if mine is None else fit.scored(mine),
+                 unkept=None if kept is None else fit.unkept(kept))
+    if mine is not None and (found.live or not fit.any_kept(db, user_id, mine)):
+        background.add_task(fit.fill, db, user_id)
     ids = [match.job.id for match in found.matches]
     # The text of the page's jobs only: matching never brings it back.
     texts = {row["_id"]: row.get("description") for row in db[CorpusJob.COLLECTION].find(
@@ -398,7 +419,7 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
                 cities=[FeedPlace(value=slug, label=CITIES[slug].label if slug in CITIES else slug,
                                   jobs=count) for slug, count in found.cities],
                 as_of=as_of, shelf_hours=shortest, shelf_longest_hours=longest, delay_hours=delay,
-                cut=found.cut)
+                cut=found.cut, match_scores=mine is not None)
 
 
 def bookmarked(db: Database, user_id: _uuid.UUID, ids: list[int]) -> set[int]:
@@ -416,7 +437,8 @@ def feed_row(match: Match, text: str | None, documents: list[dict], *,
                    apply_on=apply_on(job.source), words=list(match.words), posted_at=job.posted_at,
                    first_seen_at=job.first_seen_at, described_at=job.described_at,
                    salary=salary.extract(text), **_summary(text),
-                   documents=[job_document(row) for row in documents], bookmarked=bookmarked)
+                   documents=[job_document(row) for row in documents], bookmarked=bookmarked,
+                   fit=None if match.fit is None else fit.shown(match.fit))
 
 
 def _summary(description: str | None) -> dict:

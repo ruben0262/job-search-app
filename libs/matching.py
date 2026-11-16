@@ -37,6 +37,8 @@ class Match:
     words: tuple[str, ...]
     # Those of them in the title, which says more than the text does.
     in_title: tuple[str, ...]
+    # How well it fits them, 1 to 10 with a fraction (`libs.fit.scored`); None where it was not asked for.
+    fit: float | None = None
 
     @property
     def rank(self) -> tuple[int, int]:
@@ -97,7 +99,7 @@ ORDERS = {
     "arrived": {"described_at": -1, "_id": -1},
 }
 # What the read adds to a posting, taken off again before it is a `CorpusJob`.
-_ADDED = ("words", "in_title", "nwords", "ntitle", "when", "_visible")
+_ADDED = ("words", "in_title", "nwords", "ntitle", "when", "_visible", "fit_score")
 
 
 def _has(word: str, stored: str, fields: tuple[str, ...], by_text: bool) -> dict:
@@ -120,7 +122,7 @@ def _words(mine: list[str], pending: set[str]) -> dict:
 
 
 def _read(db: Database, user: User, *, described_since: datetime | None = None,
-          since: datetime | None = None, scan: int = SCAN, text: bool = False,
+          since: datetime | None = None, scan: int = SCAN, text: bool = False, fit: bool = False,
           skip: set[int] | frozenset[int] = frozenset()) -> list[dict] | None:
     """The stages that read this person's matches, the newest `scan` of them, each with `words` and
     `in_title`: the one question behind the Jobs page and the alerts (CLAUDE.md §1). None when they have
@@ -164,8 +166,10 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
 
     newest = [{"$sort": {"first_seen_at": -1, "_id": -1}}, {"$limit": scan}]
     # Its words found where its text is at hand, and the text left behind unless the caller shows it.
+    # What the fit score reads of a posting leaves too, unless the caller scores the page it shows.
+    left = [*([] if text else ["description"]), *([] if fit else ["fit"])]
     found_there = [_words(mine, pending), {"$match": {"words.0": {"$exists": True}}},
-                   *([] if text else [{"$unset": "description"}])]
+                   *([{"$unset": left}] if left else [])]
     searches = [[{"$match": {"$and": [*where, {"terms_at": None, **has_any(mine)}]}}, *newest, *found_there]]
     if indexed:
         searches.append([{"$match": {"$and": [*where, {"terms": {"$in": indexed}}]}}, *newest, *found_there])
@@ -185,7 +189,7 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
 def _match(row: dict) -> Match:
     words, in_title = tuple(sorted(row["words"])), tuple(sorted(row["in_title"]))
     job = CorpusJob.from_doc({key: value for key, value in row.items() if key not in _ADDED})
-    return Match(job, words, in_title)
+    return Match(job, words, in_title, row.get("fit_score"))
 
 
 def matching_jobs(db: Database, user: User, *, described_since: datetime | None = None,
@@ -222,18 +226,24 @@ class Page:
     countries: list[tuple[str, int]]
     cities: list[tuple[str, int]]
     cut: bool
+    # How many jobs of the list `unkept` holds for (`libs.fit.unkept`).
+    live: int = 0
 
 
 def page(db: Database, user: User, *, since: datetime | None, scan: int, wanted: dict, order: str,
-         offset: int, limit: int, found_after: datetime | None = None) -> Page:
+         offset: int, limit: int, found_after: datetime | None = None, fit: list[dict] | None = None,
+         unkept: dict | None = None) -> Page:
     """A page of this person's Jobs list, as the database makes it: their matches (`_read`, less a job they
     skipped or applied to), those shown in the time asked (`since`, by when a job was posted, else found),
     narrowed by the page's own filters (`wanted`, a condition on a match, its `words` and `nwords`
     included), in `order`, from `offset`; and the counts beside the filters, over the time asked alone. Only
     the page leaves the database, so the cost does not grow with what the list holds the way reading all
-    of it did: 1,025 ms at 15,554 jobs (2026-11-15)."""
+    of it did: 1,025 ms at 15,554 jobs (2026-11-15).
+
+    `fit` scores the page's jobs for this person, after the page is cut (`libs.fit.scored`); `unkept` counts
+    the jobs of the list with no score kept for them (`live`)."""
     skipped, applied = marks(db, user.id)
-    stages = _read(db, user, since=since, scan=scan, skip=skipped | set(applied))
+    stages = _read(db, user, since=since, scan=scan, fit=fit is not None, skip=skipped | set(applied))
     if stages is None:
         return Page([], 0, None if found_after is None else 0, [], [], [], [], cut=False)
     shown = {"_visible": True}
@@ -248,8 +258,10 @@ def page(db: Database, user: User, *, since: datetime | None, scan: int, wanted:
         "words": [{"$match": shown}, {"$unwind": "$words"}, {"$sortByCount": "$words"}, *counted],
         "total": [{"$match": {"$and": [shown, wanted]}}, {"$count": "n"}],
         "page": [{"$match": {"$and": [shown, wanted]}}, {"$sort": ORDERS[order]}, {"$skip": offset},
-                 {"$limit": limit}],
+                 {"$limit": limit}, *(fit or [])],
     }
+    if unkept is not None:
+        facets["live"] = [{"$match": unkept}, {"$count": "n"}]
     if found_after is not None:
         facets["arrived"] = [{"$match": {"$and": [shown, wanted, {"described_at": {"$gte": found_after}}]}},
                              {"$count": "n"}]
@@ -257,13 +269,14 @@ def page(db: Database, user: User, *, since: datetime | None, scan: int, wanted:
     [made] = db[CorpusJob.COLLECTION].aggregate([*stages, {"$addFields": {"_visible": visible}},
                                                  {"$facet": facets}])
     count = {name: made[name][0]["n"] if made[name] else 0
-             for name in ("read", "total", "arrived") if name in made}
+             for name in ("read", "total", "arrived", "live") if name in made}
     oldest = made["oldest"][0]["first_seen_at"] if made["oldest"] else None
     return Page(
         matches=[_match(row) for row in made["page"]], total=count["total"], arrived=count.get("arrived"),
         **{name: [(row["_id"], row["count"]) for row in made[name]]
            for name in ("sources", "words", "countries", "cities")},
-        cut=count["read"] >= scan and oldest is not None and (since is None or oldest >= since))
+        cut=count["read"] >= scan and oldest is not None and (since is None or oldest >= since),
+        live=count.get("live", 0))
 
 
 def marks(db: Database, user_id) -> tuple[set[int], dict[int, datetime]]:

@@ -1,7 +1,6 @@
 """How well a job fits a person, 1 to 10, from their documents alone. Rules and a fitted calibration; no AI
 call (owner, 2026-11-15 and 2026-11-16; CLAUDE.md §0). Not the learned model under the tag
-`model-on-postgres` (CLAUDE.md §3): nothing here learns per person, and nothing is stored per person per
-job.
+`model-on-postgres` (CLAUDE.md §3): nothing here learns per person.
 
 **What it compares.** A job's title, read for the job it names, against the words a person uses for their own
 roles (headline, job titles, summary); and the job's text, less what it says about the company and the
@@ -9,28 +8,37 @@ package, against everything they wrote, as two vectors of words weighted by how 
 its own language. A title that matches while the text does not counts less. A job a level or two above them,
 or one that needs a language they do not speak, counts less. Those four signals, weighted and mapped to 1 to
 10 by `model.json`, which `scripts/cvlab/fit/model.py` fits to readings of real postings against made-up
-people of every trade.
+people of every trade. On 12 people nothing was fitted to, it orders a list better than the Jobs page's own
+order for 10 of 12 (CHANGELOG 2026-11-16, evening).
 
-**Not on the site yet** (owner, 2026-11-16: accuracy first). On 12 people nothing was fitted to, it orders a
-list better than the Jobs page's own order for 10 of 12 and its top five better for 9 of 12, but its number is
-1.7 points from the readers' on average and squeezed towards the middle (CHANGELOG 2026-11-16, evening).
-What the site would run is what the bench measures: a job's features (`job`), a person's profile (`person`)
-and the database expression (`expression`, over positions in arrays of `POSITIONS` weights). Scoring every
-job of a long list that way measured 0.8 to 2.5 s per 15,000 jobs, a page of 25 11 ms, so how a filter by fit
-is made waits for the model it would filter by.
+**Where it runs.** A job's features are worked out once, with its text (`job`); a person's profile once after
+their documents change (`profile`); the score is the database comparing the two (`expression`), so the site
+runs what the bench measures. A page's cards are scored with the page (`scored`). A filter over a whole list
+reads the scores kept for their profile (`fit_scores`, `kept`), and works out the rest there and then
+(`at_least`), so a kept score only ever makes it quicker; `fill` keeps them after a page that needed them.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import math
 import pathlib
 import re
+import uuid as _uuid
 import zlib
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime, timedelta
 from functools import cache
+from time import monotonic
+
+from pymongo import UpdateOne
+from pymongo.database import Database
 
 from libs.corpus.langfilter import detect_language
+from libs.db import now
+from libs.db.models import CorpusJob, FitScore, User
 from libs.documents.read import fold, read
 from libs.fit.text import (
     IDENTITY,
@@ -45,8 +53,15 @@ from libs.fit.text import (
     working_text,
 )
 
-# What a job's features and a person's profile are made by: a change to how either is read moves it.
+logger = logging.getLogger(__name__)
+
+# What a job's features and a person's profile are made by: a change to how either is read moves it, and every
+# posting is read again (`catch_up`) and every profile on its next use (`profile`).
 VERSION = 1
+# Postings written per round trip by `catch_up`.
+_BATCH = 500
+# A scoring of a whole list that has not finished in this long is taken to have died.
+_STALE_RUN = timedelta(minutes=10)
 # The positions a word can take in the arrays a request sends: 8,192 measured the same as exact words (0.673
 # against 0.677 on the evaluation set) and 2,048 lost 0.04 (2026-11-16).
 POSITIONS = 8192
@@ -105,6 +120,26 @@ def job(title: str, description: str | None, language: str | None) -> dict:
             "tw": [round(rarity(word, language) / total, 4) for word in head],
             "vh": [position(word) for word, _ in top], "vw": [round(value / norm, 4) for _, value in top],
             "level": title_level(title), "needs": sorted(needs | ({language} if language else set()))}
+
+
+def catch_up(db: Database, *, deadline: float) -> int:
+    """Features for the postings whose text was stored without them, or by an older `VERSION`, newest first,
+    until `deadline` (`time.monotonic`): a column nothing writes is the feature missing (CLAUDE.md §6). Run
+    after each harvest pass, beside `libs.corpus.terms.catch_up`."""
+    corpus, given = db[CorpusJob.COLLECTION], 0
+    while monotonic() < deadline:
+        rows = list(corpus.find({"described_at": {"$ne": None}, "fit_version": {"$ne": VERSION}},
+                                {"title": 1, "description": 1, "language": 1},
+                                sort=[("first_seen_at", -1)]).limit(_BATCH))
+        if not rows:
+            break
+        corpus.bulk_write([UpdateOne({"_id": row["_id"]}, {"$set": {
+            "fit": job(row["title"], row.get("description"), row.get("language")), "fit_version": VERSION}})
+            for row in rows], ordered=False)
+        given += len(rows)
+    if given:
+        logger.info("fit: %d posting(s) given their features", given)
+    return given
 
 
 # ── a person ───────────────────────────────────────────────────────────────────────────────────
@@ -186,6 +221,114 @@ class _Read:
                 self.language_of.setdefault(word, language)
             if head:
                 self.roles.update(word for word in found if word not in NOISE)
+
+
+def profile(db: Database, user: User) -> dict | None:
+    """Their profile as stored, made again first when their documents changed since (`documents_changed_at`,
+    which every upload, switch, deletion and About you stamps) or `VERSION` moved; a new name or link changes
+    no score and makes none again (owner, 2026-11-16). The one writer of `users.fit_profile`, so it cannot be
+    stale. None with no documents."""
+    stored = user.fit_profile or {}
+    changed = user.documents_changed_at or datetime.min.replace(tzinfo=UTC)
+    current = stored.get("version") == VERSION and user.fit_profile_at is not None
+    if current and user.fit_profile_at >= changed:
+        return stored.get("profile")
+    from libs.suggestions import documents_of  # noqa: PLC0415 - suggestions imports matching, which imports this
+    made = person(documents_of(db, user.id), user.full_name)
+    at = now()
+    kept = {"version": VERSION, "profile": made}
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"fit_profile": kept, "fit_profile_at": at}})
+    user.fit_profile, user.fit_profile_at = kept, at
+    logger.info("fit: profile of %s made from their documents (%s)", user.id,
+                "no text" if made is None else f"{len(made['vector'])} words")
+    return made
+
+
+# ── their list's scores, kept to filter by ─────────────────────────────────────────────────────
+
+def key(made: dict) -> str:
+    """What a kept score was worked out with: their profile, the model and `VERSION`. A score kept with
+    another key is not theirs any more and is read as missing, so nothing has to find and delete it."""
+    return hashlib.sha256(json.dumps([VERSION, model(), made], sort_keys=True).encode()).hexdigest()[:16]
+
+
+def kept(db: Database, user_id: _uuid.UUID, made: dict) -> dict[int, float]:
+    """The scores kept for this person's profile as it is now, by job: 29 ms for 5,139, most of it reading
+    them into Python; an index holding all four fields measured the same (2026-11-16)."""
+    return {row["job_id"]: row["fit"] for row in db[FitScore.COLLECTION].find(
+        {"user_id": user_id, "key": key(made)}, {"_id": 0, "job_id": 1, "fit": 1})}
+
+
+def any_kept(db: Database, user_id: _uuid.UUID, made: dict) -> bool:
+    """Whether anything is kept for this person's profile as it is now: no, once their documents change."""
+    return db[FitScore.COLLECTION].count_documents({"user_id": user_id, "key": key(made)}, limit=1) > 0
+
+
+def scored(made: dict) -> list[dict]:
+    """Stages that give the postings of a page their score for this person, `fit_score`, worked out there and
+    then: 25 jobs, about 11 ms, whatever the list holds (2026-11-16). Their features leave with them."""
+    return [{"$addFields": {"fit_score": expression(made)}}, {"$unset": "fit"}]
+
+
+def at_least(made: dict, kept_: dict[int, float], shown_: int) -> dict:
+    """A condition on a posting: its score for this person shows as `shown_` or more. Read from `kept_`
+    (`kept`) where it holds one, as a list of jobs the database looks up by their number; worked out there and
+    then for the rest. Kept or not, the answer is the same; keeping makes it quick over a whole list."""
+    floor = shown_ - 0.5
+    return {"$or": [{"_id": {"$in": sorted(job for job, score in kept_.items() if score >= floor)}},
+                    {"_id": {"$nin": sorted(kept_)}, "$expr": {"$gte": [expression(made), floor]}}]}
+
+
+def unkept(kept_: dict[int, float]) -> dict:
+    """A condition on a posting: it has no score kept for this person (`kept`) and could have one."""
+    return {"_id": {"$nin": sorted(kept_)}, "fit_version": VERSION}
+
+
+def fill(db: Database, user_id: _uuid.UUID) -> None:
+    """A score kept for every job of their list that has none for their profile as it is: the whole list after
+    their documents change, the new jobs after that, all in the database. One run at a time per person; a run
+    left `_STALE_RUN` is taken to have died. Run after a page that found nothing kept, or had to work a score
+    out (`unkept`)."""
+    from libs.corpus.freshness import platform_windows, shelf_life  # noqa: PLC0415 - matching imports this module
+    from libs.matching import _read, marks, scan_for  # noqa: PLC0415
+
+    started = now()
+    claimed = db[User.COLLECTION].find_one_and_update(
+        {"_id": user_id,
+         "$or": [{"fit_scoring_at": None}, {"fit_scoring_at": {"$lt": started - _STALE_RUN}}]},
+        {"$set": {"fit_scoring_at": started}})
+    if claimed is None:
+        return
+    clock, user = monotonic(), User.from_doc(claimed)
+    try:
+        made = profile(db, user)
+        skipped, applied = marks(db, user_id)
+        _, longest = shelf_life(platform_windows(db))
+        stages = None if made is None else _read(db, user, scan=scan_for(longest), fit=True,
+                                                 skip=skipped | set(applied))
+        if stages is None:
+            return
+        have = sorted(kept(db, user_id, made))
+        db[CorpusJob.COLLECTION].aggregate([
+            # A posting whose features are older than `VERSION` is kept once `catch_up` has read it again.
+            *stages, {"$match": {"fit_version": VERSION, "_id": {"$nin": have}}},
+            {"$project": {"_id": 0, "user_id": {"$literal": user_id}, "job_id": "$_id",
+                          "fit": expression(made), "key": {"$literal": key(made)}, "scored_at": "$$NOW"}},
+            {"$match": {"fit": {"$ne": None}}},
+            {"$merge": {"into": FitScore.COLLECTION, "on": ["user_id", "job_id"], "whenNotMatched": "insert",
+                        "whenMatched": [{"$set": {"fit": "$$new.fit", "key": "$$new.key",
+                                                  "scored_at": "$$new.scored_at"}}]}}])
+        logger.info("fit: the list of %s kept in %d ms (%d had a score)", user_id,
+                    (monotonic() - clock) * 1000, len(have))
+    except Exception:
+        logger.exception("fit: keeping the scores of %s failed; its pages work them out meanwhile", user_id)
+    finally:
+        db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {"fit_scoring_at": None}})
+
+
+def shown(score: float) -> int:
+    """A score as a page shows it, 1 to 10: rounded half up, which is what `at_least` filters by."""
+    return max(1, min(10, math.floor(score + 0.5)))
 
 
 # ── the score ──────────────────────────────────────────────────────────────────────────────────

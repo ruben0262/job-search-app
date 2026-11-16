@@ -112,6 +112,7 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
         BuiltDocument,
         ContactMessage,
         CorpusJob,
+        FitScore,
         PushSubscription,
         QueueJob,
         SetupConversation,
@@ -153,7 +154,8 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
                           filename="cv.pdf", content=b"%PDF", size=4, saved=True),
             ContactMessage(user_id=user.id, email=user.email, subject="Hello",
                            message="A question for you."),
-            UploadedFile(id=build.id, user_id=user.id, content=b"the CV as uploaded")):
+            UploadedFile(id=build.id, user_id=user.id, content=b"the CV as uploaded"),
+            FitScore(user_id=user.id, job_id=job.id, fit=7.5, key="their profile")):
         insert(db, document)
 
     owned = [model for model in MODELS if model.OWNER]

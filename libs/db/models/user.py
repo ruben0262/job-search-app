@@ -64,6 +64,12 @@ class User(Document):
     hard_data_changed_at: datetime | None = None
     # Green and red words suggested from their documents, with a reason each (`libs.suggestions`).
     suggestions: dict | None = None
+    # What the fit score reads of them (`libs.fit.profile`), and when: made again from their documents the
+    # first time it is wanted after they change (`documents_changed_at`), by the one function that reads it.
+    fit_profile: dict | None = None
+    fit_profile_at: datetime | None = None
+    # When keeping the match scores of their list began (`libs.fit.fill`), so one runs at a time.
+    fit_scoring_at: datetime | None = None
     # The Jobs page's filters as they left them, so it opens the same (owner, 2026-11-07); `JobFilters` in
     # the API. None until they change one: the defaults.
     job_filters: dict | None = None

@@ -1604,6 +1604,11 @@
             "title": "Jobs",
             "type": "array"
           },
+          "match_scores": {
+            "default": false,
+            "title": "Match Scores",
+            "type": "boolean"
+          },
           "shelf_hours": {
             "title": "Shelf Hours",
             "type": "integer"
@@ -1708,6 +1713,17 @@
               }
             ],
             "title": "First Seen At"
+          },
+          "fit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fit"
           },
           "id": {
             "title": "Id",
@@ -2241,6 +2257,19 @@
               }
             ],
             "title": "Made"
+          },
+          "min_fit": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Fit"
           },
           "min_words": {
             "default": 1,
@@ -7670,6 +7699,24 @@
               "minimum": 1,
               "title": "Min Words",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_fit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 10,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Fit"
             }
           },
           {

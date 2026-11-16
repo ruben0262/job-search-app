@@ -2473,6 +2473,11 @@ export interface components {
             delay_hours: number;
             /** Jobs */
             jobs: components["schemas"]["FeedJob"][];
+            /**
+             * Match Scores
+             * @default false
+             */
+            match_scores: boolean;
             /** Shelf Hours */
             shelf_hours: number;
             /** Shelf Longest Hours */
@@ -2500,6 +2505,8 @@ export interface components {
             documents: components["schemas"]["JobDocument"][];
             /** First Seen At */
             first_seen_at: string | null;
+            /** Fit */
+            fit?: number | null;
             /** Id */
             id: number;
             /** Is Remote */
@@ -2691,6 +2698,8 @@ export interface components {
             country: string;
             /** Made */
             made?: boolean | null;
+            /** Min Fit */
+            min_fit?: number | null;
             /**
              * Min Words
              * @default 1
@@ -5517,6 +5526,7 @@ export interface operations {
                 made?: boolean | null;
                 word?: string[];
                 min_words?: number;
+                min_fit?: number | null;
                 found_after?: string | null;
                 sort?: "best" | "newest" | "arrived";
             };
