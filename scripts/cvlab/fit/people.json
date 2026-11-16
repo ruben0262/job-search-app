@@ -38,5 +38,17 @@
   "it-support": {"words": ["it support", "service desk", "desktop support"], "places": ["united_kingdom"], "languages": ["en"]},
   "civil-engineer": {"words": ["civil engineer", "structural engineer", "site engineer", "engineer"], "places": ["united_kingdom"], "languages": ["en"]},
   "cuoco": {"words": ["cuoco", "chef", "aiuto cuoco"], "places": ["italy"], "languages": ["it", "en"]},
-  "events": {"words": ["event coordinator", "events", "event manager"], "places": ["united_kingdom"], "languages": ["en"]}
+  "events": {"words": ["event coordinator", "events", "event manager"], "places": ["united_kingdom"], "languages": ["en"]},
+  "security-officer": {"words": ["security officer", "security supervisor", "security"], "places": ["united_kingdom"], "languages": ["en"]},
+  "dental-nurse": {"words": ["dental nurse", "dental", "nurse"], "places": ["united_kingdom"], "languages": ["en"]},
+  "lagerist": {"words": ["lagerist", "staplerfahrer", "lagermitarbeiter", "lager", "logistik"], "places": ["germany"], "languages": ["de"]},
+  "delivery-driver": {"words": ["delivery driver", "van driver", "bus driver", "driver"], "places": ["ireland", "united_kingdom"], "languages": ["en"]},
+  "teaching-assistant": {"words": ["teaching assistant", "learning support assistant", "school", "teaching"], "places": ["united_kingdom"], "languages": ["en"]},
+  "payroll": {"words": ["specjalista ds. płac", "płace", "kadry i płace", "payroll"], "places": ["poland"], "languages": ["pl", "en"]},
+  "elektromonteur": {"words": ["elektromonteur", "monteur", "elektrotechniek", "installatietechniek"], "places": ["netherlands"], "languages": ["nl"]},
+  "commessa": {"words": ["commessa", "addetta vendite", "sales assistant"], "places": ["italy"], "languages": ["it"]},
+  "ugyfelszolgalat": {"words": ["ügyfélszolgálati munkatárs", "ügyfélszolgálat", "customer service"], "places": ["hungary"], "languages": ["hu", "en"]},
+  "administrativa": {"words": ["administrativa", "auxiliar administrativo", "administrativo contable"], "places": ["spain"], "languages": ["es"]},
+  "plumber": {"words": ["gas engineer", "plumber", "heating", "plumbing"], "places": ["united_kingdom"], "languages": ["en"]},
+  "social-worker": {"words": ["social worker", "social work", "social care"], "places": ["ireland", "united_kingdom"], "languages": ["en"]}
 }

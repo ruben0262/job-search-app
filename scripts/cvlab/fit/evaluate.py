@@ -49,6 +49,10 @@ SPLIT = {
     # Drawn and read after the halves above had been looked at (2026-11-16): the held-out set since then.
     "fresh": ("housekeeper", "barista", "store-manager", "logistics", "maintenance", "hr-advisor",
               "kundenservice", "underwriter", "it-support", "civil-engineer", "cuoco", "events"),
+    # Written, drawn and read blind on 2026-11-16, night, while candidates were built on the 27 above: nothing
+    # was tuned on them, and their documents were not read by whoever built the candidates.
+    "fresh2": ("security-officer", "dental-nurse", "lagerist", "delivery-driver", "teaching-assistant", "payroll",
+               "elektromonteur", "commessa", "ugyfelszolgalat", "administrativa", "plumber", "social-worker"),
 }
 SECTOR = {
     "warehouse": "logistics", "driver": "logistics", "transport-planner": "logistics",
@@ -68,6 +72,10 @@ SECTOR = {
     "logistics": "logistics", "maintenance": "trades and making", "hr-advisor": "office, legal, HR",
     "kundenservice": "office, legal, HR", "underwriter": "finance", "it-support": "IT",
     "civil-engineer": "projects and building", "events": "marketing",
+    "security-officer": "security", "dental-nurse": "health and care", "lagerist": "logistics",
+    "delivery-driver": "logistics", "teaching-assistant": "education", "payroll": "finance",
+    "elektromonteur": "trades and making", "commessa": "sales", "ugyfelszolgalat": "office, legal, HR",
+    "administrativa": "office, legal, HR", "plumber": "trades and making", "social-worker": "health and care",
 }
 
 
