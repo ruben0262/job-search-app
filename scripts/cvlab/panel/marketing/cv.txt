@@ -1,0 +1,43 @@
+Ciara Nolan
+Digital Marketing Executive – Paid Media and Performance
+Rathmines, Dublin 6 · 020 917 0126 · ciara.nolan@example.com · linkedin.com/in/ciara-nolan-example
+
+Summary
+Performance marketer with five years' experience running paid search and paid social for an e-commerce retailer and a home energy company. I plan, build and optimise campaigns myself, manage monthly budgets of up to €18,000 and report on cost per lead and return on ad spend rather than clicks.
+
+Experience
+
+Digital Marketing Executive, Brightwater Home Energy, Dublin                    Mar 2024 – Present
+Home insulation and heat pump installer selling to homeowners across Leinster. Marketing team of four.
+• Own Google Ads (Search and Performance Max) and Meta Ads with a combined budget of €18,000 a month.
+• Cut cost per lead by 23%, from €52 to €40, in my first twelve months while growing monthly lead volume by 31%.
+• Rebuilt the Google Ads account around county and service campaigns, added negative keyword lists and moved bidding to target CPA.
+• Migrated tracking to GA4 and Google Tag Manager, importing offline conversions from HubSpot so campaigns are optimised towards booked home surveys, not form fills.
+• Built HubSpot lead scoring and a five-email nurture workflow; the share of leads booking a survey rose from 14% to 19%.
+• A/B tested landing pages in Unbounce, lifting conversion rate from 3.1% to 4.4%.
+• Report weekly to the Head of Marketing in a Looker Studio dashboard covering spend, leads, cost per lead and survey bookings by channel.
+• Brief the content executive and a freelance designer on ad creative and test at least two new variants per campaign each month.
+
+Marketing Executive, Pebble & Pine Outdoor, Dublin                              Sep 2021 – Feb 2024
+Online and two-store retailer of hiking and camping gear. Joined as Marketing Assistant; promoted in January 2023.
+• Managed Google Shopping and Meta Ads on €6,000 a month; return on ad spend improved from 3.2 to 4.1 over 2023.
+• Set up dynamic remarketing and catalogue ads from the Shopify product feed.
+• Ran paid, email and on-site activity for Black Friday 2023; online revenue for the week was up 27% on the previous year.
+• Built the abandoned-basket and welcome flows in Klaviyo for a list of 22,000 subscribers; the basket flow brought in 9% of online revenue.
+• Produced the monthly performance report from Google Analytics and Shopify for the owners.
+
+Education
+BSc (Hons) Marketing, 2.1, Technological University Dublin, 2017 – 2021
+Final-year dissertation on paid social advertising and purchase intent among Irish 18 to 24 year olds.
+
+Certifications
+Google Ads Search Certification (renewed 2026)
+Google Analytics Certification (GA4), 2024
+HubSpot Marketing Software Certification, 2024
+Meta Certified Digital Marketing Associate, 2022
+
+Tools
+Google Ads, Meta Ads Manager, GA4, Google Tag Manager, Looker Studio, HubSpot, Klaviyo, Unbounce, Shopify, Semrush, Canva, Excel and Google Sheets.
+
+Other
+Volunteer social media lead for a Dublin hillwalking club with 600 members. Conversational Irish and French.

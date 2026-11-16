@@ -1,11 +1,19 @@
 """The CV lab: run writing-prompt variants over the same postings and compare the numbers.
 
-Nothing here writes to a prompt. Variant `live` reads `libs/prompts/write_cv.md` at run time, so the
-baseline is always the prompt every account is written with and cannot drift from it; every other
-variant is a separate file under `variants/`, filled the same way (`build.prepare`). Variant `uploaded`
-is the person's own CV as they uploaded it, with no call: what they would have sent without us.
-`CLAUDE.md` §3a: the live prompt is measured, never edited, and a variant becomes the live prompt only
-when the owner says so.
+Nothing here writes to a prompt. Variant `live` reads `libs/prompts/write_cv.md` (`--kind cover`:
+`write_cover.md`) at run time, so the baseline is always the prompt every account is written with and
+cannot drift from it; every other variant is a separate file under `variants/` (a letter's under
+`variants/cover/`), filled the same way (`build.prepare`). Variant `uploaded` is the person's own CV or
+letter as they uploaded it, with no call: what they would have sent without us. `CLAUDE.md` §3a: the live
+prompt is measured, never edited, and a variant becomes the live prompt only when the owner says so.
+
+`--checkers` adds what tools that are not ours make of each document (`checkers.py`): for a CV ResyMatch
+and Affinda's resume parser (`certificates/affinda.env`), for a letter a cover letter checker. Their
+numbers join the comparison beside ours.
+
+    # the made-up panel (`panel/README.md`): eleven people who are not in IT, two postings each
+    python scripts/cvlab/run.py --candidates-dir scripts/cvlab/panel --candidates nurse,warehouse,chef \
+        --account someone@example.com --samples 2 --out scripts/cvlab/out/panel
 
     # score CVs already on disk — no calls, no credential, no money
     python scripts/cvlab/run.py --dry-run --out scripts/cvlab/out/ab
@@ -13,6 +21,10 @@ when the owner says so.
     # the new prompt against the CV they uploaded, on the account they linked on this computer
     python scripts/cvlab/run.py --candidates ruben=db:someone@example.com --account someone@example.com \
         --variants uploaded,live --baseline uploaded --samples 3 --judge --out scripts/cvlab/out/first
+
+    # letters already written, and what the outside checker makes of them and of their own
+    python scripts/cvlab/run.py --kind cover --dry-run --variants uploaded,live --baseline uploaded \
+        --checkers letter --out scripts/cvlab/out/first
 
 A candidate is a folder under `candidates/` (never in git: real people's documents) or `NAME=db:EMAIL`,
 an account in the local database (`MONGODB_URI`, never Atlas), read as the docgen worker reads it. NAME
@@ -30,6 +42,8 @@ copy has its own `content_key`.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import hashlib
 import io
 import json
 import logging
@@ -53,21 +67,24 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from libs import templates  # noqa: E402
-from libs.llm import client_for  # noqa: E402
-from libs.settings import CV_MODEL  # noqa: E402
-from scripts.cvlab import cvchecks  # noqa: E402
+from libs.documents.needs import BASE  # noqa: E402
+from libs.llm import cli, client_for  # noqa: E402
+from libs.settings import CV_MODEL, DEFAULT_DOCUMENT_MODELS  # noqa: E402
+from scripts.cvlab import checkers, cvchecks  # noqa: E402
 from services.docgen import build, pdf  # noqa: E402
 
 logger = logging.getLogger("cvlab")
 
 HERE = pathlib.Path(__file__).resolve().parent
-LIVE_PROMPT = REPO / "libs" / "prompts" / build.PROMPTS["cv"]
+LIVE_PROMPTS = {kind: REPO / "libs" / "prompts" / name for kind, name in build.PROMPTS.items()}
+VARIANTS = {"cv": HERE / "variants", "cover": HERE / "variants" / "cover"}
 JUDGE_PROMPT = REPO / "libs" / "prompts" / "eval_cv.md"
 # The person's own CV, unchanged: the baseline every written CV is measured against.
 UPLOADED = "uploaded"
 
 # Held fixed while the writing prompt varies: the judge is the instrument, not the thing measured.
 JUDGE_MODEL = "claude-sonnet-5-5"
+JUDGE_SYSTEM = "You review CVs the way the recruiter for the job would."
 
 # Seven dimensions, each with a quoted line, plus three fixes. coverlab lost half a grid to a judge
 # reply truncated mid-JSON that scored as `None` and was quietly averaged over, so this is generous.
@@ -149,12 +166,12 @@ def load_postings(root: pathlib.Path, candidate: str | None, only: list[str] | N
     return postings
 
 
-def load_variant(name: str) -> str | None:
+def load_variant(name: str, kind: str = "cv") -> str | None:
     """`live` is the prompt every account is written with, read fresh; `uploaded` has none. Anything else
-    is a file under `variants/`."""
+    is a file under `variants/`, or `variants/cover/` for a letter."""
     if name == UPLOADED:
         return None
-    path = LIVE_PROMPT if name == "live" else HERE / "variants" / f"{name}.md"
+    path = LIVE_PROMPTS[kind] if name == "live" else VARIANTS[kind] / f"{name}.md"
     if not path.exists():
         raise SystemExit(f"variant {name!r} not found at {path}")
     return path.read_text(encoding="utf-8")
@@ -171,20 +188,56 @@ def credential(key_file: str | None) -> tuple[str, str]:
 
 # ── one cell of the grid ──────────────────────────────────────────────────────────────────────
 
-def request_for(candidate: Candidate, posting: Posting, template: str | None):
-    """What production would send for this person and posting, in the look everyone has by default."""
-    return build.prepare("cv", user=candidate.user, job=posting, documents=candidate.documents,
-                         look=templates.find("cv", templates.DEFAULT), languages=candidate.languages,
-                         template=template)
+def request_for(candidate: Candidate, posting: Posting, template: str | None, kind: str = "cv",
+                look: str = templates.DEFAULT):
+    """What production would send for this person and posting, in the look everyone has by default or in
+    `look`."""
+    return build.prepare(kind, user=candidate.user, job=posting, documents=candidate.documents,
+                         look=templates.find(kind, look), languages=candidate.languages, template=template)
 
 
-def write_one(client, candidate: Candidate, posting: Posting, *, template: str,
-              model: str, effort: str = build.EFFORT) -> tuple[str, float]:
-    """One CV, through the production call: its whole page, and the seconds the call took."""
-    request = request_for(candidate, posting, template)
+def write_one(client, candidate: Candidate, posting: Posting, *, template: str, model: str,
+              effort: str = build.EFFORT, kind: str = "cv",
+              look: str = templates.DEFAULT) -> tuple[str, dict]:
+    """One document, through the production call: its whole page, and what writing it took (the seconds
+    the call ran, and its tokens in and out where the account's tool counts them)."""
+    request = request_for(candidate, posting, template, kind, look)
     started = time.monotonic()
-    _, body = build.draft(client, request, model=model, effort=effort)
-    return build.assemble(request, body), time.monotonic() - started
+    reply, body = build.draft(client, request, model=model, effort=effort)
+    used = getattr(reply, "usage", None)
+    return build.assemble(request, body), {
+        "seconds": round(time.monotonic() - started, 1),
+        "tokens_in": used.input_tokens if used else None, "tokens_out": used.output_tokens if used else None,
+        # The model the provider says wrote it, which need not be the one asked for.
+        "model": getattr(reply, "model", None)}
+
+
+def kept_in(out: pathlib.Path, model: str, effort: str, wording: str) -> pathlib.Path:
+    """Where the documents one model wrote from one wording are kept (owner, 2026-11-15: "save them
+    based on the model that produced it and the version of the prompt that was used", a before and an
+    after): `<out>/<model>/<version>/`, the wording itself beside them as `prompt.md`. The version is the
+    one production keeps with a document (`prompts.version`), so the live prompt's folder is the stamp on
+    people's own documents. A model's folder says how hard it was told to think, where it was told: a
+    Claude model always is, Codex only by `--codex-effort`."""
+    name = model or "the-accounts-own-model"
+    told = effort if name.startswith("claude") else cli.CODEX_EFFORT
+    folder = out / (f"{name}@{told}" if told else name) / version_of(wording)
+    folder.mkdir(parents=True, exist_ok=True)
+    if not (folder / "prompt.md").exists():
+        (folder / "prompt.md").write_text(wording, encoding="utf-8")
+    return folder
+
+
+def version_of(wording: str) -> str:
+    return hashlib.sha256(wording.encode("utf-8")).hexdigest()[:12]
+
+
+def over_ceiling(tokens_out: int | None) -> int | None:
+    """Whether a document took more tokens out, thinking included, than an API key is given
+    (`build.MAX_TOKENS`). A sign-in's tool sets its own ceiling, so the bench writes such a document whole;
+    on a key the same call is cut off and the person gets none. A wording that makes the model think
+    longer shows here first: 3 of 18 CVs of one candidate wording, none of the live one's (2026-11-15)."""
+    return None if tokens_out is None else int(tokens_out > build.MAX_TOKENS)
 
 
 # The bench writes cells side by side and the worker's one Chrome takes one document at a time over one
@@ -193,27 +246,85 @@ def write_one(client, candidate: Candidate, posting: Posting, *, template: str,
 _RENDERING = threading.Lock()
 
 
-def measured(candidate: Candidate, posting: Posting, page: str) -> dict:
-    """What code says of a written CV, as the docgen worker checks it (`build.problems`): its PDF's pages and
-    what an ATS reads, the numbers found nowhere in their documents or the posting, and what a reviewer
-    would send back. Then the whole ATS checklist (`ats_read`). Pages are None without Chrome
-    (`CHROME_BIN`)."""
-    body = page.split('<hr class="header-rule">', 1)[-1].split("</body>", 1)[0]
-    request = request_for(candidate, posting, None)
+def rendered(page: str, label: str, kind: str = "cv") -> tuple[bytes | None, pdf.PdfReport]:
+    """The PDF a person would download and what an ATS reads of it, as the docgen worker makes it
+    (`pdf.fitted`); no PDF without Chrome (`CHROME_BIN`)."""
     try:
         with _RENDERING:
-            document = pdf.render(page)
+            return pdf.fitted(page, kind=kind, headings=build.headings(body_of(page)) if kind == "cv" else ())
     except pdf.CompileFailed as exc:
-        logger.warning("no PDF for %s, so no page count: %s", posting.slug, exc)
-        document, report = None, pdf.PdfReport(pages=None, chars=0, issues=["not rendered"])
-    else:
-        report = pdf.inspect_pdf(document, headings=build.headings(body))
-    check = build.problems(request, body, report.pages, report.last_page_chars)
-    return {"pages": report.pages, "ats_issues": len(report.issues), "invented": len(check.invented),
-            "invented_numbers": list(check.invented), "faults": len(check.faults),
-            "fault_list": list(check.faults), "revision_needed": not check.ok,
-            "ats_read": len(issues := ats_read(document, page) if document else ["not rendered"]),
-            "ats_read_issues": issues}
+        logger.warning("no PDF for %s, so no page count: %s", label, exc)
+        return None, pdf.PdfReport(pages=None, chars=0, issues=["not rendered"])
+
+
+def body_of(page: str) -> str:
+    """What the model wrote, out of the whole page: after the header, and after a letter's company block."""
+    body = page.split('<hr class="header-rule">', 1)[-1].split("</body>", 1)[0]
+    return re.sub(r'(?s)^\s*<div class="letter-meta">.*?</div>', "", body)
+
+
+def measured(candidate: Candidate, posting: Posting, page: str, document: bytes | None, *,
+             report: pdf.PdfReport, kind: str = "cv") -> dict:
+    """What code says of a written document, as the docgen worker checks it (`build.problems`): its PDF's
+    pages, how much smaller the look was drawn to take up a few spilled lines, what an ATS reads, the
+    numbers found nowhere in their documents or the posting, and what a reviewer would send back. For a
+    CV, then the whole ATS checklist (`ats_read`)."""
+    body = body_of(page)
+    request = request_for(candidate, posting, None, kind)
+    check = build.problems(request, body, report.pages, report.spilled)
+    row = {"pages": report.pages, "scale": report.scale, "fitted": int(report.scale < 1),
+           "ats_issues": len(report.issues), "invented": len(check.invented),
+           "invented_numbers": list(check.invented), "faults": len(check.faults),
+           "fault_list": list(check.faults), "revision_needed": not check.ok}
+    if kind == "cv":
+        issues = ats_read(document, page) if document else ["not rendered"]
+        row |= {"ats_read": len(issues), "ats_read_issues": issues}
+        if document:
+            passed = ats_checks(document, page, posting.title, report, issues)
+            row |= {"ats_score": round(100 * sum(passed.values()) / len(passed), 1),
+                    "ats_failed": [name for name, ok in passed.items() if not ok],
+                    **{f"ats_{name}": int(ok) for name, ok in passed.items()}}
+    return row
+
+
+def letter_text(page: str) -> str:
+    """A letter as a person pastes it: greeting to name, a blank line between paragraphs and none between
+    the sign-off and the name. The subject line stays out, as it does from a letter box."""
+    found = re.search(r'(?s)<div class="letter">(.*)</div>', page)
+    blocks: list[str] = []
+    letter = found.group(1) if found else body_of(page)
+    for attributes, inner in re.findall(r"(?s)<p([^>]*)>(.*?)</p>", letter):
+        text = " ".join(unescape(re.sub(r"<[^>]+>", " ", inner)).split())
+        if "letter-subject" in attributes or not text:
+            continue
+        if "signature" in attributes and blocks:
+            blocks[-1] += f"\n{text}"
+        else:
+            blocks.append(text)
+    return "\n\n".join(blocks)
+
+
+def entries_of(page: str) -> tuple[tuple[str, str, str], ...]:
+    """Each job and qualification a written CV lists: what it is, where, and its dates as written."""
+    found = []
+    for entry in re.findall(r'(?s)<div class="entry">(.*?)(?=<div class="entry">|$)', page):
+        title = re.search(r'(?s)<span class="entry-title">(.*?)</span>', entry)
+        dates = re.search(r'(?s)<span class="entry-date">(.*?)</span>', entry)
+        parts = [" ".join(unescape(re.sub(r"<[^>]+>", " ", part)).split())
+                 for part in (title.group(1) if title else "").split("·")]
+        if len(parts) >= 2:
+            found.append((parts[0], parts[1], unescape(re.sub(r"<[^>]+>", " ", dates.group(1))).strip()
+                          if dates else ""))
+    return tuple(found)
+
+
+def contact_of(page: str) -> tuple[str, str]:
+    """The email and phone number the header gives, as written: what a reader should read back."""
+    line = re.search(r'(?s)<div class="cv-contact">(.*?)</div>', page)
+    items = [" ".join(unescape(re.sub(r"<[^>]+>", " ", each)).split())
+             for each in re.findall(r"(?s)<span>(.*?)</span>", line.group(1) if line else "")]
+    return (next((each for each in items if "@" in each), ""),
+            next((each for each in items if re.fullmatch(r"\+?[\d\s().-]{7,}", each)), ""))
 
 
 def ats_read(document: bytes, page: str) -> list[str]:
@@ -234,7 +345,8 @@ def ats_read(document: bytes, page: str) -> list[str]:
                          ("pdfminer", extract_text(io.BytesIO(document)))):
         if re.search("[\ufb00-\ufb06]", text):
             issues.append(f"{reader}: a ligature")
-        if name and not text.strip().startswith(name):
+        # Ledger and Foundry draw the name in capitals, which is the name all the same.
+        if name and not text.strip().casefold().startswith(name.casefold()):
             issues.append(f"{reader}: does not start with the name")
         if (read := words(text)) != written:
             issues.append(f"{reader}: words not read whole {sorted(read ^ written)[:6]}")
@@ -247,26 +359,106 @@ def ats_read(document: bytes, page: str) -> list[str]:
     return issues
 
 
-def judge_one(client, posting: Posting, text: str, report: dict) -> dict | None:
-    """The recruiter's verdict, on what no regular expression reaches."""
+# A job's dates as an ATS takes them: "Mar 2021 – Present", "2016 – 2019", "Jun 2026", "2024".
+_ATS_MONTH_YEAR = r"(?:[A-Z][a-z]{2,8}\.? )?\d{4}"
+_ATS_DATE = re.compile(rf"{_ATS_MONTH_YEAR}(?: [\u2013-] (?:{_ATS_MONTH_YEAR}|[Pp]resent))?")
+
+
+def ats_checks(document: bytes, page: str, title: str, report: pdf.PdfReport,
+               issues: list[str]) -> dict[str, bool]:
+    """What an applicant tracking system has to be able to do with a CV, each a yes or a no (owner,
+    2026-11-15: a CV passes its ATS checks "perfectly at least", so that a person sees it). None of them
+    depends on what the person has done: they are the writer's and the look's to get right.
+
+    - `text`: every word comes out whole for both readers, with no ligature, and the worker's own read of
+      the PDF finds nothing wrong with it (text there at all, lines of a sentence's length);
+    - `name`: the text starts with the person's name;
+    - `headings`: the section headings come out in their order;
+    - `sections`: an Experience and an Education section, under those words;
+    - `contact`: the email address and the phone number come out as written;
+    - `dates`: every job's and course's dates are in the one form a parser takes;
+    - `title`: the posting's job title is in the CV, as recruiters search by it and scanners look for it;
+    - `pages`: one or two pages, and nothing stranded on a last one.
+    `issues` is what `ats_read` found."""
+    read = " ".join("\n".join(each.extract_text() or "" for each in PdfReader(io.BytesIO(document)).pages)
+                    .split()).casefold()
+    email, phone = contact_of(page)
+    heads = unescape(" | ".join(re.findall(r'class="section-title">([^<]*)<', page))).casefold()
+    def words(text: str) -> str:
+        """Its words alone, in order: "Retail & Sales Advisor" is "Retail and Sales Advisor"."""
+        return " ".join(each for each in re.findall(r"\w+", text.casefold()) if each != "and")
+
+    wanted = words(checkers.job_title(title))
+
+    def digits(text: str) -> str:
+        return re.sub(r"\D", "", text)
+
+    return {
+        "text": not report.issues and not any("ligature" in each or "not read whole" in each
+                                              for each in issues),
+        "name": not any("start with the name" in each for each in issues),
+        "headings": not any("out of place" in each for each in issues),
+        "sections": "experience" in heads and "education" in heads,
+        "contact": email.casefold() in read and digits(phone) in digits(read),
+        "dates": all(_ATS_DATE.fullmatch(dates) for _, _, dates in entries_of(page) if dates),
+        "title": bool(wanted) and f" {wanted} " in f" {words(read)} ",
+        "pages": report.pages in (1, 2) and not report.spilled,
+    }
+
+
+def judge_one(client, posting: Posting, text: str, report: dict, theirs: str) -> dict | None:
+    """The reviewer's verdict, on what no regular expression reaches. `theirs` is everything the person
+    gave us: a reviewer who cannot see it cannot say what the CV made up."""
     prompt = (JUDGE_PROMPT.read_text(encoding="utf-8")
               .replace("<DETERMINISTIC_SUMMARY>", json.dumps(report))
-              .replace("<JOB_DESCRIPTION>", posting.description)
+              .replace("<JOB_DESCRIPTION>", f"{posting.title}\n{posting.company}\n\n{posting.description}")
+              .replace("<THEIR_DOCUMENTS>", theirs)
               .replace("<CV_TEXT>", text))
     try:
-        reply = client.complete_text(model=JUDGE_MODEL,
-                                     system="You are a strict technical recruiter.",
+        reply = client.complete_text(model=JUDGE_MODEL, system=JUDGE_SYSTEM,
                                      messages=[{"role": "user", "content": prompt}],
                                      max_tokens=JUDGE_MAX_TOKENS)
-        start, end = reply.find("["), reply.rfind("]")
-        if start == -1 or end == -1:
-            logger.warning("judge returned no JSON array for %s (%d chars)", posting.slug,
-                           len(reply))
-            return None
-        return json.loads(reply[start:end + 1])[0]
+        verdict = read_verdict(reply, text)
+        if verdict is None:
+            logger.warning("judge returned no JSON object for %s (%d chars)", posting.slug, len(reply))
+        return verdict
     except Exception as exc:                                    # noqa: BLE001 - a lab, not a lane
         logger.warning("judge failed on %s, scoring without it: %s", posting.slug, exc)
         return None
+
+
+def _flat(text: str) -> str:
+    """Text as it is compared: one space between words, and quotes and dashes as typed on a keyboard."""
+    return " ".join(str(text).translate(_TYPED).split())
+
+
+_TYPED = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2013": "-",
+                        "\u2014": "-"})
+
+
+def read_verdict(reply: str, text: str) -> dict | None:
+    """The reviewer's answer, kept only where code can check it (rules before AI). A mark whose quoted line
+    is not in the CV word for word is thrown away, as the prompt says it will be, and so is a line said not
+    to be theirs that the CV does not have. The overall mark is the mean of the marks kept, worked out
+    here: asked for as a number of its own, it moved between two reads of one CV."""
+    start, end = reply.find("{"), reply.rfind("}")
+    if start == -1 or end == -1:
+        return None
+    answer, cv = json.loads(reply[start:end + 1]), _flat(text)
+
+    def quoted(line: object) -> bool:
+        return bool(line) and _flat(line) in cv
+
+    marks = {name: mark for name, mark in (answer.get("dimensions") or {}).items()
+             if name in DIMENSIONS and isinstance(mark, dict) and isinstance(mark.get("score"), int | float)}
+    kept = {name: mark for name, mark in marks.items() if quoted(mark.get("evidence"))}
+    scores = [mark["score"] for mark in kept.values()]
+    return {"overall_100": round(10 * statistics.mean(scores)) if scores else None,
+            "verdict": answer.get("would_reply"), "one_line": answer.get("one_line"), "dimensions": kept,
+            "unquoted": len(marks) - len(kept),
+            "not_theirs": [each for each in answer.get("not_theirs") or []
+                           if isinstance(each, dict) and quoted(each.get("line"))],
+            "left_out": answer.get("left_out") or [], "top_fixes": answer.get("top_fixes") or []}
 
 
 def _rate_limited(exc: Exception) -> bool:
@@ -275,7 +467,7 @@ def _rate_limited(exc: Exception) -> bool:
 
 
 def _verdict(client, posting: Posting, text: str, report: dict, *, kept: pathlib.Path,
-             judge: bool, force: bool) -> dict | None:
+             judge: bool, force: bool, theirs: str = "") -> dict | None:
     """This CV's verdict, from beside it on disk when it has already been judged.
 
     **A verdict is cached with its CV.** Without this, every resume re-judged each finished cell
@@ -289,7 +481,7 @@ def _verdict(client, posting: Posting, text: str, report: dict, *, kept: pathlib
         return json.loads(kept.read_text(encoding="utf-8"))
     if client is None:
         return None
-    verdict = judge_one(client, posting, text, report)
+    verdict = judge_one(client, posting, text, report, theirs)
     if verdict is not None:
         kept.write_text(json.dumps(verdict, indent=2), encoding="utf-8")
     return verdict
@@ -299,8 +491,8 @@ class _LazyClient:
     """The client, created the first time something actually calls it: on `--account`, the AI account
     that person has in use in the local database, else an API key."""
 
-    def __init__(self, key_file: str | None, account: str | None):
-        self._key_file, self._account = key_file, account
+    def __init__(self, key_file: str | None, account: str | None, provider: str | None = None):
+        self._key_file, self._account, self._provider = key_file, account, provider
         self._client = None
         self._held = None
         self._lock = threading.Lock()
@@ -319,9 +511,15 @@ class _LazyClient:
 
         db = database()
         row = db.users.find_one({"email": self._account})
-        account = accounts.in_use(db, row["_id"]) if row else None
+        if row and self._provider:
+            # The one they linked for that provider, in use or not: the newest.
+            account = next((each for each in accounts.listing(db, row["_id"])
+                            if accounts.PROVIDER[each.kind] == self._provider), None)
+        else:
+            account = accounts.in_use(db, row["_id"]) if row else None
         if account is None:
-            raise SystemExit(f"{self._account} has no AI account in use in {os.environ.get('MONGODB_DB')}")
+            raise SystemExit(f"{self._account} has no {self._provider or 'AI'} account "
+                             f"{'linked' if self._provider else 'in use'} in {os.environ.get('MONGODB_DB')}")
         # Held for the whole run: the secret stays redacted from every log line while it is.
         self._held = paying_client(SecretStore(db), row["_id"], str(account.id))
         paid = self._held.__enter__()
@@ -332,42 +530,90 @@ class _LazyClient:
 
 
 def _run_cell(client, candidate: Candidate, posting: Posting, *, variant: str, sample: int,
-              template: str | None, out: pathlib.Path, args) -> dict | None:
-    """One CV and its verdict, generating whichever half is not already on disk."""
-    uploaded = variant == UPLOADED
-    path = out / f"{candidate.name}__{variant}__{posting.slug}__{sample}.{'txt' if uploaded else 'html'}"
+              template: str | None, out: pathlib.Path, args, judge=None) -> dict | None:
+    """One document and its verdicts, generating whichever part is not already on disk. `judge` reads it
+    where the account that writes cannot (a ChatGPT or Gemini sign-in asked for a Claude reviewer)."""
+    kind, uploaded = args.kind, variant == UPLOADED
+    tag = "" if kind == "cv" else ".cover"
+    wording = None if uploaded else template if template is not None else load_variant(variant, kind)
+    version = version_of(wording) if wording else None
+    # Asked for no model (a ChatGPT sign-in takes its plan's own), it is kept under its provider's name.
+    out = out / UPLOADED if uploaded else kept_in(
+        out, args.model or getattr(args, "provider", None) or "", args.effort, wording)
+    out.mkdir(parents=True, exist_ok=True)
+    # A wording written for another look than the default is a variant of its own: "live@halcyon".
+    look = getattr(args, "look", None) or templates.DEFAULT
+    if look != templates.DEFAULT and not uploaded:
+        variant = f"{variant}@{look}"
+    path = out / f"{candidate.name}__{variant}__{posting.slug}__{sample}{tag}.{'txt' if uploaded else 'html'}"
+    # What writing it took, kept beside it: a later run measures the same document for nothing.
+    cost = path.with_suffix(".cost.json")
 
-    seconds = 0.0
     if uploaded:
-        # What they would have sent: their newest CV, as they wrote it.
-        page = candidate.documents["cv"][0]
+        # What they would have sent: their newest CV or letter, as they wrote it.
+        own = candidate.documents.get(BASE[kind])
+        if not own:
+            logger.warning("%s uploaded no %s, so there is no %s baseline", candidate.name, BASE[kind],
+                           UPLOADED)
+            return None
+        page = own[0]
         path.write_text(page, encoding="utf-8")
     elif args.dry_run:
         if not path.exists():
             return None
         page = path.read_text(encoding="utf-8")
     elif path.exists() and not args.force:
-        # A CV already written is a CV already paid for.
+        # A document already written is a document already paid for.
         page = path.read_text(encoding="utf-8")
     else:
-        page, seconds = _with_backoff(
+        page, took = _with_backoff(
             lambda: write_one(client, candidate, posting, template=template, model=args.model,
-                              effort=args.effort),
+                              effort=args.effort, kind=kind, look=look),
             what=f"{candidate.name}/{variant}/{posting.slug}#{sample}")
+        if took["model"] and args.model and took["model"] != args.model:
+            logger.warning("%s was asked for and %s answered: kept under the one asked for, named in its "
+                           "record", args.model, took["model"])
+        # `answered` is what the provider named, None where it names none; `model` is that, else the
+        # one asked for.
+        took |= {"answered": took["model"], "model": took["model"] or args.model or None,
+                 "asked": args.model, "effort": args.effort, "codex_effort": cli.CODEX_EFFORT,
+                 "wording": variant, "prompt_version": version}
         path.write_text(page, encoding="utf-8")
+        cost.write_text(json.dumps(took), encoding="utf-8")
+    took = json.loads(cost.read_text(encoding="utf-8")) if cost.exists() and not uploaded else {}
+    seconds = took.get("seconds") or 0.0
 
-    report = {} if uploaded else {**cvchecks.check(page), **measured(candidate, posting, page)}
-    text = page if uploaded else cvchecks.text_of(page)
-    verdict = _verdict(client, posting, text, report, kept=path.with_suffix(".verdict.json"),
-                       judge=args.judge, force=args.force)
+    document, read = (None, None) if uploaded else rendered(page, posting.slug, kind)
+    report = {} if uploaded else {**(cvchecks.check(page) if kind == "cv" else {}),
+                                  **measured(candidate, posting, page, document, report=read, kind=kind)}
+    text = page if uploaded else cvchecks.text_of(page) if kind == "cv" else letter_text(page)
+    theirs = "\n\n".join(each for texts in candidate.documents.values() for each in texts)
+    verdict = _verdict(judge or client, posting, text, report, kept=path.with_suffix(".verdict.json"),
+                       judge=args.judge and kind == "cv", force=args.force, theirs=theirs)
     dimensions = {key: value.get("score")
                   for key, value in ((verdict or {}).get("dimensions") or {}).items()}
-    row = {"candidate": candidate.name, "variant": variant, "job": posting.slug,
-           "group": posting.group, "sample": sample, "seconds": round(seconds, 1), **report,
-           "violations": cvchecks.violations(report) if report else None,
+    outside = {}
+    if args.checkers:
+        email, phone = ("", "") if uploaded else contact_of(page)
+        # Their own document is the same for every sample, so it is asked about once, as sample 1.
+        asked = path.with_name(path.name.replace(f"__{sample}{tag}.", f"__1{tag}.")) if uploaded else path
+        outside = checkers.measure(args.checkers, checkers.Document(
+            kind=kind, path=asked, text=text, pdf=document, title=posting.title, posting=posting.description,
+            theirs=theirs, email=email, phone=phone, name=candidate.user.full_name or "",
+            entries=() if uploaded or kind != "cv" else entries_of(page)))
+    row = {"candidate": candidate.name, "variant": variant, "job": posting.slug, "kind": kind,
+           "group": posting.group, "sample": sample, "look": None if uploaded else look,
+           "model": took.get("model"), "prompt_version": version,
+           "seconds": round(seconds, 1), "tokens_in": took.get("tokens_in"),
+           "tokens_out": took.get("tokens_out"), "over_ceiling": over_ceiling(took.get("tokens_out")),
+           **report, **outside,
+           "violations": cvchecks.violations(report) if report and kind == "cv" else None,
            "overall_100": (verdict or {}).get("overall_100"),
            "verdict": (verdict or {}).get("verdict"),
            "one_line": (verdict or {}).get("one_line"),
+           # What the reviewer found in the CV that is not in their documents, and what it left unused.
+           "judge_not_theirs": len(verdict["not_theirs"]) if verdict and "not_theirs" in verdict else None,
+           "judge_left_out": len(verdict["left_out"]) if verdict and "left_out" in verdict else None,
            "dimensions": dimensions,
            "top_fixes": (verdict or {}).get("top_fixes") or []}
     logger.info("%-7s %-10s %-42s #%d  %4.1fs pages=%s invented=%s judge=%s", candidate.name, variant,
@@ -395,6 +641,15 @@ def _with_backoff(call, *, what: str):
     raise RuntimeError("unreachable")
 
 
+def at_once(args) -> int:
+    """How many cells run together. One on a person's linked account, as the docgen worker writes: it is
+    most often a sign-in, whose tool renews the session when it starts, and two starting together can each
+    renew it, the loser retiring the sign-in for everybody (2026-11-14: one was lost to a renewal that was
+    not saved). A dry run writes nothing, but with `--judge` it still calls the reviewer."""
+    calls = not args.dry_run or getattr(args, "judge", False)
+    return 1 if args.account and calls else max(args.concurrency, 1)
+
+
 def run(args) -> int:
     jobs_root = pathlib.Path(args.jobs_dir)
     out = pathlib.Path(args.out)
@@ -407,7 +662,10 @@ def run(args) -> int:
     # Built on first use, never on start-up. `--dry-run --judge` over a grid whose verdicts are
     # all cached makes no call at all, and the docstring promises that costs nothing — it was
     # refusing to start without a credential it would never have used.
-    client = _LazyClient(args.key_file, args.account)
+    provider = getattr(args, "provider", None)
+    client = _LazyClient(args.key_file, args.account, provider)
+    # The reviewer is Claude's whoever writes: on the account in use.
+    judge = _LazyClient(args.key_file, args.account) if provider else client
 
     # Every cell up front, so the work can be spread across threads instead of across processes.
     # Four processes was the previous shape and it cost a merge step, four log files, and a rate
@@ -416,20 +674,21 @@ def run(args) -> int:
     for name, candidate in candidates.items():
         postings = load_postings(jobs_root, name, args.only.split(",") if args.only else None)
         for variant in variants:
-            template = None if args.dry_run else load_variant(variant)
+            template = None if args.dry_run else load_variant(variant, args.kind)
             if variant != UPLOADED and template is None and not args.dry_run:
                 raise SystemExit(f"variant {variant} has no prompt")
             for posting in postings:
                 for sample in range(1, args.samples + 1):
                     cells.append((candidate, posting, variant, sample, template))
 
-    logger.info("%d cell(s), %d at a time", len(cells), args.concurrency)
+    logger.info("%d cell(s), %d at a time", len(cells), at_once(args))
     rows: list[dict] = []
     failed = 0
-    with futures.ThreadPoolExecutor(max_workers=max(args.concurrency, 1)) as pool:
+    with futures.ThreadPoolExecutor(max_workers=at_once(args)) as pool, \
+            contextlib.closing(checkers):
         pending = {pool.submit(_run_cell, client, candidate, posting, variant=variant, sample=sample,
-                               template=template, out=out, args=args): (candidate.name, variant,
-                                                                        posting.slug, sample)
+                               template=template, out=out, args=args, judge=judge): (
+                                   candidate.name, variant, posting.slug, sample)
                    for candidate, posting, variant, sample, template in cells}
         for done in futures.as_completed(pending):
             try:
@@ -446,28 +705,52 @@ def run(args) -> int:
         # measured all of them is how a prompt gets adopted on a partial comparison.
         logger.warning("%d of %d cell(s) failed — re-run the same command to fill them in",
                        failed, len(cells))
-    return _finish(rows, out, args.baseline)
+    look = getattr(args, "look", None)
+    baseline = args.baseline if look in (None, templates.DEFAULT) else f"{args.baseline}@{look}"
+    return _finish(rows, out, baseline, args.kind)
 
 
-def _finish(rows: list[dict], out: pathlib.Path, baseline: str = "live") -> int:
+def _finish(rows: list[dict], out: pathlib.Path, baseline: str = "live", kind: str = "cv") -> int:
     if not rows:
         logger.warning("nothing was measured, so nothing was written")
         return 1
-    (out / "results.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    # A letter's grid may share a folder with a CV's, so neither writes over the other's numbers.
+    tag = "" if kind == "cv" else ".cover"
+    (out / f"results{tag}.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
     board = scoreboard(rows, baseline)
     print(board)
-    (out / "scoreboard.md").write_text(board, encoding="utf-8")
+    (out / f"scoreboard{tag}.md").write_text(board, encoding="utf-8")
     return 0
 
 
 # ── the numbers ───────────────────────────────────────────────────────────────────────────────
 
-MECHANICAL = ("first_person", "profile_first_person", "colon_bullets", "emdash_violations",
-              "cliches", "profile_words", "entries", "bullets", "est_pages", "pages", "ats_issues",
-              "invented", "seconds")
+MECHANICAL = ("first_person", "profile_first_person", "third_person", "profile_third_person",
+              "present_in_ended", "past_in_held",
+              "task_bullets", "said_twice",
+              "colon_bullets", "emdash_violations",
+              "cliches", "profile_words", "entries", "bullets", "est_pages", "pages", "fitted", "ats_issues",
+              "ats_score", "ats_title", "ats_dates",
+              "faults", "invented", "seconds", "tokens_in", "tokens_out", "over_ceiling")
+
+# The per-variant table, a column for each of ours that any row has: a letter has no bullets to count.
+COLUMNS = (("1st person", "first_person"), ("profile 1p", "profile_first_person"),
+           ("3rd-person bullets", "third_person"), ("profile in 3rd person", "profile_third_person"),
+           ("present in an ended job", "present_in_ended"),
+           ("past in a held job", "past_in_held"), ("task bullets", "task_bullets"),
+           ("said twice in the same words", "said_twice"),
+           ("colon bullets", "colon_bullets"), ("em-dash", "emdash_violations"), ("clichés", "cliches"),
+           ("profile words", "profile_words"), ("entries", "entries"), ("pages", "pages"),
+           ("lines taken up", "fitted"), ("ATS checks passed, of 100", "ats_score"),
+           ("job title in it", "ats_title"), ("dates in one form", "ats_dates"),
+           ("sent back for", "faults"), ("not theirs", "invented"),
+           ("seconds", "seconds"), ("tokens in", "tokens_in"), ("tokens out", "tokens_out"),
+           ("over a key's ceiling", "over_ceiling"))
 
 DIMENSIONS = ("six_second_pull", "role_angle_fit", "relevance_coverage", "achievement_quality",
               "human_voice", "defensibility", "keyword_integration")
+# What the reviewer lists beside its marks, as counts.
+FOUND = ("judge_not_theirs", "judge_left_out")
 
 
 def _value(row: dict, key: str):
@@ -493,6 +776,29 @@ def _variant_mean(rows: list[dict], variant: str, key: str) -> float | None:
     return _mean([_value(row, key) for row in rows if row["variant"] == variant])
 
 
+def _means(rows: list[dict], variants: list[str], outside: list[str]) -> list[str]:
+    """One person's means per variant: ours, a column for each measure any row has, then outside tools'."""
+    ours = [(label, key) for label, key in COLUMNS if any(_value(row, key) is not None for row in rows)]
+    lines = ["| variant | n | judge /100 | judged | " + " | ".join(label for label, _ in ours) + " |",
+             "|---|---|---|---|" + "---|" * len(ours)]
+    theirs = [f"| variant | n | {' | '.join(outside)} |", "|---|---|" + "---|" * len(outside)]
+    for variant in variants:
+        group = [row for row in rows if row["variant"] == variant]
+        if not group:
+            continue
+        scored = [row["overall_100"] for row in group if row["overall_100"] is not None]
+        judged = f"{statistics.mean(scored):.1f}" if scored else "n/a"
+
+        def avg(key: str, rows_in: list[dict] = group) -> str:
+            value = _mean([_value(row, key) for row in rows_in])
+            return "n/a" if value is None else f"{value:.1f}"
+        lines.append(f"| {variant} | {len(group)} | {judged} | {len(scored)}/{len(group)} | "
+                     + " | ".join(avg(key) for _, key in ours) + " |")
+        theirs.append(f"| {variant} | {len(group)} | " + " | ".join(avg(key) for key in outside) + " |")
+    said = ["What tools that are not ours said, as means:", "", *theirs, ""] if outside else []
+    return [*lines, "", *said]
+
+
 def scoreboard(rows: list[dict], baseline: str = "live") -> str:
     """Per-variant means, then the paired comparison, then what did not move."""
     variants = list(dict.fromkeys(row["variant"] for row in rows))
@@ -504,29 +810,12 @@ def scoreboard(rows: list[dict], baseline: str = "live") -> str:
     candidates = list(dict.fromkeys(row["candidate"] for row in rows))
     lines: list[str] = []
 
+    # What tools that are not ours said (`checkers.py`), each measure as `<checker>.<measure>`.
+    outside = sorted({key for row in rows for key in row if "." in key})
+
     for name in candidates:
         mine = [row for row in rows if row["candidate"] == name]
-        lines += [f"### {name}", "",
-                  "| variant | n | judge /100 | judged | 1st person | profile 1p | colon bullets | "
-                  "em-dash | clichés | profile words | entries | pages | numbers not theirs | seconds |",
-                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
-        for variant in variants:
-            group = [row for row in mine if row["variant"] == variant]
-            if not group:
-                continue
-            scored = [row["overall_100"] for row in group if row["overall_100"] is not None]
-            def avg(key: str, rows_in: list[dict] = group) -> str:
-                value = _mean([_value(row, key) for row in rows_in])
-                return "n/a" if value is None else f"{value:.1f}"
-            lines.append(
-                f"| {variant} | {len(group)} "
-                f"| {f'{statistics.mean(scored):.1f}' if scored else 'n/a'} "
-                f"| {len(scored)}/{len(group)} "
-                f"| {avg('first_person')} | {avg('profile_first_person')} "
-                f"| {avg('colon_bullets')} | {avg('emdash_violations')} | {avg('cliches')} "
-                f"| {avg('profile_words')} | {avg('entries')} | {avg('pages')} | {avg('invented')} "
-                f"| {avg('seconds')} |")
-        lines.append("")
+        lines += [f"### {name}", "", *_means(mine, variants, outside)]
 
     # The comparison. Paired on (candidate, posting) so a hard posting cannot favour whichever
     # variant happened to draw it, and averaged within a group first so one role listed in a dozen
@@ -539,7 +828,7 @@ def scoreboard(rows: list[dict], baseline: str = "live") -> str:
         lines += [f"### {variant} vs {base}, paired by posting", "",
                   "| measure | mean difference | spread (sd) | std error | pairs higher / lower / same |",
                   "|---|---|---|---|---|"]
-        for key in ("overall_100", *MECHANICAL, *DIMENSIONS):
+        for key in ("overall_100", *MECHANICAL, *DIMENSIONS, *FOUND, *outside):
             deltas = []
             for name in candidates:
                 by_group: dict[str, list[float]] = {}
@@ -577,8 +866,10 @@ def scoreboard(rows: list[dict], baseline: str = "live") -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--kind", choices=tuple(build.PROMPTS), default="cv",
+                        help="what is written and measured: a CV, or a cover letter")
     parser.add_argument("--variants", default="live",
-                        help="comma-separated; `live` is libs/prompts/write_cv.md, `uploaded` their own CV")
+                        help="comma-separated; `live` is the deployed prompt, `uploaded` their own document")
     parser.add_argument("--baseline", default="live", help="the variant every other is measured against")
     parser.add_argument("--candidates", default="andras,ruben",
                         help="comma-separated: a folder under --candidates-dir, or NAME=db:EMAIL")
@@ -591,18 +882,41 @@ def main() -> int:
                         help="generations per cell; one is not a result")
     parser.add_argument("--concurrency", type=int, default=4,
                         help="cells in flight at once. Higher finishes sooner and trips the "
-                             "account's rate limit sooner; a 429 is waited out, not fatal")
-    parser.add_argument("--model", default=CV_MODEL)
+                             "account's rate limit sooner; a 429 is waited out, not fatal. Always one "
+                             "with --account")
+    parser.add_argument("--provider", default=None, choices=sorted(DEFAULT_DOCUMENT_MODELS),
+                        help="with --account: write on the account they linked for this provider (codex is "
+                             "a ChatGPT sign-in) instead of the one in use, with the model it writes "
+                             "documents with; the reviewer stays on the account in use")
+    parser.add_argument("--model", default=None, help=f"default {CV_MODEL}, or the provider's own")
     parser.add_argument("--effort", default=build.EFFORT, help="how hard the model thinks (low … max)")
-    parser.add_argument("--judge", action="store_true", help="also run the recruiter verdict")
+    parser.add_argument("--codex-effort", default=None, choices=["minimal", "low", "medium", "high"],
+                        help="with --provider codex: tell Codex how hard to think; production tells it "
+                             "nothing, and the documents are kept apart under <model>@<effort>")
+    parser.add_argument("--look", default=None, choices=[each.id for each in templates.of_kind("cv")],
+                        help="the look a CV is written for and drawn in; its name joins the variant's")
+    parser.add_argument("--judge", action="store_true", help="also run the recruiter verdict (CVs)")
+    parser.add_argument("--checkers", default="",
+                        help=f"comma-separated tools that are not ours, of {', '.join(checkers.CHECKERS)}; "
+                             "each answers for its own kind of document")
     parser.add_argument("--dry-run", action="store_true",
                         help="score CVs already in --out, no API calls")
     parser.add_argument("--force", action="store_true", help="rewrite CVs already on disk")
     parser.add_argument("--key-file", default=None)
     parser.add_argument("--out", default="scripts/cvlab/out")
     args = parser.parse_args()
+    cli.CODEX_EFFORT = args.codex_effort
+    if args.model is None:
+        args.model = DEFAULT_DOCUMENT_MODELS[args.provider] if args.provider else CV_MODEL
+    args.checkers = [each for each in args.checkers.split(",") if each]
+    if unknown := set(args.checkers) - set(checkers.CHECKERS):
+        parser.error(f"no such checker: {', '.join(sorted(unknown))}")
+    if idle := [name for name in args.checkers if checkers.CHECKERS[name][1] != args.kind]:
+        parser.error(f"{', '.join(idle)} cannot read a {args.kind}")
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    # One line a request would bury the bench's own lines (CLAUDE.md §8).
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     return run(args)
 
 
