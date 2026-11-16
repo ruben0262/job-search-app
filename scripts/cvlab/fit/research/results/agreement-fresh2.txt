@@ -1,0 +1,5 @@
+216 pairs: exact 0.81, within 1 0.98, within 2 0.99, 3 or more apart 2; mean a-b +0.01, mean |a-b| 0.22
+quadratic weighted kappa 0.980
+rater a against rater b            rho 0.975 [0.96, 0.99]  pairs 0.995 [0.99, 1.00]  top5 7.22 of 7.25  good P 0.94 R 0.94  poor P 0.98 R 0.96  mae 0.22 ±1 0.98 bias +0.01
+  disputed ('plumber', 3994): a 4 b 7
+  disputed ('plumber', 8625): a 4 b 7

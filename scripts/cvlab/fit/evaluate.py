@@ -51,8 +51,9 @@ SPLIT = {
               "kundenservice", "underwriter", "it-support", "civil-engineer", "cuoco", "events"),
     # Written, drawn and read blind on 2026-11-16, night, while candidates were built on the 27 above: nothing
     # was tuned on them, and their documents were not read by whoever built the candidates.
-    "fresh2": ("security-officer", "dental-nurse", "lagerist", "delivery-driver", "teaching-assistant", "payroll",
-               "elektromonteur", "commessa", "ugyfelszolgalat", "administrativa", "plumber", "social-worker"),
+    "fresh2": ("security-officer", "dental-nurse", "lagerist", "delivery-driver", "teaching-assistant",
+               "payroll", "elektromonteur", "commessa", "ugyfelszolgalat", "administrativa", "plumber",
+               "social-worker"),
 }
 SECTOR = {
     "warehouse": "logistics", "driver": "logistics", "transport-planner": "logistics",

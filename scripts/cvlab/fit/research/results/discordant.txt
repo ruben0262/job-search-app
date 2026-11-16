@@ -1,0 +1,63 @@
+396 of 2499 clear pairs the wrong way round (15.8%)
+
+what readers said of the posting put too HIGH:
+  other                                               131  33%
+  requirement: licence/registration/qualification     112  28%
+  shared word, other work                              53  13%
+  level: above them                                    38  10%
+  requirement: years                                   37  9%
+  level: below them                                    14  4%
+  language                                             11  3%
+
+what readers said of the posting put too LOW:
+  other                                               198  50%
+  requirement: licence/registration/qualification      72  18%
+  level: above them                                    52  13%
+  requirement: years                                   31  8%
+  language                                             29  7%
+  level: below them                                    13  3%
+  shared word, other work                               1  0%
+
+by person: {'school-leaver': 44, 'office-senior': 38, 'sales': 28, 'frontend-junior': 25, 'warehouse': 23, 'hotel-reception': 23, 'transport-planner': 21, 'recruiter': 19, 'project-manager': 18, 'konyvelo': 17, 'elektriker': 16, 'accountant': 14, 'backend-dev': 13, 'paralegal': 11, 'account-executive': 11, 'teacher': 11, 'vehicle-tech': 10, 'driver': 9, 'mech-graduate': 7, 'cnc-operator': 7, 'claims-handler': 7, 'data-analyst': 6, 'site-manager': 6, 'marketing': 5, 'care-worker': 5, 'nurse': 2}
+
+shared word, other work
+   warehouse         over: Data Warehouse Engineer (1.0)  under: Warehouse Team Leader (6.0)
+   warehouse         over: Data Warehouse Engineer (1.0)  under: Warehouse Section Leader - Nights (5.0)
+   warehouse         over: Data Warehouse Engineer (1.0)  under: Retail - MCS - Warehouse/Yard Supervisor (5.0)
+   warehouse         over: Data Warehouse Engineer (1.0)  under: Warehouse Lead Operator M/F/D (7.0)
+
+other
+   warehouse         over: Warehouse Section Leader - Nights (5.0)  under: Tesco Colleague - Elgin Lossie Gren Extra (7.0)
+   warehouse         over: Warehouse & Distribution Operative (7.0)  under: Warehouse Operative (Night Shift) (9.0)
+   warehouse         over: Retail - MCS - Warehouse/Yard Supervisor (5.0)  under: Warehouse Lead Operator M/F/D (7.0)
+   warehouse         over: Retail - MCS - Warehouse/Yard Supervisor (5.0)  under: Festive Colleague - Early Mornings - Salisbury Ext (7.0)
+
+level: below them
+   transport-planner over: Logistiek medewerker (4.0)  under: Medewerker Customer Service & Ordermanagement (7.0)
+   transport-planner over: Logistiek & Magazijnmedewerker Retail Cruquius (4.0)  under: Medewerker Customer Service & Ordermanagement (7.0)
+   transport-planner over: Magazijnmedewerker (Inbound Logistiek) (3.5)  under: Business Consultant Transport (7.0)
+   transport-planner over: Logistiek medewerker (4.0)  under: Business Consultant Transport (7.0)
+
+requirement: licence/registration/qualification
+   transport-planner over: Data Scientist (1.0)  under: Supply Chain Manager (4.0)
+   transport-planner over: Data Scientist (1.0)  under: Assistant Warehouse Manager (5.0)
+   nurse             over: Neonatal Staff Nurse (5.0)  under: Community Nurse - Buckley District Nursing Team (7.0)
+   nurse             over: ADHD Nurse Prescriber (3.0)  under: Clinical Advisor (5.5)
+
+requirement: years
+   transport-planner over: Product Owner ERP (2.0)  under: Supply Chain Manager (4.0)
+   transport-planner over: Product Owner ERP (2.0)  under: Assistant Warehouse Manager (5.0)
+   transport-planner over: Product Owner ERP (2.0)  under: Baliemedewerker / Magazijnmedewerker | DYKA Eindho (5.0)
+   transport-planner over: Assistent Coördinator Logistiek (5.0)  under: Business Consultant Transport (7.0)
+
+level: above them
+   sales             over: Senior Marketing Manager, Commercial Marketing (Gr (2.0)  under: Tesco Shift Leader - Days - Nottingham Castle Boul (7.0)
+   sales             over: National Account Manager (Retail) - Myprotein (2.5)  under: Tesco Shift Leader - Days - Nottingham Castle Boul (7.0)
+   sales             over: Head of Retail (2.0)  under: Tesco Shift Leader - Days - Nottingham Castle Boul (7.0)
+   sales             over: Assistant Manager | Regent Street (5.0)  under: Tesco Shift Leader - Days - Nottingham Castle Boul (7.0)
+
+language
+   hotel-reception   over: Chef de rang tournante - Hotel Cappella Alta Badia (4.0)  under: Executive Office Assistant (7.5)
+   accountant        over: Senior Technical Account Manager - Portfolios - Sp (2.5)  under: Accountancy and Finance Graduate (5.5)
+   accountant        over: Senior Technical Account Manager - Portfolios - Sp (2.5)  under: Lead Finance Partner - Consolidation (4.5)
+   accountant        over: LATAM Enterprise Account Executive - Spanish speak (1.5)  under: Head of Corporate Reporting & Financial Operations (3.5)

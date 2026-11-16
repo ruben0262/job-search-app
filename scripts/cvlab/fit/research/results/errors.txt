@@ -1,0 +1,191 @@
+current score, left out one at a time  rho 0.661  pairs 0.841  top5 6.600  mae 1.753  p7 0.556  r7 0.650  bias 0.122  p3 0.642  r3 0.646
+
+by label band
+  1-2                        n 126  mean error +1.08  mean |error| 1.29  share of squared error 16.6%
+  3-4                        n 134  mean error +0.78  mean |error| 1.75  share of squared error 25.7%
+  5-6                        n  93  mean error +0.08  mean |error| 1.96  share of squared error 19.4%
+  7-8                        n 100  mean error -1.18  mean |error| 2.04  share of squared error 27.5%
+  9-10                       n  37  mean error -1.88  mean |error| 2.04  share of squared error 10.8%
+
+by sector
+  IT                         n  54  mean error +0.22  mean |error| 1.30  share of squared error  6.3%
+  education                  n  20  mean error +0.70  mean |error| 1.30  share of squared error  1.9%
+  finance                    n  38  mean error -0.34  mean |error| 1.68  share of squared error  7.7%
+  health and care            n  30  mean error +1.08  mean |error| 1.98  share of squared error  6.5%
+  hospitality                n  57  mean error +0.04  mean |error| 1.98  share of squared error 14.2%
+  logistics                  n  58  mean error -1.35  mean |error| 1.96  share of squared error 14.3%
+  marketing                  n  19  mean error +1.26  mean |error| 1.32  share of squared error  2.0%
+  office, legal, HR          n  72  mean error +0.65  mean |error| 1.63  share of squared error 13.8%
+  projects and building      n  36  mean error +1.56  mean |error| 1.97  share of squared error  9.1%
+  sales                      n  38  mean error +0.26  mean |error| 1.71  share of squared error  7.8%
+  trades and making          n  68  mean error -0.67  mean |error| 1.98  share of squared error 16.3%
+
+by blocker readers named
+  both: language             n  12  mean error -0.50  mean |error| 1.25  share of squared error  1.2%
+  both: other                n   3  mean error +1.83  mean |error| 1.83  share of squared error  0.5%
+  both: qualification/degree n  23  mean error +1.33  mean |error| 1.93  share of squared error  5.7%
+  both: registration/licence n  12  mean error +1.88  mean |error| 1.96  share of squared error  2.8%
+  both: years/seniority      n  10  mean error +0.45  mean |error| 2.15  share of squared error  2.3%
+  none                       n 367  mean error -0.17  mean |error| 1.80  share of squared error 78.4%
+  one: eligibility           n   1  mean error +1.00  mean |error| 1.00  share of squared error  0.0%
+  one: language              n   1  mean error +1.00  mean |error| 1.00  share of squared error  0.0%
+  one: other                 n   6  mean error +1.25  mean |error| 1.42  share of squared error  0.8%
+  one: qualification/degree  n   7  mean error +1.64  mean |error| 1.79  share of squared error  1.6%
+  one: registration/licence  n   2  mean error +3.25  mean |error| 3.25  share of squared error  1.0%
+  one: years/seniority       n  46  mean error +0.82  mean |error| 1.29  share of squared error  5.5%
+
+by how the posting was drawn
+  bench                      n  15  mean error -1.30  mean |error| 2.03  share of squared error  3.4%
+  text                       n 204  mean error -0.01  mean |error| 1.62  share of squared error 37.2%
+  title                      n 271  mean error +0.30  mean |error| 1.84  share of squared error 59.4%
+
+by person
+  account-executive          n  18  mean error +0.56  mean |error| 1.61  share of squared error  3.0%
+  accountant                 n  18  mean error +1.03  mean |error| 1.69  share of squared error  3.6%
+  backend-dev                n  18  mean error -0.25  mean |error| 0.97  share of squared error  1.5%
+  care-worker                n  12  mean error -0.58  mean |error| 1.67  share of squared error  2.0%
+  chef                       n  20  mean error +1.45  mean |error| 1.45  share of squared error  2.4%
+  claims-handler             n  18  mean error +0.25  mean |error| 1.25  share of squared error  1.6%
+  cnc-operator               n  18  mean error -1.33  mean |error| 1.39  share of squared error  2.7%
+  data-analyst               n  18  mean error +0.08  mean |error| 0.97  share of squared error  1.0%
+  driver                     n  20  mean error -0.35  mean |error| 1.30  share of squared error  1.8%
+  elektriker                 n  18  mean error -3.06  mean |error| 3.06  share of squared error  8.3%
+  frontend-junior            n  18  mean error +0.83  mean |error| 1.94  share of squared error  3.8%
+  hotel-reception            n  18  mean error +0.08  mean |error| 1.86  share of squared error  3.8%
+  konyvelo                   n  20  mean error -1.57  mean |error| 1.68  share of squared error  4.1%
+  marketing                  n  19  mean error +1.26  mean |error| 1.32  share of squared error  2.0%
+  mech-graduate              n  18  mean error +1.47  mean |error| 1.64  share of squared error  2.9%
+  nurse                      n  18  mean error +2.19  mean |error| 2.19  share of squared error  4.6%
+  office-senior              n  19  mean error +0.00  mean |error| 1.79  share of squared error  4.4%
+  paralegal                  n  17  mean error +2.53  mean |error| 2.59  share of squared error  6.4%
+  project-manager            n  18  mean error +0.94  mean |error| 1.78  share of squared error  3.6%
+  recruiter                  n  18  mean error -0.06  mean |error| 0.94  share of squared error  1.4%
+  sales                      n  20  mean error +0.00  mean |error| 1.80  share of squared error  4.8%
+  school-leaver              n  19  mean error -1.50  mean |error| 2.66  share of squared error  8.1%
+  site-manager               n  18  mean error +2.17  mean |error| 2.17  share of squared error  5.5%
+  teacher                    n  20  mean error +0.70  mean |error| 1.30  share of squared error  1.9%
+  transport-planner          n  18  mean error -1.67  mean |error| 2.00  share of squared error  5.1%
+  vehicle-tech               n  14  mean error +0.50  mean |error| 1.79  share of squared error  2.4%
+  warehouse                  n  20  mean error -2.08  mean |error| 2.58  share of squared error  7.5%
+
+the 40 largest misses
+  transport-planner  18075 shown  2 label  8.0  t 0.02 c 0.015 up 0 bl 0  | Junior Transport Planner & Operations Support
+      a: planning transports with external carriers and solving problems, which he does daily with charters; a junior role asking for HBO level, below his experience
+      blocker: None / None
+  sales                804 shown  1 label  7.0  t 0.00 c 0.058 up 1 bl 0  | Tesco Shift Leader - Days - Nottingham Castle Boulevard Expr
+      a: Leading shifts in a Tesco Express and running the store when the manager is out; she already opens and closes on Sundays and trains new starters, but has not held a team leader post.
+      blocker: None / None
+  sales              23490 shown  4 label 10.0  t 0.00 c 0.087 up 0 bl 0  | POP MART - Full Time Retail Assistant
+      a: Her job: retail assistant giving customer service, handling complaints and opening and closing the till, all of which she does now.
+      blocker: None / None
+  school-leaver       9239 shown  3 label  9.0  t 0.00 c 0.068 up 0 bl 0  | Waiting Team Member
+      a: an entry-level server job where experience is a bonus; his cafe work taking orders and serving fits it
+      blocker: None / None
+  school-leaver      21816 shown  3 label  9.0  t 0.04 c 0.059 up 0 bl 0  | Food & Beverage Waiter/Waitress
+      a: an entry-level waiter job taking orders, using the till and keeping the station stocked, the same kind of work as his cafe job
+      blocker: None / None
+  konyvelo           29539 shown  1 label  7.0  t 0.22 c 0.171 up 2 bl 0  | Vezető könyvelő
+      a: checking, posting and issuing invoices she does, posted to projects and profit centres; the lead-accountant title is a step above her accountant role.
+      blocker: None / None
+  cnc-operator       29770 shown  2 label  7.5  t 0.00 c 0.017 up 0 bl 0  | Minőségbiztosítási technikus
+      a: A quality technician at a CNC parts maker; he already measures parts with hand tools and keeps SPC sheets, and lacks only CMM, 8D reports and complaint handling, which are pluses or learnable.
+      blocker: None / None
+  office-senior      20309 shown  8 label  2.5  t 1.00 c 0.109 up 0 bl 0  | Personal Assistant – JEANCL
+      a: a support worker for two autistic young people on day and night shifts; the 'personal assistant' title is shared but it is a care job, not office support.
+      blocker: None / None
+  office-senior      20727 shown  8 label  2.5  t 1.00 c 0.079 up 0 bl 0  | Personal Assistant – LTNCL
+      a: a home support worker for a visually impaired mother and her baby, with housework and driving; shares the 'personal assistant' title, not the work.
+      blocker: None / None
+  warehouse           5302 shown  6 label  1.0  t 0.27 c 0.116 up 0 bl 0  | Data Warehouse Engineer
+      a: a data warehouse software developer; shares the word warehouse, nothing else
+      blocker: None / None
+  warehouse          20666 shown  2 label  7.0  t 0.00 c 0.024 up 0 bl 0  | Tesco Colleague - Elgin Lossie Gren Extra
+      a: a supermarket colleague working the picking, replenishment and delivery areas as well as service; close to his warehouse work, with serving customers the new part
+      blocker: None / None
+  accountant          9322 shown 10 label  5.0  t 0.88 c 0.257 up 0 bl 0  | Systems Accountant
+      a: half the job is management reporting, budgeting and planning models he already does, but it wants a qualified accountant with BI or systems experience and SQL, where he is part-qualified with basic Po
+      blocker: None / ACA, ACCA or CIMA qualified; they have passed 9 of 13 ACCA exams with four still to sit
+  accountant         12154 shown 10 label  5.0  t 1.00 c 0.210 up 0 bl 0  | Accountant - UK
+      a: he can do the ledger, payables and reconciliations, but the job centres on Australian compliance (BAS, GST, FBT, superannuation, payroll) he has never handled, and it sits below his level
+      blocker: 1-2 years of Australian accounting experience / None
+  elektriker         16322 shown  3 label  8.0  t 0.00 c 0.059 up 0 bl 0  | Servicetechniker / Elektroniker (m/w/d) - IoT & Gebäudetechn
+      a: installing and servicing IoT devices in residential heating rooms, needing electrical training, practical experience, C1 German and a B licence, all met; IoT, field buses and heating controls are opti
+      blocker: None / None
+  elektriker         16444 shown  2 label  7.0  t 0.00 c 0.030 up 0 bl 0  | Elektriker/Mechatroniker m/w/d in der Maschineninstandhaltun
+      a: electrical maintenance of production machines accepts his trade, but he has worked in buildings rather than on machinery and shows no PLC knowledge, which the posting rates as a plus.
+      blocker: None / None
+  elektriker         16499 shown  5 label 10.0  t 0.40 c 0.057 up 0 bl 0  | Elektroniker (m/w/d) Energie- und Gebäudetechnik
+      a: his job: Elektroniker fuer Energie- und Gebaeudetechnik on new-build and renovation sites, laying cable, wiring distribution boards, testing and documenting.
+      blocker: None / None
+  paralegal          11258 shown  9 label  4.0  t 0.70 c 0.270 up 0 bl 0  | Conveyancing Solicitor
+      a: the residential conveyancing caseload she handles, but the posting requires a qualified solicitor
+      blocker: qualified solicitor / qualified solicitor
+  paralegal          13560 shown  9 label  4.0  t 0.70 c 0.252 up 0 bl 0  | Conveyancing Solicitor - Real Estate Finance
+      a: conveyancing caseload work she already does, but the role is for a qualified solicitor with lender finance experience
+      blocker: qualified solicitor status / qualified solicitor (or real estate finance experience)
+  paralegal          13807 shown  9 label  4.0  t 0.54 c 0.326 up 1 bl 0  | Head of Conveyancing
+      a: head of a conveyancing department, ideally a solicitor with about 5 years PQE; her field but three or more steps above a paralegal
+      blocker: None / None
+  paralegal          26188 shown  8 label  3.0  t 1.00 c 0.091 up 0 bl 0  | Paralegal
+      a: a US federal litigation paralegal job (discovery, depositions, Westlaw); it shares the title but not the work or the legal system
+      blocker: None / None
+  project-manager    23627 shown  8 label  3.0  t 1.00 c 0.075 up 0 bl 0  | Project Manager
+      a: A data centre construction project manager role requiring a construction or engineering qualification; he is an IT project manager with no engineering background.
+      blocker: construction or engineering qualification and data centre construction experience / a construction or engineering degree and a professional qualification such as chartered engineer
+  account-executive  13792 shown  8 label  3.0  t 1.00 c 0.067 up 0 bl 0  | Account Executive
+      a: an agency 'account executive' coordinating campaigns for managers, a graduate-level client-service job that shares her title but not her sales work.
+      blocker: None / None
+  school-leaver       8720 shown  4 label  9.0  t 0.07 c 0.065 up 0 bl 0  | Christmas Food Runner
+      a: food running in a busy restaurant is close to his cafe work (orders, drinks, clearing tables), and he has the six months of work history it prefers
+      blocker: None / None
+  site-manager        6127 shown  7 label  2.0  t 0.66 c 0.080 up 0 bl 0  | Project Manager - Agile, Cloud, Jira
+      a: An IT cloud infrastructure project manager; little in common with construction site management.
+      blocker: None / None
+  site-manager        8046 shown  7 label  2.0  t 0.66 c 0.074 up 0 bl 0  | Project Manager
+      a: A technology transformation project manager for a food-waste app; little in common with construction site management.
+      blocker: None / None
+  site-manager       13542 shown  7 label  2.0  t 0.66 c 0.067 up 0 bl 0  | Project Manager
+      a: An IT project manager for a trading system with ITIL and service operations; little in common with running building sites.
+      blocker: None / None
+  hotel-reception    22927 shown  1 label  5.5  t 0.00 c 0.025 up 0 bl 1  | Race Office - Segreteria di Regata
+      a: Regatta office registrations, correspondence and welcoming participants are front and back office work she could do, but it asks for a university degree she lacks and social media content skills.
+      blocker: None / None
+  elektriker         22461 shown  3 label  7.5  t 0.00 c 0.057 up 0 bl 0  | Servicetechniker Tür- und Toranlagen (m/w/d)
+      a: door and gate service technician written for electricians, fitting his maintenance and repair background and licence; door and gate systems themselves would be new to him.
+      blocker: None / None
+  elektriker         22474 shown  3 label  7.5  t 0.00 c 0.051 up 0 bl 0  | Servicetechniker Automatiktüren (m/w/d)
+      a: a service technician post written for electricians, matching his customer-service fault-finding and repair work and B licence; automatic doors and their mechanics are a specialism he has not touched y
+      blocker: None / None
+  backend-dev        24157 shown  2 label  6.5  t 0.00 c 0.031 up 0 bl 0  | Applied AI Engineer
+      a: Building AI-integration prototypes in Python and React on AWS; he has the Python, AWS, API integration work and some React, but no AI tools experience and has been backend-only.
+      blocker: None / None
+  school-leaver      13650 shown  3 label  7.5  t 0.00 c 0.048 up 0 bl 0  | Apprentice Client Support Administrator
+      a: a client support apprenticeship asking for five GCSEs including English and Maths and customer-facing experience such as hospitality, both of which he has; office work would be new
+      blocker: None / None
+  vehicle-tech       20088 shown  9 label  4.5  t 1.00 c 0.161 up 0 bl 0  | Garage Technician - Tire Technician
+      a: his Level 3 meets the qualification, but this is trackside F1 tyre preparation and pit-stop support requiring elite motorsport tyre experience; garage tyre work and track days are not that.
+      blocker: proven tyre-technician experience in F1 or elite international motorsport / None
+  warehouse          20261 shown  3 label  7.0  t 0.18 c 0.135 up 1 bl 0  | Warehouse Lead Operator M/F/D
+      a: a lead operator who supports the team leader and runs the shift when needed; he has the warehouse experience and forklift licence, but no leading yet and weak written English for the good written skil
+      blocker: None / None
+  warehouse          20561 shown  3 label  7.0  t 0.00 c 0.052 up 0 bl 0  | Festive Colleague - Early Mornings - Salisbury Extra
+      a: a supermarket festive role stocking shelves and picking click-and-collect orders, close to his warehouse picking; serving customers in a store would be the new part
+      blocker: None / None
+  warehouse          20603 shown  3 label  7.0  t 0.00 c 0.059 up 0 bl 0  | Festive Colleague - Twilights - Keith Superstore
+      a: a supermarket festive role stocking shelves and picking click-and-collect orders, close to his warehouse picking; serving customers in a store would be the new part
+      blocker: None / None
+  warehouse          20643 shown  3 label  7.0  t 0.00 c 0.052 up 0 bl 0  | Festive Colleague - Early Mornings - Kettering Extra
+      a: a supermarket festive role stocking shelves and picking click-and-collect orders, close to his warehouse picking; serving customers in a store would be the new part
+      blocker: None / None
+  warehouse          20682 shown  3 label  7.0  t 0.00 c 0.062 up 0 bl 0  | Festive Colleague - Days - Marlborough
+      a: a supermarket festive role stocking shelves and picking click-and-collect orders, close to his warehouse picking; serving customers in a store would be the new part
+      blocker: None / None
+  warehouse          20765 shown  3 label  7.0  t 0.00 c 0.062 up 0 bl 0  | Festive Colleague - Days - Ripon
+      a: a supermarket festive role stocking shelves and picking click-and-collect orders, close to his warehouse picking; serving customers in a store would be the new part
+      blocker: None / None
+  transport-planner   4105 shown  3 label  7.0  t 0.17 c 0.037 up 0 bl 0  | Medewerker Customer Service & Ordermanagement
+      a: international order management and customer follow-up, close to his earlier logistics customer-service work; customs, SAP and spare parts would be new, and his English may fall short of the C level as
+      blocker: None / None
+  transport-planner  18046 shown  3 label  7.0  t 0.00 c 0.051 up 0 bl 0  | Business Consultant Transport
+      a: setting up and training transport companies on planning software; he meets the three years of transport experience and knows TMS from the planner's side, but has not done implementation or consultancy
+      blocker: None / None

@@ -1,0 +1,6 @@
+seen 27: 25 pairs capped of 490, readers' mean label 3.46, at 5 or more 6
+   staff only 4, prescribing 3, hgv/lgv 3, driver cpc 2, chartered engineer 2, meister/techniker 2, forklift 2, cfa 1, gmc 1, nursing registration 1, solicitor 1, aircraft licence 1, driving licence 1, aca/icaew/acca/cima 1, cilex 1, students only 1, hcpc 1
+fresh 12: 2 pairs capped of 216, readers' mean label 2.75, at 5 or more 0
+   electrical qualification (de/pl/hu) 1, security clearance 1
+fresh2 12: 23 pairs capped of 216, readers' mean label 2.85, at 5 or more 0
+   nursing registration 5, hgv/lgv 4, driver cpc 3, licence c+e 3, licence c/c1 2, security clearance 1, gdc 1, solicitor 1, students only 1, meister/techniker 1, electrical qualification (de/pl/hu) 1, aat/acca/accountancy qualification/cima 1, adr 1, bus licence d/licence c+e 1, gas safe 1, cilex 1, aca/icaew/acca/cima 1, teaching qualification 1, prescribing 1, staff only 1

@@ -1,0 +1,148 @@
+warehouse         held ['driving licence', 'forklift'] half [] degree 0
+transport-planner held ['driver cpc', 'driving licence'] half [] degree 0
+nurse             held ['driving licence', 'nursing registration'] half [] degree 1
+sales             held [] half [] degree 0
+chef              held ['food hygiene'] half [] degree 0
+hotel-reception   held [] half [] degree 0
+accountant        held [] half ['acca', 'accountancy qualification'] degree 1
+elektriker        held ['driving licence', 'trade certificate (de)'] half [] degree 0
+mech-graduate     held ['driving licence'] half [] degree 2
+paralegal         held [] half ['solicitor'] degree 1
+recruiter         held [] half [] degree 2
+marketing         held [] half [] degree 1
+backend-dev       held [] half [] degree 1
+project-manager   held [] half [] degree 2
+driver            held ['adr', 'digital tachograph card', 'driver cpc', 'driving licence', 'hgv/lgv', 'licence c+e', 'licence c/c1'] half [] degree 0
+care-worker       held ['care qualification', 'driving licence'] half [] degree 0
+account-executive held [] half [] degree 0
+school-leaver     held [] half [] degree 0
+konyvelo          held ['driving licence', 'trade certificate (hu)'] half ['accountancy qualification'] degree 0
+vehicle-tech      held ['driving licence', 'f-gas', 'vehicle technician qualification'] half [] degree 0
+cnc-operator      held ['driving licence', 'forklift', 'trade certificate (hu)'] half [] degree 0
+office-senior     held ['nebosh/iosh'] half [] degree 0
+claims-handler    held ['insurance qualification'] half [] degree 0
+teacher           held ['cipd', 'driving licence'] half ['teaching qualification'] degree 1
+frontend-junior   held [] half [] degree 1
+data-analyst      held [] half [] degree 1
+site-manager      held ['cscs', 'driving licence', 'smsts/sssts'] half [] degree 0
+
+missing credential: 22 pairs, mean label 3.57, a reader named a blocker for 11
+   warehouse          8.0 [['driver cpc']] deg+0 | Recruitment Day - Transport & Warehouse - Sat | -
+   warehouse          1.0 [['cfa']] deg+0 | Director / Sr VP - Warehouse Finance (ABL/Sec | -
+   nurse              6.5 [['prescribing']] deg+0 | Clinical Nurse Specialist Endometriosis | -
+   nurse              3.0 [['prescribing']] deg+0 | ADHD Nurse Prescriber | a non-medical prescribing qualification and ADHD prescribing experienc
+   nurse              3.0 [['prescribing']] deg+1 | Community Addictions Advanced Nurse Practitio | expert drug and alcohol experience; the post is open only to NHS Ayrsh
+   nurse              1.0 [['chartered engineer']] deg+0 | Principal Electrical Design Engineer | an electrical engineering qualification, IEng/CEng and 5 years as a se
+   nurse              2.0 [['gmc']] deg+0 | Clinical Lead Psychiatrist | GMC registration with a CCT in psychiatry
+   elektriker         7.0 [['meister/techniker']] deg+0 | Elektroniker als Servicetechniker (w/m/d) Net | -
+   elektriker         4.0 [['meister/techniker']] deg+0 | Senior Technical Expert (m/w/d) | further qualification as Meister or Techniker
+   teacher            3.0 [['nursing registration']] deg+0 | Clinical Trainer | a nursing degree with NMC registration, and five years of community co
+   teacher            3.0 [['driver cpc'], ['hgv/lgv']] deg+0 | Driver Trainer | a Class 1 (C+E) licence with Class 1 driving experience, and an LGV as
+   project-manager    3.0 [['chartered engineer']] deg+0 | Project Manager | construction or engineering qualification and data centre construction
+   accountant         2.0 [['solicitor']] deg+0 | Senior Project Development Counsel | law degree and admission to practise in England with 15-20 years PQE
+   vehicle-tech       3.0 [['aircraft licence']] deg+0 | CAT A Licensed Mechanic – Birmingham | EASA/UK CAA Part-66 Cat A licence and aircraft line maintenance experi
+   vehicle-tech       2.5 [['hgv/lgv']] deg+0 | APPRENTICESHIPS | -
+   vehicle-tech       6.0 [['hgv/lgv']] deg+0 | HGV Technician | -
+   claims-handler     2.0 [['driving licence']] deg+0 | Parcelforce Collection & Delivery Driver - Ed | -
+   claims-handler     1.5 [['aca/icaew', 'acca', 'cima']] deg+2 | Oracle Cloud Procure-to-Pay Manager | -
+   paralegal          6.0 [['cilex']] deg+0 | Paralegal (Motor / Casualty Claims) | -
+   transport-planner  4.0 [['forklift']] deg+0 | Logistiek medewerker | -
+   transport-planner  5.0 [['forklift']] deg+0 | Baliemedewerker / Magazijnmedewerker | DYKA E | -
+   care-worker        2.0 [['hcpc']] deg+0 | Specialist Biomedical Scientist - Clinical Bi | HCPC registration and a biomedical science degree; also internal staff
+
+half-held credential: 14 pairs, mean label 5.14, a reader named a blocker for 6
+   konyvelo           8.0  deg+0 | Könyvelő (Pályakezdők jelentkezését is várjuk | -
+   konyvelo           4.0  deg+0 | Senior számviteli szakértő | economics degree and IFRS chartered accountant qualification
+   konyvelo           7.0  deg+0 | Könyvelő | -
+   teacher            3.0 [['nursing registration']] deg+0 | Clinical Trainer | a nursing degree with NMC registration, and five years of community co
+   accountant         3.5  deg+1 | Oracle Cloud ERP Finance Technical Consultant | -
+   accountant         5.0  deg+0 | Systems Accountant | ACA, ACCA or CIMA qualified; they have passed 9 of 13 ACCA exams with 
+   accountant         4.5  deg+0 | Lead Finance Partner - Consolidation | CIMA/ACA/ACCA qualified; they have passed 9 of 13 ACCA exams
+   paralegal          6.5  deg+0 | Conveyancing Solicitor NQ - 3PQE | -
+   paralegal          4.0  deg+0 | Conveyancing Solicitor - Real Estate Finance | qualified solicitor status
+   paralegal          6.5  deg+0 | Conveyancing Solicitor NQ - 5PQE | -
+   paralegal          4.0  deg+0 | Head of Conveyancing | -
+   paralegal          4.0  deg+0 | Conveyancing Solicitor | qualified solicitor
+   paralegal          6.0  deg+0 | Employment Paralegal | -
+   paralegal          6.0  deg+0 | Legal Professionals | -
+
+degree short: 22 pairs, mean label 4.02, a reader named a blocker for 7
+   nurse              3.0 [['prescribing']] deg+1 | Community Addictions Advanced Nurse Practitio | expert drug and alcohol experience; the post is open only to NHS Ayrsh
+   school-leaver      6.5  deg+1 | Apprentice Health Care Support Worker - Bersh | -
+   school-leaver      2.0  deg+1 | Technical Graduate Trainee - Linton, Attlebor | a 2:2 degree
+   school-leaver      1.0  deg+2 | Junior Managers Program (Trainee) - Start you | master's degree and fluent German
+   school-leaver      4.0  deg+1 | Junior Journalist Apprenticeship - SCQF 7 - B | -
+   teacher            2.5  deg+1 | Project Management Graduate | -
+   office-senior      6.0  deg+1 | Executive Assistant, Biostatistics | -
+   office-senior      7.5  deg+1 | Executive Assistant | -
+   backend-dev        4.5  deg+1 | Staff Backend Engineer | 8 years including 2 in multi-team technical leadership and 3 designing
+   backend-dev        4.5  deg+1 | Machine Learning Engineer | strong experience developing and deploying ML models (TensorFlow/Keras
+   project-manager    3.0  deg+1 | Senior Study Delivery Lead | health or life sciences degree and 6+ years of clinical trial manageme
+   account-executive  7.5  deg+1 | Sr. Account Executive, II | -
+   account-executive  3.0  deg+2 | Account Executive | -
+   accountant         3.5  deg+1 | Oracle Cloud ERP Finance Technical Consultant | -
+   accountant         1.0  deg+1 | Engineering Manager, Applied AI & Data Scienc | -
+   claims-handler     4.0  deg+1 | Customer Service Manager | -
+   claims-handler     1.5 [['aca/icaew', 'acca', 'cima']] deg+2 | Oracle Cloud Procure-to-Pay Manager | -
+   transport-planner  8.0  deg+1 | Junior Transport Planner & Operations Support | -
+   transport-planner  2.0  deg+2 | Product Owner ERP | -
+   hotel-reception    5.5  deg+1 | Race Office - Segreteria di Regata | -
+   site-manager       4.0  deg+1 | Strategic Project Manager | -
+   care-worker        4.0  deg+1 | Apprentice Health Care Support Worker - Bersh | already holds a Level 2 health and social care qualification, which th
+
+internal: 4 pairs, mean label 3.00, a reader named a blocker for 3
+   nurse              3.0 [['prescribing']] deg+1 | Community Addictions Advanced Nurse Practitio | expert drug and alcohol experience; the post is open only to NHS Ayrsh
+   teacher            3.0  deg+0 | Governance Facilitator - INTERNAL | -
+   care-worker        4.0  deg+0 | Health Care Assistant - INTERNAL | only open to current Betsi Cadwaladr staff
+   care-worker        2.0 [['hcpc']] deg+0 | Specialist Biomedical Scientist - Clinical Bi | HCPC registration and a biomedical science degree; also internal staff
+
+student-only: 1 pairs, mean label 1.00, a reader named a blocker for 1
+   transport-planner  1.0  deg+0 | Culinary Intern (f/m/x) | must be currently enrolled in a relevant study programme
+
+none of these: 433 pairs, mean label 4.83, a reader named a blocker for 99
+
+years asked: {'not asked': 419, 'asked': 71}
+
+readers blocked, rules found nothing:
+   nurse              2.0 | Veterinary Surgeon - focus on team wellbeing  | a veterinary degree and RCVS registration
+   nurse              2.0 | Veterinary Surgeon | membership of the Royal College of Veterinary Surgeons
+   nurse              3.0 | Local Primary Mental Health Practitioner | a mental health nursing registration (NMC Part 3/13), social work or OT registra
+   school-leaver      4.0 | Waiter - Full time | 5+ years in high-volume full-service restaurants
+   school-leaver      4.0 | Head Waiter / Waitress | 1+ years as a head waiter and quality-restaurant experience (stated as a must)
+   school-leaver      2.0 | Software Development Graduate Apprenticeship  | 96 UCAS points including Maths or Computing at grade B
+   school-leaver      2.0 | Digital & Technology Solutions Degree Apprent | 104 UCAS points
+   school-leaver      1.0 | Senior Recruitment Consultant | previous agency recruitment experience (essential)
+   school-leaver      1.0 | Fleet Fitter | NVQ 2/3 qualified vehicle technician
+   konyvelo           4.0 | German Speaking Payment Transactions Accounta | working German (she has A2)
+   konyvelo           3.0 | Accounting & Reporting Advisory Manager | economics degree and fluent English
+   elektriker         4.0 | Leitender Elektriker / Elektroniker (m/w/d) f | Elektromeister or state-certified technician
+   chef               4.0 | Baker - CDP Level | 4 years as a baker in an international 5-star establishment
+   teacher            1.5 | Italian Audio Evaluations Specialist - Freela | native or bilingual Italian
+   teacher            1.5 | Welsh Audio Specialist - Freelance AI Trainer | native or bilingual Welsh
+   teacher            1.0 | CAD Engineer - AI Trainer | a mechanical or aerospace engineering degree and five years of CAD
+   teacher            1.0 | AI Trainer:  Mechanical Engineers CAD | a mechanical engineering background
+   driver             3.0 | HGV Technician | an NVQ Level 3 in Heavy Vehicle Maintenance
+   frontend-junior    3.0 | Fullstack Developer .NET + React  | Polish at B2+ (stated as a must)
+   frontend-junior    3.0 | Senior Fullstack Developer – Java / React - 4 | 4+ years of Java/Spring Boot, stated as blocking
+   frontend-junior    2.0 | Lead Backend Engineer (Node.js/Golang/AWS) wi | fluent German (C1/C2)
+   data-analyst       2.0 | Head of Financial Planning | Spanish speaking required
+   project-manager    4.0 | Delivery Manager (Defence Sector) | active SC clearance and at least 3 years in UK defence, both mandatory
+   project-manager    3.5 | Senior Payroll Data Migration Specialists | hands-on Workday experience, stated as mandatory
+   account-executive  1.0 | Supervisor Transmission Line Engineering | civil or mechanical engineering degree and EIT certification
+   accountant         3.0 | Finance Director | a current or most recent role in SaaS, plus finance director experience
+   accountant         2.5 | Senior Technical Account Manager - Portfolios | proficiency in Spanish
+   accountant         2.0 | Credit Modelling Actuary | qualified actuary
+   accountant         1.5 | LATAM Enterprise Account Executive - Spanish  | fluent Spanish
+   mech-graduate      2.0 | Senior Electrical Design Engineer | a qualified electrical engineer with 5 years of senior electrical design experie
+   cnc-operator       3.5 | Híddaru kezelő | no overhead crane operator licence or crane experience
+   recruiter          4.0 | Sr Recruiter with German (from 11 000 PLN gro | German at C1 (she has none)
+   recruiter          4.0 | Senior Rekruter IT | 3+ years of agency IT recruitment, stated as a necessary condition
+   recruiter          1.0 | DevOps Engineer (French) | fluent French
+   claims-handler     2.5 | Commercial Director - Insurance | a second European language (French, German, Italian, Spanish or Polish)
+   claims-handler     1.0 | Graduate - Civil Engineering - Roads and Stre | a civil engineering degree
+   paralegal          4.0 | Commercial Litigation Paralegal | 12 months of civil or commercial litigation paralegal experience (essential)
+   paralegal          2.5 | Legal Director | qualified lawyer with 5+ years PQE in advertising, commercial and IP law
+   paralegal          4.0 | Legal Analyst and Contract Negotiator (London | top-tier law firm or investment bank background and capital markets experience (
+   transport-planner  1.0 | Data Scientist | a quantitative university (WO) degree and three years as a data scientist
+   site-manager       2.0 | Transmission Line Engineer | civil or mechanical engineering degree and transmission line design experience
+   site-manager       1.0 | Senior Payroll Data Migration Specialists | hands-on Workday experience, stated as mandatory

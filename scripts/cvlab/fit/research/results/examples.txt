@@ -1,0 +1,28 @@
+dental-nurse       Dental Nurse                                               old 10 new  4 label  4.5  [capped at 4: missing [['gdc']]]
+                   readers: her own work, chairside assisting and infection control, but it is for experienced registered dental nurses on oral surgery lists and she is still a t
+dental-nurse       Nurse (Nights) - Hurlingham (Zero Hour Contract)           old  8 new  4 label  3.0  [capped at 4: missing [['nursing registration']]]
+                   readers: a care home registered nurse job; shares the word nurse and a care setting, but it is a different profession from dental nursing
+dental-nurse       Registered Nurse                                           old  8 new  4 label  3.0  [capped at 4: missing [['nursing registration']]]
+                   readers: paid expert consultations for registered nurses; shares only the word nurse and the health field
+maintenance        Műszerész (biztosítóberendezési területre)                 old  5 new  8 label  4.0  [title signal 0.20 -> 1.00]
+                   readers: railway signalling and interlocking maintenance is an electrical safety specialism; only his maintenance and fault-finding habits carry over
+dental-nurse       Home Dialysis Specialist Nurse                             old  7 new  4 label  3.0  [capped at 4: missing [['nursing registration']]]
+                   readers: a specialist dialysis nurse job; shares a clinical setting, but it is a different profession from dental nursing
+social-worker      Senior Adult Social Care Lawyer & Team Manager             old  7 new  4 label  3.0  [capped at 4: missing [['cilex']]]
+                   readers: a senior lawyer job advising adult social care; she knows court work from the social work side but is not a lawyer
+social-worker      Community Addictions Advanced Nurse Practitioner - Interna old  7 new  4 label  3.0  [capped at 4: missing [['prescribing']] staff only]
+                   readers: an advanced nurse prescriber role in addictions; she meets addiction in her casework but is a social worker, not a nurse
+dental-nurse       Community Nurse - Buckley District Nursing Team            old  7 new  4 label  3.0  [capped at 4: missing [['nursing registration']]]
+                   readers: a district nursing job for a registered nurse; shares patient care, but it is a different profession from dental nursing
+store-manager      RETAIL MANAGER                                             old  8 new  5 label  4.5  [title signal 1.00 -> 0.35]
+                   readers: a manager of a corporate staff restaurant, cafe and bar that wants a contract catering background; her team, stock and budget management carry over bu
+delivery-driver    Driver Category C - Powered Access                         old  7 new  4 label  4.0  [capped at 4: missing [['licence c/c1']]; title signal 0.24 -> 0.36]
+                   readers: delivering and collecting hire equipment is close to his delivery work, but the rigid truck needs a category C licence he does not hold
+elektromonteur     Monteur                                                    old  7 new  9 label  7.0  [title signal 0.40 -> 1.00]
+                   readers: a maintenance technician on food production lines working in a pair; he meets the MBO and technical experience asked for, but machine maintenance is n
+delivery-driver    Delivery Driver - Stanford in the Vale                     old  6 new  8 label 10.0  [title signal 0.40 -> 1.00]
+                   readers: same work and level, a van delivery driver with eight years of multi-drop and food deliveries and the EU licence it asks for
+barista            Barista - Costa                                            old  7 new  9 label 10.0  [title signal 0.40 -> 1.00]
+                   readers: a Costa barista job making drinks and toasties, exactly what he does now
+barista            barista - Store# 09269, WALKERS BROOK                      old  7 new  9 label 10.0  [title signal 0.40 -> 1.00]
+                   readers: a Starbucks barista job needing no experience; it is his job

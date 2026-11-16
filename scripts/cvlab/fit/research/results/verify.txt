@@ -1,0 +1,5 @@
+max |python - database| over 490 pairs: 0.0
+model.py check (database)              rho 0.661  pairs 0.841  top5 6.600  mae 1.753  p7 0.560  r7 0.650  bias 0.122  p3 0.642  r3 0.646
+python replica, no copy exclusion      rho 0.661  pairs 0.841  top5 6.600  mae 1.753  p7 0.560  r7 0.650  bias 0.122  p3 0.642  r3 0.646
+harness baseline (copies excluded)     rho 0.661  pairs 0.841  top5 6.600  mae 1.753  p7 0.556  r7 0.650  bias 0.122  p3 0.642  r3 0.646
+max |python signal - database signal|: 1.1102230246251565e-16
