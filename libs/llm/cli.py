@@ -15,13 +15,14 @@ import base64
 import json
 import logging
 import os
+import re
 import subprocess
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from libs.llm.client import TIMEOUT_SEC, LlmError
+from libs.llm.client import TIMEOUT_SEC, LlmError, Reply, counted
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,12 @@ def label(kind: str, blob: str) -> str:
     return f"{title} · {email}" if isinstance(email, str) and email else title
 
 
+# How hard Codex is told to think: not told, so a ChatGPT sign-in writes at Codex's own setting (none, on
+# the model a Plus plan gets, 2026-11-15). Only the bench sets it (`scripts/cvlab/run.py --codex-effort`),
+# to measure one before every ChatGPT user's documents change with it (owner, 2026-11-15).
+CODEX_EFFORT: str | None = None
+
+
 class CliClient:
     """`LlmClient` for a signed-in account: plain text only. Tools and JSON schemas are the help chat's,
     which runs on API keys (`libs.llm.providers.resolve`)."""
@@ -168,6 +175,7 @@ class CliClient:
             argv = [binary, "exec", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config",
                     "--sandbox", "read-only", "--cd", str(work), "--output-last-message", str(answer)]
             argv += ["--model", model] if model else []
+            argv += ["-c", f"model_reasoning_effort={CODEX_EFFORT}"] if CODEX_EFFORT else []
             argv += ["-"]
             # Codex keeps its own instructions; what this platform asks comes first in the prompt.
             stdin = f"{(folder / 'system.md').read_text()}\n\n---\n\n{prompt}"
@@ -192,12 +200,17 @@ class CliClient:
             raise LlmError(f"{TOOLS[self._kind].name} wrote nothing")
         return text
 
-    def _answer(self, done: subprocess.CompletedProcess, answer: Path) -> str:
-        """The answer, or why there is none. Claude and Gemini print their JSON even when they fail,
-        with the reason inside it, so it is read before the exit code."""
+    def _answer(self, done: subprocess.CompletedProcess, answer: Path) -> Reply:
+        """The answer, with what the call used where the tool says, or why there is none. Claude and Gemini
+        print their JSON even when they fail, with the reason inside it, so it is read before the exit
+        code. Codex writes its last message alone, so its use is not known."""
         if self._kind == "codex_login":
             if done.returncode == 0 and answer.is_file():
-                return answer.read_text()
+                # Asked for no model, Codex takes the one the person's plan gives it and names it in the
+                # heading it prints before the prompt ("model: gpt-6.1-sol", 2026-11-15).
+                heading = (done.stderr or "").split("\nuser\n", 1)[0]
+                named = re.search(r"(?m)^model:\s*(\S+)\s*$", heading)
+                return Reply(answer.read_text(), None, named.group(1) if named else None)
             raise self._failed(done.stderr or done.stdout)
         try:
             reply = json.loads(done.stdout)
@@ -206,23 +219,55 @@ class CliClient:
         if self._kind == "claude_login":
             if reply.get("is_error") or done.returncode:
                 raise self._failed(str(reply.get("result") or done.stderr))
-            return str(reply.get("result") or "")
+            used = reply.get("usage") if isinstance(reply.get("usage"), dict) else {}
+            # What went in is the prompt however it was billed: new, written to the cache or read from it.
+            sent = [used.get(name) for name in ("input_tokens", "cache_creation_input_tokens",
+                                                "cache_read_input_tokens")]
+            return Reply(str(reply.get("result") or ""),
+                         counted(sum(each or 0 for each in sent) if isinstance(sent[0], int) else None,
+                                 used.get("output_tokens")), _named(reply.get("modelUsage")))
         if reply.get("error") or done.returncode:
             raise self._failed(json.dumps(reply.get("error")) if reply.get("error") else done.stderr)
-        return str(reply.get("response") or "")
+        # Gemini CLI counts per model it used: `stats.models.<model>.tokens`.
+        models = (reply.get("stats") or {}).get("models")
+        tokens = [each.get("tokens") or {} for each in (models or {}).values() if isinstance(each, dict)]
+        return Reply(str(reply.get("response") or ""), counted(
+            sum(each.get("prompt") or 0 for each in tokens),
+            sum((each.get("candidates") or 0) + (each.get("thoughts") or 0) for each in tokens))
+            if tokens else None, _named(models))
 
     def _failed(self, said: str) -> LlmError:
         # Its own words, cut short: they say why (signed out, over a limit), and never hold the prompt,
         # which went in on stdin.
-        said = (said or "").strip()[-300:]
+        # The line that says why, where the tool prints one: Gemini's is the first of a long trace, and
+        # the end of what Codex prints can be the person's own prompt echoed back.
+        reason = re.search(r"(?im)^\s*(?:error|fatal)\b.*$", said or "")
+        said = reason.group(0).strip()[:300] if reason else (said or "").strip()[-300:]
         name = TOOLS[self._kind].name
         logger.warning("cli: %s could not answer: %s", name, said)
         return LlmError(f"{name} could not write this ({_why(said)})")
 
 
+def _named(models: object) -> str | None:
+    """The model a tool says it used, from its count per model. More than one, when it used a small
+    model beside the one that wrote: all of them, the name that did most of the writing first."""
+    if not isinstance(models, dict) or not models:
+        return None
+
+    def written(name: str) -> int:
+        used = models[name] if isinstance(models[name], dict) else {}
+        tokens = used.get("tokens") if isinstance(used.get("tokens"), dict) else used
+        return int(tokens.get("outputTokens") or tokens.get("candidates") or 0)
+
+    return ", ".join(sorted(models, key=written, reverse=True))
+
+
 def _why(said: str) -> str:
     """The reason a person can act on, from what a tool printed."""
     lowered = said.lower()
+    if "no longer supported" in lowered or "ineligibletier" in lowered:
+        # Before the sign-in words: signing in again cannot help.
+        return "its provider no longer takes this kind of sign-in: link an API key for it in Settings"
     if any(word in lowered for word in ("log in", "logged in", "login", "sign in", "unauthorized", "401",
                                         "expired", "credentials", "authenticat", "authoriz")):
         return "the sign-in has expired: sign in again in Settings"

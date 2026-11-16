@@ -52,6 +52,41 @@ def test_gemini_is_asked_on_its_own_header_and_only_the_answer_comes_back():
     assert body["generationConfig"]["maxOutputTokens"] == 500
 
 
+def test_a_key_s_answer_carries_the_tokens_its_call_used():
+    """Each provider counts its own way; the thinking is tokens that came out."""
+    from libs.llm.client import Usage
+
+    gemini, _ = _http(lambda r: httpx.Response(200, json={
+        "candidates": [{"content": {"parts": [{"text": "<html>CV</html>"}]}, "finishReason": "STOP"}],
+        "usageMetadata": {"promptTokenCount": 4100, "candidatesTokenCount": 700, "thoughtsTokenCount": 250}}))
+    openai, _ = _http(lambda r: httpx.Response(200, json={
+        "choices": [{"message": {"content": "<html>CV</html>"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 3900, "completion_tokens": 1200}}))
+    silent, _ = _http(lambda r: httpx.Response(200, json={"choices": [{
+        "message": {"content": "<html>CV</html>"}, "finish_reason": "stop"}]}))
+
+    assert _ask(GeminiClient, gemini).usage == Usage(input_tokens=4100, output_tokens=950)
+    assert _ask(OpenAIClient, openai).usage == Usage(input_tokens=3900, output_tokens=1200)
+    assert _ask(OpenAIClient, silent).usage is None, "not counted is not nought"
+
+
+def test_a_key_s_answer_says_which_model_wrote_it():
+    """What the provider says answered, kept with the document (owner, 2026-11-15): a name like
+    "gpt-6-luna" is answered by a dated model, and that is the one that wrote it."""
+    gemini, _ = _http(lambda r: httpx.Response(200, json={
+        "candidates": [{"content": {"parts": [{"text": "<html>CV</html>"}]}, "finishReason": "STOP"}],
+        "modelVersion": "gemini-3.8-flash-002"}))
+    openai, _ = _http(lambda r: httpx.Response(200, json={
+        "choices": [{"message": {"content": "<html>CV</html>"}, "finish_reason": "stop"}],
+        "model": "gpt-6-luna-2026-09-01"}))
+    silent, _ = _http(lambda r: httpx.Response(200, json={"choices": [{
+        "message": {"content": "<html>CV</html>"}, "finish_reason": "stop"}]}))
+
+    assert _ask(GeminiClient, gemini).model == "gemini-3.8-flash-002"
+    assert _ask(OpenAIClient, openai).model == "gpt-6-luna-2026-09-01"
+    assert _ask(OpenAIClient, silent).model is None
+
+
 def test_openai_is_asked_with_the_instructions_first_and_the_answer_comes_back():
     http, seen = _http(lambda r: httpx.Response(200, json={"choices": [{
         "message": {"content": "<html>CV</html>"}, "finish_reason": "stop"}]}))

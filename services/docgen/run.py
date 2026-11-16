@@ -1,4 +1,4 @@
-"""One `docgen` build, end to end: write the document, check it, render it once, record it.
+"""One `docgen` build, end to end: write the document, render it, check it, record it.
 
 **AI** writes it, in one call (`build`), on the AI account the person linked, from what they uploaded
 and switched on. The PDF comes back as bytes for the worker to keep until it is downloaded (D9). The
@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import uuid as _uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 
-from libs import templates
+from libs import prompts, templates
 from libs.db import get
 from libs.db.models import CorpusJob, User
 from libs.obs import audit
@@ -43,6 +45,9 @@ class Built:
     revised: bool = False
     # Whether the PDF passed the ATS check; kept with the document (`BuiltDocument.ats_ok`).
     ats_ok: bool | None = None
+    # The wording that wrote it and the model it ran on, kept with the document for the outcomes.
+    prompt_version: str | None = None
+    model: str | None = None
 
 
 def run_ai(db, user_id: _uuid.UUID, job_id: int, *, client, model: str, kind: str,
@@ -62,55 +67,80 @@ def run_ai(db, user_id: _uuid.UUID, job_id: int, *, client, model: str, kind: st
 
     request = build.prepare(kind, user=user, job=job, documents=documents_of(db, user_id),
                             look=templates.chosen(user, kind), languages=_languages(db, user_id))
-    reply, body = build.draft(client, request, model=model)
-    document, report = _render(build.assemble(request, body), kind=kind, headings=build.headings(body))
-    check = build.problems(request, body, report.pages, report.last_page_chars)
+    # Where the time goes and what each call used, said with the document (`_done`).
+    seconds: dict[str, float] = {"write": 0.0, "render": 0.0}
+    with _timed(seconds, "write"):
+        reply, body = build.draft(client, request, model=model)
+    used = [getattr(reply, "usage", None)]
+    # The model that wrote the answer that is kept, where the provider names it; else the one asked for.
+    wrote = getattr(reply, "model", None) or model
+    with _timed(seconds, "render"):
+        document, report = pdf.fitted(build.assemble(request, body), kind=kind,
+                                      headings=build.headings(body))
+    check = build.problems(request, body, report.pages, report.spilled)
     calls = 1
     if not check.ok:
         # Said back once, with only what was found. Kept only if it is no worse. The faults are not logged:
         # they quote the person's CV.
-        logger.info("docgen: %s for %s: %d page(s) over, %d number(s) not in their documents, %d other "
-                    "fault(s); asking again", kind, user_id, check.pages_over, len(check.invented),
+        logger.info("docgen: %s for %s: %d page(s) over, %d number(s) or name(s) not in their documents, "
+                    "%d other fault(s); asking again", kind, user_id, check.pages_over, len(check.invented),
                     len(check.faults))
         calls = 2
         try:
-            _, second = build.draft(client, request, model=model,
-                                    revision=(reply, build.feedback(request, check, report.pages)))
+            with _timed(seconds, "write"):
+                again, second = build.draft(client, request, model=model,
+                                            revision=(reply, build.feedback(request, check, report.pages)))
         except build.BuildFailed as exc:
             logger.warning("docgen: the second %s for %s came back unusable (%s); keeping the first", kind,
                            user_id, exc)
         else:
-            second_document, second_report = _render(build.assemble(request, second), kind=kind,
-                                                     headings=build.headings(second))
-            second_check = build.problems(request, second, second_report.pages, second_report.last_page_chars)
+            used.append(getattr(again, "usage", None))
+            with _timed(seconds, "render"):
+                second_document, second_report = pdf.fitted(build.assemble(request, second), kind=kind,
+                                                            headings=build.headings(second))
+            second_check = build.problems(request, second, second_report.pages, second_report.spilled)
             if not second_check.worse_than(check):
                 document, report, check = second_document, second_report, second_check
+                wrote = getattr(again, "model", None) or model
     if not check.ok:
         # Delivered: a number the check could not find may be written another way in their CV ("1 200").
-        logger.warning("docgen: %s for %s delivered with %d page(s) over, number(s) not found in their "
-                       "documents (%s) and %d other fault(s)", kind, user_id, check.pages_over,
+        logger.warning("docgen: %s for %s delivered with %d page(s) over, number(s) or name(s) not found in "
+                       "their documents (%s) and %d other fault(s)", kind, user_id, check.pages_over,
                        ", ".join(check.invented) or "none", len(check.faults))
-    return _done(db, user, job, kind=kind, mode="ai", document=document, report=report, calls=calls)
+    return _done(db, user, job, kind=kind, mode="ai", document=document, report=report, calls=calls,
+                 model=wrote, seconds=seconds, used=used)
+
+
+@contextmanager
+def _timed(seconds: dict[str, float], part: str):
+    """Add how long the block took to `seconds[part]`."""
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        seconds[part] += time.monotonic() - started
 
 
 def _done(db, user: User, job: CorpusJob, *, kind: str, mode: str, document: bytes,
-          report: pdf.PdfReport, calls: int) -> Built:
-    """Say the build happened, once. It is not an application: "Mark as applied" on the jobs page is."""
+          report: pdf.PdfReport, calls: int, model: str, seconds: dict[str, float], used: list) -> Built:
+    """Say the build happened, once, with what it took: the seconds the model wrote for and Chrome drew
+    for, and the tokens in and out over its calls ("-" where the account's tool does not count them). It
+    is not an application: "Mark as applied" on the jobs page is."""
+    counts = [each for each in used if each is not None]
+    tokens_in = sum(each.input_tokens for each in counts) if counts else "-"
+    tokens_out = sum(each.output_tokens for each in counts) if counts else "-"
     if not report.ats_ok:
         # A warning rather than a refusal: the layout is single-column and known good.
         logger.warning("docgen: ATS check flagged %s for user %s: %s",
                        job.url, user.id, report.issues)
+    version = prompts.version(build.PROMPTS[kind])
     audit(logger, "docgen.built", user=user.id, job=job.id, mode=mode, kind=kind,
           pages=report.pages, calls=calls, revised=calls > 1, ats_ok=report.ats_ok,
-          chars=report.chars)
+          chars=report.chars, scale=report.scale, prompt=version, model=model or "-",
+          write_s=round(seconds["write"], 1), render_s=round(seconds["render"], 1),
+          tokens_in=tokens_in, tokens_out=tokens_out)
     return Built(_filename(user.full_name, kind), document, report.pages, calls,
-                 revised=calls > 1, ats_ok=report.ats_ok)
-
-
-def _render(html: str, *, kind: str, headings: tuple[str, ...] = ()) -> tuple[bytes, pdf.PdfReport]:
-    """The page as a PDF, rendered once, and what an ATS reads of it."""
-    document = pdf.render(html)
-    return document, pdf.inspect_pdf(document, kind=kind, headings=headings)
+                 revised=calls > 1, ats_ok=report.ats_ok, prompt_version=version, model=model or None)
 
 
 def _load(db, user_id: _uuid.UUID, job_id: int) -> tuple[User, CorpusJob]:

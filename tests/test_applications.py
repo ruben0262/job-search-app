@@ -97,13 +97,14 @@ def test_how_far_applications_got_is_counted_by_the_cv_that_went_with_them(api):
         record_state(db, who.id, job.id, applied_at=now(),
                      progress=[{"stage": stage, "at": now()} for stage in stages])
         if cv:
-            mode, ats_ok = cv
+            mode, ats_ok, *wording = cv
             insert(db, BuiltDocument(id=uuid.uuid4().int % 10**9, user_id=who.id, job_id=job.id, kind="cv",
                                      mode=mode, filename="cv.pdf", content=b"%PDF", size=4, saved=True,
-                                     ats_ok=ats_ok))
+                                     ats_ok=ats_ok, prompt_version=wording[0] if wording else None,
+                                     model=wording[1] if wording else None))
 
     application(user, "interview", "offer", "hired", cv=("instant", True))
-    application(user, "interview", "rejected", cv=("ai", False))
+    application(user, "interview", "rejected", cv=("ai", False, "0123456789ab", "claude-haiku-5-5"))
     application(other, "rejected")
     application(other)
 
@@ -114,6 +115,10 @@ def test_how_far_applications_got_is_counted_by_the_cv_that_went_with_them(api):
     assert rows["CV passed the ATS check"]["offer"] == 1
     assert rows["CV flagged by the ATS check"] == {"applied": 1, "interview": 1, "offer": 0, "hired": 0,
                                                    "rejected": 1}
+    # The wording of the prompt that wrote the CV, and its model: what a wording is judged by.
+    assert rows["CV wording 0123456789ab on claude-haiku-5-5"] == rows["CV flagged by the ATS check"]
+    assert not [name for name in rows if name.startswith("CV wording") and "0123456789ab" not in name], \
+        "a CV from before wordings were kept is in no wording's group"
 
 
 def test_only_an_admin_sees_the_outcomes(api):

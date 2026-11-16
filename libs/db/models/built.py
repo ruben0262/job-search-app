@@ -37,4 +37,8 @@ class BuiltDocument(Document):
     # Whether the PDF passed the ATS check (`services.docgen.pdf`: one column, its text read in order);
     # kept so the outcomes people report can say whether passing it helps them hear back.
     ats_ok: bool | None = None
+    # Which wording of the prompt wrote it (`libs.prompts.version`) and the model it ran on, None where the
+    # account's own tool chose it: the same outcomes, read wording by wording. Never on the document itself.
+    prompt_version: str | None = None
+    model: str | None = None
     created_at: datetime = field(default_factory=now)

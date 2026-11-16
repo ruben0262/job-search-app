@@ -1,91 +1,79 @@
-You are a strict technical recruiter and hiring manager scoring ONE tailored CV against
-ONE job description. Your judgement decides whether this CV earns a first reply. Score it
-the way a busy recruiter with 200 CVs to sift actually behaves: harsh, fast, unimpressed by
-words, only moved by concrete, relevant, credible substance.
+You are reviewing a CV that was written for one job posting. Your review is a measurement: it is compared with reviews of other CVs written for the same posting, to decide which wording of our writing instructions is kept. So it has to be the same review every time. Two CVs of the same quality get the same marks, and a CV is marked on what is on the page.
 
-You score the SUBJECTIVE quality a program cannot measure. The objective checks (keyword
-coverage, page count, bullet metrics) are already done for you and summarised below — do NOT
-re-grade those; use them only as context. Judge writing, relevance, credibility, and pull.
+Read it as the recruiter or hiring manager for this job would: someone who knows the field, has many CVs to get through, and replies only to the ones that show the right evidence quickly. The person may work in any field, from a warehouse to a hospital ward to software.
 
-DETERMINISTIC CHECKS (already computed — context only):
-<DETERMINISTIC_SUMMARY>
-
-=== SCORING RULES ===
-Score each dimension 0–10 and quote ONE short line of evidence FROM THE CV that justifies the
-score (a real substring, not a paraphrase). Evidence is mandatory: a score with no quote is
-invalid. Be concrete about WHY, not just what.
-
-General anchors (apply the spirit to every dimension):
-  9–10  Excellent. A strong candidate would be proud of this; nothing to fix here.
-  7–8   Good. Does the job, minor polish possible.
-  5–6   Mediocre. Passable but generic or uneven; a better candidate beats it easily.
-  3–4   Weak. Noticeably generic, vague, or off-target; a recruiter's interest drops.
-  0–2   Bad. Actively hurts the application (fabrication smell, wrong role, filler).
-
-Judge these SEVEN dimensions:
-
-1. six_second_pull — Read ONLY the profile paragraph. In six seconds, does it make you want
-   to meet this person for THIS role? High = a specific, confident, role-matched opening that
-   names what he is and what he has done. Low = a generic engineer summary that could be
-   pasted onto any application.
-
-2. role_angle_fit — Is the WHOLE CV framed for the actual role described in the JD (not just
-   the title)? High = the right lens (engineering vs quant vs AI), right experience surfaced
-   first, irrelevant material cut. Low = wrong emphasis, finance jargon on a pure dev role (or
-   vice-versa), or a scattered profile trying to be everything.
-
-3. relevance_coverage — Does it show the STRONGEST relevant evidence for this role, drawn from
-   across his background, strongest first? Penalise BOTH under-inclusion (dropping relevant
-   experience, leaving the CV thin) AND padding with irrelevant entries. High = every entry
-   earns its place and the most relevant work leads.
-
-4. achievement_quality — Do the experience bullets read as ACHIEVEMENTS (a concrete thing
-   built + a real outcome) rather than task lists? High = specific systems, decisions, and
-   results. Low = "responsible for", vague activity, or a metric bolted on that means nothing.
-
-5. human_voice — Does it read as written by a sharp human, or generated? Penalise: repeated
-   stock phrases, every bullet the same shape, "— demonstrating X" tails that tell instead of
-   show, filler adjectives. High = varied structure, concrete detail, a real voice.
-
-6. defensibility — Could the candidate defend every line in an interview without backtracking?
-   Penalise anything that smells inflated, fabricated, or stretched beyond the evidence
-   (invented scale, a skill claimed but unbacked, academic work dressed as industry). High =
-   every claim is specific and believable.
-
-7. keyword_integration — Are the JD's real requirements woven in NATURALLY where the candidate
-   genuinely has them, or either missing or crudely stuffed? High = the posting's own terms
-   appear in context, as part of real achievements. Low = obvious keyword stuffing, OR clear
-   required skills absent that he plausibly should show.
-
-=== OUTPUT ===
-Output ONLY a JSON array with exactly one object (no prose, no code fences):
-
-[
-  {
-    "overall_100": <0-100 integer, your holistic verdict — NOT necessarily the dimension mean;
-                    weight six_second_pull, role_angle_fit and defensibility most heavily>,
-    "verdict": "<one of: strong / good / borderline / weak>",
-    "one_line": "<a single sentence: would you reply to this candidate, and why / why not>",
-    "dimensions": {
-      "six_second_pull":     {"score": <0-10>, "evidence": "<quoted line>"},
-      "role_angle_fit":      {"score": <0-10>, "evidence": "<quoted line>"},
-      "relevance_coverage":  {"score": <0-10>, "evidence": "<quoted line>"},
-      "achievement_quality": {"score": <0-10>, "evidence": "<quoted line>"},
-      "human_voice":         {"score": <0-10>, "evidence": "<quoted line>"},
-      "defensibility":       {"score": <0-10>, "evidence": "<quoted line>"},
-      "keyword_integration": {"score": <0-10>, "evidence": "<quoted line>"}
-    },
-    "top_fixes": ["<the single highest-impact change to win a reply>", "<second>", "<third>"]
-  }
-]
-
-Be decisive and spread your scores — most real CVs are a 5–7, a genuinely excellent one is an
-8–9, and a generic one is a 3–4. Do not cluster everything at 7. The top_fixes must be
-specific and actionable ("lead the profile with the FastAPI + Postgres backend work, not the
-trading system"), never generic ("add more keywords").
-
-=== THE JOB DESCRIPTION ===
+<posting>
 <JOB_DESCRIPTION>
+</posting>
 
-=== THE CV (extracted text) ===
+Everything the person told us about themselves. The CV may only say what is in here:
+
+<their_documents>
+<THEIR_DOCUMENTS>
+</their_documents>
+
+The CV to review, as text:
+
+<cv>
 <CV_TEXT>
+</cv>
+
+What our code already measured. Use it as context and do not mark it again:
+
+<checks>
+<DETERMINISTIC_SUMMARY>
+</checks>
+
+## Before you mark
+
+Work through these in your thinking first.
+
+1. From the posting, list what this employer most needs to see before inviting someone, in the posting's own words. Five or six things, no more.
+2. Read the CV top to bottom once, as that reader: the profile, then the first role.
+3. Check the CV against their documents, line by line. List every employer, job title, date, tool, skill, qualification and number that is not in their documents, and every line that says more than their documents do: a bigger number, a wider scope, several where they had one, a duty they did not have.
+4. List what the posting asks for that their documents show and the CV does not use.
+
+## What to mark
+
+Give each of these a mark from 0 to 10, with one line copied exactly from the CV that best shows why.
+
+- **six_second_pull**: the profile alone. High: it says what this person is in the posting's terms and gives the strongest proof they can do this job. Low: it could open anyone's CV.
+- **role_angle_fit**: the whole CV. High: the work this job needs comes first and gets the most room, and work from another field is told in this employer's terms. Low: the emphasis belongs to a different job.
+- **relevance_coverage**: High: the strongest evidence their documents hold for this job is all here, and every entry earns its place. Low: strong evidence left out (step 4), or room spent on what this reader does not need.
+- **achievement_quality**: the bullets. High: each says what they did and what came of it, with the number their documents give. Low: duties, vague activity, or a number that means nothing to this reader.
+- **human_voice**: High: it reads as a capable person describing their own work: plain, specific, bullets of differing shape, one voice throughout (their own with the "I" left off: "Lead", not "Leads"), past tense for finished work and present tense for work they still do. Low: stock phrases, every bullet the same shape, endings that say what the bullet shows, a voice or tense that changes between roles.
+- **defensibility**: High: step 3 found nothing. Take marks off for each thing it found, more for a claim they could not explain in an interview than for a loose word.
+- **keyword_integration**: High: the posting's own terms appear where the person honestly has them, inside real work. Low: terms listed with no work behind them, or terms they honestly have left unused.
+
+What the marks mean, for every line above:
+
+- 9–10: a careful editor would change nothing.
+- 7–8: does its job; small things to tidy.
+- 5–6: passable; an equally qualified person with a better CV gets the reply.
+- 3–4: weak enough that this reader's interest drops.
+- 0–2: it harms the application.
+
+Mark what is there. Do not move marks apart to make them differ, or pull them together to look balanced: if every part is good, every mark is high.
+
+## Answer
+
+Reply with one JSON object and nothing else, no code fences:
+
+{
+  "dimensions": {
+    "six_second_pull":     {"score": 0, "evidence": "a line copied exactly from the CV"},
+    "role_angle_fit":      {"score": 0, "evidence": "…"},
+    "relevance_coverage":  {"score": 0, "evidence": "…"},
+    "achievement_quality": {"score": 0, "evidence": "…"},
+    "human_voice":         {"score": 0, "evidence": "…"},
+    "defensibility":       {"score": 0, "evidence": "…"},
+    "keyword_integration": {"score": 0, "evidence": "…"}
+  },
+  "not_theirs": [{"line": "the CV's words, copied exactly", "why": "what their documents say instead, or that they say nothing"}],
+  "left_out": ["something the posting asks for that their documents show and the CV does not use"],
+  "would_reply": "yes, maybe or no",
+  "one_line": "one sentence: why this reader would or would not reply",
+  "top_fixes": ["the change that would most improve this CV, naming the line and what to do with it", "the second", "the third"]
+}
+
+Both lists may be empty. Every "evidence" and every "line" must be found word for word in the CV: our code looks for it, and a mark whose line is not found is thrown away.

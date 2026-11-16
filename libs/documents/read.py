@@ -39,7 +39,8 @@ _HEADINGS = (
               r"achievements|volunteering|interests|hobbies(?: (?:and|&) interests)?|references|"
               r"memberships|activities)|additional information"),
     ("languages", r"languages?(?: skills)?"),
-    ("experience", r"(?:\w+ ){0,2}experience|employment(?: history)?|work history|career history|"
+    # "experiance", "expirience": the heading people most often misspell.
+    ("experience", r"(?:\w+ ){0,2}exp[ei]ri?[ea]nce|employment(?: history)?|work history|career history|"
                    r"career summary|professional background|positions held"),
     ("education", r"education(?: (?:and|&) (?:training|qualifications))?|(?:academic )?qualifications|"
                   r"academic background|training|studies"),
@@ -222,6 +223,10 @@ def _unspace(line: str) -> str:
 def _lines(text: str) -> list[tuple[str, bool]]:
     """Each line once, its bullet glyph off, and a wrapped line joined back to the one it continues."""
     out: list[tuple[str, bool]] = []
+    # Somebody who types in lower case starts every line so, and none of them is a wrapped line: read as
+    # such, a warehouse operative's whole CV was four lines with no name and no sections (2026-11-14).
+    starts = [raw.strip()[:1] for raw in text.splitlines() if raw.strip()]
+    typed_lower = sum(start.islower() for start in starts) > len(starts) / 2
     for raw in text.splitlines():
         line = _unspace(raw.strip())
         glyph = _BULLET.match(line)
@@ -230,7 +235,8 @@ def _lines(text: str) -> list[tuple[str, bool]]:
         if not line or re.fullmatch(r"(?i)page \d+ of \d+", line):
             continue
         # A wrapped line starts with a lowercase word; an email address or a link does not count.
-        if (not glyph and out and re.match(r"[a-z][a-z'’-]*(?:[\s,;:)]|$)", line)  # noqa: RUF001
+        if (not glyph and out and not typed_lower
+                and re.match(r"[a-z][a-z'’-]*(?:[\s,;:)]|$)", line)  # noqa: RUF001
                 and "@" not in line and not _LINK.search(line) and not heading_kind(out[-1][0])):
             out[-1] = (f"{out[-1][0]} {line}", out[-1][1])
             continue
@@ -382,6 +388,10 @@ def _is_place(text: str) -> bool:
 
 # ── the facts ────────────────────────────────────────────────────────────────────────────────
 
+# A header is a name, a title and their contact details, a line each at most.
+HEADER_LINES = 8
+
+
 def texts(documents: Mapping[str, str | Sequence[str]], *kinds: str) -> list[str]:
     """Every document of these kinds, each apart. A kind holds one text or several."""
     found = [documents.get(kind) or () for kind in kinds]
@@ -402,8 +412,11 @@ def read(documents: Mapping[str, str | Sequence[str]], *, today: date | None = N
             sections=tuple(section for each in cvs for section in each.sections))
     flat = [(line, "header") for line in cv.header] + [
         (line, section.kind) for section in cv.sections for line in section.lines]
-    # Who and where they are: the header, and a contact section if the CV has one.
-    zone = [line for line, kind in flat if kind in ("header", "contact")]
+    # Who and where they are: the top of the header, and a contact section if the CV has one. A CV whose
+    # headings were not recognised (a German "Beruflicher Werdegang", a Hungarian "Szakmai tapasztalat") is
+    # all header: read whole, an electrician's employer, "Pleißental Elektrotechnik GmbH, Leipzig", was
+    # where he lived, and headed the CV made for him (2026-11-14).
+    zone = [*cv.header[:HEADER_LINES], *(line for line, kind in flat if kind == "contact")]
     email = _email(list(cv.header), [(section.kind, list(section.lines)) for section in cv.sections])
     local = fold((email or "@").split("@")[0])
     names = _names(cv)
@@ -429,9 +442,7 @@ def read(documents: Mapping[str, str | Sequence[str]], *, today: date | None = N
         or _phone([line for line in prose_lines if _PHONE_LABEL.search(line)]),
         links=_unique(link.rstrip(").,;:") for line in [*(line for line, _ in flat), *prose_lines]
                       for link in _LINK.findall(line)),
-        location=next((part.strip() for line in zone for part in re.split(r"[|·•]", line)
-                       if "@" not in part and not re.search(r"\d", part) and len(part.split()) <= 4
-                       and (read_country(part) is not None or _PLACES.search(fold(part)))), None),
+        location=_place(zone),
         places=_unique(_PLACE_NAMES[found] for line in zone for found in _PLACES.findall(fold(line))),
         languages=_languages([*_lines_of(cv, "languages"), *inline["languages"]]),
         jobs=tuple(jobs),
@@ -440,6 +451,36 @@ def read(documents: Mapping[str, str | Sequence[str]], *, today: date | None = N
         years=max([*stated, *_experience_years(jobs, today or date.today())], default=None),
         cv=cv,
     )
+
+
+# A British postcode, whole or its first half ("BS7", "LS11", "B28 0XZ"), and a Dublin district's number.
+_POSTCODE = re.compile(r"(?i)[,\s]+[a-z]{1,2}\d[a-z\d]?(?:\s*\d[a-z]{2})?\s*$")
+_DISTRICT = re.compile(r"(?<=\w)\s+\d{1,2}\s*$")
+_PLACE_LABEL = re.compile(r"(?i)^\s*(?:address|location|home)\s*:\s*")
+_TOWN = re.compile(r"[^\W\d_]+(?:[ '’-][^\W\d_]+){0,2}")  # noqa: RUF001
+
+
+def _place(zone: list[str]) -> str | None:
+    """Where they are, from the top of their CV: a part of a line that names a country or a place we know,
+    as they wrote it, or the town an address ends on before its postcode ("Downend, Bristol BS16" is
+    Bristol, and a street is never taken with it). Of eleven CVs from people who are not in IT this found
+    one, as most write their town with its postcode (2026-11-14)."""
+    for line in zone:
+        for each in re.split(rf"[|·•]|\s[{_DASH}]\s", line):
+            part = _PLACE_LABEL.sub("", each).strip()
+            if "@" in part:
+                continue
+            address = _POSTCODE.sub("", part)
+            if address != part:
+                town = address.rsplit(",", 1)[-1].strip()
+                if _TOWN.fullmatch(town):
+                    return town.title() if town.islower() else town
+                continue
+            named = _DISTRICT.sub("", part)
+            if not re.search(r"\d", named) and len(named.split()) <= 4 and (
+                    read_country(named) is not None or _PLACES.search(fold(named))):
+                return named
+    return None
 
 
 def _lines_of(cv: CV, kind: str) -> list[str]:

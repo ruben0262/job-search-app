@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from typing import Protocol
 
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN
@@ -21,6 +22,38 @@ TIMEOUT_SEC = CLAIM_TIMEOUT_MIN["docgen"] * 60 * 2 / 5
 
 class LlmError(RuntimeError):
     """A call did not produce usable output. Callers decide whether that is fatal."""
+
+
+@dataclass(frozen=True)
+class Usage:
+    """What one call used, as its provider counts it: the tokens that went in (the prompt, cached or not)
+    and the tokens that came out (the answer, and the thinking before it)."""
+
+    input_tokens: int
+    output_tokens: int
+
+
+class Reply(str):
+    """A model's answer. It is its text, and carries what the call used where the provider says
+    (`usage`): the docgen worker logs it with every document, and the CV bench counts it per wording.
+    And which model wrote it, as the provider names it (`model`), which need not be the one asked for: a
+    plan may not include that one, and a name may be answered by a dated version of it. A document is kept
+    by this (owner, 2026-11-15)."""
+
+    __slots__ = ("model", "usage")
+
+    def __new__(cls, text: str, usage: Usage | None = None, model: str | None = None) -> Reply:
+        reply = super().__new__(cls, text)
+        reply.usage = usage
+        reply.model = model if isinstance(model, str) and model else None
+        return reply
+
+
+def counted(tokens_in: object, tokens_out: object) -> Usage | None:
+    """A call's use from what a provider reported, or None where it did not count."""
+    if isinstance(tokens_in, int) and isinstance(tokens_out, int):
+        return Usage(tokens_in, tokens_out)
+    return None
 
 
 class LlmClient(Protocol):
@@ -52,7 +85,13 @@ class AnthropicClient:
                 **_thinking(model, effort)) as stream:
             message = stream.get_final_message()
         warn_if_truncated(getattr(message, "stop_reason", None) == "max_tokens", model, max_tokens)
-        return _text_of(message)
+        used = getattr(message, "usage", None)
+        cached = sum(getattr(used, name, None) or 0
+                     for name in ("cache_creation_input_tokens", "cache_read_input_tokens"))
+        tokens_in = getattr(used, "input_tokens", None)
+        return Reply(_text_of(message), counted(tokens_in + cached if isinstance(tokens_in, int) else None,
+                                                getattr(used, "output_tokens", None)),
+                     getattr(message, "model", None))
 
 
     def complete_tools(self, *, model: str, system: str, messages: list[dict], tools: list[dict],

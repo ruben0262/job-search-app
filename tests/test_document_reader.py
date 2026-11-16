@@ -64,6 +64,62 @@ def _engineer_docx() -> str:
     return extract_text("cv.docx", buffer.getvalue()).text
 
 
+@pytest.mark.parametrize(("line", "place"), [
+    ("Downend, Bristol BS16", "Bristol"),
+    ("Bishopston, Bristol BS7 | 07700 900581 | hannah@example.com", "Bristol"),
+    ("Leith, Edinburgh EH6 – 07700 900467 – matteo@example.com", "Edinburgh"),
+    ("Address: 17 Thistledown Close, Hall Green, Birmingham, B28 0XZ", "Birmingham"),
+    ("Drumcondra, Dublin 9  |  020 915 0143", "Drumcondra, Dublin"),
+    ("Budapest, Hungary", "Budapest, Hungary"),
+    ("NMBI registered (General Division), PIN 917352", None),
+    ("Year 6 Class Teacher, KS2", None),
+    ("Mobile: 07700 900236", None),
+])
+def test_a_town_written_with_its_postcode_is_where_they_are_and_a_street_is_never_taken(line, place):
+    """Most people write their town with its postcode, and a part with a figure in it was never a place:
+    of eleven CVs from people who are not in IT, one gave the header of the CV made for them a place
+    (2026-11-14). An address gives its town and nothing of its street."""
+    text = f"Alex Morgan\n{line}\nalex@example.com\n\nEXPERIENCE\nManager, Northwind, 2020 - 2024"
+
+    facts = read({"cv": text}, today=TODAY)
+
+    assert facts.location == place
+
+
+def test_a_cv_typed_in_lower_case_is_read_line_by_line():
+    """A line starting in lower case was taken for the end of the line above, so a CV typed without
+    capitals was four long lines: no name, no sections, and a job in Poland as where they live."""
+    text = "\n".join(["Marek Wisniewski", "leeds LS11", "tel 07700 900152", "marek@example.com", "",
+                      "work experiance", "", "warehouse operative - Calder Vale Distribution, leeds",
+                      "march 2023 - now", "picking and packing, loading lorries", "",
+                      "magazynier (warehouse), Hurtownia Budowlana Kowal, Radom, poland", "2015 - 2018", "",
+                      "education", "technikum Radom, poland. finished 2015", "",
+                      "languages", "polish - native", "english - comunicative"])
+
+    facts = read({"cv": text}, today=TODAY)
+
+    assert (facts.name, facts.location, facts.phone) == ("Marek Wisniewski", "Leeds", "07700 900152")
+    assert [section.kind for section in facts.cv.sections] == ["experience", "education", "languages"]
+    assert "poland" not in facts.places
+
+
+def test_an_employer_further_down_a_cv_is_not_where_the_person_lives():
+    """A German CV's headings are not recognised, so all of it reads as its header. The first line that
+    named a place with no figure in it was his employer's, and "Pleißental Elektrotechnik GmbH, Budapest"
+    headed the CV made for him as his own place (2026-11-14, an electrician in the panel)."""
+    text = "\n".join(["LEBENSLAUF", "Persönliche Daten", "Name  Steffen Krause",
+                      "Anschrift  Am Kiesgrund 8, 04249 Leipzig", "Telefon  0171 39200 47",
+                      "E-Mail  steffen.krause@example.com", "Geburtsdatum  23.05.1996", "Geburtsort  Borna",
+                      "Familienstand  verheiratet", "Beruflicher Werdegang", "04/2021 – heute  Elektriker",
+                      "Pleißental Elektrotechnik GmbH, Budapest", "Elektroinstallation in Wohnbauten",
+                      "02/2015 – 03/2021  Elektroniker", "Elektro Kowal, Warschau, Poland"])
+
+    facts = read({"cv": text}, today=TODAY)
+
+    assert facts.location is None and facts.places == ()
+    assert (facts.email, facts.phone) == ("steffen.krause@example.com", "0171 39200 47")
+
+
 def test_a_word_cv_whose_bullets_lost_their_glyphs_is_read_whole():
     """python-docx returns a Word list item as a plain line: the bullets must still be bullets."""
     text = _engineer_docx()

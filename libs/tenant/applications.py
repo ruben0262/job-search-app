@@ -64,14 +64,16 @@ def step_back(db: Database, user_id: uuid.UUID, job_id: int) -> list[dict]:
 
 def outcomes(db: Database, user_id: uuid.UUID | None = None) -> list[dict]:
     """How far everyone's applications got, or one person's, all together and by the CV sent (none made
-    here, instant or AI, passed or flagged by the ATS check): `{"group", "applied", "interview", "offer",
-    "hired", "rejected"}`, where a stage counts every application that reached it or went past it.
+    here, instant or AI, passed or flagged by the ATS check, and the wording of the prompt and the model
+    that wrote it): `{"group", "applied", "interview", "offer", "hired", "rejected"}`, where a stage counts
+    every application that reached it or went past it.
 
     The CV is the newest one still kept for the job, so one somebody deleted reads as none made here.
     """
     whose = {} if user_id is None else {"user_id": user_id}
     cvs = {(row["user_id"], row["job_id"]): row for row in db[BuiltDocument.COLLECTION].find(
-        {"kind": "cv", **whose}, {"user_id": 1, "job_id": 1, "mode": 1, "ats_ok": 1},
+        {"kind": "cv", **whose},
+        {"user_id": 1, "job_id": 1, "mode": 1, "ats_ok": 1, "prompt_version": 1, "model": 1},
         sort=[("created_at", 1)])}
     groups: dict[str, Counter] = {}
     for row in db[UserJobState.COLLECTION].find({"applied_at": {"$ne": None}, **whose},
@@ -85,6 +87,10 @@ def outcomes(db: Database, user_id: uuid.UUID | None = None) -> list[dict]:
         names = [ALL, made]
         if cv is not None and cv.get("ats_ok") is not None:
             names.append("CV passed the ATS check" if cv["ats_ok"] else "CV flagged by the ATS check")
+        if cv is not None and cv.get("prompt_version"):
+            # A wording is judged by what became of the applications it wrote for, on the model it ran on.
+            model = cv.get("model") or "the model its account chose"
+            names.append(f"CV wording {cv['prompt_version']} on {model}")
         for name in names:
             groups.setdefault(name, Counter()).update(counts)
     return [{"group": name, **{key: counts[key] for key in ("applied", *STAGES, REJECTED)}}

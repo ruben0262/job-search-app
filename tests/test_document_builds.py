@@ -302,7 +302,9 @@ def test_a_cover_letter_built_keeps_its_posting_and_every_document_its_ats_verdi
     api = ready
     """Retention keeps a posting somebody wrote a cover letter for (`ACTED_ON`), but nothing said they
     had until 2026-11-03. And each document keeps whether it passed the ATS check, so outcomes can say
-    whether passing it helps people hear back."""
+    whether passing it helps people hear back, and the wording and model that wrote it, so they can say
+    which wording does."""
+    from libs import prompts
     from libs.db import find_one
     from libs.db.models import BuiltDocument, UserJobState
 
@@ -314,8 +316,11 @@ def test_a_cover_letter_built_keeps_its_posting_and_every_document_its_ats_verdi
 
     state = find_one(api.db, UserJobState, {"user_id": api.user.id, "job_id": api.job.id})
     assert state.cover_built is True
-    documents = api.db[BuiltDocument.COLLECTION].find({"user_id": api.user.id})
+    documents = list(api.db[BuiltDocument.COLLECTION].find({"user_id": api.user.id}))
     assert {document["ats_ok"] for document in documents} == {True}
+    assert {document["kind"]: document["prompt_version"] for document in documents} == {
+        "cv": prompts.version("write_cv.md"), "cover": prompts.version("write_cover.md")}
+    assert all(document["model"] for document in documents)
 
 
 def test_a_new_one_for_the_same_job_and_kind_replaces_the_old(ready):

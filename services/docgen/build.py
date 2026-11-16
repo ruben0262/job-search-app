@@ -8,9 +8,10 @@ one markup every look lays out (`libs/templates`), and code writes the rest of i
 contact details and links), on a letter the company and its place, and the look they picked.
 
 What comes back is cleaned to that markup and nothing else, so no style, script or hidden text can reach
-an employer. Then it is checked (`problems`): too many pages or a short last one, a number found nowhere
-in the person's documents or the posting, and what a reviewer would send back (`checks`) are said back once
-(`feedback`) for a second answer.
+an employer. Then it is checked (`problems`): too many pages, a number found nowhere in the person's
+documents or the posting, and what a reviewer would send back (`checks`) are said back once (`feedback`)
+for a second answer. A few lines alone on a last page are not: the look is drawn slightly smaller to take
+them up (`pdf.fitted`).
 
 The profile files the setup agents wrote (`base_cv.html`, `tailor_cv.md`, `tailor_cover.md`, …) are no
 longer read: a person's own uploads replaced them (owner, 2026-11-10). They stay where they are, as those
@@ -35,17 +36,30 @@ logger = logging.getLogger(__name__)
 PROMPTS = {"cv": "write_cv.md", "cover": "write_cover.md"}
 # What the model's answer is wrapped in: anything around it, its working or a word of its own, is dropped.
 TAGS = {"cv": "cv", "cover": "letter"}
+# What a whole document has, in the markup: a CV a section, a letter its body. A line of one quoted
+# between the tags is not the document.
+WHOLE = {"cv": 'class="section', "cover": 'class="letter"'}
 # The most pages of A4 each may be. More is said back once.
 MAX_PAGES = {"cv": 2, "cover": 1}
 
-# Room for a two-page CV after its thinking.
-MAX_TOKENS = 16_000
+# Room for a two-page CV after its thinking, which is spent inside this on an API key (a sign-in's tool
+# sets its own). 16,000 was too little: the proposed CV wording's largest of 18 took 15,457, and 11 of
+# the 164 CVs the bench wrote with other wordings went over, to 22,275 (2026-11-15); the same ceiling
+# once ended builds with nothing written (b7845ed). Billed by what is produced, not by what is allowed.
+# At the slowest rate measured on claude-haiku-5-5, 239 tokens a second, this is 134 s of a call's 240
+# (`libs.llm.client.TIMEOUT_SEC`), and it is inside each provider's own limit (Haiku 5.5 and GPT-6 Luna
+# 128,000, Gemini 3.8 Flash 65,536).
+MAX_TOKENS = 32_000
 # How hard the model thinks before it writes (`output_config.effort`; Claude Code's `--effort`), given on
 # every call so an API key and a Claude sign-in write alike: unset, a key ran at Haiku 5.5's own default
 # and a sign-in at Claude Code's, which nobody had chosen. Measured 2026-11-11 (CHANGELOG).
 EFFORT = "medium"
-# Less than this on the last of two pages is a few lines that spilled over (`tailor_cv.md`, failure 4).
-SHORT_LAST_PAGE_CHARS = 500
+
+# Whether a name found in neither their documents nor the posting is said back for a second call
+# (`names_not_in`). Off: the owner, 2026-11-15, "keep the name check just in case but remove it from
+# play". Every name it found in 208 written CVs was an abbreviation, which is allowed, and with those
+# let through it found nothing; it stays here, tested, for the day a made-up "QuickBooks" is seen.
+NAMES_SAID_BACK = False
 
 # The posting, capped. Measured 2026-11-11 over the 27,275 described postings stored here: median 3,678
 # characters, longest 13,985. The 6,000 the writer took before cut the end off 17.1% of them; this cuts none.
@@ -77,8 +91,10 @@ class Request:
     # On a letter, the company and its place.
     letter_to: str
     look: Template
-    # Every text a number in the document may come from: their documents and the posting.
+    # Every text a number or a name in the document may come from: their documents and the posting.
     sources: str
+    # Their documents alone: the language they are in.
+    theirs: str = ""
     # The employer, which a letter's opening names, and the posting, whose own words a letter may quote.
     company: str = ""
     posting: str = ""
@@ -105,12 +121,15 @@ def prepare(kind: str, *, user, job, documents: dict[str, list[str]], look: Temp
         "languages": " ".join(spoken) or "Not stated.",
         "name": name or "(not given)",
         "today": (today or datetime.now(UTC)).strftime("%d %B %Y"),
+        # What a page of the look they picked holds (`templates.PAGE_WORDS`).
+        "page_words": str(look.page_words or ""),
     }
     text = _SLOT.sub(lambda slot: values[slot.group(1)], template or prompts.load(PROMPTS[kind]))
-    company, place = (job.company or "").strip(), (job.location or "").strip()
-    sources = "\n".join([*(text_ for kind_ in documents for text_ in texts(documents, kind_)),
-                         job.title or "", company, place, job.description or ""])
+    company, place = unescape(job.company or "").strip(), unescape(job.location or "").strip()
+    theirs = "\n".join(text_ for kind_ in documents for text_ in texts(documents, kind_))
+    sources = "\n".join([theirs, job.title or "", company, place, job.description or ""])
     return Request(kind=kind, prompt=text, name=name, header=header, look=look, sources=sources,
+                   theirs=theirs,
                    letter_to="<br>".join(escape(each) for each in (company, place) if each), company=company,
                    posting=job.description or "")
 
@@ -135,13 +154,16 @@ def draft(client, request: Request, *, model: str, revision: tuple[str, str] | N
 
 
 def answer(reply: str | None, kind: str) -> str | None:
-    """The document out of the reply, cleaned to the markup: the last complete `<cv>…</cv>`, as a model
-    that thinks aloud may write the tag in its working first."""
+    """The document out of the reply, cleaned to the markup: the last complete `<cv>…</cv>` that is a
+    whole document (`WHOLE`). A model that thinks aloud may write the tag in its working first, or quote a
+    line of its answer between the tags after it: one CV in 44 written for the panel came out as that one
+    quoted sentence, and would have been somebody's PDF (2026-11-14)."""
     tag = TAGS[kind]
-    found = re.findall(rf"(?is)<{tag}>(.*?)</{tag}>", reply or "")
-    if not found or not found[-1].strip():
+    found = [body for body in map(clean, re.findall(rf"(?is)<{tag}>(.*?)</{tag}>", reply or ""))
+             if WHOLE[kind] in body]
+    if not found:
         return None
-    body = clean(found[-1])
+    body = found[-1]
     if kind == "cover":
         return _undated(_EMDASH.sub(", ", body))
     return _one_profile(strip_prose_emdashes(body))
@@ -159,7 +181,8 @@ def assemble(request: Request, body: str) -> str:
 
 @dataclass(frozen=True)
 class Check:
-    """What is wrong with a document: its pages, its numbers, and what a reviewer would send back."""
+    """What is wrong with a document: its pages, the numbers and names found nowhere in their documents
+    or the posting, and what a reviewer would send back."""
 
     pages_over: int
     invented: tuple[str, ...]
@@ -175,18 +198,25 @@ class Check:
         return weight(self) > weight(other)
 
 
-def problems(request: Request, body: str, pages: int | None, last_page_chars: int | None = None) -> Check:
+def problems(request: Request, body: str, pages: int | None, spilled: bool = False) -> Check:
+    """`spilled`: only a few lines reach the last page and no smaller drawing of the look took them up
+    (`pdf.PdfReport.spilled`)."""
     over = max(0, (pages or 0) - MAX_PAGES[request.kind])
     if request.kind == "cv":
         found = checks.cv(body, request.sources)
-        if not over and (pages or 0) > 1 and last_page_chars is not None \
-                and last_page_chars < SHORT_LAST_PAGE_CHARS:
+        if not over and spilled:
             found.insert(0, f"Only a few lines reach page {pages}. Cut the least relevant lines so it "
                             f"ends on page {pages - 1}.")
     else:
         found = checks.letter(body, company=request.company, posting=request.posting)
-    return Check(pages_over=over, invented=numbers_not_in(text_of(body), request.sources),
-                 faults=tuple(found))
+    written = text_of(body)
+    invented = numbers_not_in(written, request.sources)
+    # A name is checked in a CV written in the language of their documents: in another, a faithful
+    # translation ("VAT" for "áfa") is in neither their documents nor the posting.
+    if (NAMES_SAID_BACK and request.kind == "cv"
+            and checks.language(written) == checks.language(request.theirs)):
+        invented += names_not_in(written, request.sources)
+    return Check(pages_over=over, invented=invented, faults=tuple(found))
 
 
 def feedback(request: Request, check: Check, pages: int | None) -> str:
@@ -197,7 +227,7 @@ def feedback(request: Request, check: Check, pages: int | None) -> str:
         found.append(f"It came to {pages} pages of A4, and it must fit on {MAX_PAGES[request.kind]}. Cut the "
                      "least relevant parts. Do not shrink anything, and do not drop what matters most.")
     if check.invented:
-        found.append(f"These numbers are not in their documents or the posting: {', '.join(check.invented)}. "
+        found.append(f"These are in neither their documents nor the posting: {', '.join(check.invented)}. "
                      "Take each one out, or use what their documents actually say.")
     found += check.faults
     tag = TAGS[request.kind]
@@ -211,12 +241,14 @@ def feedback(request: Request, check: Check, pages: int | None) -> str:
 def _job(job) -> str:
     workplace = {"remote": "Remote", "hybrid": "Hybrid", "onsite": "On-site", "on-site": "On-site"}.get(
         (getattr(job, "workplace", None) or "").lower(), "")
-    place = ", ".join(each for each in ((job.location or "").strip(), workplace) if each)
+    place = ", ".join(each for each in (unescape(job.location or "").strip(), workplace) if each)
     language = getattr(job, "language", None)
-    posting = (job.description or "").strip() or "(no description was captured for this posting)"
+    # As a person reads them: a board's "R&amp;D" is "R&D", in the prompt and so in the document.
+    posting = unescape(job.description or "").strip() or "(no description was captured for this posting)"
     if len(posting) > POSTING_MAX_CHARS:
         posting = posting[:POSTING_MAX_CHARS] + f"\n[cut at {POSTING_MAX_CHARS} characters]"
-    lines = [f"Job title: {job.title or ''}", f"Company: {job.company or 'not given'}",
+    lines = [f"Job title: {unescape(job.title or '')}",
+             f"Company: {unescape(job.company or '') or 'not given'}",
              f"Location: {place or 'not given'}"]
     if language:
         lines.append(f"The posting is written in: {LANGUAGE_NAMES.get(language, (language,))[0]}")
@@ -242,9 +274,14 @@ def _header(facts, identity: dict) -> tuple[str, str]:
     name = (identity.get("full_name") or facts.name or "").strip()
     links = [link.get("url") if isinstance(link, dict) else str(link)
              for link in identity.get("links") or []] or list(facts.links)
-    contact = [escape(each) for each in (facts.location, facts.phone) if each]
+    # The phone and the email before the place: with the place first, Affinda's resume parser read no
+    # phone number in 4 of 4 CVs ("Greater Manchester 07700 900236"), and all three with it last
+    # (2026-11-14).
+    contact = [escape(facts.phone)] if facts.phone else []
     if facts.email:
         contact.append(f'<a href="mailto:{escape(facts.email)}">{escape(facts.email)}</a>')
+    if facts.location:
+        contact.append(escape(facts.location))
     contact += [f'<a href="{escape(url if "://" in url else f"https://{url}")}">'
                 f'{escape(re.sub(r"^(?:https?://)?(?:www[.])?|/$", "", url))}</a>' for url in links if url]
     spans = "".join(f"<span>{each}</span>" for each in contact)
@@ -298,16 +335,27 @@ class _Clean(HTMLParser):
 
     def handle_data(self, data: str) -> None:
         if not self.skipping:
-            self.out.append(escape(_ZERO_WIDTH.sub("", data), quote=False))
+            # One space wherever the model left white space: a line break in its markup is not one on the
+            # page, and every look keeps the white space it is given (`templates.EVERY_LOOK`).
+            # Decoded once more: a model that writes "&amp;amp;" means "&", and the page would show
+            # "&amp;" (owner, 2026-11-15: that must not occur).
+            self.out.append(escape(unescape(_SPACES.sub(" ", _ZERO_WIDTH.sub("", data))), quote=False))
+
+
+_SPACES = re.compile(r"\s+")
+# The white space the markup is laid out with, either side of a paragraph's, a box's or a list's tag: none
+# of it is text.
+_AROUND_A_BLOCK = re.compile(r" ?(</?(?:p|div|ul|li|br)\b[^>]*>) ?")
 
 
 def clean(fragment: str) -> str:
-    """Only the markup's own tags and class names, links that are links, and the text: no style, script,
-    comment or invisible character. Whatever hid text in a document cannot survive this."""
+    """Only the markup's own tags and class names, links that are links, and the text, with one space
+    between words: no style, script, comment or invisible character. Whatever hid text in a document
+    cannot survive this."""
     parser = _Clean()
     parser.feed(fragment)
     parser.close()
-    return "".join(parser.out).strip()
+    return _AROUND_A_BLOCK.sub(r"\1", "".join(parser.out).strip())
 
 
 def text_of(html: str) -> str:
@@ -353,8 +401,50 @@ def numbers_not_in(text: str, sources: str) -> tuple[str, ...]:
         return {plain, str(int(value)) if value.is_integer() else str(value)}
 
     known = set().union(*(forms(*each) for each in _NUMBER.findall(sources)))
+    # A date written with dots is read as one number ("07.02.2029", "2028.05.16."): its year is theirs too.
+    known |= {part for digits, _ in _NUMBER.findall(sources) if digits.count(".") >= 2
+              for part in digits.split(".") if len(part) == 4}
     return tuple(dict.fromkeys(match.group(0) for match in _NUMBER.finditer(text)
                                if not forms(match.group(1), match.group(2) or "") & known))
+
+
+# A name as a tool, a method or a qualification is written: three characters or more, with a capital
+# after its first letter or a figure after it ("DevOps", "QuickBooks", "GA4"). A word that only starts
+# with a capital is any word at the start of a line, and in German any noun. Capitals alone, or with a
+# plural's "s", are an abbreviation, and abbreviations are allowed (owner, 2026-11-15).
+_NAME_PARTS = re.compile(r"[\s,;:()\[\]/&·\u2013\u2014-]+")
+
+
+def names_not_in(text: str, sources: str) -> tuple[str, ...]:
+    """The names in `text` that appear nowhere in `sources`, each once: a tool or a method the model
+    brought in itself, as it can a number.
+
+    An abbreviation is not one of them (owner, 2026-11-15: "abbreviations are allowed"). Every name this
+    found in 208 written CVs was one: "AGM" for their "annual general meeting", "KPIs", "CRM" over
+    HubSpot, and once "ROAS" in "ROAS bidding", which that marketer had never done but whose letter does
+    say "return on ad spend". Each cost a second call, 12 of 108 panel CVs, and no reviewer counted one
+    untrue. What is left is a name with a small letter or a figure in it, which nothing has yet been
+    caught by."""
+    # As they wrote it, and without its full stops: a "B.Sc." is a "BSc".
+    known = sources.casefold()
+    known = f"{known}\n{known.replace('.', '')}"
+
+    def said(name: str) -> bool:
+        forms = {name, name[:-1]} if name.endswith("s") and len(name) > 3 else {name}
+        return any(re.search(rf"(?<![^\W_]){re.escape(form.casefold())}s?(?![^\W_])", known)
+                   for form in forms)
+
+    names = (part.strip(".'\"\u201c\u201d\u2018\u2019!?") for part in _NAME_PARTS.split(text))
+    return tuple(dict.fromkeys(
+        name for name in names
+        if len(name) >= 3 and name[0].isalpha() and name.isalnum()
+        and any(ch.isupper() or ch.isdigit() for ch in name[1:])
+        and not _abbreviation(name) and not said(name)))
+
+
+def _abbreviation(name: str) -> bool:
+    letters = name[:-1] if name.endswith("s") else name
+    return letters.isalpha() and letters.isupper()
 
 
 _EMDASH = re.compile(r"\s*(?:—|&mdash;|&#8212;)\s*")

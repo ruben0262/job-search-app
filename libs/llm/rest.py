@@ -14,7 +14,7 @@ from typing import NoReturn
 import httpx
 
 from libs.llm import toolcalls
-from libs.llm.client import TIMEOUT_SEC, LlmError, warn_if_truncated
+from libs.llm.client import TIMEOUT_SEC, LlmError, Reply, counted, warn_if_truncated
 from libs.secrets import redact
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,11 @@ class GeminiClient:
             reason = (candidate.get("finishReason")
                       or (reply.get("promptFeedback") or {}).get("blockReason"))
             raise LlmError(f"Gemini wrote nothing ({reason or 'no reason given'})")
-        return text
+        used = reply.get("usageMetadata") or {}
+        written = used.get("candidatesTokenCount")
+        if isinstance(written, int):
+            written += used.get("thoughtsTokenCount") or 0
+        return Reply(text, counted(used.get("promptTokenCount"), written), reply.get("modelVersion"))
 
     def complete_tools(self, *, model: str, system: str, messages: list[dict], tools: list[dict],
                        max_tokens: int, on_text=None) -> dict:
@@ -82,7 +86,9 @@ class OpenAIClient:
         text = (choice.get("message") or {}).get("content") or ""
         if not text:
             raise LlmError(f"OpenAI wrote nothing ({choice.get('finish_reason') or 'no reason'})")
-        return text
+        used = reply.get("usage") or {}
+        return Reply(text, counted(used.get("prompt_tokens"), used.get("completion_tokens")),
+                     reply.get("model"))
 
     def complete_tools(self, *, model: str, system: str, messages: list[dict], tools: list[dict],
                        max_tokens: int, on_text=None) -> dict:

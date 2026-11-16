@@ -54,7 +54,8 @@ def handle(db, job: QueueJob) -> None:
         logger.info("docgen: %s cannot build yet — %s", job.user_id, exc)
         return
     keep(db, build_id=job.id, user_id=job.user_id, job_id=job_id, kind=kind, mode=mode,
-         filename=built.filename, pdf=built.pdf, ats_ok=built.ats_ok)
+         filename=built.filename, pdf=built.pdf, ats_ok=built.ats_ok,
+         prompt_version=built.prompt_version, model=built.model)
     if kind == "cover":
         # What retention keeps a posting for (`libs.corpus.archive.ACTED_ON`). Nothing set it before
         # 2026-11-03, so a posting somebody wrote a cover letter for aged out like any other.

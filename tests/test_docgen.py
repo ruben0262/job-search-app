@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -101,6 +102,42 @@ class FakeClient:
 
 # ── what reaches the model ────────────────────────────────────────────────────────────────────
 
+def test_a_prompt_that_asks_what_a_page_holds_is_told_the_picked_looks_own_number():
+    """Owner, 2026-11-14: tell the prompt the picked look's own number, so a CV is written for the page it
+    will be drawn on. Meridian's is the 400 the prompt has always said."""
+    asks = "One page holds about {{page_words}} words. <cv></cv>"
+
+    assert "about 400 words" in _request(template=asks, look=MERIDIAN).prompt
+    assert "about 310 words" in _request(template=asks, look=templates.find("cv", "halcyon")).prompt
+
+
+def test_the_cv_prompt_everyone_is_written_with_is_told_their_looks_page_and_names_the_job():
+    """The wording made live on 2026-11-15 (owner; CHANGELOG): it is told the picked look's own page,
+    where the one before said 400 to everybody, and it has the profile name the job in the posting's
+    title, which is what took the ATS checks from 87 to 99 of 100."""
+    prompt = _request(look=templates.find("cv", "halcyon")).prompt
+
+    assert "about 310 words" in prompt and "about 400 words" not in prompt and "{{" not in prompt
+    assert "in the posting's own title" in _request(look=MERIDIAN).prompt
+
+
+def test_an_ampersand_is_never_shown_as_its_code():
+    """The owner, 2026-11-15: "&amp;" must not occur. A reviewer was shown "Fennel &amp; Flint" by the
+    bench, and the same could reach a person's page two ways: a model that writes the code twice, and a
+    job whose employer was kept with the code in it, which the letter's address then showed as typed."""
+    for said in ("Fennel & Flint", "Fennel &amp; Flint", "Fennel &amp;amp; Flint"):
+        page = build.clean(f'<p class="profile">Chef at {said}.</p>')
+        assert page == '<p class="profile">Chef at Fennel &amp; Flint.</p>', said
+        assert build.text_of(page) == "Chef at Fennel & Flint."
+
+    job = FakeJob()
+    job.company, job.title = "Fennel &amp; Flint", "R&amp;D Chef"
+    letter = _request("cover", job=job)
+    assert "Fennel & Flint" in letter.prompt and "R&D Chef" in letter.prompt and "&amp;" not in letter.prompt
+    assert "Fennel &amp; Flint" in letter.letter_to and "amp;amp" not in letter.letter_to
+    assert letter.company == "Fennel & Flint"
+
+
 def test_the_prompt_carries_the_job_and_everything_they_switched_on():
     """The owner's plan (2026-11-10): one prompt with all of it. Each CV apart, their About you, their
     other files, the whole posting, and the day it is."""
@@ -174,12 +211,41 @@ def test_only_the_markup_survives():
                     '<a>bad</a><a href="https://example.com">good</a>cell</div>')
 
 
+def test_the_white_space_of_the_models_markup_is_not_text():
+    """Every look keeps the white space it is given, so that a wrapped line keeps its space for a reader
+    that takes a PDF's characters as they are (`templates.EVERY_LOOK`, 2026-11-15). A line break or an
+    indent in the model's markup must then not be one on the page."""
+    written = ('<p class="profile">\n  Backend engineer who cut\n  latency to <strong>40ms</strong> for '
+               'shops.\n</p>\n\n<div class="section">\n  <div class="section-title">Skills</div>\n  <ul>\n'
+               "    <li><strong>Tools:</strong> Python, Postgres</li>\n    <li> On\n      call </li>\n"
+               "  </ul>\n</div>")
+
+    assert build.clean(written) == (
+        '<p class="profile">Backend engineer who cut latency to <strong>40ms</strong> for shops.</p>'
+        '<div class="section"><div class="section-title">Skills</div><ul>'
+        "<li><strong>Tools:</strong> Python, Postgres</li><li>On call</li></ul></div>")
+
+
 def test_the_answer_is_the_last_complete_one_and_nothing_around_it():
     """A model that works aloud may write the tag in its working before its answer."""
     reply = (f'Plan: the <cv> should lead with billing.\n<cv><p class="profile">Draft</p></cv>\n'
              f"Then:\n{ANSWER}\nDone.")
 
     assert build.answer(reply, "cv").startswith('<p class="profile">Backend engineer')
+
+
+def test_a_line_of_the_answer_quoted_after_it_is_not_taken_for_the_document():
+    """One CV in 44 written for the panel was a single quoted sentence: the model went on after its CV,
+    quoting its profile between the tags, and the last pair of tags was the answer (2026-11-14)."""
+    quoted = '<cv><p class="profile">Backend engineer who built the billing service...</p></cv>'
+    quoted_letter = "<letter><p>Dear Hiring Manager,</p></letter>"
+
+    assert build.answer(f"{ANSWER}\nI checked the profile: {quoted}", "cv") == build.answer(ANSWER, "cv")
+    assert build.answer(f"{LETTER_ANSWER}\nIt opens {quoted_letter}", "cover") == build.answer(LETTER_ANSWER,
+                                                                                               "cover")
+    # And when a line is all there is, there is no document: the build fails and is tried again.
+    with pytest.raises(build.BuildFailed):
+        build.draft(FakeClient(f"The CV starts {quoted} and then <cv><p>ran out"), _request(), model=MODEL)
 
 
 @pytest.mark.parametrize("reply", ["", "Here is the CV.", "<cv><p>cut off", "<cv>   </cv>"])
@@ -189,8 +255,9 @@ def test_a_reply_with_no_complete_answer_is_a_build_failure(reply):
 
 
 def test_em_dashes_leave_a_cvs_sentences_and_stay_in_its_titles():
-    body = build.answer('<cv><p class="profile">Engineer — payments</p><span class="entry-title">Lead — '
-                        'Northwind</span><ul><li>Shipped billing — 40ms</li></ul></cv>', "cv")
+    body = build.answer('<cv><p class="profile">Engineer — payments</p><div class="section"><span '
+                        'class="entry-title">Lead — Northwind</span><ul><li>Shipped billing — 40ms</li></ul>'
+                        "</div></cv>", "cv")
 
     assert "Engineer, payments" in body and "Shipped billing, 40ms" in body
     assert "Lead — Northwind" in body
@@ -221,6 +288,11 @@ def test_the_page_has_their_header_and_the_look_they_picked():
     assert '<a href="https://github.com/alice">github.com/alice</a>' in page
     assert '<a href="https://alice.dev">alice.dev</a>' in page
     assert page.index("cv-header") < page.index('class="profile"')
+    # The phone, then the email, then the place: with the place first, a resume parser read no phone
+    # number at all ("Greater Manchester 07700 900236", Affinda, 4 of 4 CVs, 2026-11-14).
+    contact = page[page.index('class="cv-contact"'):]
+    assert contact.index("+49 151 2345 6789") < contact.index("alice@example.com") < contact.index(
+        "<span>Berlin, Germany</span>") < contact.index("github.com/alice")
 
 
 def test_a_letter_names_the_company_and_its_place_above_the_subject():
@@ -248,6 +320,79 @@ def test_a_number_found_nowhere_in_their_documents_or_the_posting_is_named():
     assert build.numbers_not_in("Grew revenue 35% across 1,200 shops, 35% again", sources) == ("35",)
 
 
+def test_a_document_that_uses_its_whole_ceiling_still_ends_inside_its_calls_clock():
+    """The ceiling holds the thinking too, on an API key. At 16,000 the longest CVs the bench wrote would
+    have been cut off with nothing to show (22,275 tokens out the longest of 164, 2026-11-15), and a
+    ceiling raised past what one call's clock allows would be cut off by the clock instead."""
+    from libs.llm.client import TIMEOUT_SEC
+
+    tokens_a_second = 239  # the slowest of claude-haiku-5-5's long CVs at medium (239 to 260 a second)
+    assert build.MAX_TOKENS > 22_275
+    assert build.MAX_TOKENS / tokens_a_second < TIMEOUT_SEC
+
+
+def test_the_year_of_a_date_written_with_dots_is_theirs():
+    """A driver's licence says "07.02.2029" and his CV "valid to Feb 2029". Read whole, the date is one
+    number, so the year was called a number from nowhere and the CV sent back for a second call: 3 of 36
+    CVs of two candidate wordings (2026-11-15). A year their documents do not give is still named."""
+    sources = "Valid to: 07.02.2029. Érvényes: 2028.05.16. Stock worth 1.200.000 Ft."
+
+    assert build.numbers_not_in("Licence valid to Feb 2029, ADR to May 2028", sources) == ()
+    assert build.numbers_not_in("Licence valid to 2030, 200 pallets a day", sources) == ("2030", "200")
+
+
+def test_a_name_found_nowhere_in_their_documents_or_the_posting_is_named():
+    """As a number is: a tool or a method the model brought in itself ("QuickBooks" on the CV of somebody
+    who never said it). A word that only starts with a capital is any word, and in German any noun."""
+    sources = "Ran Google Ads and Meta Ads with target CPA bidding in GA4. Reported KPIs weekly. HubSpot."
+
+    assert build.names_not_in("Target CPA bidding in GA4, HubSpot and QuickBooks, Google Ads",
+                              sources) == ("QuickBooks",)
+    assert build.names_not_in("DevOps and MLOps: Docker, CI/CD. Used GA4 and GA5.", sources) == (
+        "DevOps", "MLOps", "GA5")
+    assert build.names_not_in("Elektroinstallation in Wohn- und Gewerbebauten, 40ms, 10k+, B2B", sources
+                              + " B2B") == ()
+    assert build.names_not_in("BSc Nursing, three GCSEs", "B.Sc. in Nursing. GCSE English and Maths.") == ()
+
+
+def test_an_abbreviation_is_allowed():
+    """The owner, 2026-11-15: abbreviations are allowed. A CV that said "AGMs" for their "annual general
+    meeting", "KPIs" for the figures they report or "CRM" over HubSpot was sent back for a second call: 12
+    of 108 CVs written for the panel, and no reviewer counted one as untrue. Capitals alone, or with the "s"
+    of a plural, are an abbreviation. A name with a small letter or a figure in it is still checked."""
+    sources = "Organised the annual general meeting. Reported cost per lead weekly from HubSpot."
+
+    assert build.names_not_in("Events: AGMs. Report KPIs. CRM and email: HubSpot. ROAS, ÁFA.", sources) == ()
+    assert build.names_not_in("CRM: HubSpot and SalesHub, GA4 and B2B", sources) == ("SalesHub", "GA4", "B2B")
+
+
+def test_a_name_from_nowhere_is_not_said_back_while_the_check_is_out_of_play(monkeypatch):
+    """The owner, 2026-11-15: keep the name check, "just in case", and take it out of play. It costs
+    nobody a second call now; switched on again it says a name back with the numbers, in a CV written in
+    the language of their documents."""
+    request = _request()
+    named = build.answer(ANSWER.replace("Built the billing service", "Built PayStream into the billing "
+                                                                     "service"), "cv")
+
+    assert build.problems(request, named, 1).ok
+    assert build.problems(request, '<li>Built PayStream for 35 shops</li>', 1).invented == ("35",)
+
+    monkeypatch.setattr(build, "NAMES_SAID_BACK", True)
+    check = build.problems(request, named, 1)
+    assert check.invented == ("PayStream",) and not check.ok
+    assert ("These are in neither their documents nor the posting: PayStream."
+            in build.feedback(request, check, 1))
+
+    # Their documents are English. In a CV written in German for a German posting, a translated name is in
+    # neither, and is theirs all the same.
+    german = ('<p class="profile">Backend-Entwicklerin mit Erfahrung in der Abrechnung und im Zahlungsverkehr'
+              ' '
+              'für Onlinehändler in ganz Deutschland, seit vielen Jahren in Berlin tätig.</p>'
+              '<div class="section"><div class="section-title">Berufserfahrung</div><ul><li>Verantwortlich '
+              "für die Umsatzsteuer-Voranmeldung (UStVA) und die Abrechnung aller Händler</li></ul></div>")
+    assert build.problems(request, german, 1).invented == ()
+
+
 def test_the_checks_count_pages_over_and_numbers_not_theirs():
     request = _request()
 
@@ -262,7 +407,7 @@ def test_what_is_said_back_is_only_what_was_found_and_says_cut_never_shrink():
     said = build.feedback(_request(), build.Check(pages_over=1, invented=("35",)), 3)
 
     assert "3 pages" in said and "fit on 2" in said and "Do not shrink" in said
-    assert "These numbers are not in their documents or the posting: 35." in said
+    assert "These are in neither their documents nor the posting: 35." in said
     assert said.rstrip().endswith("between <cv> and </cv>.")
     assert "numbers" not in build.feedback(_request(), build.Check(pages_over=1, invented=()), 3)
 
@@ -271,8 +416,9 @@ def test_what_is_said_back_is_only_what_was_found_and_says_cut_never_shrink():
 
 @pytest.fixture
 def fake_chrome(monkeypatch):
-    """Chrome, as a function: what it was handed, how often, and the pages the PDF claims, in order."""
-    state = {"pages": [1], "calls": 0, "html": []}
+    """Chrome, as a function: what it was handed, how often, and the pages the PDF claims, in order.
+    `last` is how many characters every PDF's last page holds."""
+    state = {"pages": [1], "calls": 0, "html": [], "last": None}
 
     def render(html: str) -> bytes:
         state["calls"] += 1
@@ -281,7 +427,8 @@ def fake_chrome(monkeypatch):
 
     def inspect_pdf(document: bytes, *, kind="cv", headings=()):
         pages = state["pages"]
-        return pdf.PdfReport(pages=pages.pop(0) if len(pages) > 1 else pages[0], chars=1_200, issues=[])
+        return pdf.PdfReport(pages=pages.pop(0) if len(pages) > 1 else pages[0], chars=1_200, issues=[],
+                             last_page_chars=state["last"])
 
     monkeypatch.setattr(run.pdf, "render", render)
     monkeypatch.setattr(run.pdf, "inspect_pdf", inspect_pdf)
@@ -315,6 +462,23 @@ def test_a_cv_comes_back_as_a_pdf_named_for_the_person_in_one_call(monkeypatch, 
     assert fake_chrome["calls"] == 1
     assert client.calls[0]["model"] == MODEL and client.calls[0]["system"] == build.SYSTEM
     assert "Built the billing service" in fake_chrome["html"][0]
+
+
+def test_a_document_is_kept_by_the_model_that_wrote_it(monkeypatch, fake_chrome):
+    """Owner, 2026-11-15. The model that answered, where the provider says: asked for a name, a provider
+    answers with the dated model behind it, and a plan may answer with another altogether. Where it does
+    not say, the one asked for."""
+    from libs.llm.client import Reply
+
+    session, user = _session(monkeypatch)
+
+    assert _ai(session, user, FakeClient(Reply(ANSWER, model="claude-haiku-5-5-20261001"))).model == (
+        "claude-haiku-5-5-20261001")
+    assert _ai(session, user, FakeClient(ANSWER)).model == MODEL
+    # Said back once and the second answer kept: the second answer's model.
+    invented = ANSWER.replace("Built the billing service", "Grew revenue 35% with the billing service")
+    twice = FakeClient(Reply(invented, model="first"), Reply(ANSWER, model="second"))
+    assert _ai(session, user, twice).model == "second"
 
 
 def test_a_number_they_never_gave_is_said_back_once_and_the_answer_without_it_kept(monkeypatch,
@@ -360,6 +524,53 @@ def test_a_second_answer_that_never_came_whole_leaves_the_first(monkeypatch, fak
     result = _ai(session, user, FakeClient(ANSWER, "<cv><p>cut off"))
 
     assert result.calls == 2 and result.pdf == b"%PDF-1.4 fake 1" and fake_chrome["calls"] == 1
+
+
+def test_a_few_lines_on_a_last_page_are_taken_up_by_the_look_and_not_asked_for_again(monkeypatch,
+                                                                                     fake_chrome):
+    """8 of 36 first drafts cost a second call of ~45 s for one spilled line (2026-11-14)."""
+    session, user = _session(monkeypatch)
+    fake_chrome["pages"], fake_chrome["last"] = [2, 1], 40
+    client = FakeClient()
+
+    result = _ai(session, user, client)
+
+    assert result.calls == 1 and len(client.calls) == 1 and result.pages == 1
+    assert fake_chrome["calls"] == 2 and result.pdf == b"%PDF-1.4 fake 2"
+    first, smaller = fake_chrome["html"]
+    assert "zoom" not in first and smaller.replace("<style>body { zoom: 0.98; }</style>\n", "") == first
+
+
+def test_lines_no_smaller_drawing_takes_up_are_said_back_as_before(monkeypatch, fake_chrome):
+    session, user = _session(monkeypatch)
+    fake_chrome["pages"], fake_chrome["last"] = [2], 40
+    client = FakeClient()
+
+    result = _ai(session, user, client)
+
+    assert result.calls == 2 and "Only a few lines reach page 2" in client.calls[1]["messages"][2]["content"]
+    # Each answer was tried at every smaller drawing, and what they download is the look as designed.
+    assert fake_chrome["calls"] == 8 and result.pdf == b"%PDF-1.4 fake 5"
+    assert "zoom" not in fake_chrome["html"][4] and "zoom: 0.94" in fake_chrome["html"][3]
+
+
+def test_a_document_says_how_long_it_took_and_the_tokens_it_used(monkeypatch, fake_chrome, caplog):
+    """Owner, 2026-11-14: record the token spend, and time the making. One line a document, with the
+    seconds the model wrote for and Chrome drew for, and the tokens of every call it took."""
+    from libs.llm.client import Reply, Usage
+
+    session, user = _session(monkeypatch)
+    invented = ANSWER.replace("Built the billing service", "Grew revenue 35% with the billing service")
+    counted = FakeClient(Reply(invented, Usage(5_000, 2_000)), Reply(ANSWER, Usage(7_400, 1_300)))
+
+    with caplog.at_level("INFO", logger="services.docgen.run"):
+        _ai(session, user, counted)
+        _ai(session, user, FakeClient())
+
+    built = [record.getMessage() for record in caplog.records if "docgen.built" in record.getMessage()]
+    assert "calls=2" in built[0] and "tokens_in=12400 tokens_out=3300" in built[0]
+    assert re.search(r"write_s=\d+[.]\d render_s=\d+[.]\d", built[0])
+    assert "tokens_in=- tokens_out=-" in built[1], "a tool that does not count is not nought"
 
 
 def test_a_cv_that_passes_is_never_asked_for_twice(monkeypatch, fake_chrome):
@@ -558,6 +769,9 @@ def test_a_role_that_ended_above_one_still_held_is_sent_back_and_each_section_is
 
     assert any("still hold" in fault for fault in checks.cv(wrong))
     assert not any("still hold" in fault for fault in checks.cv(right))
+    # A job dated as a chef wrote it, "since March 23", is a job still held (2026-11-14).
+    since = _section("Experience", _entry("2021 - Feb 23"), _entry("Since March 23"))
+    assert any("still hold" in fault for fault in checks.cv(since))
 
 
 def test_a_cv_names_nobody_and_states_no_length_of_experience_their_documents_do_not():
@@ -578,6 +792,13 @@ def test_end_to_end_testing_is_work_and_owning_something_end_to_end_is_filler():
     assert checks.cliches("Modelled fee dynamics") == [], "a word that holds a cliché is not one"
 
 
+def test_dynamic_remarketing_is_a_kind_of_advert_and_a_dynamic_team_is_filler():
+    """A marketer's own "dynamic remarketing" was sent back as a word that describes nothing, in 2 of the
+    4 CVs written for her (2026-11-14)."""
+    assert checks.cliches("Set up dynamic remarketing and catalogue ads from the product feed") == []
+    assert checks.cliches("Thrives in a dynamic team") == ["dynamic"]
+
+
 def test_the_word_rules_are_english_and_a_german_cv_is_held_to_the_rest():
     """A German "dynamisch" is not the cliché the list means; a bullet too long is long in any language."""
     long = ("Entwickelte die Zahlungsplattform für zwölfhundert Händler in Berlin und München neu, "
@@ -589,6 +810,51 @@ def test_the_word_rules_are_english_and_a_german_cv_is_held_to_the_rest():
               f"<ul><li>{long}</li></ul></div>")
 
     assert [fault.split()[1:4] for fault in checks.cv(german)] == [["bullet(s)", "run", "over"]]
+
+
+def test_a_cv_in_another_language_headed_in_english_is_sent_back():
+    """One of the eight CVs written in German and Hungarian for the panel was headed "Skills", "Experience",
+    "Education" and "Languages", as the prompt's markup example is (2026-11-14)."""
+    def german(*headings: str) -> str:
+        return ('<p class="profile">Elektroniker für Energie- und Gebäudetechnik mit Erfahrung in der '
+                "Elektroinstallation, Wartung und Fehlersuche in Wohn- und Gewerbebauten sowie in "
+                "Mietwohnungen im Raum Leipzig.</p>"
+                + "".join(_section(heading, "<ul><li>Elektroinstallation in Wohnbauten</li></ul>")
+                          for heading in headings))
+
+    said = checks.cv(german("Skills", "Experience", "Education", "Weiterbildung"))
+    assert said == ["The headings Skills, Experience, Education are in English and the CV is not. Write "
+                    "every heading in the language of the CV."]
+    assert checks.cv(german("Kenntnisse", "Berufserfahrung", "Ausbildung")) == []
+    assert not any("headings" in fault for fault in checks.cv(CV_BODY)), "an English CV is headed in English"
+
+
+def test_a_letter_in_another_language_is_measured_by_its_length_on_the_page():
+    """Two of four Hungarian letters were sent back as too short at 164 and 166 words, each as long on the
+    page as an English one of 230: Hungarian says the same in fewer, longer words (2026-11-14)."""
+    hungarian = _letter(
+        "Jelenleg 22 ügyfelem, kft.-k, bt.-k és egyéni vállalkozók könyvelését vezetem a Számadó "
+        "Könyvelőiroda Kft.-nél, a Northwind könyvelői állására pedig azért jelentkezem, mert ugyanezt a "
+        "munkát szeretném egyetlen cégcsoportnál, hosszú távon végezni.",
+        "A havi munkám egyik legfontosabb része az áfabevallások elkészítése és beküldése ÁNYK és ONYA "
+        "felületen. A bevallásokhoz a számlaadatokat a NAV Online Számla adataival egyeztetem, a "
+        "bankkivonatokat pedig naponta könyvelem, hogy a folyószámlák mindig naprakészek legyenek.",
+        "Mielőtt könyvelőirodába kerültem, másfél évig a Tölgyes Bútor Kft.-nél dolgoztam pénzügyi "
+        "asszisztensként. Itt havonta mintegy 250 szállítói számlát iktattam és rögzítettem Kulcs-Soft "
+        "rendszerben, a házipénztárt kezeltem, és a vevői kintlévőségeket figyeltem.",
+        "Stabil, magyar tulajdonú családi cégcsoportnál szeretnék hosszú távon dolgozni, és a szakmai "
+        "képzések is fontosak számomra. Mérlegképes könyvelő képzésen vagyok, a vizsgám jövő júniusban "
+        "várható, addig is a főkönyvelő mellett önállóan vinném a havi feladatok egy részét.",
+        "A folyószámla-egyeztetést és a vevő- és szállítóanalitika vezetését jelenleg is önállóan végzem, a "
+        "havi zárásokban és az éves beszámolók előkészítésében pedig a vezető könyvelővel dolgozom együtt, "
+        "a határidőket minden hónapban pontosan betartva.")
+    prose = re.findall(r"<p>(.*?)</p>", hungarian)[1:]
+    assert sum(len(part.split()) for part in prose) < checks.LETTER_WORDS[0], "the premise: under 180 words"
+
+    assert not any("words" in fault for fault in checks.letter(hungarian, company="Northwind"))
+    # And a letter too short in any language still is.
+    short = _letter(*re.findall(r"<p>(.*?)</p>", hungarian)[1:3])
+    assert any("words" in fault for fault in checks.letter(short, company="Northwind"))
 
 
 def test_a_letter_is_sent_back_for_what_gives_a_generated_one_away():
@@ -616,11 +882,30 @@ def test_a_letter_that_closes_on_applying_is_sent_back_and_one_quoting_the_posti
 
 
 def test_a_second_page_with_a_few_lines_on_it_is_sent_back_and_a_full_one_is_not():
-    """The fourth failure the owner's review caught every time: an orphan line or two on page two."""
+    """The fourth failure the owner's review caught every time: an orphan line or two on page two. Said
+    back only when no smaller drawing of the look took the lines up (`pdf.fitted`)."""
     request, body = _request(), build.answer(ANSWER, "cv")
+    few, full = (pdf.PdfReport(pages=2, chars=3_000, last_page_chars=last) for last in (120, 2_400))
 
-    assert any("page 2" in fault for fault in build.problems(request, body, 2, 120).faults)
-    assert build.problems(request, body, 2, 2_400).ok
+    assert few.spilled and not full.spilled
+    assert not pdf.PdfReport(pages=1, chars=3_000, last_page_chars=120).spilled
+    assert any("page 2" in fault for fault in build.problems(request, body, 2, few.spilled).faults)
+    assert build.problems(request, body, 2, full.spilled).ok
+
+
+def test_a_line_that_says_only_what_they_did_is_not_sent_back(monkeypatch, fake_chrome):
+    """Owner, 2026-11-14. "Helped the sous chef with orders" is all a chef's documents say of it, and it was
+    said back as "describes a task" for 8 of 44 CVs. Four of those second calls were run: each reworded
+    the line, and one made it "Shared ordering". The CV goes out as written, in one call."""
+    session, user = _session(monkeypatch)
+    helped = ANSWER.replace("Built the billing service in Python and Postgres",
+                            "Helped the lead engineer with the billing service in Python and Postgres")
+    client = FakeClient(helped)
+
+    result = _ai(session, user, client)
+
+    assert checks.cv(build.answer(helped, "cv")) == []
+    assert result.calls == 1 and len(client.calls) == 1
 
 
 def test_a_fault_is_said_back_once_and_the_answer_without_it_kept(monkeypatch, fake_chrome):

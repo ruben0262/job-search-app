@@ -19,12 +19,15 @@ from libs.corpus.langfilter import detect_language
 
 # Words that describe nothing, and the AI tells a recruiter skims past. One list for both documents; the
 # letter adds its own openings and closings below.
-CLICHES = ("results-driven", "passionate", "dynamic", "motivated", "hard-working", "team player",
+CLICHES = ("results-driven", "passionate", "motivated", "hard-working", "team player",
            "detail-oriented", "go-getter", "proven track record", "leverage", "leveraging", "leveraged",
            "spearheaded", "synergy", "synergies", "cutting-edge", "seamless", "seamlessly", "robust",
            "innovative", "best-in-class", "proactive", "ambitious", "institutional-quality", "delve")
 # "End-to-end" is a kind of testing, and only filler otherwise.
 _END_TO_END = re.compile(r"(?i)\bend-to-end\b(?!\s+(?:test|tests|testing|tested|encrypt\w*)\b)")
+# "Dynamic" is a kind of advert and of pricing: a marketer's "dynamic remarketing" was sent back as filler
+# in 2 of her 4 CVs (2026-11-14).
+_DYNAMIC = re.compile(r"(?i)\bdynamic\b(?!\s+(?:remarketing|retargeting|pricing|ads?|creatives?|content)\b)")
 
 # How a cover letter gives itself away in its first and last lines (`tailor_cover.md`, failures 1 and 7):
 # every close about applying rather than the work ("I would welcome a conversation", 2026-11-11).
@@ -37,9 +40,6 @@ LETTER_PHRASES = ("i am writing to", "i'm writing to", "i\u2019m writing to", "i
 # A bullet that ends by saying what it shows (`tailor_cv.md`, failure 2).
 _TELLING_TAIL = re.compile(r"(?i),\s*(?:demonstrating|showcasing|highlighting|underscoring|proving|"
                            r"reflecting)\b[^,.;]*[.]?$")
-# A bullet that describes a task and not what came of it (`context.md`, the bullet formula).
-_TASK_OPENING = re.compile(r"(?i)^(?:responsible for|worked on|helped|assisted|participated in|"
-                           r"was involved in|involved in|duties included)\b")
 # A profile about the application rather than the person, or rating itself.
 _ABOUT_APPLYING = re.compile(r"(?i)\b(?:applicant|applying|candidate)\b")
 # A CV names nobody: one called its owner "he" from their first name (2026-11-11).
@@ -48,8 +48,8 @@ _THIRD_PERSON = re.compile(r"\b(?:he|she|him|his|her|hers)\b", re.IGNORECASE)
 _WORDS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve")
 _YEARS_SAID = re.compile(rf"(?i)\b(\d+|{'|'.join(_WORDS)})\+?\s+years?\b")
 # A role still held, by how its dates end: "Mar 2021 – Present", "2019 – heute", "2020 – jelenleg".
-_ONGOING = re.compile(r"(?i)\b(?:present|current|now|today|heute|aktuell|pr[ée]sent|aujourd|actualidad|"
-                      r"presente|attuale|jelenleg|napjainkig|obecnie|heden|nu)\b")
+STILL_HELD = re.compile(r"(?i)\b(?:present|current|now|today|since|heute|aktuell|seit|pr[ée]sent|aujourd|"
+                        r"depuis|actualidad|presente|desde|attuale|dal|jelenleg|napjainkig|obecnie|heden|nu)\b")
 _DATES = re.compile(r'(?is)<div class="entry">.*?(?:<span class="entry-date">(.*?)</span>|</div>)')
 _SELF_RATING = re.compile(r"(?i)\b(?:strong in|strengths in|excellent|exceptional|outstanding|"
                           r"highly skilled)\b")
@@ -67,10 +67,17 @@ _CONTRACTION = re.compile(rf"(?i)\b(?:\w+n[{_Q}]t|i[{_Q}]m|\w+[{_Q}](?:re|ve|ll|
 # A colon in a sentence, the claim-colon-elaboration habit (`tailor_cover.md`, failure 4).
 _PROSE_COLON = re.compile(r"[^\W\d_]\s*:\s+\S")
 
+# The headings of the prompt's own markup example. A CV written in German came out headed "Skills",
+# "Experience", "Education" and "Languages" (1 of the 8 written in German and Hungarian, 2026-11-14).
+_EXAMPLE_HEADINGS = frozenset({"skills", "experience", "education", "languages"})
+_SECTION_TITLE = re.compile(r'(?is)<div class="section-title">(.*?)</div>')
+
 # One bullet, one or two lines of A4.
 MAX_BULLET_WORDS = 35
 # A letter that reads in under a minute, and still says something (`tailor_cover.md`: about 200-260).
 LETTER_WORDS = (180, 320)
+# An English word and its space, in the letters written for the panel (5.6 to 5.9).
+CHARS_A_WORD = 6
 # A paragraph a reader skims in one look.
 MAX_PARAGRAPH_SENTENCES = 4
 
@@ -91,10 +98,14 @@ def text(html: str) -> str:
     return " ".join(unescape(_TAG.sub(" ", html)).split())
 
 
+def language(prose: str) -> str:
+    """The language a text is in. Unknown (too short to tell) counts as English: the checks it gates are
+    the prompt's own rules, and a wrong "yes" costs one revision, a wrong "no" a missed fault."""
+    return detect_language(prose) or "en"
+
+
 def is_english(html: str) -> bool:
-    """Whether the document is in English. Unknown (too short to tell) counts as English: the checks it
-    gates are the prompt's own rules, and a wrong "yes" costs one revision, a wrong "no" a missed fault."""
-    return detect_language(text(html)) in ("en", None)
+    return language(text(html)) == "en"
 
 
 def first_person(prose: str) -> int:
@@ -108,7 +119,8 @@ def first_person(prose: str) -> int:
 def cliches(prose: str) -> list[str]:
     lowered = prose.lower()
     found = [word for word in CLICHES if re.search(rf"\b{re.escape(word)}\b", lowered)]
-    return found + (["end-to-end"] if _END_TO_END.search(prose) else [])
+    return (found + (["dynamic"] if _DYNAMIC.search(prose) else [])
+            + (["end-to-end"] if _END_TO_END.search(prose) else []))
 
 
 def bullets(body: str) -> list[str]:
@@ -125,13 +137,25 @@ def cv(body: str, sources: str = "") -> list[str]:
     if is_english(body):
         found += [*_words_of(text(_SKILLS.sub("", body))), *_profile(text(" ".join(_PROFILE.findall(body))),
                                                                      sources), *_bullets(items)]
+    else:
+        found += _headings(body)
     return found
+
+
+def _headings(body: str) -> list[str]:
+    """In a CV that is not in English, headings left as the markup example has them."""
+    copied = [title for title in map(text, _SECTION_TITLE.findall(body))
+              if title.casefold() in _EXAMPLE_HEADINGS]
+    if len(copied) > 1:
+        return [f"The headings {', '.join(copied)} are in English and the CV is not. Write every heading "
+                "in the language of the CV."]
+    return []
 
 
 def _order(body: str) -> list[str]:
     """Within each section, every role still held above every role that ended (`write_cv.md`)."""
     for section in body.split('<div class="section-title">')[1:]:
-        ongoing = [bool(_ONGOING.search(text(dates))) for dates in _DATES.findall(section) if dates]
+        ongoing = [bool(STILL_HELD.search(text(dates))) for dates in _DATES.findall(section) if dates]
         if False in ongoing and True in ongoing[ongoing.index(False):]:
             return ["A role that has ended sits above one they still hold. Put every role they still hold "
                     "first."]
@@ -175,8 +199,9 @@ def _bullets(items: list[str]) -> list[str]:
                      "with a different verb.")
     if tails := [item for item in items if _TELLING_TAIL.search(item)]:
         found.append(f"{_quote(tails[0])} ends by saying what it shows. End on what came of the work.")
-    if tasks := [item for item in items if _TASK_OPENING.search(item)]:
-        found.append(f"{_quote(tasks[0])} describes a task. Say what they did and what came of it.")
+    # A bullet that only describes a task ("Helped the sous chef with orders") is not said back (owner,
+    # 2026-11-14). Where their documents say no more, a second call had nothing to add: of four run, all
+    # four reworded the line and one made it more than it was. The bench counts them (`cvchecks`).
     return found
 
 
@@ -188,7 +213,11 @@ def letter(body: str, *, company: str, posting: str = "") -> list[str]:
     paragraphs = [(kind or "", text(part)) for kind, part in _PARAGRAPH.findall(inside)]
     # Every paragraph after the greeting, up to the sign-off.
     prose = [part for kind, part in paragraphs if kind not in ("closing", "signature")][1:]
-    words = sum(len(part.split()) for part in prose)
+    # Counted in words in English, as the prompt counts. In another language the same letter is fewer,
+    # longer words (in Hungarian 166 where English has about 230, at the same 1,300 characters), and 2 of 4
+    # were sent back as too short (2026-11-14): there it is measured at six characters a word.
+    words = (sum(len(part.split()) for part in prose) if is_english(body)
+             else round(sum(len(part) for part in prose) / CHARS_A_WORD))
     if not LETTER_WORDS[0] <= words <= LETTER_WORDS[1]:
         found.append(f"The letter is {words} words. Make it {LETTER_WORDS[0]} to {LETTER_WORDS[1]}.")
     if dense := [part for part in prose if len(_STOP.findall(part)) > MAX_PARAGRAPH_SENTENCES]:
