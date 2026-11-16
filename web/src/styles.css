@@ -3113,21 +3113,6 @@ button.ai-provider {
     grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr);
   }
 }
-.pricing-lines {
-  min-width: 0;
-  margin: 0 0 1.15rem;
-  padding: 0;
-  border: 0;
-}
-.pricing-line {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-.pricing-line button {
-  flex: none;
-  padding-inline: 0.95rem;
-}
 .pricing-save {
   display: flex;
   flex-wrap: wrap;
@@ -4931,4 +4916,112 @@ button.toggle[aria-pressed="true"]::before {
 .look-card[aria-pressed="true"] .thumb {
   outline: 3px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* A question mark after a line that says more about it: pointed at, tapped or reached by keyboard (`Explain`). The
+   words open under the line, as wide as the list it is in, so they never run off a phone's screen. */
+.explain {
+  display: inline-flex;
+  margin-left: 0.4rem;
+  vertical-align: 0.1em;
+}
+
+.explain-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.55;
+  cursor: help;
+}
+
+.explain-mark:hover,
+.explain-mark:focus-visible,
+.explain.open .explain-mark {
+  opacity: 1;
+}
+
+.explain-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 20;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--hairline);
+  border-radius: 0.65rem;
+  background: var(--bg-raised);
+  box-shadow: var(--lift);
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  /* Read, never tapped: what it covers, a button under it among them, takes the tap even while it fades. */
+  pointer-events: none;
+  transition: opacity 0.15s ease, visibility 0.15s;
+}
+
+.explain:hover .explain-text,
+.explain:focus-within .explain-text,
+.explain.open .explain-text {
+  opacity: 1;
+  visibility: visible;
+}
+
+.adds li {
+  position: relative;
+}
+
+/* Starter or Member on the Upgrade page, over the switch. */
+.toggles.plan-pick {
+  justify-content: center;
+  margin: 0 auto 1.1rem;
+}
+
+/* The match score filter (`JobsPage`): numbers in a row of their own, not words, laid out and swiped on a phone
+   as the other rows of filters are (`.filters`), each in its score's colour on the cards' line from red to
+   green (`.made-badge.match`), the one picked filled with it. */
+.chip.score-step {
+  --fit-hue: calc(25 + (var(--fit) - 1) * 13.3);
+  --fit-ink: oklch(0.8 0.13 var(--fit-hue));
+  justify-content: center;
+  min-width: 2.9rem;
+  border-color: var(--fit-ink);
+  border-radius: 999px;
+  color: var(--fit-ink);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-theme="light"] .chip.score-step {
+  --fit-ink: oklch(0.5 0.14 var(--fit-hue));
+}
+
+.chip.score-step.any,
+[data-theme="light"] .chip.score-step.any {
+  --fit-ink: var(--muted);
+}
+
+.chip.score-step:hover {
+  border-color: var(--fit-ink);
+  color: var(--fit-ink);
+  background: rgba(var(--ink-rgb), 0.06);
+}
+
+.chip.score-step.on,
+.chip.score-step.on:hover {
+  background: var(--fit-ink);
+  color: var(--bg);
 }

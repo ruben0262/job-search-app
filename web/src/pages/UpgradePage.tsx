@@ -1,15 +1,16 @@
 /** Becoming a member later, from the free plan (owner, 2026-11-12): what it adds, and Stripe's own checkout in the
- * page. Where the jobs page's banner, a Make button and Settings send a free account. Somebody whose payment
- * failed is sent on to Stripe's portal to pay it instead, since their membership is still there. A page of its
- * own, laid out as the plan page's checkout is, with the way back at its top. */
+ * page; or Starter, once it is sold (owner, 2026-11-16: "we are also selling starter"). Where the jobs page's
+ * banner, a Make button and Settings send a free account. Somebody whose payment failed is sent on to Stripe's
+ * portal to pay it instead, since their membership is still there. A page of its own, laid out as the plan
+ * page's checkout is, with the way back at its top. */
 import { useEffect, useState, type CSSProperties } from "react";
 
 import { api, type Membership } from "../api";
 import { useKept } from "../kept";
 import type { Pricing } from "../landing/Landing";
-import { MEMBERSHIP, StripeCheckout, openPortal, price, standing } from "../membership";
+import { MEMBERSHIP, PLAN_NAMES, StripeCheckout, openPortal, price, standing } from "../membership";
 import { ThemeToggle } from "../theme";
-import { Error, useAction } from "../ui";
+import { Error, Explain, useAction } from "../ui";
 import { Brand } from "../wheel";
 
 /** Free to member, shown over and over (owner, 2026-11-13: "switch back to free to show differences constantly"):
@@ -56,6 +57,15 @@ function useSwitching(count: number): ["free" | "member", (side: "free" | "membe
   }];
 }
 
+type Line = Pricing["lines"]["free"]["gives"][number];
+type Paid = "starter" | "member";
+
+/** What a paid plan gives beyond Free: its own lines, after those of the plan before it. */
+function beyondFree(lines: Pricing["lines"], plan: Paid): Line[] {
+  const said = lines[plan];
+  return said.everything_in === "starter" ? [...beyondFree(lines, "starter"), ...said.gives] : said.gives;
+}
+
 /** Back to the page they came from, or to their jobs when this page was opened on its own. */
 function back(): void {
   if (history.length > 1) history.back();
@@ -75,7 +85,12 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
   };
   // A payment owed, or paused: the membership is still there, and is settled at Stripe.
   const owed = m?.status === "past_due" || m?.status === "unpaid";
-  const [on, show] = useSwitching(pricing.data?.lines.member.gives.length ?? 0);
+  // Which plan they are buying: the membership, the offer, or Starter once it has a price to pay.
+  const [chosen, choose] = useState<Paid>("member");
+  const buying: Paid = m?.starter ? chosen : "member";
+  const cost = buying === "starter" ? m?.starter : m?.plan;
+  const adds = pricing.data ? beyondFree(pricing.data.lines, buying) : [];
+  const [on, show] = useSwitching(adds.length);
 
   return (
     <>
@@ -120,21 +135,30 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
             </div>
           ) : (
             <>
-              <h1>Become a member</h1>
+              <h1>{buying === "starter" ? "Start with Starter" : "Become a member"}</h1>
+              {m.starter ? (
+                <div className="toggles plan-pick" role="group" aria-label="Plan">
+                  {(["starter", "member"] as const).map((each) => (
+                    <button key={each} type="button" className="toggle" aria-pressed={buying === each}
+                            onClick={() => choose(each)}>{PLAN_NAMES[each]}</button>
+                  ))}
+                </div>
+              ) : null}
               <div className={`upgrade-switch ${on}`} aria-hidden="true">
-                <i /><span onClick={() => show("free")}>Free</span><span onClick={() => show("member")}>Member</span>
+                <i /><span onClick={() => show("free")}>Free</span>
+                <span onClick={() => show("member")}>{PLAN_NAMES[buying]}</span>
               </div>
-              {m.plan ? (
+              {cost ? (
                 <p className="plan-price">
-                  {price(m.plan)}{m.trial_days ? <span>, after {m.trial_days} days free</span> : null}
+                  {price(cost)}{m.trial_days ? <span>, after {m.trial_days} days free</span> : null}
                 </p>
               ) : null}
               <p className="lede">
                 {m.trial_days ? "Stripe keeps your card, and nothing is taken until the free days end."
                   : "Paid securely through Stripe. Cancel any time."}
               </p>
-              {pricing.data ? <Adds lines={pricing.data.lines.member.gives} on={on} /> : null}
-              {key ? <StripeCheckout publishableKey={key} onPaid={() => void paid()} />
+              {pricing.data ? <Adds lines={adds} on={on} /> : null}
+              {key ? <StripeCheckout publishableKey={key} plan={buying} onPaid={() => void paid()} />
                 : <p className="error">Payments aren't set up yet. Try again later.</p>}
             </>
           )}
@@ -145,15 +169,15 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
 }
 
 /** What moving up adds, a tick each: ticked in turn while `on` is "member", as the switch above shows it. */
-function Adds({ lines, on }: { lines: string[]; on: "free" | "member" }) {
+function Adds({ lines, on }: { lines: Line[]; on: "free" | "member" }) {
   return (
     <ul className={`adds ${on}`}>
       {lines.map((line, i) => (
-        <li key={line} style={{ "--delay": `${TICK_FIRST_MS + i * TICK_MS}ms` } as CSSProperties}>
+        <li key={line.text} style={{ "--delay": `${TICK_FIRST_MS + i * TICK_MS}ms` } as CSSProperties}>
           <svg viewBox="0 0 20 20" aria-hidden="true">
             <circle cx="10" cy="10" r="10" /><path d="M6 10.4l2.6 2.6 5.6-5.6" pathLength={1} />
           </svg>
-          {line}
+          <span>{line.text}<Explain text={line.more} /></span>
         </li>
       ))}
     </ul>

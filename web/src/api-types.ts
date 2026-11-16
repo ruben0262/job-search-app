@@ -2790,6 +2790,16 @@ export interface components {
             /** Windows */
             windows: components["schemas"]["LimitWindow"][];
         };
+        /**
+         * Line
+         * @description One line of a card: a few words, and what its question mark says when it is pointed at or tapped.
+         */
+        Line: {
+            /** More */
+            more: string;
+            /** Text */
+            text: string;
+        };
         /** Link */
         Link: {
             /** Url */
@@ -3012,10 +3022,12 @@ export interface components {
          * @description What a card says of its plan, never typed (`lines_of`).
          */
         PlanLines: {
+            /** Everything In */
+            everything_in?: ("free" | "starter") | null;
             /** Gives */
-            gives: string[];
+            gives: components["schemas"]["Line"][];
             /** Lacks */
-            lacks: string[];
+            lacks: components["schemas"]["Line"][];
         };
         /** PlansLines */
         PlansLines: {
@@ -3041,8 +3053,6 @@ export interface components {
          * @description One card's own words, each with room for what the card has room for.
          */
         PricingCard: {
-            /** Also */
-            also: string[];
             /** Button */
             button: string;
             /**

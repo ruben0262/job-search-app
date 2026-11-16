@@ -2477,6 +2477,25 @@
         "title": "Limits",
         "type": "object"
       },
+      "Line": {
+        "description": "One line of a card: a few words, and what its question mark says when it is pointed at or tapped.",
+        "properties": {
+          "more": {
+            "title": "More",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "more"
+        ],
+        "title": "Line",
+        "type": "object"
+      },
       "Link": {
         "properties": {
           "url": {
@@ -3153,16 +3172,31 @@
       "PlanLines": {
         "description": "What a card says of its plan, never typed (`lines_of`).",
         "properties": {
+          "everything_in": {
+            "anyOf": [
+              {
+                "enum": [
+                  "free",
+                  "starter"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Everything In"
+          },
           "gives": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/Line"
             },
             "title": "Gives",
             "type": "array"
           },
           "lacks": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/Line"
             },
             "title": "Lacks",
             "type": "array"
@@ -3249,16 +3283,6 @@
       "PricingCard": {
         "description": "One card's own words, each with room for what the card has room for.",
         "properties": {
-          "also": {
-            "items": {
-              "maxLength": 120,
-              "minLength": 1,
-              "type": "string"
-            },
-            "maxItems": 12,
-            "title": "Also",
-            "type": "array"
-          },
           "button": {
             "maxLength": 40,
             "minLength": 1,
@@ -3285,7 +3309,6 @@
         },
         "required": [
           "name",
-          "also",
           "button",
           "note"
         ],

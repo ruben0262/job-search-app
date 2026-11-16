@@ -2749,6 +2749,7 @@
 }
 
 .landing .price-list li {
+  position: relative;
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);
   gap: 12px;
@@ -2756,6 +2757,11 @@
   font-size: 16px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+/* "Everything in Free": what the card before it gives, first and in bold, so what follows reads as added. */
+.landing .price-list li.everything {
+  font-weight: 650;
 }
 
 .landing .price-list svg {

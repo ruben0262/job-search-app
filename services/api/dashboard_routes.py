@@ -310,7 +310,7 @@ def _banners(db: Database, user: User, member: bool) -> list[DashboardBanner]:
         delay = delay_hours(db, user)
         text = "Alerts, match scores, CVs and cover letters come with a membership."
         if delay:
-            text = (f"You see each job {_span(delay)} after we find it. Members see it the moment we find "
+            text = (f"You see jobs that are {_span(delay)} or older. Members see each one the moment we find "
                     "it, and apply among the first.")
         return [DashboardBanner(level="info", key="free", text=text)]
     if user.telegram_status == "broken":

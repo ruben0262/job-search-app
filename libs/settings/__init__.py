@@ -290,19 +290,14 @@ DEFAULT_STARTER_DELAY_HOURS = 72
 # lacks is not here: every card says that by itself, from the plans fixed in code (`libs.membership.PLANS`)
 # and the settings they wait by, so no card can promise what its plan does not give. Neither is a price
 # (Stripe's), the price it is shown as reduced from (`price_was`) or the free days (`trial_days`), each filled
-# in where the cards are drawn. `also` is what else a card ticks, after its plan's own lines. A card's lists
-# saved before 2026-11-16's plans (`benefits`, `left_out`) and its line under the name (`tagline`) are no
-# longer read. `highlight` is the band under a paid plan's price, read at a glance while scrolling: the price
-# kept for as long as they stay (owner, 2026-11-16: "lifetime").
+# in where the cards are drawn. A card's lists saved before 2026-11-16's plans (`benefits`, `left_out`,
+# `also`) and its line under the name (`tagline`) are no longer read: what every plan has is fixed in code
+# too (`libs.membership.EVERYONE`). `highlight` is the band under a paid plan's price, read at a glance
+# while scrolling: the price kept for as long as they stay (owner, 2026-11-16: "lifetime").
 DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
     "free": {
         "name": "Free",
         "highlight": "",
-        "also": [
-            "Every job that fits you, from every job site, in one list",
-            "Every filter, and words that hide the jobs you don't want",
-            "Bookmarks, and every application tracked to the offer",
-        ],
         "button": "Start free",
         "note": "No card needed. Upgrade whenever you like.",
     },
@@ -310,14 +305,12 @@ DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
         "name": "Starter",
         # The price a plan is joined at is kept for as long as it runs (owner, 2026-11-16: "lifetime").
         "highlight": "Price locked for life",
-        "also": ["Everything in Free"],
         "button": "Start with Starter",
         "note": "Card needed. Free to cancel in the trial.",
     },
     "member": {
         "name": "Member",
         "highlight": "Price locked for life",
-        "also": ["Everything in Free"],
         "button": "Start your free trial",
         # One line on the card (owner, 2026-11-16).
         "note": "Card needed. Free to cancel in the trial.",

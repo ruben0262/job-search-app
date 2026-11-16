@@ -14,6 +14,66 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-16, night — The offer said as the owner set it: jobs 7 or 3 days or older, "Everything in" first, a question mark that says more; Starter sold on Upgrade; the match filter a row of numbers; kept scores go with their job; nothing left to get stuck
+
+The owner: "jobs that are 7 days or older appear to users on the free plan, and 3 days or older on the starter
+plan"; "the top of the starter and member has the 'Everything in Free/Starter plan' so people know what we are
+referring to"; the match score on Starter; "descriptions a bit shorter and precise", with "a small hovering question
+mark"; "the filter should be a new filter not for keywords but for a score or above it. so make it numbers"; "yes we
+are also selling starter"; "the expiry on the saved scores should be the same as the days we let jobs stay ... before
+archive"; "no background stuck timeouts"; latency need not be tracked.
+
+### The cards
+
+- **How soon, in the owner's words**: "Jobs that are 7 days or older" (Free), "Jobs that are 3 days or older"
+  (Starter), "New jobs the moment we find them" (Member), from the waits set in Admin. The Jobs page and Free's
+  banner say it the same way.
+- **"Everything in Free" / "Everything in Starter" first**, in bold, worked out by the server (`PlanLines.everything_in`,
+  by the plan before it; Starter's once it has a price, else Member's card follows Free's). Each paid card then says
+  only what it adds: Starter, 3 days or older, alerts, a match score on every job; Member, every job the moment it is
+  found, CVs and cover letters (ATS-checked), adding a job from any site, and the members' chat once it has a link.
+- **A few words a line, and a question mark** after each that says more when pointed at, tapped (a phone has nothing
+  to point with) or reached by keyboard (`Explain`, a tooltip under the line, inside the card on a 320px phone).
+  The words are fixed in code with the plans (`libs.membership.AREAS`, `EVERYONE`): Free's own lines too, so the
+  list typed in Admin (`also`) and its editor are gone; a card's name, band, button and small print stay the
+  operator's.
+- **A question mark's words never take a tap.** The sign-in timing test caught it: on the plan page, "Start free"
+  waited 0.5 s (1.52 to 1.61 s against 0.99 to 1.03 s) while a fading explanation lay over it. Now 1.00 to 1.07 s.
+
+### Starter sold on Upgrade
+
+A free account's Upgrade page offers Starter beside the membership once Starter has a price: its price, what it adds
+to Free, and Stripe's form for the plan picked (`StripeCheckout plan`). Member stays the one shown first.
+
+### The match filter
+
+A row of its own under the filters, "Match score: Any 5+ 6+ 7+ 8+ 9+", numbers in their scores' colours from the
+cards' red-to-green, the one picked filled; on a phone one line that swipes, as the other rows of filters do. The
+select among the word filters is gone.
+
+### Kept scores
+
+- **Gone with their job**: each kept score expires on the day its posting is archived, `first_seen_at` +
+  `corpus_retention_days`, the archive's own rule (`libs.corpus.archive._due`), through a TTL on `expires_at`; the
+  fixed 40 days and `scored_at` are gone. A setting changed later is taken by the scores kept after it; one that
+  expired early is worked out on the page and kept again.
+- **Nothing to get stuck**: the claim on the account (`users.fit_scoring_at`) and its 10-minute "taken to have died"
+  are gone. One run a person at a time is held in the process (`_keeping`) and let go however the run ends; a run
+  that failed is logged and the next page keeps the scores. Two processes keeping one person's scores write the
+  same rows.
+
+### Tests
+
+`test_pricing.py` (26): each card's lines and what each question mark says; "Everything in Starter" once Starter is
+sold, with Member saying only what it adds; the waits from Admin; the chat only with its link; **every card ticks,
+"Everything in" included, exactly what an account on that plan `has()`**, over three sets of waits, with and without
+the chat, Starter sold or not. `test_fit.py` (20): a kept score expires on its job's archive day; a run that fails
+leaves nothing that stops the next. Browser: the landing cards and a question mark opened by pointing and by a tap
+inside a 320px screen; the match row keeps the jobs whose badge shows the number or more and leaves one out; a free
+account picks Starter or Member on Upgrade with each one's price and what it adds. Run against broken copies first:
+a fixed 40-day expiry, a run never let go, "Everything in Starter" while Starter is not sold, and a card that leaves
+out match scores each failed.
+
 ## 2026-11-16, late evening — Match scores on the Jobs page for Starter and Member: a number out of 10 on each card, red to green, and a filter by it over the whole list
 
 The owner, after the evaluation below: "ship the score to them now" (Starter and Member, the plans entry above);

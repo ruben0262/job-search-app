@@ -14,9 +14,6 @@ type Cards = Pricing["cards"];
 type Kind = keyof Cards;
 type Card = Cards[Kind];
 
-/** What the server allows a list (`pricing_routes.PricingCard`). */
-const MOST_LINES = 12;
-
 export function AdminPricing() {
   const kept = useKept<Pricing>("/pricing");
   // What is being typed, until it is saved; null is the saved cards.
@@ -67,8 +64,6 @@ export function AdminPricing() {
             <input value={card.highlight} maxLength={40} placeholder="Price locked for life"
                    onChange={(event) => edit({ highlight: event.target.value })} />
           </label>
-          <Lines legend="Also included, after what the plan gives" name="Also included" lines={card.also}
-                 onChange={(also) => edit({ also })} />
           <label className="field">
             <span className="label">Button</span>
             <input value={card.button} maxLength={40} required onChange={(event) => edit({ button: event.target.value })} />
@@ -90,30 +85,5 @@ export function AdminPricing() {
         </div>
       </div>
     </div>
-  );
-}
-
-/** A list of lines, each its own box with a ×, and a button for one more. */
-function Lines({ legend, name, lines, onChange }: {
-  legend: string;
-  name: string;
-  lines: string[];
-  onChange: (lines: string[]) => void;
-}) {
-  return (
-    <fieldset className="field pricing-lines">
-      <legend className="label">{legend}</legend>
-      {lines.map((each, i) => (
-        <div key={i} className="pricing-line">
-          <input value={each} maxLength={120} required aria-label={`${name}, line ${i + 1}`}
-                 onChange={(event) => onChange(lines.map((line, j) => (j === i ? event.target.value : line)))} />
-          <button type="button" className="secondary" aria-label={`Remove ${name.toLowerCase()} line ${i + 1}`}
-                  onClick={() => onChange(lines.filter((_, j) => j !== i))}>×</button>
-        </div>
-      ))}
-      {lines.length < MOST_LINES ? (
-        <button type="button" className="secondary" onClick={() => onChange([...lines, ""])}>Add a line</button>
-      ) : null}
-    </fieldset>
   );
 }

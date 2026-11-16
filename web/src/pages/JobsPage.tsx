@@ -75,6 +75,9 @@ function asked(filters: Filters, offset = 0): URLSearchParams {
   return params;
 }
 
+/** The scores the match filter offers, each "this or more": below 5 is not a fit worth asking for. */
+const FIT_STEPS = [5, 6, 7, 8, 9];
+
 /** Jobs has three tabs: the jobs that match your words, the ones you bookmarked, and one brought in by
  * its link. */
 const TABS = [["list", "#/", "Your jobs"], ["bookmarks", "#/bookmarks", "Bookmarks"],
@@ -320,7 +323,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       {/* How long a job stays here, as Admin sets it: a job leaving is then no surprise (owner, 2026-11-06). */}
       {feed ? (
         <p className="small muted">
-          {delay ? `You see each job ${span(delay)} after we find it. ` : ""}Jobs stay here for {span(feed.shelf_hours)}
+          {delay ? `You see jobs that are ${span(delay)} or older. ` : ""}Jobs stay here for {span(feed.shelf_hours)}
           {feed.shelf_longest_hours > feed.shelf_hours
             ? `, or ${span(feed.shelf_longest_hours)} from slower boards` : ""}.
           {feed.cut ? " More match your words than the page reads at once, so these are the newest." : ""}
@@ -345,13 +348,6 @@ export function JobsPage({ dashboard, focus, onChanged }: {
             <option key={label} value={hours ?? ""}>{label}</option>
           ))}
         </select>
-        {scoring ? (
-          <select aria-label="Match score" value={fitFloor ?? ""}
-                  onChange={(event) => set({ min_fit: event.target.value ? Number(event.target.value) : null })}>
-            <option value="">Any match</option>
-            {[5, 6, 7, 8, 9].map((score) => <option key={score} value={score}>Match {score}+</option>)}
-          </select>
-        ) : null}
         <select aria-label="Job board" value={source} onChange={(event) => set({ source: event.target.value })}>
           <option value="">All boards</option>
           {boards.map((each) => (
@@ -393,6 +389,22 @@ export function JobsPage({ dashboard, focus, onChanged }: {
         ))}
         {filtered ? <button type="button" className="linklike small" onClick={clear}>Clear filters</button> : null}
       </div>
+      {/* The match score, a filter of its own: numbers, not words (owner, 2026-11-16: "a score or above it"),
+          each in its colour on the cards' line from red to green, the one picked filled. */}
+      {scoring ? (
+        <div className="filters score-filter" role="group" aria-label="Match score">
+          <span className="small muted">Match score</span>
+          {[null, ...FIT_STEPS].map((at) => (
+            <button key={at ?? "any"} type="button" aria-pressed={fitFloor === at}
+                    aria-label={at === null ? "Any match score" : `Match score ${at} or more`}
+                    className={`chip score-step${at === null ? " any" : ""}${fitFloor === at ? " on" : ""}`}
+                    style={at === null ? undefined : { "--fit": at } as CSSProperties}
+                    onClick={() => set({ min_fit: at })}>
+              {at === null ? "Any" : `${at}+`}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {words.length > 1 ? (
         <div className="filters words-filter" role="group" aria-label="Only jobs with">
           <span className="small muted">Only jobs with:</span>

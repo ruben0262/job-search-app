@@ -3597,7 +3597,14 @@ work, or opening and closing sessions faster, would help):
       CV is the answer on the very next page and a kept score only makes it quicker. Filtered day 146 ms (83 with
       no score); kept after the answer, 2.4 s a 5,000-job list.
     - **Still open**: the score on Bookmarks, Add a job and the alerts; an order by match; what would move the
-      accuracy (above). A latency figure for keeping scores is not kept: a page never waits on it.
+      accuracy (above). No latency figure is kept for it (owner, 2026-11-16: "latency doesn't necessarily need to
+      be tracked"). Kept scores go with their job, on its archive day; nothing about keeping them can be left
+      stuck (CHANGELOG 2026-11-16, night).
+    - **2026-11-16, night, the owner: more measurement for accuracy**, "other criteria ... from the jobs or the
+      users", "similar to reverse engineering ATS", evaluation first. Under way: requirements (licences,
+      registrations), years asked against years had, education, seniority both ways, the main role's title,
+      must-have skills, calibration; built on the seen 27, the fresh 12 read once at the end, a new fresh set if
+      that is not enough.
 
 53. **The cover letter prompt** (owner, 2026-11-15, night: "some research on the company might need to be
     done too… motivation and so on, for it to be a great cover letter").
@@ -3662,9 +3669,8 @@ work, or opening and closing sessions faster, would help):
       print of 2026-11-16 ("Card needed. Free to cancel in the trial."), type it on each paid card and save.
     - **Match scores are promised** on Starter's and Member's cards from the commit that fixed the plans, and
       the score and its filter (item 52) are committed with them: they reach the live site in one deploy.
-    - **A free account cannot pick Starter after signing up**: the Upgrade page sells the membership, and
-      Starter is offered only on the plan page after the email link. Whether Upgrade offers it too is the
-      owner's.
+    - **Starter is sold on Upgrade too** (owner, 2026-11-16: "yes we are also selling starter"): a free account
+      picks Starter or Member there once Starter has a price at Stripe.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

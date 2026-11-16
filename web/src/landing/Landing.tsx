@@ -10,6 +10,7 @@ import { money } from "../membership";
 import { PICTURES } from "../pages/JobsPage";
 import { PLACES } from "../places";
 import { ThemeToggle } from "../theme";
+import { Explain } from "../ui";
 import { Mark, Wheel } from "../wheel";
 import { Alerts, Phone } from "./Demo";
 import { Reviews } from "./Reviews";
@@ -469,6 +470,8 @@ type Paid = "starter" | "member";
 type Card = Pricing["cards"]["free"];
 
 const LOCK = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10.5V8a5 5 0 0110 0v2.5M5.5 10.5h13v10h-13z" /></svg>;
+/** A card's tick. */
+const TICK = <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" /><path d="M6 10.4l2.6 2.6 5.6-5.6" /></svg>;
 
 /** The offer at a glance, under the pricing's title: the most a plan is reduced by, the band the membership's
  * card carries ("Price locked for life") and the free days, each worked out from what the cards themselves
@@ -535,21 +538,25 @@ export function PriceCards({ pricing, preview = false, onChoose, busy = false }:
       </>
     );
   };
+  // "Everything in Free": the card before it, by the name its card shows.
+  const below = (said: Pricing["lines"]["free"]) => (said.everything_in ? cards[said.everything_in].name : null);
   const trial = (of: Pricing["plan"]) =>
     (days ? (of ? `after your ${days}-day free trial` : `The first ${days} days free`) : null);
   return (
     <div className="price-room">
       <div className={three ? "price-cards three" : "price-cards"}>
-        <PriceCard card={cards.free} said={lines.free} href="#/signup" preview={preview} busy={busy}
+        <PriceCard card={cards.free} said={lines.free} everything={null} href="#/signup" preview={preview} busy={busy}
                    onChoose={onChoose && (() => onChoose("free"))}
                    amount={plan ? <><strong>{nothing(plan.currency)}</strong><span>for good</span></> : null}
                    under={null} />
         {three ? (
-          <PriceCard card={cards.starter} said={lines.starter} href="#/signup?plan=starter" preview={preview}
+          <PriceCard card={cards.starter} said={lines.starter} everything={below(lines.starter)}
+                     href="#/signup?plan=starter" preview={preview}
                      busy={busy} onChoose={onChoose && (() => onChoose("starter"))}
                      amount={cost("starter", starter)} under={trial(starter)} />
         ) : null}
-        <PriceCard card={cards.member} said={lines.member} href="#/signup?plan=member" preview={preview} lit
+        <PriceCard card={cards.member} said={lines.member} everything={below(lines.member)}
+                   href="#/signup?plan=member" preview={preview} lit
                    busy={busy} onChoose={onChoose && (() => onChoose("member"))}
                    badge={days ? `${days} days free` : null}
                    amount={cost("member", plan)} under={trial(plan)} />
@@ -558,12 +565,16 @@ export function PriceCards({ pricing, preview = false, onChoose, busy = false }:
   );
 }
 
-/** One card: its name, what it costs, what it gives and leaves out, and its button at the foot. What its plan
- * gives comes first, how soon it sees a job leading, so the three read across at a glance; then the card's own
- * lines; then what its plan lacks, crossed out. */
-function PriceCard({ card, said, href, preview, onChoose, busy, lit = false, badge = null, amount, under }: {
+/** One card: its name, what it costs, what it gives and leaves out, and its button at the foot. A paid card
+ * begins with everything in the card before it (owner, 2026-11-16: "so people know what we are referring to"),
+ * then how soon it sees a job, so the three read across at a glance, then what it adds; then what its plan
+ * lacks, crossed out. Each line is a few words, with a question mark that says more. */
+function PriceCard({ card, said, everything, href, preview, onChoose, busy, lit = false, badge = null, amount,
+  under }: {
   card: Card;
   said: Pricing["lines"]["free"];
+  /** The name of the card before it, all of which this plan has; null on the first. */
+  everything: string | null;
   href: string;
   preview: boolean;
   onChoose?: () => void;
@@ -587,16 +598,17 @@ function PriceCard({ card, said, href, preview, onChoose, busy, lit = false, bad
         </div>
       ) : null}
       <ul className="price-list">
-        {[...said.gives, ...card.also].map((line, i) => (
+        {everything ? <li className="everything">{TICK}<span className="line">Everything in {everything}</span></li> : null}
+        {said.gives.map((line, i) => (
           <li key={`in${i}`}>
-            <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" /><path d="M6 10.4l2.6 2.6 5.6-5.6" /></svg>
-            {line}
+            {TICK}
+            <span><span className="line">{line.text}</span><Explain text={line.more} /></span>
           </li>
         ))}
         {said.lacks.map((line, i) => (
           <li key={`out${i}`} className="out">
             <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" /><path d="M7 7l6 6M13 7l-6 6" /></svg>
-            <span className="unseen">Not included: </span>{line}
+            <span><span className="unseen">Not included: </span><span className="line">{line.text}</span><Explain text={line.more} /></span>
           </li>
         ))}
       </ul>

@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import uuid as _uuid
 from datetime import datetime, timedelta
+from typing import NamedTuple
 
 from pymongo.database import Database
 
@@ -38,27 +39,64 @@ ONGOING = (*PAID, "past_due", "unpaid", "paused")
 
 FREE, STARTER, MEMBER = "free", "starter", "member"
 
+class Said(NamedTuple):
+    """How a card says something a plan gives: a few words on the card, and what its question mark says when
+    it is pointed at or tapped (owner, 2026-11-16: "shorter and precise", the rest "a small hovering question
+    mark")."""
+    short: str
+    more: str
+
+
 # What the paid plans give, each asked for by name where the site gives it and said on the pricing cards in
 # these words (`services.api.pricing_routes`), in the order the cards say them: one list, so a card cannot
-# promise what its plan does not give. Each says what it does for the person rather than what it is called
-# (owner, 2026-11-16).
-AREAS: dict[str, str] = {
+# promise what its plan does not give.
+AREAS: dict[str, Said] = {
     # A job reaches a member's list once its text is read, minutes after it is found (`libs.matching`).
-    "early_jobs": "See every new job the moment we find it",
-    "alerts": "New jobs sent to your phone or inbox: no more checking",
-    # Shown on the job cards to whoever has it.
-    "match_scores": "A match score on each job, so the best fits stand out",
+    "early_jobs": Said(
+        "New jobs the moment we find them",
+        "A new job joins your list as soon as we have found and read it, so you can apply among the first."),
+    "alerts": Said(
+        "Alerts for new jobs",
+        "New jobs sent to Telegram, your browser or your inbox, so you don't have to keep checking."),
+    # Shown on the job cards to whoever has it, and a filter on the Jobs page (`libs.fit`).
+    "match_scores": Said(
+        "A match score on every job",
+        "Each job is scored out of 10 for how well it fits your CV, cover letter and About you, and you can "
+        "show only the best fits."),
     # Each document is checked as it is made (`services.docgen.pdf.inspect_pdf`), not the same way: a CV's
     # text, its headings in order and its email read back as an ATS reads them; a letter's text alone, that it
     # reads back whole and in lines. Delivered either way, with the answer kept (`BuiltDocument.ats_ok`): so
     # "checked", never "passes". The hyphen does not break, so "ATS" and "checked" stay on one line of a card.
-    "cvs": "A CV for each job in one tap with your own AI account, ATS\u2011checked",
-    "covers": "A cover letter for each job in one tap, ATS\u2011checked",
+    "cvs": Said(
+        "A CV for any job, ATS\u2011checked",
+        "One tap writes a CV for that job with your own AI account, then reads it back the way an applicant "
+        "tracking system (ATS) does."),
+    "covers": Said(
+        "A cover letter for any job, ATS\u2011checked",
+        "One tap writes a cover letter for that job with your own AI account, then reads it back the way an "
+        "ATS does."),
     # Add a job (`services.api.link_routes`): theirs to track, with a CV and a letter for it like any other.
-    "add_job": "Any job you find elsewhere, added by its link",
+    "add_job": Said(
+        "Add jobs from any site",
+        "Paste the link of a job you found anywhere else: it joins your list, with a CV and cover letter for "
+        "it like any other."),
     # A chat the owner runs (`members_channel_url`), linked on the Help page: promised only while it is set.
-    "team_access": "A members' chat with the people who build Mahoraga",
+    "team_access": Said(
+        "A chat with the team",
+        "A members' chat with the people who build Mahoraga: get help, and tell us what to build next."),
 }
+
+# What every account has, Free's included, as Free's card says it after how soon it sees a job (owner,
+# 2026-11-16: "application tracking and bookmarks ... and filtering ... the negatives").
+EVERYONE: tuple[Said, ...] = (
+    Said("Jobs from every site, in one list",
+         "Jobs from every job site we read, matched to the words you search for, in one list."),
+    Said("Every filter, and words that hide jobs",
+         "Filter by when a job was posted, its site, country and city; and add words that hide any job that "
+         "has them."),
+    Said("Bookmarks and application tracking",
+         "Save jobs for later, and keep track of every application, from applied to offer."),
+)
 
 # What each plan has of them, fixed in code (owner, 2026-11-16), each with all the one before it has.
 PLANS: dict[str, tuple[str, ...]] = {

@@ -263,14 +263,55 @@ def test_a_new_name_or_link_scores_nothing_again(site):
     http, db, user, _ = site
     _cv(db, user, BACKEND_CV)
     before = _shown(http)
-    kept = {row["job_id"]: row["scored_at"] for row in db[FitScore.COLLECTION].find({"user_id": user.id})}
+    kept = {row["job_id"]: row["key"] for row in db[FitScore.COLLECTION].find({"user_id": user.id})}
     assert kept, "the first page keeps their list's scores"
     saved = http.put("/onboarding/identity", json={"full_name": "Sam Okafor",
                                                    "links": [{"url": "https://github.com/jordanlee"}]})
     assert saved.status_code == 200, saved.text
     assert _shown(http) == before
-    assert {row["job_id"]: row["scored_at"]
-            for row in db[FitScore.COLLECTION].find({"user_id": user.id})} == kept
+    assert {row["job_id"]: row["key"] for row in db[FitScore.COLLECTION].find({"user_id": user.id})} == kept
+
+
+@needs_db
+def test_a_kept_score_goes_on_the_day_its_job_is_archived(site):
+    """The owner (2026-11-16): kept as long as jobs stay before they are archived. A posting is archived
+    `corpus_retention_days` after it was found (`libs.corpus.archive`); its scores go then too."""
+    from datetime import timedelta
+
+    from libs.db.models import CorpusJob, FitScore
+    from libs.settings import corpus_retention_days, put
+
+    http, db, user, jobs = site
+    put(db, "corpus_retention_days", 12, by="test")
+    _cv(db, user, BACKEND_CV)
+    _shown(http)
+    found = {row["_id"]: row["first_seen_at"] for row in db[CorpusJob.COLLECTION].find(
+        {"_id": {"$in": list(jobs.values())}}, {"first_seen_at": 1})}
+    kept = {row["job_id"]: row["expires_at"] for row in db[FitScore.COLLECTION].find({"user_id": user.id})}
+    assert kept and kept == {job: found[job] + timedelta(days=corpus_retention_days(db)) for job in kept}
+
+
+@needs_db
+def test_a_keeping_that_fails_leaves_nothing_that_stops_the_next(site, monkeypatch):
+    """A run that fails is logged and let go: the next page keeps their scores, with no time to wait out."""
+    from libs.db.models import FitScore
+
+    http, db, user, jobs = site
+    _cv(db, user, BACKEND_CV)
+    real = fit.kept
+    calls = []
+
+    def failing_once(*args):
+        calls.append(args)
+        if len(calls) == 1:
+            raise RuntimeError("the database went away")
+        return real(*args)
+
+    monkeypatch.setattr(fit, "kept", failing_once)
+    _shown(http)
+    assert calls and not db[FitScore.COLLECTION].count_documents({"user_id": user.id}), "the first run failed"
+    _shown(http)
+    assert db[FitScore.COLLECTION].count_documents({"user_id": user.id}) == len(jobs)
 
 
 @needs_db

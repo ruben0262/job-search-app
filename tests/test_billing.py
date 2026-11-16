@@ -475,7 +475,7 @@ def test_a_free_account_sees_each_job_a_week_late_until_it_leaves_everybodys_lis
     assert http.put(f"/jobs/{week_old}/applied").status_code == 200
     [banner] = http.get("/dashboard").json()["banners"]
     assert banner["key"] == "free"
-    assert banner["text"].startswith("You see each job 7 days after we find it.")
+    assert banner["text"].startswith("You see jobs that are 7 days or older.")
 
 
 def test_starter_sees_each_job_three_days_late_and_the_operator_sets_how_late(db, http):

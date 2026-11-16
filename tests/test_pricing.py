@@ -13,16 +13,28 @@ import pytest
 from libs import settings
 from libs.db import insert
 from libs.db.models import User
-from libs.membership import AREAS
+from libs.membership import AREAS, EVERYONE
 
 pytest.importorskip("fastapi")
 
 ADMIN = "operator@example.com"
-CARD = {"name": "Mahoraga Plus", "highlight": "Yours for life", "also": ["Every job that fits you"],
-        "button": "Try it free", "note": "Cancel any time."}
+CARD = {"name": "Mahoraga Plus", "highlight": "Yours for life", "button": "Try it free",
+        "note": "Cancel any time."}
 FREE = {**CARD, "name": "Free", "highlight": "", "button": "Start free"}
 CARDS = {"free": FREE, "starter": {**CARD, "name": "First steps"}, "member": CARD}
-MOMENT = AREAS["early_jobs"]
+
+
+def said(name: str) -> dict:
+    """A line as a card says it: its words, and what its question mark says."""
+    return {"text": AREAS[name].short, "more": AREAS[name].more}
+
+
+EVERY = [{"text": each.short, "more": each.more} for each in EVERYONE]
+MOMENT = said("early_jobs")
+
+
+def texts(lines: list[dict]) -> list[str]:
+    return [line["text"] for line in lines]
 
 
 @pytest.fixture()
@@ -67,25 +79,47 @@ def test_anybody_reads_the_cards_with_the_trial_before_they_have_an_account(api)
 
 
 def test_each_card_says_how_soon_its_plan_sees_a_job_and_what_it_gives_and_lacks(api):
-    """Owner, 2026-11-16: Free each job once it is 7 days old, Starter once it is 3 days old with alerts and
-    match scores, Member the moment it is posted with everything; each card ticking what its plan gives and
-    crossing out what it lacks, in words that say what it does for them."""
+    """Owner, 2026-11-16: Free each job once it is 7 days old, Starter 3 days or older with alerts and match
+    scores, Member the moment it is found with everything; each paid card first saying it has everything in
+    the card before it, then what it adds, ticked, and crossing out what it lacks, a few words a line with a
+    question mark that says more. Starter has no price here, so Member's card follows Free's."""
     http, *_ = api
 
     lines = http.get("/pricing").json()["lines"]
 
     assert lines["free"] == {
-        "gives": ["See every new job 7 days after we find it"],
-        "lacks": [MOMENT, AREAS["alerts"], AREAS["match_scores"], AREAS["cvs"], AREAS["covers"],
-                  AREAS["add_job"]]}
+        "everything_in": None,
+        "gives": [{"text": "Jobs that are 7 days or older",
+                   "more": "A new job joins your list 7 days after we find it."}, *EVERY],
+        "lacks": [MOMENT, said("alerts"), said("match_scores"), said("cvs"), said("covers"), said("add_job")]}
     assert lines["starter"] == {
-        "gives": ["See every new job 3 days after we find it, 4 days before Free accounts do",
-                  AREAS["alerts"], AREAS["match_scores"]],
-        "lacks": [MOMENT, AREAS["cvs"], AREAS["covers"], AREAS["add_job"]]}
+        "everything_in": "free",
+        "gives": [{"text": "Jobs that are 3 days or older",
+                   "more": "A new job joins your list 3 days after we find it, 4 days before Free accounts "
+                           "see it."},
+                  said("alerts"), said("match_scores")],
+        "lacks": [MOMENT, said("cvs"), said("covers"), said("add_job")]}
     assert lines["member"] == {
-        "gives": [f"{MOMENT}, 7 days before Free accounts do", AREAS["alerts"], AREAS["match_scores"],
-                  AREAS["cvs"], AREAS["covers"], AREAS["add_job"]],
+        "everything_in": "free",
+        "gives": [MOMENT, said("alerts"), said("match_scores"), said("cvs"), said("covers"), said("add_job")],
         "lacks": []}
+
+
+def test_once_starter_is_sold_member_has_everything_in_it_and_says_only_what_it_adds(api, monkeypatch):
+    """Owner, 2026-11-16: "the top of the starter and member has the 'Everything in Free/Starter plan' so
+    people know what we are referring to", and Starter is sold."""
+    from services.api import billing_routes
+    from services.api.billing_routes import Plan
+
+    http, *_ = api
+    monkeypatch.setattr(billing_routes, "plan", lambda db, which="member": Plan(
+        amount=299 if which == "starter" else 499, currency="gbp", interval="month", interval_count=1,
+        trial_days=7))
+
+    lines = http.get("/pricing").json()["lines"]
+
+    assert (lines["starter"]["everything_in"], lines["member"]["everything_in"]) == ("free", "starter")
+    assert lines["member"]["gives"] == [MOMENT, said("cvs"), said("covers"), said("add_job")]
 
 
 def test_how_soon_each_card_says_follows_the_waits_set_in_admin(api):
@@ -95,16 +129,20 @@ def test_how_soon_each_card_says_follows_the_waits_set_in_admin(api):
     settings.put(db, "free_delay_hours", 120)
     settings.put(db, "starter_delay_hours", 24)
     lines = http.get("/pricing").json()["lines"]
-    assert lines["free"]["gives"][0] == "See every new job 5 days after we find it"
-    assert lines["starter"]["gives"][0] == \
-        "See every new job 24 hours after we find it, 4 days before Free accounts do"
-    assert lines["member"]["gives"][0] == f"{MOMENT}, 5 days before Free accounts do"
+    assert lines["free"]["gives"][0]["text"] == "Jobs that are 5 days or older"
+    assert lines["starter"]["gives"][0] == {
+        "text": "Jobs that are 24 hours or older",
+        "more": "A new job joins your list 24 hours after we find it, 4 days before Free accounts see "
+                "it."}
+    assert lines["member"]["gives"][0] == MOMENT
 
-    # Nobody waits: no card crosses out what every plan has, and none says it is sooner than Free.
+    # Nobody waits: Free's card says every job comes the moment it is found, the cards after it have it in
+    # "Everything in" and do not say it again, and none crosses it out.
     settings.put(db, "starter_delay_hours", 0)
     settings.put(db, "free_delay_hours", 0)
     lines = http.get("/pricing").json()["lines"]
-    assert [lines[plan]["gives"][0] for plan in ("free", "starter", "member")] == [MOMENT] * 3
+    assert lines["free"]["gives"][0] == MOMENT
+    assert MOMENT not in lines["starter"]["gives"] + lines["member"]["gives"]
     assert not any(MOMENT in lines[plan]["lacks"] for plan in ("free", "starter", "member"))
 
 
@@ -112,9 +150,9 @@ def test_the_member_card_promises_the_members_chat_only_while_it_has_a_link(api)
     """Owner, 2026-11-16: direct access to the people who build the site is a member's, and never promised
     while there is nothing to open."""
     http, db, *_ = api
-    chat = AREAS["team_access"]
-    said = http.get("/pricing").json()["lines"].values()
-    assert not any(chat in lines["gives"] + lines["lacks"] for lines in said)
+    chat = said("team_access")
+    said_now = http.get("/pricing").json()["lines"].values()
+    assert not any(chat in lines["gives"] + lines["lacks"] for lines in said_now)
 
     settings.put(db, "members_channel_url", "https://chat.example.com/mahoraga-members")
     lines = http.get("/pricing").json()["lines"]
@@ -122,31 +160,44 @@ def test_the_member_card_promises_the_members_chat_only_while_it_has_a_link(api)
     assert chat in lines["starter"]["lacks"] and chat in lines["free"]["lacks"]
 
 
+def ticked(lines: dict, plan: str) -> list[dict]:
+    """Everything a card ticks, counting "Everything in" the card before it as that card's ticks."""
+    before = lines[plan]["everything_in"]
+    return [*(ticked(lines, before) if before else []), *lines[plan]["gives"]]
+
+
+@pytest.mark.parametrize("sold", [False, True])
 @pytest.mark.parametrize("channel", ["", "https://chat.example.com/mahoraga-members"])
 @pytest.mark.parametrize("waits", [(168, 72), (120, 0), (0, 0)])
-def test_what_each_card_promises_is_what_an_account_on_that_plan_gets(api, channel, waits):
-    """The cards and the site ask the same plans: an account on each plan has every area its card ticks and
-    none its card crosses out, and sees new jobs at once exactly when its card says so. A card that promised
-    an area its plan does not give, or left out one it does, fails here."""
+def test_what_each_card_promises_is_what_an_account_on_that_plan_gets(api, monkeypatch, channel, waits, sold):
+    """The cards and the site ask the same plans: an account on each plan has every area its card ticks,
+    "Everything in" included, and none its card crosses out, and sees new jobs at once exactly when its card
+    says so. A card that promised an area its plan does not give, or left out one it does, fails here."""
     from libs.membership import delay_hours, has
+    from services.api import billing_routes
+    from services.api.billing_routes import Plan
 
     http, db, *_ = api
+    if sold:
+        monkeypatch.setattr(billing_routes, "plan", lambda db, which="member": Plan(
+            amount=299, currency="gbp", interval="month", interval_count=1, trial_days=7))
     settings.put(db, "members_channel_url", channel)
     settings.put(db, "free_delay_hours", waits[0])
     settings.put(db, "starter_delay_hours", waits[1])
     lines = http.get("/pricing").json()["lines"]
 
     for plan in ("free", "starter", "member"):
-        account, said = on(db, plan), lines[plan]
-        for area, words in AREAS.items():
+        account, gives, lacks = on(db, plan), ticked(lines, plan), lines[plan]["lacks"]
+        for area in AREAS:
+            words = said(area)
             if area == "early_jobs":
-                assert (words in said["lacks"]) == (delay_hours(db, account) > 0), plan
+                assert (words in lacks) == (delay_hours(db, account) > 0), plan
             elif area == "team_access" and not channel:
-                assert words not in said["gives"] + said["lacks"], plan
+                assert words not in gives + lacks, plan
             else:
-                assert (words in said["gives"], words in said["lacks"]) == (has(db, account.id, area),
-                                                                          not has(db, account.id, area)), \
-                    (plan, area)
+                assert (words in gives, words in lacks) == (has(db, account.id, area),
+                                                            not has(db, account.id, area)), (plan, area)
+        assert all(line in gives for line in EVERY), f"every account has these, {plan} too"
 
 
 def test_an_admin_changes_what_the_cards_say_and_the_landing_page_shows_it(api):
@@ -169,8 +220,7 @@ def test_nobody_else_can_change_it(api):
 
 
 @pytest.mark.parametrize("change", [
-    {"name": " "}, {"button": ""}, {"also": ["Alerts", "  "]}, {"also": [f"Line {n}" for n in range(13)]},
-    {"note": "x" * 281},
+    {"name": " "}, {"button": ""}, {"note": "x" * 281},
 ])
 def test_a_card_the_page_has_no_room_for_is_refused_and_the_saved_ones_kept(api, change):
     http, _, operator, _, sign_in = api
@@ -185,7 +235,7 @@ def test_saved_cards_that_no_longer_read_are_the_defaults_and_the_log_says_so(ap
     """Saved some other way: the page shows the defaults, never an error. (A card saved before a field was
     added is completed from the defaults: the last test.)"""
     http, db, *_ = api
-    settings.put(db, "pricing_cards", {"free": {"name": "Old", "also": "not a list"}})
+    settings.put(db, "pricing_cards", {"free": {"name": "Old", "button": ["not a word"]}})
 
     with caplog.at_level(logging.WARNING, logger="services.api.pricing_routes"):
         body = http.get("/pricing").json()
@@ -239,5 +289,5 @@ def test_cards_saved_before_the_plans_were_fixed_keep_their_own_words_and_lose_t
 
     for name, own in (("free", FREE), ("member", CARD)):
         default = defaults[name]
-        assert cards[name] == {**own, "highlight": default["highlight"], "also": default["also"]}
+        assert cards[name] == {**own, "highlight": default["highlight"]}
     assert cards["starter"] == defaults["starter"]

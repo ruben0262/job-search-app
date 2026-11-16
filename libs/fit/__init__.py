@@ -29,8 +29,9 @@ import uuid as _uuid
 import zlib
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from functools import cache
+from threading import Lock
 from time import monotonic
 
 from pymongo import UpdateOne
@@ -60,8 +61,6 @@ logger = logging.getLogger(__name__)
 VERSION = 1
 # Postings written per round trip by `catch_up`.
 _BATCH = 500
-# A scoring of a whole list that has not finished in this long is taken to have died.
-_STALE_RUN = timedelta(minutes=10)
 # The positions a word can take in the arrays a request sends: 8,192 measured the same as exact words (0.673
 # against 0.677 on the evaluation set) and 2,048 lost 0.04 (2026-11-16).
 POSITIONS = 8192
@@ -284,24 +283,30 @@ def unkept(kept_: dict[int, float]) -> dict:
     return {"_id": {"$nin": sorted(kept_)}, "fit_version": VERSION}
 
 
+# Whose scores this process is keeping now, so a page that asks while a run is under way adds no second one.
+# Held in this process alone and let go however a run ends: nothing is left claimed by a run that failed or a
+# process that stopped, and no clock decides when a run is over (owner, 2026-11-16: "no background stuck
+# timeouts"). Two processes keeping one person's scores at once write the same rows.
+_keeping: set[_uuid.UUID] = set()
+_keeping_lock = Lock()
+
+
 def fill(db: Database, user_id: _uuid.UUID) -> None:
     """A score kept for every job of their list that has none for their profile as it is: the whole list after
-    their documents change, the new jobs after that, all in the database. One run at a time per person; a run
-    left `_STALE_RUN` is taken to have died. Run after a page that found nothing kept, or had to work a score
-    out (`unkept`)."""
+    their documents change, the new jobs after that, all in the database. Each kept until its job is archived.
+    Run after a page that found nothing kept, or had to work a score out (`unkept`)."""
     from libs.corpus.freshness import platform_windows, shelf_life  # noqa: PLC0415 - matching imports this module
     from libs.matching import _read, marks, scan_for  # noqa: PLC0415
+    from libs.settings import corpus_retention_days  # noqa: PLC0415
 
-    started = now()
-    claimed = db[User.COLLECTION].find_one_and_update(
-        {"_id": user_id,
-         "$or": [{"fit_scoring_at": None}, {"fit_scoring_at": {"$lt": started - _STALE_RUN}}]},
-        {"$set": {"fit_scoring_at": started}})
-    if claimed is None:
-        return
-    clock, user = monotonic(), User.from_doc(claimed)
+    with _keeping_lock:
+        if user_id in _keeping:
+            return
+        _keeping.add(user_id)
+    clock = monotonic()
     try:
-        made = profile(db, user)
+        user = User.from_doc(db[User.COLLECTION].find_one({"_id": user_id}))
+        made = None if user is None else profile(db, user)
         skipped, applied = marks(db, user_id)
         _, longest = shelf_life(platform_windows(db))
         stages = None if made is None else _read(db, user, scan=scan_for(longest), fit=True,
@@ -309,21 +314,25 @@ def fill(db: Database, user_id: _uuid.UUID) -> None:
         if stages is None:
             return
         have = sorted(kept(db, user_id, made))
+        kept_for = corpus_retention_days(db) * 86_400_000  # in milliseconds, as dates are added
         db[CorpusJob.COLLECTION].aggregate([
             # A posting whose features are older than `VERSION` is kept once `catch_up` has read it again.
             *stages, {"$match": {"fit_version": VERSION, "_id": {"$nin": have}}},
             {"$project": {"_id": 0, "user_id": {"$literal": user_id}, "job_id": "$_id",
-                          "fit": expression(made), "key": {"$literal": key(made)}, "scored_at": "$$NOW"}},
+                          "fit": expression(made), "key": {"$literal": key(made)},
+                          # Archived when it was found that long ago (`libs.corpus.archive._due`).
+                          "expires_at": {"$add": ["$first_seen_at", kept_for]}}},
             {"$match": {"fit": {"$ne": None}}},
             {"$merge": {"into": FitScore.COLLECTION, "on": ["user_id", "job_id"], "whenNotMatched": "insert",
                         "whenMatched": [{"$set": {"fit": "$$new.fit", "key": "$$new.key",
-                                                  "scored_at": "$$new.scored_at"}}]}}])
+                                                  "expires_at": "$$new.expires_at"}}]}}])
         logger.info("fit: the list of %s kept in %d ms (%d had a score)", user_id,
                     (monotonic() - clock) * 1000, len(have))
     except Exception:
         logger.exception("fit: keeping the scores of %s failed; its pages work them out meanwhile", user_id)
     finally:
-        db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {"fit_scoring_at": None}})
+        with _keeping_lock:
+            _keeping.discard(user_id)
 
 
 def shown(score: float) -> int:
