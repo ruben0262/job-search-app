@@ -125,6 +125,11 @@ def label(kind: str, blob: str) -> str:
 # the model a Plus plan gets, 2026-11-15). Only the bench sets it (`scripts/cvlab/run.py --codex-effort`),
 # to measure one before every ChatGPT user's documents change with it (owner, 2026-11-15).
 CODEX_EFFORT: str | None = None
+# Whether Claude Code may search the web while it writes: off, so a sign-in writes from what it is given, as
+# an API key does. Only the bench turns it on (`scripts/cvlab/run.py --research`), to measure the AI looking a
+# company up itself against facts read by rules (owner, 2026-11-16). Search only: WebFetch would fetch pages
+# from this server, where a posting's words could point it at a private address.
+WEB_SEARCH = False
 
 
 class CliClient:
@@ -166,8 +171,10 @@ class CliClient:
         env = environment(self._kind, home)
         answer = folder / "answer.txt"
         if self._kind == "claude_login":
-            argv = [binary, "-p", "--output-format", "json", "--system-prompt-file", system, "--tools", "",
+            tools = "WebSearch" if WEB_SEARCH else ""
+            argv = [binary, "-p", "--output-format", "json", "--system-prompt-file", system, "--tools", tools,
                     "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config"]
+            argv += ["--allowedTools", "WebSearch"] if WEB_SEARCH else []
             argv += ["--model", model] if model else []
             argv += ["--effort", effort] if effort else []
             stdin = prompt

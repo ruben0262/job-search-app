@@ -657,9 +657,78 @@ def test_a_refusal_from_affinda_says_why(tmp_path, monkeypatch):
     assert "aff_test" not in str(raised.value)
 
 
+def test_a_letter_is_reviewed_by_its_own_reviewer_who_is_shown_what_is_known_of_the_company():
+    """Letters have a reviewer of their own (owner, 2026-11-16: "the same procedure" as the CV), and it is
+    shown the company facts the wording may use, so it can tell a true reason from a made-up one. A mark is
+    kept only with a line found in the letter, as the CV's reviewer's is."""
+    from scripts.cvlab import run as bench
+
+    posting = bench.Posting({"slug": "job", "group": "g", "candidate": "maya", "title": "Analyst",
+                             "company": "Acme", "description": "We need an analyst."})
+    posting.company_facts = "Acme makes bicycles in Leeds."
+    letter = "Dear Hiring Manager,\n\nI rebuilt the stock count for a bike shop.\n\nKind regards,\nMaya"
+    heard = {}
+
+    class Reviewer:
+        def complete_text(self, *, model, system, messages, max_tokens):
+            heard.update(system=system, prompt=messages[0]["content"])
+            return json.dumps({"dimensions": {
+                "why_here": {"score": 8, "evidence": "I rebuilt the stock count for a bike shop."},
+                "opening": {"score": 9, "evidence": "a line that is not in the letter"},
+                "six_second_pull": {"score": 2, "evidence": "Dear Hiring Manager,"}},
+                "not_theirs": [], "would_reply": "yes", "one_line": "Good."})
+
+    verdict = bench.judge_one(Reviewer(), posting, letter, {}, "Her documents.", kind="cover")
+    assert heard["system"] == bench.LETTER_JUDGE_SYSTEM
+    assert "Acme makes bicycles in Leeds." in heard["prompt"] and letter in heard["prompt"]
+    assert set(verdict["dimensions"]) == {"why_here"}, "unquoted marks and a CV's dimension are dropped"
+    assert verdict["overall_100"] == 80
+
+
+def test_a_wording_reads_what_is_known_about_the_company_or_that_nothing_is():
+    from scripts.cvlab import run as bench
+
+    candidate = bench.Candidate.__new__(bench.Candidate)
+    candidate.name, candidate.languages = "maya", ()
+    candidate.user = SimpleNamespace(full_name="Maya Example", links=[])
+    candidate.documents = {"cv": ["Maya Example\nEXPERIENCE\nAnalyst"]}
+    posting = bench.Posting({"slug": "job", "group": "g", "candidate": "maya", "title": "Analyst",
+                             "company": "Acme", "description": "We need an analyst."})
+    wording = "Write the letter. {{job}} <company>{{company}}</company> <letter></letter>"
+
+    posting.company_facts = "Acme makes bicycles in Leeds."
+    assert "<company>Acme makes bicycles in Leeds.</company>" in bench.request_for(
+        candidate, posting, wording, "cover").prompt
+    posting.company_facts = ""
+    assert "<company>Nothing is known about the company beyond the posting.</company>" in bench.request_for(
+        candidate, posting, wording, "cover").prompt
+    assert "{{company}}" not in bench.request_for(candidate, posting, None, "cover").prompt
+
+
+@pytest.mark.skipif(not os.path.exists(os.environ.get("CHROME_BIN", "")),
+                    reason="needs CHROME_BIN: a real Chrome renders the PDF")
+def test_a_letter_has_ats_checks_of_its_own():
+    """A letter through an ATS procedure too (owner, 2026-11-16): read whole, the name first, the employer and
+    the posting's title in it, its length, one page."""
+    from scripts.cvlab import run as bench
+    from services.docgen import pdf
+
+    posting = bench.Posting({"slug": "job", "group": "g", "candidate": "maya", "title": "Analyst (m/f/d)",
+                             "company": "Acme Ltd", "description": "We need an analyst."})
+    middle = "<p>" + "We count stock every week. " * 40 + "</p>"
+    long_enough = LETTER_PAGE.replace("<p>Second one.</p>", middle)
+    for page, failed in ((LETTER_PAGE, ["length"]), (long_enough, []),
+                         (long_enough.replace("Data analyst specialising", "Specialist"), ["title"])):
+        document = pdf.render(page)
+        report = pdf.inspect_pdf(document, kind="cover")
+        passed = bench.ats_letter_checks(document, page, posting, report)
+        assert [name for name, ok in passed.items() if not ok] == failed, page[:0]
+    pdf._discard()
+
+
 def test_a_cover_letter_cell_is_measured_as_a_letter(tmp_path, monkeypatch):
-    """A letter is pasted as a letter, its own letter is the baseline, and the CV's counts and CV judge stay
-    off it. Their own letter is asked about once, whatever the sample."""
+    """A letter is pasted as a letter, its own letter is the baseline, and the CV's counts stay off it.
+    Their own letter is asked about once, whatever the sample."""
     from scripts.cvlab import run as bench
 
     candidate = bench.Candidate.__new__(bench.Candidate)

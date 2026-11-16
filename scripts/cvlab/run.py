@@ -79,6 +79,14 @@ HERE = pathlib.Path(__file__).resolve().parent
 LIVE_PROMPTS = {kind: REPO / "libs" / "prompts" / name for kind, name in build.PROMPTS.items()}
 VARIANTS = {"cv": HERE / "variants", "cover": HERE / "variants" / "cover"}
 JUDGE_PROMPT = REPO / "libs" / "prompts" / "eval_cv.md"
+# The letters' reviewer: the bench's own, as the CV's reviewer was before it was approved (owner, 2026-11-16:
+# "cover letter prompt should be claude first same way cv was made, with the same procedure").
+LETTER_JUDGE_PROMPT = HERE / "eval_cover.md"
+LETTER_JUDGE_SYSTEM = "You review cover letters the way the hiring manager for the job would."
+# What is known about each posting's company, a file a posting (`company/<slug>.txt`): a `{{company}}` slot
+# in a letter's wording is filled with it, and the letters' reviewer is shown it whatever wrote the letter.
+COMPANY_FACTS = HERE / "company"
+COMPANY_SLOT = "{{company}}"
 # The person's own CV, unchanged: the baseline every written CV is measured against.
 UPLOADED = "uploaded"
 
@@ -107,6 +115,8 @@ class Posting:
         self.description = data.get("description", "")
         self.workplace = data.get("workplace") or ""
         self.language = data.get("language")
+        facts = COMPANY_FACTS / f"{self.slug}.txt"
+        self.company_facts = facts.read_text(encoding="utf-8").strip() if facts.exists() else ""
 
 
 class Candidate:
@@ -192,6 +202,11 @@ def request_for(candidate: Candidate, posting: Posting, template: str | None, ki
                 look: str = templates.DEFAULT):
     """What production would send for this person and posting, in the look everyone has by default or in
     `look`."""
+    if template and COMPANY_SLOT in template:
+        # A wording that reads what is known about the company (`company/<slug>.txt`), or that nothing is:
+        # filled here, since production's slots (`build.prepare`) do not have it.
+        template = template.replace(
+            COMPANY_SLOT, posting.company_facts or "Nothing is known about the company beyond the posting.")
     return build.prepare(kind, user=candidate.user, job=posting, documents=candidate.documents,
                          look=templates.find(kind, look), languages=candidate.languages, template=template)
 
@@ -279,11 +294,12 @@ def measured(candidate: Candidate, posting: Posting, page: str, document: bytes 
     if kind == "cv":
         issues = ats_read(document, page) if document else ["not rendered"]
         row |= {"ats_read": len(issues), "ats_read_issues": issues}
-        if document:
-            passed = ats_checks(document, page, posting.title, report, issues)
-            row |= {"ats_score": round(100 * sum(passed.values()) / len(passed), 1),
-                    "ats_failed": [name for name, ok in passed.items() if not ok],
-                    **{f"ats_{name}": int(ok) for name, ok in passed.items()}}
+    if document:
+        passed = (ats_checks(document, page, posting.title, report, row["ats_read_issues"]) if kind == "cv"
+                  else ats_letter_checks(document, page, posting, report))
+        row |= {"ats_score": round(100 * sum(passed.values()) / len(passed), 1),
+                "ats_failed": [name for name, ok in passed.items() if not ok],
+                **{f"ats_{name}": int(ok) for name, ok in passed.items()}}
     return row
 
 
@@ -364,6 +380,52 @@ _ATS_MONTH_YEAR = r"(?:[A-Z][a-z]{2,8}\.? )?\d{4}"
 _ATS_DATE = re.compile(rf"{_ATS_MONTH_YEAR}(?: [\u2013-] (?:{_ATS_MONTH_YEAR}|[Pp]resent))?")
 
 
+def ats_letter_checks(document: bytes, page: str, posting: Posting, report: pdf.PdfReport) -> dict[str, bool]:
+    """What an applicant tracking system, and the person who reads after it, have to be able to take from a
+    cover letter, each a yes or a no, none depending on what the person has done (owner, 2026-11-16: letters
+    "should be put through the ats procedure as well"):
+
+    - `text`: every word comes out whole for both readers, with no ligature;
+    - `name`: the text starts with the person's name;
+    - `contact`: the email address and the phone number come out as written;
+    - `company`: the employer is named in the letter;
+    - `title`: the posting's job title is in it, in the subject or the letter, as a reader searches by it;
+    - `length`: the letter itself is `checks.LETTER_WORDS` long, the length a hiring manager reads;
+    - `pages`: one page."""
+    from pdfminer.high_level import extract_text  # noqa: PLC0415 - a development dependency
+
+    pages = PdfReader(io.BytesIO(document)).pages
+    readers = {"pypdf": "\n".join(each.extract_text() or "" for each in pages),
+               "pdfminer": extract_text(io.BytesIO(document))}
+    written = set(re.findall(r"\w+", unicodedata.normalize("NFC", unescape(
+        re.sub(r"<[^>]+>", " ", page.split("<body>", 1)[1]))).casefold()))
+    named = re.search(r'class="cv-name">([^<]*)<', page)
+    name = unescape(named.group(1)).strip() if named else ""
+    read = " ".join(readers["pypdf"].split()).casefold()
+    email, phone = contact_of(page)
+
+    def words(text: str) -> str:
+        return " ".join(each for each in re.findall(r"\w+", text.casefold()) if each != "and")
+
+    def digits(text: str) -> str:
+        return re.sub(r"\D", "", text)
+
+    company = re.sub(r"(?i)\b(ltd|limited|plc|gmbh|kft|inc|llc)\b\.?", "", posting.company or "")
+    letter_words = len(letter_text(page).split())
+    return {
+        "text": all(not re.search("[\ufb00-\ufb06]", text)
+                    and set(re.findall(r"\w+", unicodedata.normalize("NFC", text).casefold())) == written
+                    for text in readers.values()),
+        "name": bool(name) and all(" ".join(text.split()).casefold().startswith(name.casefold())
+                                   for text in readers.values()),
+        "contact": email.casefold() in read and digits(phone) in digits(read),
+        "company": bool(words(company)) and f" {words(company)} " in f" {words(read)} ",
+        "title": f" {words(checkers.job_title(posting.title))} " in f" {words(read)} ",
+        "length": build.checks.LETTER_WORDS[0] <= letter_words <= build.checks.LETTER_WORDS[1],
+        "pages": report.pages == 1,
+    }
+
+
 def ats_checks(document: bytes, page: str, title: str, report: pdf.PdfReport,
                issues: list[str]) -> dict[str, bool]:
     """What an applicant tracking system has to be able to do with a CV, each a yes or a no (owner,
@@ -406,19 +468,24 @@ def ats_checks(document: bytes, page: str, title: str, report: pdf.PdfReport,
     }
 
 
-def judge_one(client, posting: Posting, text: str, report: dict, theirs: str) -> dict | None:
+def judge_one(client, posting: Posting, text: str, report: dict, theirs: str, *,
+              kind: str = "cv") -> dict | None:
     """The reviewer's verdict, on what no regular expression reaches. `theirs` is everything the person
-    gave us: a reviewer who cannot see it cannot say what the CV made up."""
-    prompt = (JUDGE_PROMPT.read_text(encoding="utf-8")
+    gave us: a reviewer who cannot see it cannot say what the document made up. A letter's reviewer is shown
+    what is known about the company too, for the same reason."""
+    letter = kind == "cover"
+    prompt = ((LETTER_JUDGE_PROMPT if letter else JUDGE_PROMPT).read_text(encoding="utf-8")
               .replace("<DETERMINISTIC_SUMMARY>", json.dumps(report))
               .replace("<JOB_DESCRIPTION>", f"{posting.title}\n{posting.company}\n\n{posting.description}")
+              .replace("<COMPANY_FACTS>", posting.company_facts or "Nothing beyond the posting.")
               .replace("<THEIR_DOCUMENTS>", theirs)
               .replace("<CV_TEXT>", text))
     try:
-        reply = client.complete_text(model=JUDGE_MODEL, system=JUDGE_SYSTEM,
+        system = LETTER_JUDGE_SYSTEM if letter else JUDGE_SYSTEM
+        reply = client.complete_text(model=JUDGE_MODEL, system=system,
                                      messages=[{"role": "user", "content": prompt}],
                                      max_tokens=JUDGE_MAX_TOKENS)
-        verdict = read_verdict(reply, text)
+        verdict = read_verdict(reply, text, LETTER_DIMENSIONS if letter else DIMENSIONS)
         if verdict is None:
             logger.warning("judge returned no JSON object for %s (%d chars)", posting.slug, len(reply))
         return verdict
@@ -436,7 +503,7 @@ _TYPED = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '
                         "\u2014": "-"})
 
 
-def read_verdict(reply: str, text: str) -> dict | None:
+def read_verdict(reply: str, text: str, dimensions: tuple[str, ...] | None = None) -> dict | None:
     """The reviewer's answer, kept only where code can check it (rules before AI). A mark whose quoted line
     is not in the CV word for word is thrown away, as the prompt says it will be, and so is a line said not
     to be theirs that the CV does not have. The overall mark is the mean of the marks kept, worked out
@@ -450,7 +517,8 @@ def read_verdict(reply: str, text: str) -> dict | None:
         return bool(line) and _flat(line) in cv
 
     marks = {name: mark for name, mark in (answer.get("dimensions") or {}).items()
-             if name in DIMENSIONS and isinstance(mark, dict) and isinstance(mark.get("score"), int | float)}
+             if name in (dimensions or DIMENSIONS) and isinstance(mark, dict)
+             and isinstance(mark.get("score"), int | float)}
     kept = {name: mark for name, mark in marks.items() if quoted(mark.get("evidence"))}
     scores = [mark["score"] for mark in kept.values()]
     return {"overall_100": round(10 * statistics.mean(scores)) if scores else None,
@@ -467,7 +535,7 @@ def _rate_limited(exc: Exception) -> bool:
 
 
 def _verdict(client, posting: Posting, text: str, report: dict, *, kept: pathlib.Path,
-             judge: bool, force: bool, theirs: str = "") -> dict | None:
+             judge: bool, force: bool, theirs: str = "", kind: str = "cv") -> dict | None:
     """This CV's verdict, from beside it on disk when it has already been judged.
 
     **A verdict is cached with its CV.** Without this, every resume re-judged each finished cell
@@ -481,7 +549,7 @@ def _verdict(client, posting: Posting, text: str, report: dict, *, kept: pathlib
         return json.loads(kept.read_text(encoding="utf-8"))
     if client is None:
         return None
-    verdict = judge_one(client, posting, text, report, theirs)
+    verdict = judge_one(client, posting, text, report, theirs, kind=kind)
     if verdict is not None:
         kept.write_text(json.dumps(verdict, indent=2), encoding="utf-8")
     return verdict
@@ -589,7 +657,7 @@ def _run_cell(client, candidate: Candidate, posting: Posting, *, variant: str, s
     text = page if uploaded else cvchecks.text_of(page) if kind == "cv" else letter_text(page)
     theirs = "\n\n".join(each for texts in candidate.documents.values() for each in texts)
     verdict = _verdict(judge or client, posting, text, report, kept=path.with_suffix(".verdict.json"),
-                       judge=args.judge and kind == "cv", force=args.force, theirs=theirs)
+                       judge=args.judge, force=args.force, theirs=theirs, kind=kind)
     dimensions = {key: value.get("score")
                   for key, value in ((verdict or {}).get("dimensions") or {}).items()}
     outside = {}
@@ -747,6 +815,7 @@ COLUMNS = (("1st person", "first_person"), ("profile 1p", "profile_first_person"
            ("seconds", "seconds"), ("tokens in", "tokens_in"), ("tokens out", "tokens_out"),
            ("over a key's ceiling", "over_ceiling"))
 
+LETTER_DIMENSIONS = ("opening", "why_here", "evidence", "fit", "voice", "honesty", "close")
 DIMENSIONS = ("six_second_pull", "role_angle_fit", "relevance_coverage", "achievement_quality",
               "human_voice", "defensibility", "keyword_integration")
 # What the reviewer lists beside its marks, as counts.
@@ -890,6 +959,8 @@ def main() -> int:
                              "documents with; the reviewer stays on the account in use")
     parser.add_argument("--model", default=None, help=f"default {CV_MODEL}, or the provider's own")
     parser.add_argument("--effort", default=build.EFFORT, help="how hard the model thinks (low … max)")
+    parser.add_argument("--research", action="store_true",
+                        help="let a Claude sign-in search the web while it writes (production never does)")
     parser.add_argument("--codex-effort", default=None, choices=["minimal", "low", "medium", "high"],
                         help="with --provider codex: tell Codex how hard to think; production tells it "
                              "nothing, and the documents are kept apart under <model>@<effort>")
@@ -906,6 +977,7 @@ def main() -> int:
     parser.add_argument("--out", default="scripts/cvlab/out")
     args = parser.parse_args()
     cli.CODEX_EFFORT = args.codex_effort
+    cli.WEB_SEARCH = args.research
     if args.model is None:
         args.model = DEFAULT_DOCUMENT_MODELS[args.provider] if args.provider else CV_MODEL
     args.checkers = [each for each in args.checkers.split(",") if each]

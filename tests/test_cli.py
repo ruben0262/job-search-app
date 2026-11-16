@@ -98,6 +98,18 @@ def test_each_tool_is_given_the_prompt_and_its_answer_comes_back(tools, kind, mo
     assert not Path(said["cwd"]).exists(), "nothing of the call is left on disk"
 
 
+def test_claude_searches_the_web_only_when_the_bench_asks_and_never_fetches_a_page(tools, monkeypatch):
+    """Production writes from what it is given. The bench may let Claude search, to measure it (owner,
+    2026-11-16); fetching stays off either way: a posting's words could point it at a private address."""
+    plain = _write("claude_login", _blob("claude_login"))["args"]
+    assert plain[plain.index("--tools") + 1] == "" and "--allowedTools" not in plain
+    monkeypatch.setattr(cli, "WEB_SEARCH", True)
+    told = _write("claude_login", _blob("claude_login"))["args"]
+    assert told[told.index("--tools") + 1] == "WebSearch"
+    assert told[told.index("--allowedTools") + 1] == "WebSearch"
+    assert "WebFetch" not in " ".join(told)
+
+
 def test_claude_runs_with_no_tools_and_gemini_trusted_and_read_only(tools):
     claude = _write("claude_login", _blob("claude_login"))["args"]
     gemini = _write("gemini_login", _blob("gemini_login"))["args"]
