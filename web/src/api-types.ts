@@ -1276,6 +1276,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/bookmarked": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bookmarks
+         * @description The jobs this person bookmarked, the latest first, as the Jobs page shows a job: until they take
+         *     the bookmark off, skip the job, apply to it, or it closes. For every account (owner, 2026-11-15).
+         */
+        get: operations["bookmarks_jobs_bookmarked_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/link": {
         parameters: {
             query?: never;
@@ -2437,6 +2458,8 @@ export interface components {
         FeedJob: {
             /** Apply On */
             apply_on: string;
+            /** Bookmarked */
+            bookmarked: boolean;
             /** Company */
             company: string | null;
             /** Country */
@@ -2676,6 +2699,8 @@ export interface components {
         JobMarks: {
             /** Applied */
             applied: boolean;
+            /** Bookmarked */
+            bookmarked: boolean;
             /** Hidden */
             hidden: boolean;
             /** Job Id */
@@ -5518,6 +5543,26 @@ export interface operations {
             };
         };
     };
+    bookmarks_jobs_bookmarked_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedJob"][];
+                };
+            };
+        };
+    };
     find_by_link_jobs_link_post: {
         parameters: {
             query?: never;
@@ -5687,7 +5732,7 @@ export interface operations {
             header?: never;
             path: {
                 job_id: number;
-                mark: "applied" | "hidden";
+                mark: "applied" | "hidden" | "bookmarked";
             };
             cookie?: never;
         };
@@ -5719,7 +5764,7 @@ export interface operations {
             header?: never;
             path: {
                 job_id: number;
-                mark: "applied" | "hidden";
+                mark: "applied" | "hidden" | "bookmarked";
             };
             cookie?: never;
         };

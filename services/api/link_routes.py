@@ -26,15 +26,17 @@ from pymongo.database import Database
 
 from libs.corpus.postings import PAGE_HEADERS, job_link, linkedin_id, read_link
 from libs.corpus.repository import LINK, MAX_DESCRIPTION, MIN_DESCRIPTION, TYPED, CorpusRepository
+from libs.corpus.words import terms_of
 from libs.db import now
 from libs.db.models import CorpusJob, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
-from libs.matching import Match
+from libs.matching import Match, green_words
 from libs.obs import audit
 from libs.proxy import site_proxy
 from libs.secrets import redacting
-from services.api.dashboard_routes import FeedJob, feed_row
+from libs.tenant.repository import TenantRepository
+from services.api.dashboard_routes import FeedJob, bookmarked, feed_row
 from services.api.deps import current_user, get_db, rate_limit
 
 logger = logging.getLogger(__name__)
@@ -44,8 +46,8 @@ router = APIRouter(tags=["links"])
 # server, a LinkedIn one through the site's proxy, and each job kept is shown to everyone whose words
 # it has: a ceiling on a script, as uploads and the contact form have, not on a person.
 LINKS_PER_HOUR = 30
-# The jobs they brought that the page lists, newest first.
-ADDED_SHOWN = 100
+# How many of the jobs they brought, and of the jobs they bookmarked, a page lists, newest first.
+MARKED_SHOWN = 100
 # A person waits on the read, and a job's page is a few hundred KB; past this it is not one.
 READ_TIMEOUT = 10
 MAX_PAGE_BYTES = 5 * 1024 * 1024
@@ -183,10 +185,24 @@ def save_typed(body: TypedJob, request: Request, db: Database = Depends(get_db),
 def added(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> list[FeedJob]:
     """The jobs this person brought here by their links, the latest first, until they skip one, apply
     to it, or it closes."""
+    return _listed(db, user_id, "added_at")
+
+
+@router.get("/jobs/bookmarked")
+def bookmarks(db: Database = Depends(get_db),
+              user_id: _uuid.UUID = Depends(current_user)) -> list[FeedJob]:
+    """The jobs this person bookmarked, the latest first, as the Jobs page shows a job: until they take
+    the bookmark off, skip the job, apply to it, or it closes. For every account (owner, 2026-11-15)."""
+    return _listed(db, user_id, "bookmarked_at", why=True)
+
+
+def _listed(db: Database, user_id: _uuid.UUID, since: str, *, why: bool = False) -> list[FeedJob]:
+    """The jobs this person holds a mark of their own on (`since`: when they added it, or bookmarked it),
+    the latest first, less the ones they skipped or applied to and the ones that closed."""
     rows = db[UserJobState.COLLECTION].find(
-        {"user_id": user_id, "added_at": {"$ne": None}, "applied_at": None, "dismissed_at": None},
-        {"job_id": 1}, sort=[("added_at", -1)], limit=ADDED_SHOWN)
-    return _jobs(db, user_id, [row["job_id"] for row in rows], open_only=True)
+        {"user_id": user_id, since: {"$ne": None}, "applied_at": None, "dismissed_at": None},
+        {"job_id": 1}, sort=[(since, -1)], limit=MARKED_SHOWN)
+    return _jobs(db, user_id, [row["job_id"] for row in rows], open_only=True, why=why)
 
 
 def _address(pasted: str) -> str:
@@ -232,10 +248,20 @@ def _answer(db: Database, user_id: _uuid.UUID, outcome: str, job_id: int, url: s
     return LinkAnswer(outcome=outcome, job=_jobs(db, user_id, [job_id])[0])
 
 
-def _jobs(db: Database, user_id: _uuid.UUID, ids: list[int], *, open_only: bool = False) -> list[FeedJob]:
-    """Cards for these jobs, in this order, with the documents made for each."""
+def _jobs(db: Database, user_id: _uuid.UUID, ids: list[int], *, open_only: bool = False,
+          why: bool = False) -> list[FeedJob]:
+    """Cards for these jobs, in this order, with the documents made for each. `why` says which of the
+    person's words each has, as its card on the Jobs page does and by the same rule (`words.terms_of`): a
+    bookmarked job is shown as it was there. A job brought by its link is listed for that, not its words."""
+    mine = green_words(TenantRepository(db).get_config(user_id)) if why else []
     where: dict[str, Any] = {"_id": {"$in": ids}, **({"closed_at": None} if open_only else {})}
     jobs = {row["_id"]: CorpusJob.from_doc(row) for row in db[CorpusJob.COLLECTION].find(where)}
-    documents = for_jobs(db, user_id, list(jobs))
-    return [feed_row(Match(job=job, words=(), in_title=()), job.description, documents.get(job_id, []))
-            for job_id in ids if (job := jobs.get(job_id))]
+    documents, kept = for_jobs(db, user_id, list(jobs)), bookmarked(db, user_id, list(jobs))
+    cards = []
+    for job_id in ids:
+        if job := jobs.get(job_id):
+            has = terms_of(job.title, job.description, mine)
+            match = Match(job=job, words=tuple(has["terms"]), in_title=tuple(has["title_terms"]))
+            cards.append(feed_row(match, job.description, documents.get(job_id, []),
+                                  bookmarked=job_id in kept))
+    return cards

@@ -229,6 +229,24 @@ def test_a_skip_lasts_while_the_posting_is_kept_for_somebody_else(ctx, tmp_path)
     assert _state(s, alice, job_id).dismissed_at is not None
 
 
+def test_a_bookmark_goes_with_its_posting_and_lasts_while_it_is_kept_for_somebody_else(ctx, tmp_path):
+    """A bookmark is the person's own mark, so the sweep of what we merely sent leaves it alone; it does
+    not keep a posting past its time, or the mark people tap most would keep most of the corpus."""
+    r, s = ctx
+    gone, kept = _aged(r, s, days=45), _aged(r, s, days=200)
+    alice, bob = _user(s), _user(s)
+    record_state(s, alice.id, gone, bookmarked_at=now())
+    record_state(s, alice.id, kept, bookmarked_at=now())
+    record_state(s, bob.id, kept, applied_at=now())
+
+    result = archive_expired(s, directory=tmp_path)
+    forget_stale_state(s, cutoff=now() - timedelta(days=30))
+
+    assert (result.jobs, result.states) == (1, 1)
+    assert _state(s, alice, gone) is None
+    assert _state(s, alice, kept).bookmarked_at is not None
+
+
 # ── the state that goes with it ────────────────────────────────────────────────────────────────
 
 def test_a_sent_row_for_an_archived_posting_goes_with_it(ctx, tmp_path):

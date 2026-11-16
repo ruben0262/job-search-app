@@ -61,8 +61,9 @@ class ArchiveResult:
 # A row whose posting is kept forever: the person applied, or built a cover letter for it.
 ACTED_ON = {"$or": [{"applied_at": {"$ne": None}}, {"cover_built": True}]}
 # A row recording something the person did, rather than something we worked out: kept while its posting
-# is. A skip is one, so a posting kept for somebody else's application stays skipped for this person.
-MARKED = {"$or": [*ACTED_ON["$or"], {"dismissed_at": {"$ne": None}}]}
+# is. A skip is one, so a posting kept for somebody else's application stays skipped for this person, and
+# so is a bookmark. Neither keeps the posting itself: a bookmark goes when its job is archived.
+MARKED = {"$or": [*ACTED_ON["$or"], {"dismissed_at": {"$ne": None}}, {"bookmarked_at": {"$ne": None}}]}
 
 
 def _plain(value: object) -> object:

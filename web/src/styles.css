@@ -551,10 +551,10 @@ button.danger {
    **A new kind of plain button goes on this list**, or it borrows the purple's light at rest. */
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
-    .look-card, .toast-close),
+    .look-card, .toast-close, .bookmark),
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
-    .look-card, .toast-close):hover:not([disabled]) {
+    .look-card, .toast-close, .bookmark):hover:not([disabled]) {
   box-shadow: none;
 }
 
@@ -1560,6 +1560,47 @@ button.main {
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.025em;
+}
+
+/* The bookmark, a little mark in the card's corner (owner, 2026-11-15): an outline, filled once tapped.
+   Big enough for a thumb, and out of the flow, so the title starts where it always did and only makes
+   room beside it. */
+.job-card:not(.gone) {
+  position: relative;
+}
+
+.job-card:not(.gone) h3 {
+  padding-right: 2rem;
+}
+
+.job-card .bookmark {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.55rem;
+  padding: 0.6rem;
+  border: none;
+  background: none;
+  color: var(--dim);
+  line-height: 0;
+}
+
+.job-card .bookmark:hover,
+.job-card .bookmark.on {
+  color: var(--accent-text);
+  transform: none;
+}
+
+.job-card .bookmark svg {
+  width: 1.3rem;
+  height: 1.3rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+
+.job-card .bookmark.on svg {
+  fill: currentColor;
 }
 
 /* The title opens the whole job, as a tap anywhere else on the card does. */
@@ -2810,7 +2851,7 @@ button.ai-provider {
   box-shadow: 0 6px 16px -8px rgba(var(--accent-rgb), 1);
 }
 
-/* Two tabs on a phone share its width, as two halves of one switch. */
+/* The tabs of a page share a phone's width, as the parts of one switch. */
 @media (max-width: 720px) {
   .tabs.split {
     width: 100%;

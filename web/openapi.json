@@ -1592,6 +1592,10 @@
             "title": "Apply On",
             "type": "string"
           },
+          "bookmarked": {
+            "title": "Bookmarked",
+            "type": "boolean"
+          },
           "company": {
             "anyOf": [
               {
@@ -1745,7 +1749,8 @@
           "salary",
           "summary",
           "more",
-          "documents"
+          "documents",
+          "bookmarked"
         ],
         "title": "FeedJob",
         "type": "object"
@@ -2243,6 +2248,10 @@
             "title": "Applied",
             "type": "boolean"
           },
+          "bookmarked": {
+            "title": "Bookmarked",
+            "type": "boolean"
+          },
           "hidden": {
             "title": "Hidden",
             "type": "boolean"
@@ -2255,7 +2264,8 @@
         "required": [
           "job_id",
           "applied",
-          "hidden"
+          "hidden",
+          "bookmarked"
         ],
         "title": "JobMarks",
         "type": "object"
@@ -7611,6 +7621,32 @@
         ]
       }
     },
+    "/jobs/bookmarked": {
+      "get": {
+        "description": "The jobs this person bookmarked, the latest first, as the Jobs page shows a job: until they take\nthe bookmark off, skip the job, apply to it, or it closes. For every account (owner, 2026-11-15).",
+        "operationId": "bookmarks_jobs_bookmarked_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeedJob"
+                  },
+                  "title": "Response Bookmarks Jobs Bookmarked Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Bookmarks",
+        "tags": [
+          "links"
+        ]
+      }
+    },
     "/jobs/link": {
       "post": {
         "description": "A pasted link: the job, if it is here; else read from its page and kept, if the page said all of\nit; else what the page did say, for the person to finish and keep (`POST /jobs/link/save`).",
@@ -7861,7 +7897,8 @@
             "schema": {
               "enum": [
                 "applied",
-                "hidden"
+                "hidden",
+                "bookmarked"
               ],
               "title": "Mark",
               "type": "string"
@@ -7915,7 +7952,8 @@
             "schema": {
               "enum": [
                 "applied",
-                "hidden"
+                "hidden",
+                "bookmarked"
               ],
               "title": "Mark",
               "type": "string"

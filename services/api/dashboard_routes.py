@@ -134,6 +134,8 @@ class FeedJob(BaseModel):
     more: bool
     # The CVs and cover letters made for it, newest first: still downloadable after a refresh.
     documents: list[JobDocument]
+    # They bookmarked it: it is under Bookmarks too.
+    bookmarked: bool
 
 
 class FeedSource(BaseModel):
@@ -356,6 +358,7 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     texts = {row["_id"]: row.get("description") for row in db[CorpusJob.COLLECTION].find(
         {"_id": {"$in": ids}}, {"description": 1})}
     documents = for_jobs(db, user_id, ids)
+    kept = bookmarked(db, user_id, ids)
     boards = Counter(match.job.source for match in visible)
     words = Counter(each for match in visible for each in match.words)
     countries = Counter(match.job.country for match in visible if match.job.country)
@@ -364,8 +367,8 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     since = found_after.replace(tzinfo=found_after.tzinfo or UTC) if found_after else None
     arrived = sum(1 for match in matches if match.job.described_at >= since) if since else None
     return Feed(total=len(matches), arrived=arrived,
-                jobs=[feed_row(match, texts.get(match.job.id), documents.get(match.job.id, []))
-                      for match in page],
+                jobs=[feed_row(match, texts.get(match.job.id), documents.get(match.job.id, []),
+                               bookmarked=match.job.id in kept) for match in page],
                 sources=[FeedSource(name=name, label=board_name(name), jobs=count)
                          for name, count in boards.most_common()],
                 words=[FeedWord(name=name, jobs=count) for name, count in words.most_common()],
@@ -382,7 +385,14 @@ def _when(match: Match) -> datetime:
     return match.job.posted_at or match.job.first_seen_at
 
 
-def feed_row(match: Match, text: str | None, documents: list[dict]) -> FeedJob:
+def bookmarked(db: Database, user_id: _uuid.UUID, ids: list[int]) -> set[int]:
+    """Which of these jobs this person bookmarked."""
+    return set(db[UserJobState.COLLECTION].distinct(
+        "job_id", {"user_id": user_id, "job_id": {"$in": ids}, "bookmarked_at": {"$ne": None}}))
+
+
+def feed_row(match: Match, text: str | None, documents: list[dict], *,
+             bookmarked: bool = False) -> FeedJob:
     """One job, with the start of its text and the salary in it, not the whole of it."""
     job = match.job
     return FeedJob(id=job.id, title=job.title, company=job.company, location=job.location,
@@ -390,7 +400,7 @@ def feed_row(match: Match, text: str | None, documents: list[dict]) -> FeedJob:
                    apply_on=apply_on(job.source), words=list(match.words), posted_at=job.posted_at,
                    first_seen_at=job.first_seen_at, described_at=job.described_at,
                    salary=salary.extract(text), **_summary(text),
-                   documents=[job_document(row) for row in documents])
+                   documents=[job_document(row) for row in documents], bookmarked=bookmarked)
 
 
 def _summary(description: str | None) -> dict:
@@ -487,17 +497,19 @@ class JobMarks(BaseModel):
     job_id: int
     applied: bool
     hidden: bool
+    bookmarked: bool
 
 
-# "Mark as applied" and "Skip" — the only two things a person records about a job, and nothing else does:
-# making a document is not applying. Either takes the job off their jobs page for good. Skip is
-# `hidden` here, as it was called before the page renamed it.
-_MARKS = {"applied": "applied_at", "hidden": "dismissed_at"}
+# "Mark as applied" and "Skip" — the only two things a person records about what they did with a job, and
+# nothing else does: making a document is not applying. Either takes the job off their jobs page for good.
+# Skip is `hidden` here, as it was called before the page renamed it. A bookmark takes nothing off any
+# page: it lists the job under Bookmarks as well (owner, 2026-11-15).
+_MARKS = {"applied": "applied_at", "hidden": "dismissed_at", "bookmarked": "bookmarked_at"}
 
 
 @router.put("/jobs/{job_id}/{mark}", response_model=JobMarks)
 @router.delete("/jobs/{job_id}/{mark}", response_model=JobMarks)
-def mark_job(job_id: int, mark: Literal["applied", "hidden"], request: Request,
+def mark_job(job_id: int, mark: Literal["applied", "hidden", "bookmarked"], request: Request,
              db: Database = Depends(get_db),
              user_id: _uuid.UUID = Depends(current_user)) -> JobMarks:
     """PUT records the mark, DELETE takes it back. Only ever this person's own row."""
@@ -510,4 +522,4 @@ def mark_job(job_id: int, mark: Literal["applied", "hidden"], request: Request,
     state = record_state(db, user_id, job_id, **{_MARKS[mark]: now() if request.method == "PUT" else None})
     audit(logger, "job.marked", user=user_id, job=job_id, mark=mark, on=request.method == "PUT")
     return JobMarks(job_id=job_id, applied=state.applied_at is not None,
-                    hidden=state.dismissed_at is not None)
+                    hidden=state.dismissed_at is not None, bookmarked=state.bookmarked_at is not None)

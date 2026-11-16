@@ -1,9 +1,11 @@
-/** "Skip" and "Mark as applied", kept in this browser until the server has them: a lost connection, a
- * refresh or a phone switched off loses neither, and a job marked is never shown again. */
+/** "Skip", "Mark as applied" and a bookmark, kept in this browser until the server has them: a lost
+ * connection, a refresh or a phone switched off loses none, and a job skipped or applied to is never
+ * shown again. */
 import { ApiError, api } from "./api";
 
+/** What takes a job off the Jobs page. A bookmark takes it off nothing. */
 export type Mark = "applied" | "hidden";
-type Waiting = { job: number; mark: Mark; on: boolean };
+type Waiting = { job: number; mark: Mark | "bookmarked"; on: boolean };
 
 const KEY = "job-marks";
 
@@ -25,11 +27,25 @@ function keep(marks: Waiting[]): void {
 
 /** Jobs marked here that the server has not confirmed yet: off the page whatever it answers. */
 export function unsent(): Set<number> {
-  return new Set(waiting().filter((each) => each.on).map((each) => each.job));
+  return new Set(waiting().filter((each) => each.on && each.mark !== "bookmarked").map((each) => each.job));
+}
+
+/** Bookmarks tapped in this tab, by job: what a card shows over a list read before the tap. */
+const tapped = new Map<number, boolean>();
+
+/** Whether a job is bookmarked: the last tap here, else what its list said. */
+export function bookmarked(job: { id: number; bookmarked: boolean }): boolean {
+  return tapped.get(job.id) ?? job.bookmarked;
+}
+
+/** Put a bookmark on a job, or take it off: shown at once, sent like any mark. */
+export function bookmark(job: number, on: boolean): Promise<void> {
+  tapped.set(job, on);
+  return mark(job, "bookmarked", on);
 }
 
 /** Record a mark, or take one back, and send it with whatever else is waiting. */
-export function mark(job: number, kind: Mark, on: boolean): Promise<void> {
+export function mark(job: number, kind: Waiting["mark"], on: boolean): Promise<void> {
   keep([...waiting().filter((each) => each.job !== job || each.mark !== kind), { job, mark: kind, on }]);
   return send();
 }
@@ -61,6 +77,7 @@ export function send(): Promise<void> {
 /** Forgotten on sign-out, or the next account would send this one's marks. */
 export function forgetMarks(): void {
   keep([]);
+  tapped.clear();
 }
 
 window.addEventListener("online", () => void send());

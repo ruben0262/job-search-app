@@ -121,6 +121,7 @@ def test_a_new_person_goes_from_sign_up_to_their_jobs(site, capsys):
         expect(page.get_by_role("button", name="Make my CV")).to_have_count(2)
         _what_is_missing(page, cards.first)
 
+        _bookmarks(page)
         _marks(page)
         _alert_links(page, base, ids)
         _settings(browser, page, base)
@@ -1701,6 +1702,45 @@ def _onboard(page) -> None:
 
     expect(page.get_by_role("heading", name="You're all set")).to_be_visible()
     page.get_by_role("button", name="See my jobs").click()
+
+
+def _bookmarks(page) -> None:
+    """A little mark in the corner of a job (owner, 2026-11-15): tapped, the job stays on the Jobs page and
+    is under Bookmarks too, shown as it is there. Taken off under Bookmarks, it can be put straight back;
+    left off, it is gone from there the next time. A refresh loses nothing, and three tabs fit a phone."""
+    def card(title):
+        return page.locator("article.job-card").filter(has=page.get_by_role("button", name=title, exact=True))
+
+    tabs = page.get_by_role("navigation", name="Jobs")
+    tabs.get_by_role("link", name="Bookmarks").click()
+    expect(page.get_by_role("heading", name="No bookmarks yet")).to_be_visible()
+    expect(page.locator("nav .places a[aria-current=page]")).to_have_text("Jobs", use_inner_text=True)
+    assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth"), (
+        "the three tabs are wider than a phone")
+    tabs.get_by_role("link", name="Your jobs").click()
+
+    card(TITLES[0]).get_by_role("button", name="Bookmark this job").click()
+    on = card(TITLES[0]).get_by_role("button", name="Remove bookmark")
+    expect(on).to_have_attribute("aria-pressed", "true")
+    expect(page.get_by_role("dialog")).to_have_count(0)
+    expect(page.locator("article.job-card")).to_have_count(2)
+
+    tabs.get_by_role("link", name="Bookmarks").click()
+    expect(page.get_by_role("heading", name="1 bookmarked job")).to_be_visible()
+    expect(card(TITLES[0]).locator(".why")).to_have_text("Why: backend engineer")
+    expect(card(TITLES[0]).get_by_role("button", name="Make my CV")).to_be_visible()
+    card(TITLES[0]).get_by_role("button", name="Remove bookmark").click()
+    card(TITLES[0]).get_by_role("button", name="Bookmark this job").click()
+    page.reload()
+    expect(page.get_by_role("heading", name="1 bookmarked job")).to_be_visible()
+
+    card(TITLES[0]).get_by_role("button", name="Remove bookmark").click()
+    page.get_by_role("navigation", name="Jobs").get_by_role("link", name="Your jobs").click()
+    expect(card(TITLES[0]).get_by_role("button", name="Bookmark this job")).to_be_visible()
+    page.get_by_role("navigation", name="Jobs").get_by_role("link", name="Bookmarks").click()
+    expect(page.get_by_role("heading", name="No bookmarks yet")).to_be_visible()
+    page.get_by_role("navigation", name="Jobs").get_by_role("link", name="Your jobs").click()
+    expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
 
 
 def _marks(page) -> None:

@@ -1,4 +1,4 @@
-/** Add a job, the second tab of Jobs: a job found anywhere, brought here by its link. If it is here
+/** Add a job, the third tab of Jobs: a job found anywhere, brought here by its link. If it is here
  * already, it says so; if not, it is read from its page and kept, for you and for everyone whose words
  * it has. What the page will not say, you write in, and a job written in is yours alone. Each one you
  * add stays listed here, a tap from a CV, until you skip it or apply (owner, 2026-11-03). */
@@ -6,15 +6,12 @@ import { useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 
 import { api, type Schema } from "../api";
-import { keep, useKept } from "../kept";
-import { type Mark, mark as record } from "../marks";
 import { Banner, Error, Field, useAction } from "../ui";
-import { JobCard, JobsTabs } from "./JobsPage";
+import { JobsTabs, useJobList } from "./JobsPage";
 
 /** The jobs they added, as `kept.ts` keeps them. */
 export const ADDED = "/jobs/added";
 
-type Job = Schema<"FeedJob">;
 type Answer = Schema<"LinkAnswer">;
 type Draft = Schema<"Draft">;
 
@@ -24,9 +21,7 @@ export function AddJobPage({ onChanged }: {
 }) {
   const [link, setLink] = useState("");
   const [answer, setAnswer] = useState<Answer | null>(null);
-  const { data: added, set: setAdded, failed } = useKept<Job[]>(ADDED);
-  // Skipped here (gone), or applied (kept, with its Undo).
-  const [marked, setMarked] = useState<Map<number, Mark>>(new Map());
+  const { jobs: added, set: setAdded, failed, card } = useJobList(ADDED, onChanged);
   const show = (body: Answer) => {
     setAnswer(body);
     const job = body.job;
@@ -39,24 +34,6 @@ export function AddJobPage({ onChanged }: {
     setAnswer(null);
     show(await api.post<Answer>("/jobs/link", { url: link }));
   });
-  const onMark = (job: Job, kind: Mark, on: boolean) => {
-    setMarked((now) => {
-      const next = new Map(now);
-      if (on) next.set(job.id, kind);
-      else next.delete(job.id);
-      return next;
-    });
-    // Gone from the list kept for next time at once; this one keeps its Undo while it is open.
-    keep(ADDED, on ? (added ?? []).filter((each) => each.id !== job.id) : added);
-    void record(job.id, kind, on).then(() => {
-      if (kind === "applied") onChanged();
-    });
-  };
-
-  const card = (job: Job) => marked.get(job.id) === "hidden" ? null : (
-    <JobCard key={job.id} job={job} focus={false} fresh={false} onMark={onMark}
-             done={marked.get(job.id) === "applied" ? "applied" : undefined} />
-  );
   const shown = answer?.job ?? null;
   const others = (added ?? []).filter((job) => job.id !== shown?.id);
   return (

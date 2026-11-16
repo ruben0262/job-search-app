@@ -7,8 +7,8 @@ import type { MouseEvent, ReactNode } from "react";
 import { api, request, type Ready, type Schema } from "../api";
 import { useBuild } from "../documents";
 import { JobView } from "../jobview";
-import { keep, peek } from "../kept";
-import { type Mark, mark as record, send, unsent } from "../marks";
+import { keep, peek, useKept } from "../kept";
+import { type Mark, bookmark, bookmarked, mark as record, send, unsent } from "../marks";
 import { POLL_MS } from "../notifications";
 import { PLACES } from "../places";
 import { ago, span, useNow } from "../time";
@@ -35,11 +35,13 @@ const POSTED: [string, number | null][] = [["Any time", null], ["Last 24 hours",
                                            ["Last week", 168], ["Last 2 weeks", 336]];
 
 /** The pictures on a job's own buttons, in each button's colour: out to the site it was posted on, the tick
- * that is Applied's picture, and an eye shut on a job not shown again. The landing page's card has them too. */
+ * that is Applied's picture, an eye shut on a job not shown again, and the bookmark in a card's corner. The
+ * landing page's card has them too. */
 export const PICTURES = {
   apply: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 4.5h6v6M19.5 4.5l-8 8M18 13.5v5a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 014 18.5v-11A1.5 1.5 0 015.5 6h5" /></svg>,
   applied: <svg viewBox="0 0 24 24" aria-hidden="true">{PLACES.find(([key]) => key === "applied")?.[2]}</svg>,
   skip: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12zM14.5 12a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM4 4l16 16" /></svg>,
+  bookmark: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10a1 1 0 011 1v15l-6-4-6 4V5a1 1 0 011-1z" /></svg>,
 };
 
 /** The orders the list comes in: its words, when the board says it was posted, when it arrived here. */
@@ -72,18 +74,48 @@ function asked(filters: Filters, offset = 0): URLSearchParams {
   return params;
 }
 
-/** Jobs has two tabs: the jobs that match your words, and one brought in by its link. */
-export function JobsTabs({ on }: { on: "list" | "add" }) {
+/** Jobs has three tabs: the jobs that match your words, the ones you bookmarked, and one brought in by
+ * its link. */
+const TABS = [["list", "#/", "Your jobs"], ["bookmarks", "#/bookmarks", "Bookmarks"],
+              ["add", "#/add", "Add a job"]] as const;
+
+export function JobsTabs({ on }: { on: (typeof TABS)[number][0] }) {
   return (
     <nav className="tabs split" aria-label="Jobs">
-      <a className={on === "list" ? "tab on" : "tab"} href="#/" aria-current={on === "list" ? "page" : undefined}>
-        Your jobs
-      </a>
-      <a className={on === "add" ? "tab on" : "tab"} href="#/add" aria-current={on === "add" ? "page" : undefined}>
-        Add a job
-      </a>
+      {TABS.map(([key, href, name]) => (
+        <a key={key} className={on === key ? "tab on" : "tab"} href={href}
+           aria-current={on === key ? "page" : undefined}>
+          {name}
+        </a>
+      ))}
     </nav>
   );
+}
+
+/** The jobs kept under `path` (`kept.ts`), as cards, with what is done to each: a skipped one is gone,
+ * one marked applied shows its Undo. What Bookmarks and Add a job both list. Marks still waiting in this
+ * browser are sent before the list is asked for, so a bookmark tapped a moment ago is in it. */
+export function useJobList(path: string, onChanged: () => void) {
+  const { data: jobs, set, failed } = useKept<Job[]>(path, send);
+  const [marked, setMarked] = useState<Map<number, Mark>>(new Map());
+  const onMark = (job: Job, kind: Mark, on: boolean) => {
+    setMarked((now) => {
+      const next = new Map(now);
+      if (on) next.set(job.id, kind);
+      else next.delete(job.id);
+      return next;
+    });
+    // Gone from the list kept for next time at once; this one keeps its Undo while it is open.
+    keep(path, on ? (jobs ?? []).filter((each) => each.id !== job.id) : jobs);
+    void record(job.id, kind, on).then(() => {
+      if (kind === "applied") onChanged();
+    });
+  };
+  const card = (job: Job) => marked.get(job.id) === "hidden" ? null : (
+    <JobCard key={job.id} job={job} focus={false} fresh={false} onMark={onMark}
+             done={marked.get(job.id) === "applied" ? "applied" : undefined} />
+  );
+  return { jobs, set, failed, card };
 }
 
 export function JobsPage({ dashboard, focus, onChanged }: {
@@ -462,6 +494,12 @@ export function JobCard({ job, focus, done, fresh, onMark }: {
   const [open, setOpen] = useState(false);
   // A Skip asks first: a job skipped is never shown again (owner, 2026-11-02).
   const [skipping, setSkipping] = useState(false);
+  // A little mark in the card's corner (owner, 2026-11-15): tapped on, the job is under Bookmarks too.
+  const [saved, setSaved] = useState(() => bookmarked(job));
+  const save = () => {
+    setSaved(!saved);
+    void bookmark(job.id, !saved);
+  };
   // Made before (kept, so a refresh still shows it) or made now: what colours the card.
   const made = new Set(job.documents.map((each) => each.kind));
   if (cv.build?.state === "ready") made.add("cv");
@@ -529,6 +567,10 @@ export function JobCard({ job, focus, done, fresh, onMark }: {
     <article onClick={opener}
              className={["job-card", focus && "focus", made.has("cv") && "made-cv", made.has("cover") && "made-cover"]
                .filter(Boolean).join(" ")}>
+      <button type="button" className={saved ? "bookmark on" : "bookmark"} aria-pressed={saved} onClick={save}
+              aria-label={saved ? "Remove bookmark" : "Bookmark this job"}>
+        {PICTURES.bookmark}
+      </button>
       <h3>
         <button type="button" className="title" onClick={() => setOpen(true)}>{job.title}</button>
       </h3>

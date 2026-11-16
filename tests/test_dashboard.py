@@ -10,6 +10,7 @@ import pytest
 
 from libs.db import insert, now
 from libs.db.models import CorpusJob, User, UserJobState
+from libs.db.models.tenant import record_state
 
 pytest.importorskip("fastapi")
 
@@ -562,7 +563,7 @@ def test_i_applied_counts_takes_the_job_off_the_jobs_page_and_can_be_taken_back(
         return {row["id"] for row in http.get("/feed").json()["jobs"]}
 
     assert http.put(f"/jobs/{job.id}/applied").json() == {
-        "job_id": job.id, "applied": True, "hidden": False}
+        "job_id": job.id, "applied": True, "hidden": False, "bookmarked": False}
     assert http.get("/dashboard").json()["applied"] == 1
     assert job.id not in listed()
     assert [row["id"] for row in http.get("/applied").json()] == [job.id]
@@ -589,10 +590,58 @@ def test_a_skipped_job_leaves_the_jobs_page_until_it_is_shown_again(api):
     assert job.id in listed()
 
 
-def test_only_a_real_job_and_the_two_marks_are_accepted(api):
+def test_only_a_real_job_and_the_marks_there_are_are_accepted(api):
     http, _db, _user, jobs = api
     assert http.put("/jobs/999999999/applied").status_code == 404
+    assert http.put("/jobs/999999999/bookmarked").status_code == 404
     assert http.put(f"/jobs/{jobs[0].id}/sent").status_code == 422
+
+
+def test_a_bookmarked_job_stays_on_the_jobs_page_and_is_listed_under_bookmarks_latest_first(api):
+    """A little mark on a job (owner, 2026-11-15): it takes nothing off the Jobs page, the job says it is
+    bookmarked there, and Bookmarks lists it as the Jobs page shows a job, the latest bookmarked first."""
+    http, _db, _user, jobs = api
+    first, senior, nurse = jobs
+
+    def on_the_page() -> dict[int, bool]:
+        return {row["id"]: row["bookmarked"] for row in http.get("/feed").json()["jobs"]}
+
+    assert on_the_page() == {first.id: False, senior.id: False}
+    assert http.get("/jobs/bookmarked").json() == []
+
+    assert http.put(f"/jobs/{first.id}/bookmarked").json()["bookmarked"] is True
+    # One that is not on their list can be bookmarked too: it was shown to them by its link, or was theirs.
+    assert http.put(f"/jobs/{nurse.id}/bookmarked").json()["bookmarked"] is True
+
+    assert on_the_page() == {first.id: True, senior.id: False}
+    listed = http.get("/jobs/bookmarked").json()
+    assert [row["id"] for row in listed] == [nurse.id, first.id]
+    assert all(row["bookmarked"] for row in listed)
+    assert {"title", "company", "summary", "apply_on", "documents"} <= set(listed[0]), "a card like any other"
+    assert [row["words"] for row in listed] == [[], ["backend engineer"]], "and it says why, as it did there"
+
+    assert http.delete(f"/jobs/{nurse.id}/bookmarked").json()["bookmarked"] is False
+    assert [row["id"] for row in http.get("/jobs/bookmarked").json()] == [first.id]
+    assert on_the_page() == {first.id: True, senior.id: False}
+
+
+def test_a_bookmark_is_one_persons_and_leaves_bookmarks_when_they_apply_skip_or_the_job_closes(api):
+    http, db, _user, jobs = api
+    first, senior, nurse = jobs
+    other = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+                            active=True))
+    record_state(db, other.id, senior.id, bookmarked_at=now())
+    assert http.get("/jobs/bookmarked").json() == [], "somebody else's bookmark is not theirs"
+
+    for job in jobs:
+        http.put(f"/jobs/{job.id}/bookmarked")
+    http.put(f"/jobs/{first.id}/applied")
+    http.put(f"/jobs/{senior.id}/hidden")
+    assert [row["id"] for row in http.get("/jobs/bookmarked").json()] == [nurse.id]
+    assert [row["id"] for row in http.get("/applied").json()] == [first.id]
+
+    db[CorpusJob.COLLECTION].update_one({"_id": nurse.id}, {"$set": {"closed_at": now()}})
+    assert http.get("/jobs/bookmarked").json() == []
 
 
 # ── the landing page ──────────────────────────────────────────────────────────────────────────

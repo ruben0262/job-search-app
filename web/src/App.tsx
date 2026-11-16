@@ -10,6 +10,7 @@ import { MEMBERSHIP, backFromStripe } from "./membership";
 import { ADMIN_READS, AdminPage, CORPUS_FIRST, LATENCY_FIRST } from "./pages/AdminPage";
 import { forgetKept, readAhead } from "./kept";
 import { ADDED, AddJobPage } from "./pages/AddJobPage";
+import { BOOKMARKED, BookmarksPage } from "./pages/BookmarksPage";
 import { AdminUserPage } from "./pages/AdminUserPage";
 import { APPLIED, AppliedPage } from "./pages/AppliedPage";
 import { DOCUMENTS, DocumentsPage, HISTORY, IDENTITY, SAVED } from "./pages/DocumentsPage";
@@ -100,7 +101,7 @@ export function App() {
   const admin = session.state === "in" && session.dashboard.stage === "ready" && session.dashboard.is_admin;
   useEffect(() => {
     if (ready) {
-      readAhead([ADDED, APPLIED, REVIEW, DOCUMENTS, SAVED, HISTORY, IDENTITY, TEMPLATES, ACCOUNT, AI_ACCOUNTS,
+      readAhead([ADDED, BOOKMARKED, APPLIED, REVIEW, DOCUMENTS, SAVED, HISTORY, IDENTITY, TEMPLATES, ACCOUNT, AI_ACCOUNTS,
                  MEMBERSHIP]);
     }
   }, [ready]);
@@ -180,8 +181,10 @@ export function App() {
             a moment (owner, 2026-11-03). Each page draws at once from what it read last (`kept.ts`). */}
         <main className={section === "admin" ? "admin" : undefined}>
           {path?.startsWith("/add") ? (
-            // The second tab of Jobs, not a place of its own.
+            // A tab of Jobs, not a place of its own; and so is the next.
             <AddJobPage onChanged={reload} />
+          ) : path?.startsWith("/bookmarks") ? (
+            <BookmarksPage onChanged={reload} />
           ) : section === "applied" ? (
             <AppliedPage />
           ) : section === "words" ? (

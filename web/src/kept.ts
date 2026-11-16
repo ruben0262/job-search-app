@@ -18,15 +18,16 @@ export function keep<T>(path: string, value: T): void {
 }
 
 /** `path`'s last answer at once, and a fresh one as soon as it comes. `set` changes it here and in
- * what is kept, for a page that changed it itself; `reload` asks again. */
-export function useKept<T>(path: string) {
+ * what is kept, for a page that changed it itself; `reload` asks again. `first` is what must reach the
+ * server before the answer is asked for, so the answer already has it. */
+export function useKept<T>(path: string, first?: () => Promise<unknown>) {
   const [data, setData] = useState<T | null>(() => peek<T>(path));
   const [failed, setFailed] = useState(false);
-  const reload = useCallback(() => api.get<T>(path).then((fresh) => {
+  const reload = useCallback(() => Promise.resolve(first?.()).then(() => api.get<T>(path)).then((fresh) => {
     kept.set(path, fresh);
     setData(fresh);
     setFailed(false);
-  }).catch(() => setFailed(true)), [path]);
+  }).catch(() => setFailed(true)), [path, first]);
   useEffect(() => {
     void reload();
   }, [reload]);
