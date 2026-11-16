@@ -3607,9 +3607,13 @@ work, or opening and closing sessions faster, would help):
       that is not enough.
     - **2026-11-16, night: version 2 shipped** (owner: "lets go with your recommendation"; CHANGELOG): roles
       from the lines that name a job, and at most 4 for a job they cannot take. On 24 held out, mean error 1.84
-      to 1.72, the order unchanged. Nothing tried moved the order. Next: a third held-out set, weighted to
-      licensed and registered trades, read once; then what would move the order needs more labels than the
-      word-level signals have.
+      to 1.72, the order unchanged. Nothing tried moved the order. A third held-out set, weighted to licensed
+      and registered trades, read once: over all 36 held out, mean error 1.81 to 1.66 and a 7+ right 67.2% of
+      the time against 57.6%; the order unchanged; the cap never wrong on it.
+    - **Next, each measured on a fourth held-out set (every one so far has been read):** credentials the list
+      misses (pharmacist against pharmacy technician, MRCVS, NICEIC, checking technician, Albo dei Farmacisti,
+      an Ausbildung in another trade, NMC lines not read as required); and for the order, more labels than the
+      word-level signals have had.
 
 53. **The cover letter prompt** (owner, 2026-11-15, night: "some research on the company might need to be
     done too… motivation and so on, for it to be a great cover letter").

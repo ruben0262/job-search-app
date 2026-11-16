@@ -79,10 +79,35 @@ with it more; a post open only to its own staff at most 4; a licence trained for
 "essential" or "or equivalent" does; part-qualified ACCA is not capped on "ACA, ACCA or CIMA qualified", none of them
 is; a German table CV's "Elektroniker" is a role, its address, "Persönliche Daten" and employer are not.
 
-### Next
+### The third held-out set, read once
 
-A third held-out set, weighted to licensed and registered trades (owner, 2026-11-16, night: "take the extra test
-set"), is being built the same way; version 2 is read on it once.
+12 more made-up people, in licensed and registered trades (a pharmacy technician, a healthcare assistant who is not a
+nurse, a nursery practitioner half way to Level 3, an apprentice electrician, a part-qualified ACCA accountant, a
+Polish C+E driver, a German Pflegehelferin, a Dutch forklift driver whose VCA lapsed, an Italian OSS, a Hungarian
+electrician, a Spanish security guard, a UK groundworker): 7 hold what their trade asks, 2 do not, 3 are on the
+way. Written by an agent barred from every reader; 216 postings read twice blind (exact 76%, within one point 100%,
+kappa 0.983). The readers and the credential list were frozen before any of it was seen. `SPLIT["fresh3"]`, 1,138
+labels.
+
+| | version 1 | version 2 | difference [95%] |
+|---|---|---|---|
+| mean error, fresh3 | 1.731 | 1.519 | -0.213 [-0.426, -0.028] |
+| mean error, all 36 held out | 1.808 | 1.663 | -0.145 [-0.255, -0.043] |
+| a 7+ that readers put at 7+, all 36 | 57.6% | 67.2% | +9.6 [+0.4, +20.2] |
+| rank correlation in a list, all 36 | 0.601 | 0.608 | +0.007 [-0.009, +0.022] |
+| clear pairs in order, all 36 | 0.838 | 0.838 | 0.000 [-0.008, +0.009] |
+
+The cap fired on 17 of fresh3's 216 pairs, none labelled 5 or more, none on somebody who held the credential. Worse:
+on fresh3 the order fell a little for 8 of 12 people (the Dutch forklift driver 0.60 to 0.55, the Pflegehelferin's
+clear pairs 0.64 to 0.60), and the mean error rose for three (the accounts assistant 1.33 to 1.50). The Hungarian
+electrician, whose CV is in capitals, gained most: his role is found now (mean error 3.42 to 2.42).
+
+**What the list does not know yet** (found on fresh3, nothing changed): a pharmacist against a pharmacy technician
+(the GPhC registers both, so a technician shows 8 on "Advanced Pharmacist" posts readers put at 3); "MRCVS" (the
+pattern wants "RCVS" alone); NICEIC Qualified Supervisor; an accredited checking technician; Italy's Albo dei
+Farmacisti; a German Ausbildung in another trade counting as the one asked; two NMC lines the line reader did not
+mark as required. Each is a change to measure, and every held-out group has now been read for this one: the next
+needs a fourth.
 
 ## 2026-11-16, night — The offer said as the owner set it: jobs 7 or 3 days or older, "Everything in" first, a question mark that says more; Starter sold on Upgrade; the match filter a row of numbers; kept scores go with their job; nothing left to get stuck
 
