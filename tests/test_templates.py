@@ -8,6 +8,7 @@ docgen image does not have, a sector with nothing in it, a pick that is saved an
 from __future__ import annotations
 
 import io
+import itertools
 import os
 import pathlib
 import re
@@ -276,7 +277,195 @@ def test_a_long_contact_line_stays_on_the_page(template):
         assert any(part in line for line in lines), f"{template.id} broke {part!r} over two lines"
 
 
+@pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
+@pytest.mark.parametrize("name", ["Ciara Nolan", "Bo Li"])
+@pytest.mark.parametrize("template", templates.of_kind("cv"), ids=lambda each: each.id)
+def test_the_name_is_read_first_however_wide_the_contact_line_under_it(template, name):
+    """A look that centres the name over a contact line much wider than it had the contact line read
+    first by a reader that orders text by where it sits: Ledger, for a person with a phone, an email, a
+    place and a link, in 4 of 288 CVs (2026-11-15). A parser that takes the first line for the name would
+    have taken a phone number. Both readers, a long name and a short one."""
+    from services.docgen import pdf
+
+    html = _render(template, name=name, contact=[
+        "020 917 0126", ("ciara.nolan@example.com", "mailto:ciara.nolan@example.com"), "Rathmines, Dublin",
+        ("linkedin.com/in/ciara-nolan-example", "https://linkedin.com/in/ciara-nolan-example")])
+    document = pdf.render(html)
+    pdf._discard()
+    for reader, text in _read(document).items():
+        assert " ".join(text.split()).casefold().startswith(name.casefold()), (
+            f"{template.id}: {reader} reads {text.strip()[:40]!r} before the name")
+
+
+@pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
+@pytest.mark.parametrize("template", templates.CATALOGUE, ids=lambda each: f"{each.kind}-{each.id}")
+def test_the_parts_of_the_contact_line_have_a_character_between_them(template):
+    """A reader that takes a PDF's characters as they are, making no space out of a gap, read a CV's place,
+    phone and email as "UK+44 7700 900123maya.example@example.com" and took that for the email (ResyMatch,
+    2026-11-14). Five of the eight CV looks had only a gap between the parts, which pypdf and pdfminer fill
+    with a space, so the checks above passed them. Read here as the characters in the file alone."""
+    from pdfminer.high_level import extract_pages
+    from pdfminer.layout import LTChar, LTContainer
+
+    from services.docgen import pdf
+
+    def glyphs(item) -> str:
+        if isinstance(item, LTChar):
+            return item.get_text()
+        return "".join(glyphs(child) for child in item) if isinstance(item, LTContainer) else ""
+
+    document = pdf.render(_render(template))
+    pdf._discard()
+    text = "".join(glyphs(page) for page in extract_pages(io.BytesIO(document)))
+    parts = ["Portugal", "+351 912 345 678", "alex.morgan@example.com", "linkedin.com/in/alexmorgan"]
+    for left, right in itertools.pairwise(parts):
+        between = re.search(re.escape(left) + "(.*?)" + re.escape(right), text)
+        assert between and between.group(1), f"{template.id} runs {left!r} into {right!r}"
+
+
 @pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome lays the page out")
+@pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
+@pytest.mark.parametrize("template", templates.of_kind("cv"), ids=lambda each: each.id)
+def test_a_line_that_spills_onto_a_last_page_is_taken_up_by_every_look(template):
+    """One line alone on a second page cost a second model call of ~45 s (8 of 36 first drafts,
+    2026-11-14). Every look is drawn slightly smaller instead, and reads the same to an ATS."""
+    from services.docgen import pdf
+
+    def page(lines: int) -> str:
+        more = "<li>Forklift licence, counterbalance and reach, renewed 2024</li>" * lines
+        return _render(template).replace("</ul></div>\n</body>", f"{more}</ul></div>\n</body>")
+
+    def pages(lines: int) -> int:
+        return pdf.inspect_pdf(pdf.render(page(lines)), kind="cv").pages
+
+    # The fewest added lines that reach a second page: there, one line has spilled.
+    fits, spills = 0, 64
+    assert pages(fits) == 1 and pages(spills) > 1
+    while spills - fits > 1:
+        middle = (fits + spills) // 2
+        fits, spills = (fits, middle) if pages(middle) > 1 else (middle, spills)
+    html = page(spills)
+    assert pdf.inspect_pdf(pdf.render(html), kind="cv").spilled
+
+    document, report = pdf.fitted(html, kind="cv")
+
+    assert report.pages == 1 and report.scale in pdf.FIT_SCALES and report.ats_ok, report
+    written = _words(unescape(re.sub(r"<[^>]+>", " ", html.split("<body>", 1)[1])))
+    for name, text in _read(document).items():
+        assert _words(text) == written, f"{template.id}: {name} read it differently when drawn smaller"
+
+
+@pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
+@pytest.mark.parametrize("template", templates.of_kind("cv"), ids=lambda each: each.id)
+def test_no_two_words_run_together_for_a_reader_that_makes_no_space_of_a_gap(template):
+    """Chrome writes no character where a block ends or a line wraps, so a reader that takes a PDF's
+    characters as they are read "EDUCATIONBSc" and "offand", 17.6 words run together in a CV, and
+    ResyMatch counted a posting's word the CV has as missing (2026-11-15). Read here as the characters in
+    the file alone, over bullets and a title that wrap, and over a profile of four lines: where a look
+    justifies it, each wrapped line lost its space still ("Looking for a WarehouseOperator role", so the
+    job's own title was not found in the CV), and in a look that draws the name after the contact line
+    the last link ran into it."""
+    from pdfminer.high_level import extract_pages
+    from pdfminer.layout import LTChar, LTContainer
+
+    from services.docgen import pdf
+
+    def glyphs(item) -> str:
+        if isinstance(item, LTChar):
+            return item.get_text()
+        return "".join(glyphs(child) for child in item) if isinstance(item, LTContainer) else ""
+
+    long = ("Cut delivery errors by a third in one year by redesigning the picking process together with the "
+            "floor teams and both night supervisors")
+    title = ("Project Coordinator and Deputy Store Planning Lead — Contoso Retail Iberia and Northern Africa "
+             "Distribution")
+    html = _render(template, long=True).replace(
+        "<li>Planned 40 store openings in Portugal and Spain, each on its date</li>", f"<li>{long}</li>")
+    html = html.replace("Project Coordinator — Contoso Retail", title)
+    profile = ("Project manager with nine years of store openings in Portugal and Spain, who plans ahead, "
+               "keeps suppliers and landlords informed and hands each store over on its date. Opened forty "
+               "stores in four years and cut fitting-out costs by a tenth with one approved contractor list. "
+               "Hold a PRINCE2 Practitioner certificate. Looking for a Regional Store Planning Lead role.")
+    html = html.replace("Project manager who plans carefully, keeps people informed and delivers on time.",
+                        profile)
+    assert long in html and "Northern Africa Distribution" in html and profile in html
+    document = pdf.render(html)
+    pdf._discard()
+
+    written = {word.casefold() for word in re.findall(
+        r"[^\W\d_]{2,}", unescape(re.sub(r"<[^>]+>", " ", html.split("<body>", 1)[1])))}
+    read = re.findall(r"[^\W\d_]{2,}", "".join(glyphs(page) for page in extract_pages(io.BytesIO(document))))
+    assert not [word for word in read if word.casefold() not in written], f"{template.id} runs words together"
+
+
+MM = 72 / 25.4
+
+
+def _pages_filled(document: bytes, template) -> float:
+    """How much of its pages a PDF fills: the whole pages before the last, and the share of the last one's
+    text area above its lowest line."""
+    from pypdf import PdfReader
+
+    margin = [float(part.replace("mm", "")) for part in template.page_margin.split()]
+    top, bottom = margin[0], margin[2] if len(margin) > 2 else margin[0]
+    reader = PdfReader(io.BytesIO(document))
+    last = reader.pages[-1]
+    height, lowest = float(last.mediabox.height), []
+    last.extract_text(visitor_text=lambda text, cm, tm, font, size: text.strip() and lowest.append(
+        cm[1] * tm[4] + cm[3] * tm[5] + cm[5]))
+    used = (height - top * MM) - min(lowest)
+    return len(reader.pages) - 1 + min(1.0, used / (height - (top + bottom) * MM))
+
+
+def _written_like_a_cv(template) -> str:
+    """A CV shaped as the prompt writes one: a profile, skills lines, five jobs with a few bullets of a
+    line or two each, two qualifications, languages and certificates."""
+    bullets = ["Cut delivery errors by 38% in a year by redesigning the picking process with the floor teams",
+               "Brought in weekly planning reviews that every regional office now uses to plan its stock",
+               "Managed a €2.4M budget and reported to the board every month"]
+    jobs = "".join(_entry(f"Operations Manager · Northwind Logistics {n} · Lisbon", "Mar 2021 – Present",
+                          bullets[:3 if n < 2 else 2]) for n in range(5))
+    line = f"<li><strong>Planning:</strong> {'weekly planning reviews, ' * 2}supplier contracts</li>"
+    school = _entry("MSc Management · Nova School of Business and Economics · Lisbon", "2013 – 2015", ())
+    profile = "Operations manager who plans carefully and delivers on time. " * 5
+    body = (f'<p class="profile">{profile}</p><div class="section competencies">'
+            f'<div class="section-title">Skills</div><ul>{line * 4}</ul></div>'
+            + _section("Experience", jobs) + _section("Education", school * 2)
+            + _section("Languages", _plain(["Portuguese (native), English (C2), Spanish (B2)"]))
+            + _section("Certifications", _plain(["PRINCE2 Practitioner, 2020", "Lean Six Sigma, 2018"])))
+    return _render(template).split('<p class="profile">', 1)[0] + body + "\n</body>\n</html>\n"
+
+
+def test_every_cv_look_says_how_many_words_its_page_holds():
+    """What the CV prompt is told a page is (owner, 2026-11-14). Meridian's is the 400 the prompt has always
+    said, so nothing changes for whoever never picked a look; a letter is not written by the page."""
+    assert set(templates.PAGE_WORDS) == {each.id for each in templates.of_kind("cv")}
+    assert templates.find("cv", "meridian").page_words == 400
+    assert all(each.page_words is None for each in templates.of_kind("cover"))
+
+
+@pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
+def test_each_looks_number_is_in_step_with_what_its_page_holds():
+    """The prompt said "about 400 words" a page to everyone, which is Meridian's page: the same CVs spilled
+    onto a second page five times as often in the five looks that hold fewer (2026-11-14). A look redrawn
+    with larger type or more air holds fewer words again, and its number has to follow."""
+    from services.docgen import pdf
+
+    def holds(template) -> float:
+        html = _written_like_a_cv(template)
+        words = len(unescape(re.sub(r"<[^>]+>", " ", html.split('<hr class="header-rule">', 1)[1])).split())
+        return words / _pages_filled(pdf.render(html), template)
+
+    meridian = templates.find("cv", "meridian")
+    base = holds(meridian)
+    for template in templates.of_kind("cv"):
+        measured, said = holds(template) / base, template.page_words / meridian.page_words
+        # Within an eighth: what a page holds moves that much with how long the bullets are.
+        assert abs(said / measured - 1) < 0.12, (
+            f"{template.id} is told {template.page_words} words a page, {said:.2f} of Meridian's, and its "
+            f"page holds {measured:.2f} of Meridian's")
+
+
 def test_every_cv_look_puts_a_jobs_dates_at_the_right_and_shows_none_where_there_are_none():
     """A job's dates at the right end of its line in every look, and a job with none has no date and its
     title where the others are (owner, 2026-11-08: "dates ... should go on the right", and where there

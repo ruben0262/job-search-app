@@ -19,7 +19,7 @@ import select
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from libs.documents.read import EMAIL
 
@@ -44,6 +44,15 @@ MIN_EXTRACTED_CHARS = 300
 # A single-column CV extracts as normal prose lines.
 MIN_AVG_LINE_CHARS = 8
 
+# Fewer characters than this on a last page are a few lines that spilled over (`tailor_cv.md`, failure 4).
+SHORT_LAST_PAGE_CHARS = 500
+# How much smaller the whole look is drawn to take those lines up, tried in this order (`fitted`). At the
+# last of them 10 pt type prints at 9.4 pt. Measured 2026-11-14 over 56 written CVs in each of the eight
+# looks: all 19 spills in Meridian, Kestrel and Ledger ended on one page by 0.96, and 111 of 177 over every
+# look, each read by pypdf and pdfminer exactly as before. The other 66 are in the five looks whose page
+# holds fewer words than the prompt's "about 400" (CHANGELOG 2026-11-14).
+FIT_SCALES = (0.98, 0.96, 0.94)
+
 
 class CompileFailed(RuntimeError):
     """Chrome did not produce a PDF. Retryable — it is usually memory or a cold start."""
@@ -56,10 +65,18 @@ class PdfReport:
     issues: list[str] = field(default_factory=list)
     # What the last page holds: a second page with a few lines on it is a CV that spilled over.
     last_page_chars: int | None = None
+    # How the look was drawn: 1.0 as designed, less when a few spilled lines were taken up (`fitted`).
+    scale: float = 1.0
 
     @property
     def ats_ok(self) -> bool:
         return not self.issues
+
+    @property
+    def spilled(self) -> bool:
+        """Whether only a few lines reach the last page."""
+        return ((self.pages or 0) > 1 and self.last_page_chars is not None
+                and self.last_page_chars < SHORT_LAST_PAGE_CHARS)
 
 
 def chrome_binary() -> str:
@@ -189,6 +206,21 @@ def _discard() -> None:
     if _chrome is not None:
         _chrome.close()
         _chrome = None
+
+
+def fitted(html: str, *, kind: str = "cv", headings: tuple[str, ...] = ()) -> tuple[bytes, PdfReport]:
+    """The page as a PDF, and what an ATS reads of it. A few lines alone on a last page are taken up here,
+    by drawing the whole look slightly smaller (`FIT_SCALES`), and not by asking the model to cut them: 8 of
+    36 first drafts were sent back for one spilled line each, a second call of about 45 seconds
+    (2026-11-14). A spill no scale takes up comes back as it was, for `build.problems` to say."""
+    document = render(html)
+    report = inspect_pdf(document, kind=kind, headings=headings)
+    for scale in FIT_SCALES if report.spilled else ():
+        smaller = render(html.replace("</head>", f"<style>body {{ zoom: {scale}; }}</style>\n</head>", 1))
+        tried = inspect_pdf(smaller, kind=kind, headings=headings)
+        if (tried.pages or report.pages) < report.pages:
+            return smaller, replace(tried, scale=scale)
+    return document, report
 
 
 def inspect_pdf(pdf: bytes, *, kind: str = "cv", headings: tuple[str, ...] = ()) -> PdfReport:

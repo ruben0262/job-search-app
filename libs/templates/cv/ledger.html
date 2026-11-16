@@ -25,7 +25,15 @@ a { color: inherit; text-decoration: none; }
 
 .cv-header { text-align: center; }
 .cv-name { font-size: 20pt; font-weight: 700; text-transform: uppercase; letter-spacing: 1pt; line-height: 1.05; }
-.cv-contact { font-size: 9.5pt; margin-top: 3pt; display: flex; justify-content: center; }
+/* Room under the name, and not for looks alone. The name is centred, so a contact line wider than it
+   starts further left, and a reader that orders text by where it sits (pdfminer) then took the contact
+   line for the first thing on the page: "020 917 0126" before the name, for a person with a phone, an
+   email, a place and a link (4 of 288 CVs, 2026-11-15). How far below the name the line sits is what
+   decides it. Measured over names of 5 to 29 letters and contact lines of 2 to 5 parts, 16 cases: at 3pt
+   7 read the contact line first, at 10pt 2, at 14pt and over none. Narrowing the line so it wraps, and
+   an unseen tall or wide character on the name's line, were each tried and each put the parts of the
+   contact line out of order for that reader. */
+.cv-contact { font-size: 9.5pt; margin-top: 16pt; display: flex; justify-content: center; }
 .cv-contact span + span::before { content: "|"; margin: 0 6pt; color: #666; }
 .header-rule { border: none; border-top: 0.75pt solid #111; margin: 6pt 0 6pt; }
 

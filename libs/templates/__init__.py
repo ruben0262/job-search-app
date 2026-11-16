@@ -59,10 +59,34 @@ def split_style(html: str) -> tuple[str, str]:
 # - Each part of the contact line moves to the next line whole, and breaks inside only when it is wider
 #   than the line (a very long link). Meridian's broke anywhere: a phone came out "91234-" over "5678",
 #   which all five read wrongly and poppler as "912345678".
+# - A real character between the parts of the contact line (2026-11-14). Five looks had only a gap, which
+#   those five readers fill with a space and a reader that takes the characters as they are does not:
+#   ResyMatch read "UK+44 7700 900123maya.example@example.com" and took it for the email. A one-point space
+#   after each part is a space to every reader and moves nothing on the page by more than half a pixel.
+# - A real character between any two words (2026-11-15). Chrome writes none where one block ends and the
+#   next begins, or where a line wraps, so the same kind of reader ran 17.6 words together in a CV
+#   ("EDUCATIONBSc", "offand"), and ResyMatch counted a posting's word the CV has as missing (the nurse's
+#   "Patient Care", "Healthcare" and "Clinical"). Each block now starts with a space that takes no room on
+#   the line, and a wrapped line keeps the space it wrapped at (`build.clean` leaves no other white space
+#   for it to keep). Over 18 written CVs in each look: 2,538 words run together before, none after.
+#   `break-spaces`, not `pre-wrap`: under `pre-wrap` a justified line still wrote no space where it
+#   wrapped (Meridian's and Ledger's profile, 74 words left over 144 CVs), which is where a CV now names
+#   the job it is for, and ResyMatch read "Looking for a WarehouseOperator role" and found no job title.
+#   The space takes its room at the line's end, so a justified line ends its width short (2.5 pt) and now
+#   and then a word wraps a line sooner: no CV of the 144 changed its pages or its fit, and pypdf and
+#   pdfminer read every one as before. The name has its space too: Ledger draws it after the contact
+#   line, and the last link ran into it.
+_SPACED_BLOCKS = (".cv-name", ".cv-contact span:first-child", ".profile", ".section-title", ".entry-title",
+                  ".entry-date", ".entry-desc", "li", ".letter-to", ".letter-subject", ".letter p")
 EVERY_LOOK = ("\n/* Every look (libs/templates EVERY_LOOK): what an ATS needs to read each word whole. */\n"
               "body { font-variant-ligatures: none; }\n"
               ".cv-contact { flex-wrap: wrap; }\n"
-              ".cv-contact span { display: inline-block; overflow-wrap: anywhere; }\n")
+              ".cv-contact span { display: inline-block; overflow-wrap: anywhere; }\n"
+              ".cv-contact span:not(:last-child)::after "
+              '{ content: " "; white-space: pre; font-size: 1pt; }\n'
+              + ", ".join(f"{block}::before" for block in _SPACED_BLOCKS)
+              + ' { content: " "; display: inline-block; width: 0; white-space: pre; font-size: 1pt; }\n'
+              ".profile, .entry-title, .entry-desc, li, .letter p { white-space: break-spaces; }\n")
 
 KINDS = ("cv", "cover")
 # Where each kind's pick is kept on the account.
@@ -93,6 +117,11 @@ class Template:
         block = split_style(load(self.path))[1]
         css, end, _ = block.rpartition("</style>")
         return f"{css}{EVERY_LOOK}{end}" if end else block
+
+    @property
+    def page_words(self) -> int | None:
+        """About how many words of a CV one page of this look holds, below the header (`PAGE_WORDS`)."""
+        return PAGE_WORDS.get(self.id) if self.kind == "cv" else None
 
     @property
     def page_margin(self) -> str:
@@ -154,6 +183,15 @@ CATALOGUE: tuple[Template, ...] = (
     _cover("prism", "Prism",
            "Marketing, media and design", "Sales and customer service", "Hospitality and retail"),
 )
+
+# About how many words of a CV one page of each look holds, below the header: what the CV prompt is told
+# a page is (owner, 2026-11-14, so that a CV is written for the look it will be drawn in). Measured that
+# day over 91 CVs the prompt had written, each drawn in every look: the words a page holds, by its median,
+# are Meridian 420, Kestrel 432, Ledger 415, Prism 376, Tabula 378, Halcyon 331, Foundry 353, Quill 339.
+# Meridian's is said as the 400 the prompt has always said, and the others in the same proportion, rounded
+# down to a ten. `test_templates.py` holds each number to its look's page.
+PAGE_WORDS = {"meridian": 400, "kestrel": 410, "ledger": 390, "prism": 350, "tabula": 360, "halcyon": 310,
+              "foundry": 330, "quill": 320}
 
 # What research shows is used most (owner, 2026-11-07: fixed, not counted from picks). README.md has why.
 POPULAR = {"cv": ("meridian", "kestrel", "ledger", "prism"),

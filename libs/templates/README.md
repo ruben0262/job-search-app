@@ -156,6 +156,18 @@ drawn, each looking right on the page:
      contact line's third link went off the page in all thirteen new looks (2026-11-07). Breaking
      anywhere, Meridian put a phone over two lines as "91234-" and "5678", which all five readers read
      wrongly (2026-11-08).
+   - *A real character between the contact line's parts.* Each part but the last ends in a one-point
+     space. Five CV looks and the default letter look had only a gap there, which the five readers below
+     fill with a space and a reader that takes the characters as they are does not: ResyMatch read a
+     phone and an email as one address, "900123maya.example@example.com" (2026-11-14).
+   - *A real character before each block, and at each wrapped line's end.* The same kind of reader ran a
+     heading into the line under it and a wrapped line's last word into the next line's first
+     ("EDUCATIONBSc", "offand"). Each block starts with a space that takes no room on the line, the name
+     too, and a wrapped line keeps the space it wrapped at (`break-spaces`, which is why `build.clean`
+     leaves no other white space in a document). Over 18 written CVs in each look: 2,538 words run together
+     before, none after (2026-11-15). `pre-wrap` was not enough: a justified line still wrote no space
+     where it wrapped. With `break-spaces` the space takes its room at the line's end, so a justified
+     line ends 2.5 pt short of the edge and now and then a word wraps a line sooner.
 
 ### What is measured, and what is not
 
@@ -163,6 +175,80 @@ Measured on 2026-11-08 with five readers (pypdf, pdfminer, MuPDF, and poppler's 
 and `-layout`), over each look's sample, a two-page CV, and a stress CV and letter written as the AI writes
 them, with "C++", "C#", ".NET", accents, "Ł" and "€": every word whole, the name first, contact details
 exact, sections in order, every font embedded, in all 14 looks and all five readers.
+
+A sixth kind of reader takes a PDF's characters as they are and makes no space of a gap (ResyMatch's,
+2026-11-14, `scripts/cvlab/checkers.py`). It ran the contact line's parts together until `EVERY_LOOK` spaced
+them. It also ran the last word of a line into the first of the next ("stockdata"), and a heading into the
+line under it: Chrome writes no space where a line wraps or a block ends, while LibreOffice keeps one.
+Affinda's resume parser, the kind an ATS reads a CV with, ran no two words together in 44 of 44 CVs, so
+this was left at first (2026-11-14). It was mended the next day, because ResyMatch counted a posting's word
+that the CV has as missing (a nurse's "Patient Care", "Healthcare" and "Clinical"), and a checker a person
+may try their CV on should find their words. Where a justified paragraph wraps (Meridian's and Ledger's
+profile, 1.8 places a CV) took a second rule that afternoon, when the profile began to name the job and
+ResyMatch read "Looking for a WarehouseOperator role": none is left in 144 CVs, and none changed its pages.
+`test_no_two_words_run_together_for_a_reader_that_makes_no_space_of_a_gap` holds every look to it, over a
+profile of four lines.
+
+**What that parser read** (Affinda, 44 CVs written for eleven made-up people who are not in IT,
+`scripts/cvlab/panel`): the name in 44 of 44, the email in 44 of 44, 85% of jobs and qualifications with
+their title and employer, and 97% of those with the right dates. Two things it did not read:
+
+- **A phone number after a place.** With the place first in the contact line ("Greater Manchester 07700
+  900236") it read no phone at all, 4 of 4. With the place last it read all three, so the header is now
+  written phone, email, place, links (`build._header`). A bar between the parts changed nothing.
+- **A job with no dates.** Shown as the owner decided, with none (2026-11-08), it is not taken for a job
+  of its own: the parser folds it into the one above.
+
+## A few lines on a last page
+
+One line alone on a second page was sent back to the model to cut, a second call of about 45 seconds: 8
+of 36 first drafts (2026-11-14). The look takes them up now. `pdf.fitted` draws the whole page slightly
+smaller, 98%, then 96%, then 94%, and keeps the first that ends a page sooner; at 94%, 10 pt type prints
+at 9.4 pt. What no step takes up is said back as before. Measured over 56 written CVs in each look:
+
+| Look | One page as designed | A few lines spilled | Taken up | Still said back | Two full pages |
+|---|---|---|---|---|---|
+| Meridian | 48 | 8 | 8 | 0 | 0 |
+| Kestrel | 53 | 3 | 3 | 0 | 0 |
+| Ledger | 48 | 8 | 8 | 0 | 0 |
+| Prism | 25 | 31 | 29 | 2 | 0 |
+| Tabula | 31 | 25 | 20 | 5 | 0 |
+| Halcyon | 9 | 35 | 10 | 25 | 12 |
+| Foundry | 14 | 36 | 21 | 15 | 6 |
+| Quill | 13 | 31 | 12 | 19 | 12 |
+
+Each of the 111 taken up read the same to pypdf and pdfminer as before. The five looks at the bottom hold
+fewer words on a page than the "about 400" the CV prompt names, which is Meridian's: the same CVs spill
+in them five times as often (158 of 280 against 19 of 168).
+
+## What a page of each look holds
+
+The owner, 2026-11-14: tell the prompt the picked look's own number. Each look says how many words of a
+CV its page holds below the header (`PAGE_WORDS`, `Template.page_words`), and `build.prepare` hands the
+picked look's number to a prompt that asks for it (`{{page_words}}`). Measured over 91 CVs the prompt had
+written, each drawn in every look, as its words divided by the share of a page it fills:
+
+| Look | Words a page holds (median, middle half) | Told to the prompt |
+|---|---|---|
+| Meridian | 420 (403 to 435) | 400 |
+| Kestrel | 432 (410 to 448) | 410 |
+| Ledger | 415 (400 to 431) | 390 |
+| Prism | 376 (358 to 389) | 350 |
+| Tabula | 378 (362 to 394) | 360 |
+| Halcyon | 331 (316 to 344) | 310 |
+| Foundry | 353 (338 to 368) | 330 |
+| Quill | 339 (327 to 354) | 320 |
+
+Meridian's is said as the 400 the prompt has always said, and the others in proportion, rounded down to a
+ten. `test_each_looks_number_is_in_step_with_what_its_page_holds` fails when a look is redrawn and its
+number is not. The live prompt still says 400 to everyone: the wording that asks for the look's number
+(`scripts/cvlab/variants/page-words.md`) is measured against it first (CLAUDE.md §3a).
+
+**Measured 2026-11-15, and not adopted.** The same 18 people and postings in Halcyon and in Quill, the two
+looks that hold least, on claude-haiku-5-5: told the look's number, a CV was 6.9 ± 4.5 words shorter over
+36 pairs, which is no move, and 6 of 36 ran to a second page against 8. The model does not count words as
+it writes. What keeps a CV on its page is the fit above and, past that, the say-back. The slot and the
+numbers stay for a wording that uses them better.
 
 Not every date: a job's date at the right of its title line, as every look has it and most CVs anywhere
 do, is read apart from its title by the two readers that lay text out by position. poppler moves it
