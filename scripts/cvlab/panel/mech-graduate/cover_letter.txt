@@ -1,0 +1,14 @@
+Dear Hiring Manager,
+
+I am writing to apply for the Design Engineer position. I am a year into a graduate scheme at Calderbrook Valves in Rotherham, where I design changes to hydraulic control valve bodies and spools in SolidWorks and draw them to BS 8888 with GD&T.
+
+Most of my work so far has been making parts cheaper or more reliable without changing what they do. On my placement at Hartwell Pumps I redesigned an impeller casting so that one machining operation was no longer needed, which saves £14 a unit on 3,000 units a year. At Calderbrook I have written 11 engineering change notes and ran the first-article inspection for a redesigned spool with our supplier, so I have seen a change all the way from the model to a part in my hand.
+
+I back my designs with hand calculations and FEA, in ANSYS Mechanical and SolidWorks Simulation, and four months in our test laboratory taught me how parts actually fail under pressure and endurance testing. At university I led suspension design for the Formula Student team.
+
+I am working towards chartership with the IMechE and would value a team of experienced engineers to learn from. I hold a full UK driving licence.
+
+Thank you for considering my application.
+
+Yours faithfully,
+Ellie Thompson

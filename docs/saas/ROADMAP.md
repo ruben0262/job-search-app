@@ -3570,6 +3570,25 @@ work, or opening and closing sessions faster, would help):
       title in more than 5 of 11 CVs.
       (4) *Validated before anybody sees a number:* postings of one trade a person, marked fitting or not
       by hand, since yesterday's set only shows it tells a nurse's job from a driver's.
+    - **2026-11-16, evening: an evaluation built first, a score measured on it, kept off the site** (CHANGELOG
+      2026-11-16, evening). 39 made-up people of every trade (four in IT), each with real postings drawn from the
+      list their own search gives on the site, read twice by blind readers to a written rubric: 706 pairs, the two
+      readings within one point 99% of the time (`scripts/cvlab/fit`). The score (`libs/fit`): the job's title
+      against the words of their roles, the job's text against all they wrote as rarity-weighted vectors in each
+      language, a level above them, a language they lack; weights and steps to 1-10 fitted on 27 people. On 12
+      fresh people nothing was tuned on, it orders a list better than the Jobs page's order for 10 of 12 (pairs
+      83.2% against 67.1%; its top five 6.66 against 5.73, best possible 7.30); its number is 1.66 from the
+      readers' on average, within one point half the time, and squeezed (a 9 or 10 shows as 6 or 7). Measured and
+      not taken: three embedders (no gain over the words), Snowball stemmers, corpus enrichment, word pairs,
+      letter triples, ESCO occupations. Read-time scoring of a whole list costs 0.8 to 2.5 s per 15,000 jobs in
+      the database, a page of 25 11 ms.
+    - **The owner, 2026-11-16: accuracy first; how a filter is built decided after.** Not on users' screens.
+    - **What would move it, measured as where the error is**: the squeezed scale (45% of the squared error is
+      labels 1-2 scored too high and 9-10 too low); requirements a person lacks (a registration, a licence, a
+      qualification: about a fifth, over-scored by 1.2); more labelled pairs for a model with interactions. Each is
+      built on the 27 people seen and judged on the fresh 12, paired, once. Then the filter: a lean read-time
+      score (about 250 ms on a 5,000-job list) or scores stored per person and job, kept up to date in the
+      background.
 
 53. **The cover letter prompt** (owner, 2026-11-15, night: "some research on the company might need to be
     done too… motivation and so on, for it to be a great cover letter").

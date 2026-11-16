@@ -1,0 +1,35 @@
+Tomasz Zieliński
+Python Backend Developer
+Kraków, Poland · +48 555 014 228 · tomasz.zielinski@example.com · github.com/tzielinski-example
+
+Summary
+Backend developer with four and a half years of commercial Python experience, mostly Django and FastAPI services for e-commerce and logistics clients. I design REST APIs, model PostgreSQL schemas and run background jobs with Celery, and I am comfortable owning a service from the first ticket to production on AWS.
+
+Experience
+
+Python Developer — Fernhill Software House, Kraków                         Feb 2023 – present
+Software house of 120 people building products for clients in Germany and the UK.
+• Backend for a parcel-tracking platform for a German logistics client: FastAPI, PostgreSQL, Redis and Celery, about 2 million tracking events a day.
+• Designed the carrier-integration layer (DHL, DPD and InPost APIs) behind one adapter interface; adding a carrier went from three weeks to five days.
+• Cut the p95 latency of the shipment search endpoint from 1.8 s to 240 ms with query rewrites and two composite indexes.
+• Moved the team's services from EC2 to Docker on ECS with a GitLab CI pipeline; wrote the Terraform for the staging environment with a senior colleague.
+• Code reviews for four developers; mentor one junior developer.
+
+Junior Python Developer — Pixelgarden, Kraków                               Jun 2021 – Jan 2023
+E-commerce agency.
+• Django and Django REST Framework backends for three online shops: product catalogue, orders, payments with Przelewy24 and Stripe.
+• Wrote the import jobs for supplier product feeds (XML and CSV, up to 40,000 products).
+• Unit and integration tests with pytest; raised coverage of the orders module from 35% to 80%.
+
+Python Intern — Pixelgarden, Kraków                                         Mar 2021 – May 2021
+
+Education
+BSc Computer Science (inżynier), AGH University of Kraków, 2017 – 2021
+Thesis: a recommendation service for a library catalogue in Django.
+
+Skills
+Python, Django, Django REST Framework, FastAPI, Celery, PostgreSQL, Redis, REST, Docker, AWS (ECS, RDS, S3, SQS), GitLab CI, Terraform (basic), pytest, Git, Linux
+Some JavaScript and React from small internal tools.
+
+Languages
+Polish — native; English — C1 (daily work with UK and German clients)

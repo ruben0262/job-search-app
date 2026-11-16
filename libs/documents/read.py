@@ -120,7 +120,7 @@ def fold(text: str) -> str:
 _PLACE_NAMES = {fold(name): CITY_COUNTRY.get(slug, slug) for slug in (*CITIES, *COUNTRIES)
                 for name in (slug.replace("_", " "), *place_names(slug))}
 # Longest first, so "northern ireland" is read before "ireland" can be.
-_PLACES = re.compile(r"(?<!\w)(" + "|".join(sorted(map(re.escape, _PLACE_NAMES), key=len, reverse=True))
+PLACES = re.compile(r"(?<!\w)(" + "|".join(sorted(map(re.escape, _PLACE_NAMES), key=len, reverse=True))
                      + r")(?!\w)")
 
 
@@ -383,7 +383,7 @@ def _entry(heads: list[str], dates: str, start: int | None, end: int | None,
 
 def _is_place(text: str) -> bool:
     return fold(text) in ("remote", "hybrid") or (
-        len(text.split()) <= 2 and (read_country(text) is not None or bool(_PLACES.search(fold(text)))))
+        len(text.split()) <= 2 and (read_country(text) is not None or bool(PLACES.search(fold(text)))))
 
 
 # ── the facts ────────────────────────────────────────────────────────────────────────────────
@@ -443,7 +443,7 @@ def read(documents: Mapping[str, str | Sequence[str]], *, today: date | None = N
         links=_unique(link.rstrip(").,;:") for line in [*(line for line, _ in flat), *prose_lines]
                       for link in _LINK.findall(line)),
         location=_place(zone),
-        places=_unique(_PLACE_NAMES[found] for line in zone for found in _PLACES.findall(fold(line))),
+        places=_unique(_PLACE_NAMES[found] for line in zone for found in PLACES.findall(fold(line))),
         languages=_languages([*_lines_of(cv, "languages"), *inline["languages"]]),
         jobs=tuple(jobs),
         profiles=tuple(summary for each in cvs if (summary := " ".join(_lines_of(each, "profile")))),
@@ -478,7 +478,7 @@ def _place(zone: list[str]) -> str | None:
                 continue
             named = _DISTRICT.sub("", part)
             if not re.search(r"\d", named) and len(named.split()) <= 4 and (
-                    read_country(named) is not None or _PLACES.search(fold(named))):
+                    read_country(named) is not None or PLACES.search(fold(named))):
                 return named
     return None
 

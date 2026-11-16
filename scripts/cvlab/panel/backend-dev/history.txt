@@ -1,0 +1,1 @@
+I'd like to stay on the backend in Python. Mid or senior is fine if senior means owning services, not managing people: I don't want a team lead job yet. Data engineering would be interesting but I have never used Spark or Airflow. I don't want frontend work or a full-time DevOps job. Remote, or hybrid in Kraków.

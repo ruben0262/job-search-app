@@ -14,6 +14,125 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-16, evening — A fit score measured before it is shown: 39 people, 706 readings, a score by rules that orders a list better than the Jobs page does, kept off the site
+
+The owner: a score on every job for every person, 1 to 10, from their CV, cover letter and About you, "realistic and
+a bit generous", and a filter on the Jobs page; deterministic, no AI call; "the evaluation should be the highest
+priority, since if we do not have a pristine evaluation pipeline… the results will be terrible for the users";
+"a variety of job types and industries to keep it fair"; the corpus's own jobs; and "firstly it needs to be correct
+and accurate for each user… then we can deal with the efficiency issue". After the first measurement below: keep it
+off users' screens and improve accuracy first; decide how a filter is built once the score is worth filtering by.
+
+### The evaluation (`scripts/cvlab/fit`)
+
+- **People of every trade.** 39 made up (`scripts/cvlab/panel`, README): the CV bench's 11 and 28 more, in
+  logistics, care and nursing, retail and B2B sales, hospitality, finance, trades and manufacturing, office, legal,
+  HR and insurance, education, marketing and events, construction and projects, and four in IT; documents in
+  English, Polish, Hungarian, German, Dutch and Italian, some with an About you in another language than the CV.
+  What each would type into My search is `people.json`.
+- **Their jobs, drawn, never picked.** The list each search gives on the site (`candidate_conditions` with
+  `has_any`), one posting per role (one role in several cities is one), 18 to 20 at random from a seed named for
+  the person: up to ten with one of their words in the title, the rest with it only in the text, as most of a list
+  is (the warehouse operative's: 12 titles in 281). Frozen with their text: 678 postings, 706 pairs. Drawing is
+  incremental (`build.py freeze`): a person drawn keeps their postings whatever the corpus holds since.
+- **Read twice, blind.** A written rubric (`rubric.md`: the work, the level, what is required, what is a plus; a
+  blocker caps at 4; realistic and a bit generous), two readers who never saw each other's readings or any score,
+  each in an order of their own. Exact 75%, within one point 99%, mean gap 0.27, quadratic weighted kappa 0.98,
+  rank correlation per person 0.97. **Both readers are the same model** (Claude, as agents of this session): that
+  is consistency, not a recruiter's truth, and their shared blind spots do not show in it; a sample for the owner
+  to read is the check on that. One pair 3 apart, settled by a third reading (a post reserved for Italy's protected
+  categories, read as right to work); one reading both readers made against the rubric's intent (a male-only
+  cleaning job capped for a woman they took to be one from her name) overridden, and the rubric now says a rule
+  about who may be hired for who they are is never guessed from a name.
+- **Measures** (`evaluate.py`), per person, then averaged: rank correlation; of two postings two points or more
+  apart, how often the better is first; the top five's mean label against the best five's; a "fit 7+" filter's
+  precision and recall; the number's error. `paired` compares two scores person by person with an interval.
+- **Three groups.** The score was built on 14 people, judged once on 13 more, then on 12 drawn and read after the
+  first 27 had been looked at, nothing tuned on them (`SPLIT["fresh"]`).
+
+### The score (`libs/fit`; the site does not use it)
+
+- A job's title, its core read for the job it names ("Warehouse Operative" of "Warehouse Operative - Erith"),
+  against the words of their roles (headline, job titles, summary), counting less while the texts are unalike; the
+  job's text, less its sections about the company, the package and the law, against everything they wrote, as two
+  vectors of words weighted by rarity in each language (`common.json`: 10,888 common words in nine tables from
+  34,272 postings); a level above them; a language it needs that they do not have. Weights and 23 steps to 1-10
+  (`model.json`), fitted to the readings of the first 27 people.
+- What is measured is what the site would run: features by `libs.fit.job`, profiles by `libs.fit.person`, scores
+  by the database expression `libs.fit.expression` (`model.py`). A job's words are positions in an array of 8,192
+  (measured the same as exact words; 2,048 lost 0.04), a hundred of them (as good as all; forty lost 0.03).
+- Found and fixed while measuring: "manager" was a level word and taken out of every title ("Site Manager" read
+  as "site"); the CV reader knows English headings only, so a Polish CV's "angielski — B2" was no English and
+  blocked every English job (`languages_spoken` reads language names in nine languages); a posting's rarest words
+  were its benefits ("mindfulness", "WeChat"), not its work (`working_text`).
+
+### Measured
+
+| | rank correlation | clear pairs in order | top five, of best | number off by |
+|---|---|---|---|---|
+| readers against each other | 0.96 to 0.98 | 99% | 7.45 of 7.49 | 0.27 |
+| **fit score, 12 fresh people** | **0.645** | **83.2%** | **6.66 of 7.30** | **1.66** |
+| Jobs page's order, same people | 0.444 | 67.1% | 5.73 of 7.30 | |
+| fit score, 13 people of the first test | 0.635 | 81.9% | 6.28 of 7.48 | 1.85 |
+| Jobs page's order, same people | 0.524 | 74.8% | 6.58 of 7.48 | |
+
+- **Paired, on the fresh 12**: better than the Jobs page's order for 10 of 12 on rank correlation (+0.20, 95%
+  +0.07 to +0.34), 10 of 12 on pairs (+0.16, +0.08 to +0.25), 9 of 12 on the top five (+0.93, +0.40 to +1.55). On
+  the first test's 13, read when the score was first fitted, it was better on pairs (+0.07, +0.02 to +0.14) and not
+  on the top five (−0.31, −0.92 to +0.18): across the 25 people the weights never saw, it orders a list better,
+  its top picks better on balance.
+- **The number is squeezed.** Within one point of the readers half the time. Over the 27 people, left out one at
+  a time, a job read 1 or 2 shows 1.7 too high and one read 9 or 10 shows 3.0 too low: 45% of the squared error.
+  A shown 7 or more is a reader's 7 or more 81% of the time, and a shown 7 or more is given to 28% of the jobs
+  readers put there. A software job that mentions nurses shows 2 for a nurse where readers say 1; the first fit
+  showed it 5 (`tests/test_fit.py` holds it).
+- **Where else the error is**: requirements the person lacks (a qualification, a registration, a licence) are about
+  a fifth of it, over-scored by about 1.2; the score knows only languages.
+
+### Tried, measured, not taken
+
+| | leave one person out | against |
+|---|---|---|
+| three embedders, alone (MiniLM-L12, mpnet-base, e5-large; multilingual, CPU) | 0.52 to 0.55 | the words, 0.67 to 0.69 |
+| an embedder added to the words | +0.004 to +0.012 | in the noise; a 120-560M model on the server |
+| Snowball stemmers in each language | 0.617 | the CV reader's own stem, 0.644 |
+| a CV enriched with the words of postings with their role titles | 0.607 to 0.667 | 0.688 |
+| word pairs in titles | +0.003 | |
+| letter triples between a title and their role lines | 0.656 | 0.672 |
+| ESCO occupations (the EU's search, as a probe) | 0.450 alone, 0.659 added | 0.672 |
+| the Jobs page's order added to the score | 0.687 | 0.682 |
+| a years reader in nine languages beside the CV reader's | +0.011 | in the noise, and a second answer to one question |
+| small boosted trees in place of the straight line | 0.646 | 0.672 |
+
+### Speed (local MongoDB 8.0.34)
+
+- The whole expression over 15,000 real postings: 2.4 s at a hundred words a job, 1.0 s at twenty; a lean form
+  (one weight a job, no steps in the database, which a filter does not need) 0.8 s at forty words. A page of 25:
+  11 ms. Per part over 15,000: the title 193 ms, forty words 374 ms (246 ms read from a plain array rather than a
+  `$literal`), the language 61, the level 87. Scoring a whole list on every read does not meet 300 ms for a long
+  list (owner's account, "any time": about 4,900 jobs); a day's list does.
+
+### In the code
+
+- `libs/fit` (`text.py`, `__init__.py`, `__main__.py common`, `common.json`, `model.json`): the scorer under
+  evaluation. Nothing on the site imports it; the producers it would need (features written with a posting's
+  text, a profile rebuilt when `documents_changed_at` moves) were written, measured and taken out again with the
+  four columns they wrote, since a column nothing reads is dead code (CLAUDE.md §3, §6). They come back with the
+  page that uses them.
+- `libs/documents/read.py`: `_PLACES` is `PLACES`, the one pattern for places, now read by `libs.fit.text` too.
+- `scripts/cvlab/fit`: `build.py` (freeze, packets, disputes, merge), `evaluate.py`, `model.py` (check, test, fresh,
+  write), `baselines.py`, `rubric.md`, `people.json`, and the frozen `postings.jsonl`, `pairs.jsonl`, `labels.jsonl`.
+- `tests/test_fit.py`: a person's own kind of job above one that only mentions their word, through the database;
+  a changed profile changes the score; the same text reads the same; the shipped steps never lower a higher sum;
+  the evaluation set whole.
+
+### What waits
+
+- Accuracy, the owner's first: the squeezed scale, requirements a person lacks, more labelled pairs for a model of
+  interactions; each built on the 27 and judged once on the fresh 12, paired. Then how a filter is built: a lean
+  score read with the list, or scores kept per person and job in the background.
+- A sample of the 706 readings for the owner to read, against the one model that made them.
+
 ## 2026-11-16 — Three plans with the offer shown; Starter by switches; the landing page reordered, with reviews and the ATS figure; the three ATS failures
 
 The owner: a reviews section, "dummy" for now; the landing page as What it is, Why it works, How it works,

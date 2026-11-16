@@ -1,0 +1,26 @@
+JOSH PATEL
+2nd Line IT Support Technician
+Coventry CV3 | 07700 900519 | josh.patel@example.com
+
+PROFILE
+IT support technician with three years on a service desk and in 2nd line support for a 900-user housing association. I fix things for people politely and write the knowledge base article afterwards. CompTIA A+ and Microsoft 365 certified.
+
+EXPERIENCE
+
+2nd Line IT Support Technician — Midshire Homes, Coventry — Jan 2024 – present
+• Resolve escalated tickets in ServiceNow: about 25 a day, 94% inside SLA.
+• Microsoft 365 administration: users, licences, Exchange Online mailboxes, Teams.
+• Build and enrol laptops with Intune and Autopilot; rolled out Windows 11 to 600 devices.
+• Active Directory and Entra ID accounts, groups and MFA resets.
+• Set up and support printers, mobile phones and meeting room kit.
+
+1st Line Service Desk Analyst — Midshire Homes — Sep 2022 – Dec 2023
+• Phone and ticket support, password resets, software installs, onboarding new starters.
+
+EDUCATION
+CompTIA A+ (2022), Microsoft 365 Fundamentals MS-900 (2023)
+A levels: Computer Science, Maths, Physics — Coventry, 2022
+
+SKILLS
+Windows 10/11, Microsoft 365, Intune, Autopilot, Active Directory, Entra ID, ServiceNow, basic networking (DHCP, DNS, VLANs), PowerShell (basic)
+Full UK driving licence

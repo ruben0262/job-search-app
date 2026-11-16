@@ -1,0 +1,30 @@
+Priya Nair
+Data Analyst
+Rotterdam, Netherlands · +31 6 5550 1742 · priya.nair@example.com · linkedin.com/in/priya-nair-example
+
+Profile
+Data analyst with three years' experience turning operational data into reports people use. Strong SQL and Power BI; Python for cleaning data and automating the dull parts. I have worked in logistics and banking, and I like being the person who knows where the numbers come from.
+
+Experience
+
+Data Analyst, Havenlijn Logistics, Rotterdam — April 2024 – present
+Container terminal operator, 900 staff.
+• Own the Power BI reporting for terminal operations: 14 dashboards used daily by shift managers and the operations director.
+• Write SQL (SQL Server) against the terminal operating system's data warehouse; built the crane productivity model that replaced a weekly Excel report.
+• Automated the monthly KPI pack with Python (pandas) and Power Automate, saving about two days of work a month.
+• Worked with the data engineer to define three new fact tables for berth planning, and wrote the data dictionary.
+• Did the analysis behind a change to gate opening hours that cut truck waiting time by 18%.
+
+Reporting Analyst, Northbridge Bank (graduate scheme), Leeds, UK — September 2022 – March 2024
+• Produced weekly and monthly MI on mortgage applications in Excel and SSRS.
+• Moved five Excel reports to Power BI, with DAX measures and row-level security.
+• Answered ad-hoc data requests from the product and risk teams (SQL, Excel).
+
+Education
+BSc Mathematics with Statistics, University of Leeds, 2019 – 2022 (First)
+
+Skills
+SQL (SQL Server, some PostgreSQL), Power BI (DAX, Power Query), Excel (advanced), Python (pandas, matplotlib), Power Automate, SSRS, dbt (basic), Git (basic), statistics (regression, A/B tests)
+
+Languages
+English (native), Malayalam (native), Dutch (A2, learning)

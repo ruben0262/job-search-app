@@ -1,0 +1,29 @@
+GARETH LEWIS
+IT Project Manager | PRINCE2 Practitioner | PSM I
+Stockport, Greater Manchester | 07700 900471 | gareth.lewis@example.com | linkedin.com/in/gareth-lewis-example
+
+PROFILE
+IT project manager with nine years in financial services, six of them running software delivery projects of up to £1.8m for an insurer. Comfortable in Agile and waterfall, and with the governance a regulated business needs. I started as a business analyst, so I write a good requirement and I know when one is missing.
+
+CAREER HISTORY
+
+Project Manager, Pennine Mutual Insurance, Manchester — Jan 2020 – Present
+• Delivered the replacement of the home insurance quote-and-buy journey (£1.8m, 14 people across two suppliers) on time and 6% under budget.
+• Run three to four projects at once in a hybrid Agile/PRINCE2 framework: plans, RAID logs, budgets, steering committee reports.
+• Led the move of the claims team's document store to SharePoint Online for 600 users.
+• Acted as Scrum Master for a team of seven for 18 months while the role was vacant.
+• Manage supplier statements of work and change requests with procurement.
+
+Business Analyst, Pennine Mutual Insurance — Mar 2017 – Dec 2019
+• Requirements, process maps and user stories for the pricing and policy administration systems.
+• Ran workshops with underwriters and claims handlers; wrote acceptance criteria and supported UAT.
+
+Customer Service Team Leader, Pennine Mutual Insurance — 2014 – 2017
+• Led a team of 12 in the home claims contact centre.
+
+EDUCATION & CERTIFICATIONS
+BA (Hons) History, University of Manchester, 2011 – 2014
+PRINCE2 Practitioner (2019), Professional Scrum Master I (2021), APM Project Fundamentals (2018)
+
+SKILLS
+Project planning, budgets and forecasting, RAID management, stakeholder management, supplier management, Agile/Scrum, PRINCE2, Jira, Confluence, MS Project, Smartsheet, SharePoint, Excel, process mapping (Visio)

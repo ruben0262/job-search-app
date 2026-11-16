@@ -1,0 +1,30 @@
+Ellie Thompson MEng
+Graduate Mechanical Engineer
+Sheffield · 07700 900694 · ellie.thompson@example.com · linkedin.com/in/ellie-thompson-example
+
+Profile
+Mechanical engineer with an MEng from the University of Sheffield, a year in industry designing centrifugal pump components and a year on a graduate scheme in hydraulic valve design. Confident in SolidWorks, drawing to BS 8888 with GD&T, and in hand calculations backed by FEA. Working towards IMechE chartership.
+
+Experience
+
+Graduate Design Engineer — Calderbrook Valves Ltd, Rotherham — Sep 2025 – present
+• Design changes to hydraulic control valve bodies and spools in SolidWorks; 2D drawings with GD&T to BS 8888.
+• Tolerance stack-ups and stress hand calculations, checked with SolidWorks Simulation.
+• Wrote 11 engineering change notes and ran the first-article inspection of a redesigned spool with the supplier.
+• Rotations so far: design office (6 months) and test laboratory (4 months, pressure and endurance testing).
+
+Design Engineering Placement — Hartwell Pumps, Doncaster — Jul 2023 – Jun 2024
+• Redesigned an impeller casting to remove a machining operation: £14 a unit saved on 3,000 units a year.
+• FEA of a pump bracket in ANSYS Mechanical; the bracket passed its vibration test first time.
+• Supported production with drawing queries and non-conformance reports.
+
+Education
+MEng Mechanical Engineering, University of Sheffield, 2020 – 2025 — 2:1
+Final-year project: topology optimisation of a Formula Student upright (ANSYS, 23% lighter).
+Formula Student team: suspension design lead (2023–24).
+
+Skills
+SolidWorks (CSWP), ANSYS Mechanical, SolidWorks Simulation, AutoCAD (2D), GD&T, BS 8888, tolerance analysis, MATLAB, Excel, Python (basic), DFMEA, 3D printing for prototypes
+
+Other
+Full UK driving licence. IMechE graduate member.

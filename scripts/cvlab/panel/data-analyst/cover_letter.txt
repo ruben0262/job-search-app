@@ -1,0 +1,14 @@
+Dear Hiring Manager,
+
+I am applying for the Data Analyst role. For the last two and a half years I have been the analyst a container terminal runs its shifts on: 14 Power BI dashboards that shift managers open before every shift, fed by SQL I wrote against the terminal's data warehouse.
+
+What I enjoy most is the part before the dashboard. When the operations director asked why trucks were queuing at the gate, I joined three years of gate, booking and crane data, found that most of the waiting came from two hours in the late afternoon, and the change to opening hours that followed cut waiting time by 18%. I also automated our monthly KPI pack in Python and Power Automate, which gave the team back about two days a month.
+
+Before Rotterdam I was on a bank's graduate scheme in Leeds, producing mortgage MI and moving Excel reports into Power BI with row-level security, so I am used to data that has to be right and to people who will check it.
+
+I am strongest in SQL, Power BI and Excel, and I use Python with pandas every week. I have not worked as a data engineer, but I work closely with ours on new tables and I wrote our data dictionary. I am learning Dutch (A2) and work in English.
+
+I would be glad to talk about how I could help your team.
+
+Kind regards,
+Priya Nair

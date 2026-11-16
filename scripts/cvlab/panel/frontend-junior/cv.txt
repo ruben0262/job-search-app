@@ -1,0 +1,28 @@
+LUCÍA ROMERO GIL
+Frontend Developer
+Valencia, Spain | +34 555 012 904 | lucia.romero@example.com | linkedin.com/in/lucia-romero-example | github.com/lromero-example
+
+ABOUT ME
+Junior frontend developer with 1.5 years of experience building websites and web apps with React and TypeScript. Before that I worked three years in customer service, so I am good with clients and I like to understand what the user needs.
+
+EXPERIENCE
+Frontend Developer, Nube Creativa (digital agency), Valencia — May 2025 to now
+- Build landing pages and web apps for agency clients with React, TypeScript and Tailwind CSS
+- Built the booking flow for a chain of 12 physiotherapy clinics in Next.js, connected to their REST API
+- Turn Figma designs into responsive components and keep the agency component library in Storybook
+- Fix bugs and add small features in two older Vue 2 projects
+- Work in sprints with Jira and GitHub, code reviews
+
+Customer Service Agent (Spanish and English), Teleservicios Levante, Valencia — 2021 to 2024
+- Phone and chat support for an energy company, 60-80 contacts a day
+- Zendesk, solving complaints, trained 4 new agents
+
+EDUCATION
+Full Stack Web Development Bootcamp, Upgrade Hub Valencia (2024), 600 hours: HTML, CSS, JavaScript, React, Node.js, MongoDB
+Degree in Tourism (Grado en Turismo), Universitat de València, 2016 - 2020
+
+SKILLS
+JavaScript, TypeScript, React, Next.js, HTML5, CSS3, Tailwind, Sass, Vue (basic), Node.js (basic), REST APIs, Git, Figma, Storybook, Jest (basic)
+
+LANGUAGES
+Spanish native, Valencian native, English B2 (First Certificate)
