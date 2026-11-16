@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid as _uuid
-from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -22,7 +22,7 @@ from libs.db import get, now
 from libs.db.models import AtsToken, BuiltDocument, CorpusJob, CountryCount, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
-from libs.matching import Match, marks, norm, scan_for, their_jobs
+from libs.matching import Match, marks, norm, page, scan_for
 from libs.membership import areas_of, choosing, delay_hours, is_admin, is_member, jobs_as_of
 from libs.notify import reachable
 from libs.obs import audit
@@ -357,63 +357,48 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     as_of = behind or now()
     shortest, longest = shelf_life(platform_windows(db))
     cutoff = now() - timedelta(hours=since_hours) if since_hours else None
-    # The read reaches as far back as asked, "Any time" being the longest shelf life (`scan_for`).
-    read = their_jobs(db, user, since=cutoff, scan=scan_for(since_hours or longest))
-    # The time asked is how the list is shown, so what the filters offer is counted inside it too: "golang 5"
+    # Made by the database, the page and the counts beside the filters alike (`libs.matching.page`): only the
+    # page leaves it. Reading the whole list here took 1,025 ms at 15,554 jobs and grew with the list
+    # (2026-11-15). The read reaches as far back as asked, "Any time" being the longest shelf life
+    # (`scan_for`); what the filters offer is counted inside the time asked, as the list is shown: "golang 5"
     # beside a list of 2 from the last day disagreed (2026-11-07).
-    visible = [match for match in read if cutoff is None or _when(match) >= cutoff]
-    made_for = (set(db[BuiltDocument.COLLECTION].distinct("job_id", {"user_id": user_id}))
-                if made is not None else set())
-    needle = (q or "").lower()
-    picked = {norm(each) for each in word if each.strip()}
-    # `None` is a filter that is off, so `x in (None, value)` reads "off, or equal".
-    matches = [match for match in visible
-               if needle in f"{match.job.title} {match.job.company or ''} {match.job.url}".lower()
-               and remote in (None, bool(match.job.is_remote))
-               and job in (None, match.job.id)
-               and source in (None, match.job.source)
-               and country in (None, match.job.country)
-               and city in (None, match.job.city)
-               and made in (None, match.job.id in made_for)
-               and picked <= set(match.words)
-               and len(match.words) >= min_words]
-    if sort == "newest":
-        matches.sort(key=_when, reverse=True)
-    elif sort == "arrived":
-        # When it reached their list, whatever date the board puts on it: a job posted a week ago and
-        # read an hour ago is new to them.
-        matches.sort(key=lambda match: (match.job.described_at, match.job.id), reverse=True)
-    page = matches[offset:offset + limit]
-    ids = [match.job.id for match in page]
+    made_for = [] if made is None else db[BuiltDocument.COLLECTION].distinct("job_id", {"user_id": user_id})
+    picked = sorted({norm(each) for each in word if each.strip()})
+    wanted = [condition for on, condition in (
+        (bool(q), {"$expr": {"$regexMatch": {
+            "input": {"$concat": ["$title", " ", {"$ifNull": ["$company", ""]}, " ", "$url"]},
+            "regex": re.escape(q or ""), "options": "i"}}}),
+        (remote is not None, {"is_remote": True} if remote else {"is_remote": {"$ne": True}}),
+        (job is not None, {"_id": job}),
+        (source is not None, {"source": source}),
+        (country is not None, {"country": country}),
+        (city is not None, {"city": city}),
+        (made is not None, {"_id": {"$in" if made else "$nin": made_for}}),
+        (bool(picked), {"words": {"$all": picked}}),
+        (min_words > 1, {"nwords": {"$gte": min_words}})) if on]
+    # A time without a zone is UTC, as the database reads one when it does the comparing.
+    since = found_after.replace(tzinfo=found_after.tzinfo or UTC) if found_after else None
+    found = page(db, user, since=cutoff, scan=scan_for(since_hours or longest),
+                 wanted={"$and": wanted} if wanted else {}, order=sort, offset=offset, limit=limit,
+                 found_after=since)
+    ids = [match.job.id for match in found.matches]
     # The text of the page's jobs only: matching never brings it back.
     texts = {row["_id"]: row.get("description") for row in db[CorpusJob.COLLECTION].find(
         {"_id": {"$in": ids}}, {"description": 1})}
     documents = for_jobs(db, user_id, ids)
     kept = bookmarked(db, user_id, ids)
-    boards = Counter(match.job.source for match in visible)
-    words = Counter(each for match in visible for each in match.words)
-    countries = Counter(match.job.country for match in visible if match.job.country)
-    cities = Counter(match.job.city for match in visible if match.job.city)
-    # A time without a zone is UTC, as the database read one when it did the comparing.
-    since = found_after.replace(tzinfo=found_after.tzinfo or UTC) if found_after else None
-    arrived = sum(1 for match in matches if match.job.described_at >= since) if since else None
-    return Feed(total=len(matches), arrived=arrived,
+    return Feed(total=found.total, arrived=found.arrived,
                 jobs=[feed_row(match, texts.get(match.job.id), documents.get(match.job.id, []),
-                               bookmarked=match.job.id in kept) for match in page],
+                               bookmarked=match.job.id in kept) for match in found.matches],
                 sources=[FeedSource(name=name, label=board_name(name), jobs=count)
-                         for name, count in boards.most_common()],
-                words=[FeedWord(name=name, jobs=count) for name, count in words.most_common()],
+                         for name, count in found.sources],
+                words=[FeedWord(name=name, jobs=count) for name, count in found.words],
                 countries=[FeedPlace(value=code, label=COUNTRY_LABELS.get(code, code), jobs=count)
-                           for code, count in countries.most_common()],
+                           for code, count in found.countries],
                 cities=[FeedPlace(value=slug, label=CITIES[slug].label if slug in CITIES else slug,
-                                  jobs=count) for slug, count in cities.most_common()],
+                                  jobs=count) for slug, count in found.cities],
                 as_of=as_of, shelf_hours=shortest, shelf_longest_hours=longest, delay_hours=delay,
-                cut=read.cut)
-
-
-def _when(match: Match) -> datetime:
-    """When a job appeared: its posting date where the board gives one, else when it was found."""
-    return match.job.posted_at or match.job.first_seen_at
+                cut=found.cut)
 
 
 def bookmarked(db: Database, user_id: _uuid.UUID, ids: list[int]) -> set[int]:

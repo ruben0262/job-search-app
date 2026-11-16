@@ -82,6 +82,9 @@ class CorpusJob(Document):
     reposted: bool | None = None
     workplace: str | None = None
     closed_at: datetime | None = None
+    # The top of the pay its text states, in euros a year (`libs.corpus.pay`), read when the text is stored:
+    # what a person's minimum salary is compared with, in the database. None: none stated, or no period.
+    salary_top_eur: float | None = None
     posted_at: datetime | None = None
     fetched_at: datetime | None = None
     first_seen_at: datetime = field(default_factory=now)

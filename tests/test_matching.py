@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import pytest
 
-from libs.matching import found, green_words, pattern, underpaid
+from libs.matching import found, green_words, pattern
 from tests.conftest import needs_db
 
 
@@ -39,9 +39,22 @@ def test_the_words_found_are_said_as_they_are_compared():
     # And no minimum means nothing is ever dropped for pay.
     ("Pays €10,000 per year.", None, "EUR", False),
 ])
+@needs_db
 def test_a_job_is_dropped_for_pay_only_when_its_stated_top_is_known_and_below(
-        text, minimum, currency, dropped):
-    assert underpaid({"min_salary": minimum, "salary_currency": currency}, text) is dropped
+        account, text, minimum, currency, dropped):
+    """The pay a posting states is read once, when its text is stored (`libs.corpus.pay`), and a minimum is
+    compared with it in the database, so a match never reads a description for it."""
+    from libs.corpus.repository import CorpusRepository
+    from libs.matching import matching_jobs
+
+    db, user = account
+    _search(db, user, {"sections": [{"platform": "all", "keywords": ["backend engineer"]}],
+                       "min_salary": minimum, "salary_currency": currency})
+    corpus = CorpusRepository(db)
+    job = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Backend Engineer")
+    corpus.set_description(job, f"{text} We build services for shops and the people who run them. " * 4)
+
+    assert (job not in {match.job.id for match in matching_jobs(db, user)}) is dropped
 
 
 @pytest.fixture()
@@ -116,12 +129,17 @@ def test_a_minimum_salary_drops_what_pays_less_and_keeps_what_does_not_say(accou
     db, user = account
     _search(db, user, {"sections": [{"platform": "all", "keywords": ["backend engineer"]}],
                        "min_salary": 60_000, "salary_currency": "EUR"})
-    _low, high, silent = _jobs(db,
-                               ("Backend Engineer A", "€40,000 - €50,000 per year", True, 1),
-                               ("Backend Engineer B", "€70,000 - €90,000 per year", True, 2),
-                               ("Backend Engineer C", "Competitive pay", True, 3))
+    # Stored as the harvest stores them: the pay a text states is read when the text is (`libs.corpus.pay`).
+    from libs.corpus.repository import CorpusRepository
 
-    assert [m.job.id for m in matching_jobs(db, user)] == [high.id, silent.id]
+    corpus = CorpusRepository(db)
+    low, high, silent = (corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title)
+                         for title in ("Backend Engineer A", "Backend Engineer B", "Backend Engineer C"))
+    for job, pay in ((low, "€40,000 - €50,000 per year"), (high, "€70,000 - €90,000 per year"),
+                     (silent, "Competitive pay")):
+        corpus.set_description(job, f"{pay}. We build services for shops and the people who run them. " * 4)
+
+    assert {m.job.id for m in matching_jobs(db, user)} == {high, silent}
 
 
 @needs_db
