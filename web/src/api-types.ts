@@ -656,6 +656,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai-accounts/{account_id}/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Limits
+         * @description Where this account's plan limits stand: the 5-hour window and the weekly one (owner, 2026-11-14).
+         */
+        get: operations["limits_ai_accounts__account_id__limits_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applied": {
         parameters: {
             query?: never;
@@ -2687,6 +2707,25 @@ export interface components {
             /** Value */
             value?: number | null;
         };
+        /**
+         * LimitWindow
+         * @description One limit of a plan: how much of it is used, and when it starts again.
+         */
+        LimitWindow: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Percent */
+            percent: number;
+            /** Resets At */
+            resets_at: string | null;
+        };
+        /** Limits */
+        Limits: {
+            /** Windows */
+            windows: components["schemas"]["LimitWindow"][];
+        };
         /** Link */
         Link: {
             /** Url */
@@ -4584,6 +4623,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiAccounts"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    limits_ai_accounts__account_id__limits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Limits"];
                 };
             };
             /** @description Validation Error */

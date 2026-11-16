@@ -13,6 +13,8 @@ from datetime import datetime
 from typing import Literal
 
 import httpx
+from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from pymongo.database import Database
@@ -20,6 +22,7 @@ from pymongo.database import Database
 from libs import settings
 from libs.credentials import validate_credential
 from libs.llm import accounts
+from libs.llm import limits as plan_limits
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
 from services.api.deps import current_user, get_db, get_store, rate_limit
@@ -180,6 +183,36 @@ def switch(account_id: str, body: InUse, db: Database = Depends(get_db),
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="that account is not linked here")
     audit(logger, "ai_accounts.switched", user=user_id, account=account_id, in_use=body.in_use)
     return _listing(db, user_id)
+
+
+class LimitWindow(BaseModel):
+    """One limit of a plan: how much of it is used, and when it starts again."""
+    id: str
+    label: str
+    # 0 to 100.
+    percent: float
+    resets_at: datetime | None
+
+
+class Limits(BaseModel):
+    # Empty when there are none to show: an API key has no plan, and a sign-in not used for some hours
+    # shows them again after the next document (`libs.llm.limits`).
+    windows: list[LimitWindow]
+
+
+@router.get("/{account_id}/limits")
+def limits(account_id: str, user_id: _uuid.UUID = Depends(current_user),
+           store: SecretStore = Depends(get_store)) -> Limits:
+    """Where this account's plan limits stand: the 5-hour window and the weekly one (owner, 2026-11-14)."""
+    try:
+        secret = store.reveal_account(user_id, ObjectId(account_id))
+    except (InvalidId, TypeError):
+        secret = None
+    if secret is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="that account is not linked here")
+    return Limits(windows=[LimitWindow(id=each.id, label=each.label, percent=each.percent,
+                                       resets_at=each.resets_at)
+                           for each in plan_limits.read(secret.kind, secret.reveal())])
 
 
 @router.delete("/{account_id}")

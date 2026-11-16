@@ -257,3 +257,89 @@ def test_accounts_linked_before_the_change_are_settled_once(db):
     assert (left["claude_api"]["label"], left["gemini_api"]["label"]) == ("Claude API key", "Gemini API key")
     assert "label" not in left["telegram_bot"]
     assert settle(db) == {"labelled": 0, "switched": 0, "removed": 0}
+
+
+# ── a plan's limits ───────────────────────────────────────────────────────────────────────────
+
+def _signed_in(expires_ms: float | None = None) -> str:
+    login = {"accessToken": "sk-ant-oat01-" + "a" * 40, "refreshToken": "sk-ant-ort01-" + "r" * 40}
+    if expires_ms is not None:
+        login["expiresAt"] = expires_ms
+    return json.dumps({".credentials.json": json.dumps({"claudeAiOauth": login})})
+
+
+def _anthropic(answer):
+    import httpx
+
+    seen: list = []
+
+    def handler(request):
+        seen.append(request)
+        return answer(request)
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), seen
+
+
+USAGE = {"five_hour": {"utilization": 37.0, "resets_at": "2026-11-15T03:00:00Z"},
+         "seven_day": {"utilization": 12.5, "resets_at": "2026-11-19T09:00:00+00:00"},
+         "seven_day_opus": None, "extra_usage": {"is_enabled": False}}
+
+
+def test_a_claude_sign_in_shows_its_five_hour_and_weekly_limits():
+    """Owner, 2026-11-14: the plan's limits in Settings, the 5-hour one and the weekly one, as Claude Code's
+    own /usage shows them. Asked with the token the sign-in holds, which never leaves in a log line."""
+    import httpx
+
+    from libs.llm import limits
+
+    http, seen = _anthropic(lambda request: httpx.Response(200, json=USAGE))
+
+    windows = limits.read("claude_login", _signed_in(), http=http)
+
+    assert [(each.id, each.label, each.percent) for each in windows] == [
+        ("five_hour", "5-hour limit", 37.0), ("seven_day", "Weekly limit", 12.5)]
+    assert [each.resets_at.isoformat() for each in windows] == ["2026-11-15T03:00:00+00:00",
+                                                                "2026-11-19T09:00:00+00:00"]
+    assert str(seen[0].url) == limits.USAGE_URL
+    assert seen[0].headers["authorization"] == "Bearer sk-ant-oat01-" + "a" * 40
+
+
+def test_limits_that_cannot_be_read_are_none_and_never_cost_the_sign_in(caplog):
+    """No tool is run for them, so nothing can renew a sign-in and leave the renewal unsaved, which retires
+    it: a probe did that on 2026-11-14. A token that ran out is not even asked with; a refusal, a key, and
+    an answer in another shape show nothing, and say so in the log without the token."""
+    import httpx
+
+    from libs.llm import limits
+
+    refused, asked = _anthropic(lambda request: httpx.Response(401, json={"error": "expired"}))
+    odd, _ = _anthropic(lambda request: httpx.Response(200, json={"limits": []}))
+    past = 1_000.0  # an expiry long gone, in milliseconds
+
+    with caplog.at_level("WARNING", logger="libs.llm.limits"):
+        assert limits.read("claude_login", _signed_in(expires_ms=past), http=refused) == []
+        assert asked == [], "a token that ran out is left alone"
+        assert limits.read("claude_login", _signed_in(), http=refused) == []
+        assert limits.read("claude_login", _signed_in(), http=odd) == []
+        assert limits.read("claude_api", "sk-ant-api03-key", http=refused) == []
+        assert limits.read("codex_login", json.dumps({"auth.json": "{}"}), http=refused) == []
+
+    assert len(asked) == 1 and "answered 401" in caplog.text and "no window we know" in caplog.text
+    assert "sk-ant-oat01" not in caplog.text
+
+
+@needs_db
+def test_settings_asks_for_an_accounts_limits_and_only_its_owner_may(api, monkeypatch):
+    http, _, user, store = api
+    from libs.llm import limits
+
+    monkeypatch.setattr(limits, "read", lambda kind, blob, **kw: [
+        limits.Window("five_hour", "5-hour limit", 37.0, None)] if kind == "claude_login" else [])
+    account = store.add(user.id, "claude_login", CLAUDE_LOGIN, label="Claude Max · ruben@example.com")
+    key = _key(http).json()["accounts"][0]["id"]
+
+    assert http.get(f"/ai-accounts/{account}/limits").json() == {"windows": [
+        {"id": "five_hour", "label": "5-hour limit", "percent": 37.0, "resets_at": None}]}
+    assert http.get(f"/ai-accounts/{key}/limits").json() == {"windows": []}, "a key has no plan"
+    assert http.get("/ai-accounts/not-an-id/limits").status_code == 404
+    assert http.get(f"/ai-accounts/{'0' * 24}/limits").status_code == 404

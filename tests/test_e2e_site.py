@@ -1014,6 +1014,40 @@ def _the_sheet_opens_drawn(page, templates) -> None:
     assert asked == [], f"opening the sheet asked the server for {asked}"
 
 
+def test_a_claude_sign_in_shows_its_plans_limits_in_settings(site, capsys, monkeypatch):
+    """Owner, 2026-11-14: a Claude plan's 5-hour and weekly limits, under the account in Settings, each
+    with how much is used and when it starts again; nearly spent, its bar says so. What Anthropic answers
+    is a stand-in here (`tests/test_ai_accounts.py` reads a real answer's shape)."""
+    import json
+
+    from libs.db import database
+    from libs.llm import limits
+    from libs.secrets import SecretStore, generate_key
+
+    monkeypatch.setenv("SECRETS_KEK", f"k1:{generate_key()}")
+    monkeypatch.setattr(limits, "read", lambda kind, blob, **kw: [
+        limits.Window("five_hour", "5-hour limit", 37.2, datetime(2026, 11, 15, 3, 0, tzinfo=UTC)),
+        limits.Window("seven_day", "Weekly limit", 91.0, None)])
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        db = database()
+        SecretStore(db).add(db.users.find_one({"email": email})["_id"], "claude_login",
+                            json.dumps({".credentials.json": "{}"}), label="Claude Pro · jordan@example.com")
+
+        page.goto(f"{base}/#/settings")
+        row = page.locator(".ai-accounts li")
+        expect(row).to_contain_text("5-hour limit: 37% used, starts again")
+        expect(row).to_contain_text("Weekly limit: 91% used")
+        expect(row.locator(".ai-limit .storage-bar span")).to_have_count(2)
+        expect(row.locator(".ai-limit .storage-bar span.full")).to_have_count(1)
+        assert page.evaluate(FAULTS) == {"off": [], "over": []}, "Settings at 390px"
+        browser.close()
+
+
 def test_an_ai_account_linked_in_settings_is_what_the_make_buttons_were_missing(site, capsys, monkeypatch):
     """CVs and cover letters are written with the person's own AI account (owner, 2026-11-09). Linked in
     Settings, each way in by its provider's mark, in use at once, named and never shown back. A switch

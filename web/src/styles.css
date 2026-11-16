@@ -2566,6 +2566,19 @@ button.toast-close:hover:not([disabled]) {
   overflow-wrap: anywhere;
 }
 
+/* A plan's limits under its account: each a line and the share used as a bar. */
+.ai-limits {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  max-width: 22rem;
+}
+
+.ai-limit {
+  display: grid;
+  gap: 0.2rem;
+}
+
 .ai-switch {
   display: inline-flex;
   align-items: center;

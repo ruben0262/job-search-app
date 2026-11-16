@@ -74,6 +74,33 @@ const KEYS: Record<KeyKind, [string, string, string]> = {
 const SWITCH_MS = 900;
 
 const linked = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" });
+const again = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
+
+/** Where a Claude plan's limits stand: the 5-hour one and the weekly one (owner, 2026-11-14), as Claude's
+ * own usage page gives them. Asked when the card opens. A sign-in not used for some hours has none to
+ * show until the next document is made with it, and says so. */
+function PlanLimits({ account }: { account: Account }) {
+  const { data } = useKept<Schema<"Limits">>(`${AI_ACCOUNTS}/${account.id}/limits`);
+  if (!data) return null;
+  if (!data.windows.length) {
+    return <span className="small muted">Your plan's limits show here after your next CV or cover letter.</span>;
+  }
+  return (
+    <span className="ai-limits">
+      {data.windows.map((each) => (
+        <span key={each.id} className="small muted ai-limit">
+          <span>
+            {each.label}: <strong>{Math.round(each.percent)}% used</strong>
+            {each.resets_at ? `, starts again ${again.format(new Date(each.resets_at))}` : ""}
+          </span>
+          <span className="storage-bar" aria-hidden="true">
+            <span style={{ width: `${Math.min(each.percent, 100)}%` }} className={each.percent >= 90 ? "full" : ""} />
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+}
 const wait = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
 
 /** A tab opened in the click itself, or Safari blocks it; the sign-in sends it to the provider's page. */
@@ -134,6 +161,7 @@ export function AiAccounts() {
                     <span className="small muted">
                       Writes with {account.model ? <code>{account.model}</code> : "the model your plan includes"}
                     </span>
+                    {account.kind === "claude_login" ? <PlanLimits account={account} /> : null}
                   </span>
                   <label className="ai-switch">
                     {/* Not disabled while one moves, which would grey every switch out: a click then is
