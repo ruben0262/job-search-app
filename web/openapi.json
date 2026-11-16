@@ -711,6 +711,45 @@
         "title": "Asked",
         "type": "object"
       },
+      "AtsMeasured": {
+        "description": "How many CVs passed every ATS check in our own tests, with what was tested and when: said on the\nlanding page with all of it (owner, 2026-11-12: sourced figures only; 2026-11-15: on the site if above\n95.3%).",
+        "properties": {
+          "checks": {
+            "title": "Checks",
+            "type": "integer"
+          },
+          "looks": {
+            "title": "Looks",
+            "type": "integer"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "of": {
+            "title": "Of",
+            "type": "integer"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "integer"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "passed",
+          "of",
+          "checks",
+          "looks",
+          "month",
+          "prompt"
+        ],
+        "title": "AtsMeasured",
+        "type": "object"
+      },
       "AuthStatus": {
         "properties": {
           "status": {
@@ -3272,6 +3311,16 @@
       "Reach": {
         "description": "How much the platform reads, counted from what it reads. The landing page typed its own numbers\nand still said 25 sources and ~940 company boards after both had changed (2026-11-06).",
         "properties": {
+          "ats": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AtsMeasured"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "company_boards": {
             "title": "Company Boards",
             "type": "integer"
@@ -3293,7 +3342,8 @@
           "sources",
           "company_boards",
           "every_minutes",
-          "jobs_week"
+          "jobs_week",
+          "ats"
         ],
         "title": "Reach",
         "type": "object"

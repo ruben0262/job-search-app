@@ -2,7 +2,7 @@
  * where you would apply, asks before a Skip, and offers an Undo after "Mark as applied". The app's own
  * classes and pictures, so it looks as the real one does. Fictional, as every example on the landing page
  * is: never real pipeline output. */
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
 import { STEPS } from "../pages/AppliedPage";
 import { PICTURES } from "../pages/JobsPage";
@@ -13,27 +13,29 @@ import { Mark } from "../wheel";
 type Kind = "cv" | "cover";
 type Line = [kind: "h" | "m" | "s" | "b" | "l" | "p", text: string];
 
-const TITLE = "Senior Backend Engineer";
+// The landing page's examples are work anyone does (owner, 2026-11-14): the phone is a warehouse team
+// leader's, the flow above it a nurse's. Every one was a software job before.
+const TITLE = "Warehouse Team Leader";
 
 // Jordan's CV, the parts that fit this job first. Nothing in the letter that the CV does not say.
 const LINES: Record<Kind, Line[]> = {
   cv: [
     ["h", "Jordan Ellery"],
-    ["m", "Backend Engineer · Berlin, Germany"],
+    ["m", "Team Leader · Berlin, Germany"],
     ["s", "Experience"],
-    ["b", "Backend Engineer, Northwind · 2021 – now"],
-    ["l", "Built the billing service in Python and Postgres"],
-    ["l", "Cut checkout latency to 40 ms at p99"],
-    ["b", "Software Engineer, Contoso · 2018 – 2021"],
-    ["l", "Moved the payments API to Go"],
+    ["b", "Team Leader, Northwind · 2021 – now"],
+    ["l", "Lead a shift of 14 pickers and loaders"],
+    ["l", "Cut picking errors by a third in a year"],
+    ["b", "Forklift Driver, Contoso · 2018 – 2021"],
+    ["l", "Loaded 20 lorries a day"],
     ["s", "Languages"],
     ["l", "English (native), German (B2)"],
   ],
   cover: [
     ["h", "Jordan Ellery"],
-    ["m", "To the Acme Robotics team"],
-    ["p", "I build the kind of backend a fleet reports to. At Northwind I built the billing service in Python and Postgres, and cut checkout latency to 40 ms at p99."],
-    ["p", "Moving telemetry from the warehouse floor to the cloud is that work at a larger scale, and it is the work I want to do next."],
+    ["m", "To the Acme Logistics team"],
+    ["p", "I run the kind of shift your depot needs. At Northwind I lead 14 pickers and loaders, and we cut picking errors by a third in a year."],
+    ["p", "Getting every lorry out of your Berlin depot on time is that work at a larger scale, and it is the work I want to do next."],
     ["p", "Kind regards, Jordan"],
   ],
 };
@@ -128,17 +130,17 @@ export function Demo({ auto = 0 }: { auto?: number }) {
         {made.has("cover") ? <span className="made-badge cover">Cover letter made</span> : null}
       </p>
       <p className="job-meta">
-        <strong className="company">Acme Robotics</strong>
+        <strong className="company">Acme Logistics</strong>
         <span className="country">Germany</span>
         Berlin · Posted 2 hours ago
       </p>
-      <p className="job-meta">€70–85k a year</p>
+      <p className="job-meta">€38–44k a year</p>
       <p className="summary">
-        Build the services that move our robots' telemetry from the warehouse floor to the cloud. Python,
-        Postgres, Kafka.
+        Lead a shift of 12 at our Berlin depot: picking, loading and every lorry out on time. Forklift
+        licence needed.
       </p>
       <p className="why">
-        Why: <span className="word green">backend engineer</span> <span className="word green">python</span>
+        Why: <span className="word green">warehouse</span> <span className="word green">team leader</span>
       </p>
       <div className="job-actions">
         {slot("cv")}
@@ -332,9 +334,9 @@ export function Phone() {
 /** Applied, as the app draws it: each application on the one track it moves along. Made-up applications. */
 function AppliedScreen() {
   const applications: [title: string, company: string, reached: number][] = [
-    ["Senior Backend Engineer", "Acme Robotics", 1],
-    ["Data Engineer, Platform", "Northwind", 2],
-    ["Python Developer", "Contoso", 0],
+    [TITLE, "Acme Logistics", 1],
+    ["Logistics Coordinator", "Northwind", 2],
+    ["Shift Supervisor", "Contoso", 0],
   ];
   return (
     <>
@@ -364,10 +366,10 @@ function AppliedScreen() {
 /** My search, as the app draws it: the words that find jobs, the words that hide them, and where. */
 function WordsScreen() {
   const rows: [label: string, tone: string, words: string[]][] = [
-    ["Green words find jobs", "green", ["backend engineer", "python", "data platform"]],
-    ["Red words hide them", "red", ["php", "sales"]],
+    ["Green words find jobs", "green", ["warehouse", "team leader", "logistics"]],
+    ["Red words hide them", "red", ["agency", "night shift"]],
     ["Countries", "plain", ["Germany", "Netherlands"]],
-    ["Ways of working", "plain", ["Remote", "Hybrid"]],
+    ["Ways of working", "plain", ["On-site", "Hybrid"]],
   ];
   return (
     <>
@@ -385,11 +387,11 @@ function WordsScreen() {
 /** New jobs as alerts on a phone, as `services/notifier/card.py` words them: one arrives at the top every few
  * seconds while they are in sight, and the older ones move down (owner, 2026-11-12). Made-up jobs. */
 const ALERTS: [title: string, from: string, place: string, words: string][] = [
-  ["Python Engineer, Data Platform", "Northwind · LinkedIn", "📍 London · 🏠 Hybrid", "python, data platform"],
-  ["Backend Developer (Go)", "Contoso · Greenhouse", "📍 Amsterdam · 🌍 Remote", "backend, go"],
-  ["Senior Software Engineer", "Fabrikam · Personio", "📍 Berlin · 🏢 On-site", "software engineer"],
-  ["Data Engineer", "Tailspin · Workable", "📍 Dublin · 🏠 Hybrid", "data engineer, sql"],
-  ["Platform Engineer", "Litware · Lever", "📍 Lisbon · 🌍 Remote", "platform, kubernetes"],
+  ["Warehouse Team Leader", "Northwind · LinkedIn", "📍 Rotterdam · 🏢 On-site", "warehouse, team leader"],
+  ["Logistics Coordinator", "Contoso · Greenhouse", "📍 Amsterdam · 🏠 Hybrid", "logistics"],
+  ["Shift Supervisor, Distribution", "Fabrikam · Personio", "📍 Berlin · 🏢 On-site", "warehouse"],
+  ["Transport Planner", "Tailspin · Workable", "📍 Dublin · 🌍 Remote", "logistics"],
+  ["Stock Control Team Leader", "Litware · Lever", "📍 Lisbon · 🏢 On-site", "team leader"],
 ];
 const SHOWN = 3;
 const EVERY_MS = 2800;
@@ -398,6 +400,29 @@ export function Alerts() {
   const box = useRef<HTMLDivElement>(null);
   // How many have arrived: the newest on top, the two before it under it, and the one before those folding away.
   const [arrived, setArrived] = useState(() => (still() ? SHOWN : 1));
+  // The room of SHOWN alerts, kept from the first one: they arrive, move down and fold away inside it, and
+  // nothing under it moves (owner, 2026-11-16: the reviews below went up and down with them, by up to 430 px
+  // on a phone). Measured on the cards as drawn, the tallest, again when the width or the fonts change.
+  const [room, setRoom] = useState<number>();
+  useLayoutEffect(() => {
+    const here = box.current;
+    if (!here) return;
+    const measure = () => {
+      const cards = [...here.querySelectorAll<HTMLElement>(".alert-card")];
+      const fold = here.querySelector<HTMLElement>(".alert-fold");
+      if (!cards.length || !fold) return;
+      const slot = Math.max(...cards.map((card) => card.offsetHeight)) + parseFloat(getComputedStyle(fold).paddingBottom);
+      setRoom((was) => Math.max(was ?? 0, Math.ceil(slot * SHOWN)));
+    };
+    measure();
+    void document.fonts?.ready.then(measure);
+    const watch = new ResizeObserver(() => {
+      setRoom(undefined);
+      measure();
+    });
+    watch.observe(here);
+    return () => watch.disconnect();
+  }, []);
   useEffect(() => {
     if (still() || !box.current) return;
     let visible = false;
@@ -416,7 +441,8 @@ export function Alerts() {
   // Newest first; one more than shown, folding away.
   const cards = Array.from({ length: Math.min(arrived, SHOWN + 1) }, (_, i) => arrived - 1 - i);
   return (
-    <div className="alerts" ref={box} role="img" aria-label="New jobs arriving as alerts on a phone">
+    <div className="alerts" ref={box} role="img" aria-label="New jobs arriving as alerts on a phone"
+         style={room ? { height: room } : undefined}>
       {cards.map((n, i) => {
         const [title, from, place, words] = ALERTS[n % ALERTS.length]!;
         return (

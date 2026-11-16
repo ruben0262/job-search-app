@@ -218,17 +218,29 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         reach = page.locator(".reach div")
         expect(reach).to_have_text([f"{len(HARVEST_SOURCES)}Job sources", "40+Company career pages",
                                     "72,000+New jobs this week", "24/7Rapid checks"])
+        # Its examples are work anyone does: every one was a software job until 2026-11-14 (owner).
+        software = re.compile("python|backend|engineer|kubernetes", re.I)
+        expect(page.locator("main")).not_to_contain_text(software)
         demo = page.locator(".demo-card")
         demo.get_by_role("button", name="Apply on LinkedIn").click()
         expect(demo).to_contain_text("opens it on LinkedIn, and you apply there")
         # The sections at the foot of a phone: a picture over each one's word (owner, 2026-11-07).
         expect(page.locator(".dock a").filter(has=page.locator(".short"))).to_have_text(
-            ["Why", "What", "How", "Jobs", "Price", "Start"], use_inner_text=True)
+            ["What", "Why", "How", "See", "Price", "Start"], use_inner_text=True)
         # Each section says what it is in a big title of its own, where a small label stood (owner,
         # 2026-11-07).
+        # What it is comes first, since a visitor needs that before why it works (owner, 2026-11-16).
         expect(page.locator("main section h2")).to_have_text([
-            "Be first. Be seen.", "Every job site. One list for you.", "From sign\u2011up to applied.",
+            "Every job site. One list for you.", "Be first. Be seen.", "From sign\u2011up to applied.",
             "See it working.", "Start free. Upgrade to be first.", "Start in a few minutes."])
+        # Our own figure, with what was tested and when, beside the other reasons it works.
+        expect(page.locator("#edge")).to_contain_text("99% passed all 8 ATS checks.")
+        expect(page.locator("#edge .sourced")).to_have_text(
+            "288 CVs in 8 looks, our own tests, November 2026")
+        # A review nobody wrote never reaches a visitor: the section waits for the first real one
+        # (`web/src/landing/reviews.ts`).
+        expect(page.locator("[data-sample]")).to_have_count(0)
+        expect(page.locator(".reviews")).to_have_count(0)
         # Each figure behind a selling point says where it comes from, and links there (owner, 2026-11-12).
         figures = page.locator("#edge .figures > div")
         expect(figures).to_have_count(5)
@@ -439,7 +451,7 @@ def test_step_two_says_what_it_found_with_its_words_ready_and_a_plain_way_to_add
         expect(page.locator(".word.green", has_text="golang")).to_be_visible()
 
         # One or two words work best, and a long phrase is said to be one.
-        expect(page.get_by_text("At least 3, more is better. Like “nurse” or “python”.")).to_be_visible()
+        expect(page.get_by_text("At least 3, more is better. Like “nurse” or “excel”.")).to_be_visible()
         expect(page.get_by_text("Long phrases find fewer jobs")).to_have_count(0)
         page.get_by_label("Add to: Show me jobs with these words").fill("team coordinator and co lead")
         page.get_by_label("Add to: Show me jobs with these words").press("Enter")

@@ -1691,8 +1691,11 @@
    the oldest folds away. */
 .landing .alerts {
   display: grid;
+  align-content: start;
   max-width: 420px;
   margin-top: 24px;
+  /* Its height is the room of three alerts (`Alerts`): one arriving or folding away stays inside it. */
+  overflow: hidden;
 }
 
 .landing .alert-slot {
@@ -1794,6 +1797,169 @@
   margin-bottom: 10px;
   font: 600 clamp(1.7rem, 6vw, 2.4rem)/1.06 var(--font-display);
   letter-spacing: -0.04em;
+}
+
+/* What people say, under the phone: their stars at a glance, then every review on rows that drift past
+   (`Reviews.tsx`). The rows run edge to edge, fading at both ends; each stops under a pointer or a finger. */
+.landing .reviews {
+  margin-top: 88px;
+}
+
+.landing .reviews-head {
+  margin-bottom: 36px;
+  text-align: center;
+}
+
+.landing .reviews-score {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.landing .reviews-score strong {
+  color: var(--ink);
+  font: 600 22px/1 var(--font-display);
+}
+
+.landing .review-stars {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.landing .review-stars svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--faint);
+}
+
+.landing .review-stars svg.on {
+  fill: #f5b83d;
+}
+
+.landing .review-row {
+  margin-inline: calc(-1 * var(--pad));
+  padding-block: 8px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+}
+
+.landing .review-track {
+  display: flex;
+  width: max-content;
+  animation: review-drift calc(var(--n) * 9s) linear infinite;
+}
+
+.landing .review-row:nth-child(odd) .review-track {
+  animation-direction: reverse;
+}
+
+.landing .review-row:hover .review-track,
+.landing .review-row:active .review-track,
+.landing .review-row:focus-within .review-track {
+  animation-play-state: paused;
+}
+
+@keyframes review-drift {
+  to {
+    translate: -50% 0;
+  }
+}
+
+.landing .review-set {
+  display: flex;
+  gap: 16px;
+  margin: 0;
+  padding: 0 16px 0 0;
+  list-style: none;
+}
+
+.landing .review {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(340px, 78vw);
+  padding: 22px 22px 20px;
+  border: 1px solid var(--glass-line);
+  border-radius: 24px;
+  background: var(--tile);
+}
+
+.landing .review-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.landing .review-result {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent-text);
+  font: 600 12.5px/1 var(--font-body);
+  white-space: nowrap;
+}
+
+.landing .review blockquote {
+  flex: 1;
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.landing .review footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.landing .review-face {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #c79bff);
+  color: #fff;
+  font: 600 14px/1 var(--font-display);
+}
+
+.landing .review footer strong,
+.landing .review footer small {
+  display: block;
+}
+
+.landing .review footer strong {
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.landing .review footer small {
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+/* Motion turned off: the rows stand still and scroll by hand, each review once. */
+@media (prefers-reduced-motion: reduce) {
+  .landing .review-track {
+    animation: none;
+  }
+
+  .landing .review-row {
+    overflow-x: auto;
+  }
+
+  .landing .review-set[aria-hidden] {
+    display: none;
+  }
 }
 
 /* Get started: two big cards, each a number, when, what, and three things, read in a glance while
@@ -2500,4 +2666,12 @@
   font-size: 14px;
   line-height: 1.5;
   text-align: center;
+}
+
+/* Where a figure of our own comes from, under it: small, and there. */
+.landing .sourced {
+  display: block;
+  margin-top: 6px;
+  color: var(--dim);
+  font-size: 13px;
 }

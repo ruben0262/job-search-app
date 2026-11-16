@@ -12,6 +12,7 @@ import { PLACES } from "../places";
 import { ThemeToggle } from "../theme";
 import { Mark, Wheel } from "../wheel";
 import { Alerts, Phone } from "./Demo";
+import { Reviews } from "./Reviews";
 import "./landing.css";
 
 type Reach = Schema<"Reach">;
@@ -24,13 +25,14 @@ const clamp = (value: number) => Math.min(1, Math.max(0, value));
 const after = (seconds: number) => ({ "--d": `${seconds}s` }) as CSSProperties;
 
 /** The sections in page order, and each one's picture in the dock: on a phone the dock is pictures alone
- * (owner, 2026-11-06), so each is the thing its section is about. */
+ * (owner, 2026-11-06), so each is the thing its section is about. What it is comes first, since a visitor
+ * needs that before why it works (owner, 2026-11-16). */
 const SECTIONS: [id: string, name: string, short: string, icon: ReactNode][] = [
   ["top", "Mahoraga", "Top", null],
-  ["edge", "Why it works", "Why", <path key="i" d="M13.2 2.8L5.5 13.4h5.6l-1.3 7.8 7.7-10.6h-5.6z" />],
   ["what", "What it is", "What", <path key="i" d="M12 3.5a8.5 8.5 0 110 17 8.5 8.5 0 010-17zM12 11v5.3M12 7.9h.01" />],
+  ["edge", "Why it works", "Why", <path key="i" d="M13.2 2.8L5.5 13.4h5.6l-1.3 7.8 7.7-10.6h-5.6z" />],
   ["how", "How it works", "How", <path key="i" d="M6 20.2a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4zM18 8.2a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4zM8.2 18h7.3a3 3 0 000-6h-7a3 3 0 010-6h7.3" />],
-  ["live", "Your jobs", "Jobs", PLACES.find(([key]) => key === "jobs")?.[2]],
+  ["live", "See it working", "See", PLACES.find(([key]) => key === "jobs")?.[2]],
   ["price", "Pricing", "Price", <path key="i" d="M3.8 12.7V4.9c0-.6.5-1.1 1.1-1.1h7.8l7.6 7.6c.4.4.4 1.1 0 1.5l-7.8 7.8c-.4.4-1.1.4-1.5 0zM8.4 8.4h.01" />],
   ["start", "Get started", "Start", <path key="i" d="M12 3c2.8 1.9 4.2 5 4.2 8.8L14.6 15H9.4l-1.6-3.2C7.8 8 9.2 4.9 12 3zM12 7.6a1.6 1.6 0 110 3.2 1.6 1.6 0 010-3.2zM7.8 11.8l-2.3 2.4v3.3l3.9-2.5M16.2 11.8l2.3 2.4v3.3l-3.9-2.5M10.5 17.6c.3 1.4.8 2.4 1.5 3.1.7-.7 1.2-1.7 1.5-3.1" />],
 ];
@@ -50,12 +52,22 @@ const steps = (often: string): [string, ReactNode, ReactNode][] => [
 
 /** Be first and be seen: what Mahoraga does about the figures above them, a card each, stacking as How it works'
  * steps do, so a reader scrolling past still reads both (owner, 2026-11-12: "short and sweet"). */
-const edges = (often: string): [string, ReactNode, ReactNode][] => [
+const edges = (often: string, ats: Reach["ats"] | undefined): [string, ReactNode, ReactNode][] => [
   ["New jobs in minutes, not days", <>Every job site read {often}. <strong>Apply in a job's first days,</strong> when
     hiring starts.</>, <WeekArt />],
-  ["A CV made for each job, in seconds", <>From your own CV, with a cover letter, in one tap. <strong>Made to pass
-    ATS checks,</strong> each one checked before you get it.</>, <AtsArt />],
+  // The figure is our own tests', served with what was tested and when, and only for the CV wording it was
+  // measured on (`/stats`): without it the page claims no rate.
+  ["A CV made for each job, in seconds", ats ? <>From your own CV, with a cover letter, in one tap.{" "}
+    <strong>{passRate(ats)}% passed all {ats.checks} ATS checks.</strong>{" "}
+    <small className="sourced">{ats.of} CVs in {ats.looks} looks, our own tests, {ats.month}</small></>
+    : <>From your own CV, with a cover letter, in one tap. <strong>Made to pass ATS checks,</strong> each one
+      checked before you get it.</>, <AtsArt />],
 ];
+
+/** "99": the share of CVs that passed every check, never rounded up to all of them. */
+function passRate(ats: NonNullable<Reach["ats"]>): number {
+  return ats.passed === ats.of ? 100 : Math.min(99, Math.round((100 * ats.passed) / ats.of));
+}
 
 /** A figure behind the selling points, with where it comes from: each read at its source on 2026-11-12, and
  * each said with its own scope. Claims that could not be traced to a source were left out ("4x within 10
@@ -304,6 +316,16 @@ export function Landing() {
           ) : null}
         </section>
 
+        <section id="what" className="section">
+          <div className="head center" data-reveal>
+            <h2>Every job site. <span className="glow">One list for you.</span></h2>
+            <p className="lp-lede">
+              It reads them all for you and keeps only the jobs that fit. No more checking sites one by one.
+            </p>
+          </div>
+          <Flow often={often} />
+        </section>
+
         {/* Why it gets people interviews (owner, 2026-11-12): there first, with a CV made for the job. */}
         <section id="edge" className="section">
           <div className="head center" data-reveal>
@@ -314,7 +336,7 @@ export function Landing() {
             </p>
           </div>
           <Figures of={FIGURES} />
-          <Stack cards={edges(often)} />
+          <Stack cards={edges(often, reach?.ats)} />
           {/* The rest of what it does for them, a picture each, so the point lands without reading. */}
           <div className="edge-row">
             <article className="tile edge-mini" data-reveal data-spot>
@@ -333,16 +355,6 @@ export function Landing() {
               <p>Applied, interview, offer: one tap each. No spreadsheet.</p>
             </article>
           </div>
-        </section>
-
-        <section id="what" className="section">
-          <div className="head center" data-reveal>
-            <h2>Every job site. <span className="glow">One list for you.</span></h2>
-            <p className="lp-lede">
-              It reads them all for you and keeps only the jobs that fit. No more checking sites one by one.
-            </p>
-          </div>
-          <Flow often={often} />
         </section>
 
         <section id="how" className="section">
@@ -370,6 +382,7 @@ export function Landing() {
               <Alerts />
             </div>
           </div>
+          <Reviews />
         </section>
 
         {/* Free, a week behind; or a member, first (owner, 2026-11-12). What the cards say is set in Admin. */}
@@ -701,8 +714,8 @@ function Flow({ often }: { often: string }) {
       <FlowOn />
       <div className="flow-step">
         <div className="flow-art flow-list" aria-hidden="true">
-          {[["Backend Engineer", "backend engineer"], ["Data Engineer", "python · sql"],
-            ["Python Developer", "python"]].map(([title, why], i) => (
+          {[["Staff Nurse", "nurse"], ["Care Home Nurse", "nurse · care"],
+            ["Care Coordinator", "care"]].map(([title, why], i) => (
             <span key={title} style={{ "--i": i } as CSSProperties}><b>{title}</b><small>Why: {why}</small></span>
           ))}
         </div>
@@ -728,7 +741,7 @@ function CvArt() {
       </span>
       <span className="cv-said">We suggest</span>
       <div className="cv-words">
-        {[["backend engineer", "finds"], ["python", "finds"], ["unpaid", "hides"], ["commission only", "hides"]].map(
+        {[["team leader", "finds"], ["warehouse", "finds"], ["unpaid", "hides"], ["commission only", "hides"]].map(
           ([word, kind], i) => <span key={word} className={kind} style={{ "--i": i } as CSSProperties}>{word}</span>)}
       </div>
     </div>
@@ -740,8 +753,8 @@ function MatchArt() {
   return (
     <div className="match-art">
       <span className="match-new">3 new jobs</span>
-      <div className="match"><b><mark>Backend Engineer</mark></b><small>Acme Robotics · Berlin · Why: backend engineer</small></div>
-      <div className="match"><b><mark>Python</mark> Developer</b><small>Northwind · Remote · Why: python</small></div>
+      <div className="match"><b>Warehouse <mark>Team Leader</mark></b><small>Acme · Berlin · Why: team leader</small></div>
+      <div className="match"><b><mark>Warehouse</mark> Supervisor</b><small>Contoso · Kiel · Why: warehouse</small></div>
     </div>
   );
 }

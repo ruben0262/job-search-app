@@ -646,6 +646,24 @@ def test_a_bookmark_is_one_persons_and_leaves_bookmarks_when_they_apply_skip_or_
 
 # ── the landing page ──────────────────────────────────────────────────────────────────────────
 
+def test_the_ats_figure_is_said_only_for_the_cv_wording_it_was_measured_on(api, monkeypatch):
+    """A figure of our own on the landing page (owner, 2026-11-15: on the site if "above 95.3%"), with what
+    was tested and when. It is about one wording of `write_cv.md`: change the prompt and the page says no
+    figure until the bench has measured the new one and `ATS_MEASURED` says so. **If this fails after a prompt
+    change, measure again; do not edit the version alone.**"""
+    from libs import prompts
+    from services.api.dashboard_routes import ATS_MEASURED
+
+    http, *_ = api
+    assert ATS_MEASURED.prompt == prompts.version("write_cv.md"), (
+        "write_cv.md changed since the ATS figure was measured: the landing page now says none")
+    assert ATS_MEASURED.passed / ATS_MEASURED.of > 0.953
+    assert http.get("/stats").json()["ats"] == ATS_MEASURED.model_dump()
+
+    monkeypatch.setattr(prompts, "version", lambda name: "another wording")
+    assert http.get("/stats").json()["ats"] is None
+
+
 def test_the_landing_pages_numbers_are_counted_and_answer_anybody(db, monkeypatch):
     """What the landing page says the platform reads: the one source list, and the company boards still
     answering. Typed into the page, they said 25 sources and ~940 boards long after either was true."""

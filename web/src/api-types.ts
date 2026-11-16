@@ -2144,6 +2144,26 @@ export interface components {
             /** Reply Id */
             reply_id: number;
         };
+        /**
+         * AtsMeasured
+         * @description How many CVs passed every ATS check in our own tests, with what was tested and when: said on the
+         *     landing page with all of it (owner, 2026-11-12: sourced figures only; 2026-11-15: on the site if above
+         *     95.3%).
+         */
+        AtsMeasured: {
+            /** Checks */
+            checks: number;
+            /** Looks */
+            looks: number;
+            /** Month */
+            month: string;
+            /** Of */
+            of: number;
+            /** Passed */
+            passed: number;
+            /** Prompt */
+            prompt: string;
+        };
         /** AuthStatus */
         AuthStatus: {
             /** Status */
@@ -3043,6 +3063,7 @@ export interface components {
          *     and still said 25 sources and ~940 company boards after both had changed (2026-11-06).
          */
         Reach: {
+            ats: components["schemas"]["AtsMeasured"] | null;
             /** Company Boards */
             company_boards: number;
             /** Every Minutes */

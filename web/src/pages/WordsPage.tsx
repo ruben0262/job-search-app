@@ -44,7 +44,7 @@ export function IdentityFields({ name, links, onName, onLinks }: {
         <input value={name} autoComplete="name" onChange={(event) => onName(event.target.value)} />
       </Field>
       <Words tone="plain" label="Your links" chipClass="link-chip"
-             hint="LinkedIn, GitHub or a portfolio. Optional."
+             hint="LinkedIn, a portfolio or your own site. Optional."
              placeholder="linkedin.com/in/you" values={links} onChange={onLinks}
              display={(url) => url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")} />
     </>
@@ -152,7 +152,7 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
           </>
         ) : null}
         <Words tone="green" label="Show me jobs with these words" warnLong
-               hint={`At least ${choices.min_words}, more is better. Like “nurse” or “python”.`}
+               hint={`At least ${choices.min_words}, more is better. Like “nurse” or “excel”.`}
                placeholder="Add a job title or skill"
                values={section.keywords} suggested={suggestions.green}
                suggestedTitle="Suggested from your CV — tap one to add it"

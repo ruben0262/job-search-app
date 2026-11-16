@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, ValidationError
 from pymongo.database import Database
 
-from libs import settings
+from libs import prompts, settings
 from libs.corpus import salary
 from libs.corpus.boards import apply_on, board_name
 from libs.corpus.freshness import platform_windows, shelf_life
@@ -233,6 +233,28 @@ def save_job_filters(filters: JobFilters, db: Database = Depends(get_db),
     return filters
 
 
+class AtsMeasured(BaseModel):
+    """How many CVs passed every ATS check in our own tests, with what was tested and when: said on the
+    landing page with all of it (owner, 2026-11-12: sourced figures only; 2026-11-15: on the site if above
+    95.3%)."""
+    passed: int
+    of: int
+    checks: int
+    looks: int
+    month: str
+    # The version of `write_cv.md` that wrote the CVs measured (`libs.prompts.version`).
+    prompt: str
+
+
+# Measured 2026-11-16 (CHANGELOG): 36 CVs, nine made-up people and two postings each, 18 written by Claude
+# Haiku 5.5 and 18 by GPT, each drawn in all eight looks and read back by two PDF readers, against the eight
+# checks in `scripts/cvlab/run.py::ats_checks`. **A figure about one wording**: `stats` serves it only while
+# that wording is the live one, so a changed prompt takes it off the page until it is measured again and
+# this line is rewritten (`tests/test_dashboard.py` holds the two together).
+ATS_MEASURED = AtsMeasured(passed=285, of=288, checks=8, looks=8, month="November 2026",
+                           prompt="6fcbbabfca70")
+
+
 class Reach(BaseModel):
     """How much the platform reads, counted from what it reads. The landing page typed its own numbers
     and still said 25 sources and ~940 company boards after both had changed (2026-11-06)."""
@@ -244,6 +266,9 @@ class Reach(BaseModel):
     # New jobs found in the last seven days, counted as the admin's chart counts them (`CountryCount`, one
     # row a run a country): what was found, never a typed number.
     jobs_week: int
+    # What our own tests measured of the CVs made here (`ATS_MEASURED`), or None while the CV prompt is not
+    # the one they measured: the page then says no figure rather than an old one.
+    ats: AtsMeasured | None
 
 
 @router.get("/stats", response_model=Reach)
@@ -254,7 +279,8 @@ def stats(db: Database = Depends(get_db)) -> Reach:
         {"$group": {"_id": None, "jobs": {"$sum": "$jobs"}}}])
     return Reach(sources=len(HARVEST_SOURCES), every_minutes=PLATFORM_TICK_MIN,
                  company_boards=db[AtsToken.COLLECTION].count_documents({"dead_at": None}),
-                 jobs_week=next(week, {}).get("jobs", 0))
+                 jobs_week=next(week, {}).get("jobs", 0),
+                 ats=ATS_MEASURED if prompts.version("write_cv.md") == ATS_MEASURED.prompt else None)
 
 
 
