@@ -54,6 +54,11 @@ SPLIT = {
     "fresh2": ("security-officer", "dental-nurse", "lagerist", "delivery-driver", "teaching-assistant",
                "payroll", "elektromonteur", "commessa", "ugyfelszolgalat", "administrativa", "plumber",
                "social-worker"),
+    # Written, drawn and read blind on 2026-11-17, weighted to trades with a licence or a registration, after
+    # the readers and the credential list were frozen (commit 410cce5) and with nothing changed in them since.
+    "fresh3": ("pharmacy-technician", "healthcare-assistant", "nursery-practitioner",
+               "apprentice-electrician", "accounts-assistant", "kierowca", "pflegehelferin",
+               "heftruckchauffeur", "oss", "villanyszerelo", "vigilante", "groundworker"),
 }
 SECTOR = {
     "warehouse": "logistics", "driver": "logistics", "transport-planner": "logistics",
@@ -77,6 +82,11 @@ SECTOR = {
     "delivery-driver": "logistics", "teaching-assistant": "education", "payroll": "finance",
     "elektromonteur": "trades and making", "commessa": "sales", "ugyfelszolgalat": "office, legal, HR",
     "administrativa": "office, legal, HR", "plumber": "trades and making", "social-worker": "health and care",
+    "pharmacy-technician": "health and care", "healthcare-assistant": "health and care",
+    "nursery-practitioner": "education", "apprentice-electrician": "trades and making",
+    "accounts-assistant": "finance", "kierowca": "logistics", "pflegehelferin": "health and care",
+    "heftruckchauffeur": "logistics", "oss": "health and care", "villanyszerelo": "trades and making",
+    "vigilante": "security", "groundworker": "projects and building",
 }
 
 

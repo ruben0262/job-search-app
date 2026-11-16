@@ -50,5 +50,17 @@
   "ugyfelszolgalat": {"words": ["ügyfélszolgálati munkatárs", "ügyfélszolgálat", "customer service"], "places": ["hungary"], "languages": ["hu", "en"]},
   "administrativa": {"words": ["administrativa", "auxiliar administrativo", "administrativo contable"], "places": ["spain"], "languages": ["es"]},
   "plumber": {"words": ["gas engineer", "plumber", "heating", "plumbing"], "places": ["united_kingdom"], "languages": ["en"]},
-  "social-worker": {"words": ["social worker", "social work", "social care"], "places": ["ireland", "united_kingdom"], "languages": ["en"]}
+  "social-worker": {"words": ["social worker", "social work", "social care"], "places": ["ireland", "united_kingdom"], "languages": ["en"]},
+  "pharmacy-technician": {"words": ["pharmacy technician", "pharmacy"], "places": ["united_kingdom"], "languages": ["en"]},
+  "healthcare-assistant": {"words": ["nursing associate", "healthcare assistant", "nurse"], "places": ["united_kingdom"], "languages": ["en"]},
+  "nursery-practitioner": {"words": ["nursery practitioner", "nursery", "early years"], "places": ["united_kingdom"], "languages": ["en"]},
+  "apprentice-electrician": {"words": ["apprentice electrician", "electrician", "electrical"], "places": ["united_kingdom"], "languages": ["en"]},
+  "accounts-assistant": {"words": ["accounts assistant", "accounts payable", "accountant", "accounts"], "places": ["ireland"], "languages": ["en"]},
+  "kierowca": {"words": ["kierowca", "kierowca C+E", "ADR", "transport"], "places": ["poland"], "languages": ["pl"]},
+  "pflegehelferin": {"words": ["pflegehelferin", "pflege", "tagespflege"], "places": ["germany"], "languages": ["de"]},
+  "heftruckchauffeur": {"words": ["heftruck", "reachtruck", "magazijn", "logistiek"], "places": ["netherlands"], "languages": ["nl"]},
+  "oss": {"words": ["operatore socio sanitario", "socio sanitario", "assistenza"], "places": ["italy"], "languages": ["it"]},
+  "villanyszerelo": {"words": ["villanyszerelő", "ipari villanyszerelő"], "places": ["hungary"], "languages": ["hu"]},
+  "vigilante": {"words": ["vigilante", "vigilante de seguridad", "seguridad"], "places": ["spain"], "languages": ["es"]},
+  "groundworker": {"words": ["groundworker", "labourer", "construction"], "places": ["united_kingdom"], "languages": ["en"]}
 }
