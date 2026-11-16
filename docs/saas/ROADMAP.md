@@ -3605,6 +3605,11 @@ work, or opening and closing sessions faster, would help):
       registrations), years asked against years had, education, seniority both ways, the main role's title,
       must-have skills, calibration; built on the seen 27, the fresh 12 read once at the end, a new fresh set if
       that is not enough.
+    - **2026-11-16, night: version 2 shipped** (owner: "lets go with your recommendation"; CHANGELOG): roles
+      from the lines that name a job, and at most 4 for a job they cannot take. On 24 held out, mean error 1.84
+      to 1.72, the order unchanged. Nothing tried moved the order. Next: a third held-out set, weighted to
+      licensed and registered trades, read once; then what would move the order needs more labels than the
+      word-level signals have.
 
 53. **The cover letter prompt** (owner, 2026-11-15, night: "some research on the company might need to be
     done too… motivation and so on, for it to be a great cover letter").

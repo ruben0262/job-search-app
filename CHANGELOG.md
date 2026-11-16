@@ -14,6 +14,76 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-16, night — The match score, version 2: roles read from the lines that name a job, and at most 4 for a job they cannot take; a second held-out set
+
+The owner: "run a lot more tests ... other criteria that we can extract from the jobs or the users and compare ...
+similar to reverse engineering ATS ... evaluation is really important"; then, on the results, "lets go with your
+recommendation and take the extra test set".
+
+### A second held-out set first
+
+12 new made-up people of other trades and countries, written by an agent from a brief naming only trades, countries
+and quality; 216 postings drawn from their own lists (`build.py freeze`; eight searches too narrow, 0 to 15 jobs,
+widened by list size alone); read twice blind to `rubric.md` by six reader agents: exact 81%, within one point 98%,
+kappa 0.980, two disputes read a third time. `labels.jsonl` holds 922 labels, the first 706 unchanged;
+`SPLIT["fresh2"]`. Disclosed by the agent that built it: it read the persona summaries (not their documents) before
+writing the credential list, and 2 of the 23 caps there use patterns those summaries named.
+
+### What was measured (`scripts/cvlab/fit/research`, seen 27, one left out at a time, paired against version 1)
+
+Taken: **roles from role phrases** (`libs.fit.roles`: the short lines of a CV that name a job in nine languages, in
+place of a CV's first four lines, the CV reader's titles and a summary's first sentence, which gave "Leeds",
+"Persönliche Daten" and an address as roles; whole lists sat 1.6 to 3.1 points low for it), mean error -0.120
+[-0.184, -0.054], order unchanged; **at most 4 for a job they cannot take** (`libs.fit.requirements`, `CEILING`:
+a credential required that they hold no part of, a post open only to its own staff, or only to students), mean
+error -0.037 [-0.071, -0.008], 7+ precision +0.022. Not taken, the order or the error unmoved or worse: years asked
+against years held, a degree asked against held, levels below them, the most recent roles, the same occupation
+noun, must-have coverage line by line (18 variants), the gate, interactions, weights fitted to the order, isotonic
+steps, a level shift by language, text cleaning in nine languages, a cap on a language they lack.
+
+### Held out: fitted on the 27, read once on 24 nobody tuned on (12 fresh, 12 fresh2), paired
+
+| | version 1 | version 2 | difference [95%] |
+|---|---|---|---|
+| mean error | 1.844 | 1.723 | -0.120 [-0.250, -0.009] |
+| rank correlation in a list | 0.621 | 0.625 | +0.005 [-0.015, +0.021] |
+| a 7+ that readers put at 7+ | 58.2% | 66.3% | +8.1 [-2.9, +20.0] |
+| readers' 7+ given a 7+ | 52.8% | 52.8% | 0 |
+
+Worse: on the fresh 12 alone, the top five -0.058 [-0.158, 0.000] and 7+ precision -0.047; fresh2's mean bias -0.17
+to -0.33; on the seen 27, 6 of 25 capped pairs were labelled 5 or more. A Hungarian maintenance man on a railway
+signalling job went 5 to 8 (readers 4). Better, for example: a trainee dental nurse on a GDC-registered post 10 to 4
+(readers 4.5); a delivery driver with a car licence on a category C job 7 to 4 (4); the same driver on "Delivery
+Driver" 6 to 8 (10).
+
+### Shipped
+
+- `libs.fit.roles` and `libs.fit.requirements`, the measured code verbatim less what was rejected; a posting's
+  features gain `req` (groups of alternative credentials, empty for about 90%), `staff` and `student`; a profile
+  gains `has` (held or half held) and `student`; the expression caps a barred job at `CEILING = 4.0` (`barred`).
+- `VERSION = 2`: the harvest's catch-up reads every posting again in its budget (about 35,000 here, 11.6 ms each
+  once), and logs which credentials postings require, so one the list does not know shows by its absence.
+  Kept scores re-key by themselves; scoring a page or a filter is no slower (603 against 631 ms over 14,892).
+- `model.json` refitted on the seen 27: title 2.93, text 8.96, levels above -0.89, a language they lack -0.88,
+  constant 3.12. Its steps are kept whole: rounded to four places, a step began just above the reading it was
+  fitted at, and 10 of 922 pairs showed half a point lower than measured. Now the site's score equals the measured
+  one on all 922 pairs (largest difference 0.0; 50 capped).
+- "Or equivalent" caps a credential ("forklift licence or equivalent" asks for it or what counts as it); only a
+  degree's "or equivalent" was ever let off, and degrees were not taken. "We will train you" and "or willing to
+  obtain" never cap.
+
+### Tests
+
+`tests/test_fit.py`, five, each failing on version 1: a dental nurse without GDC registration shows at most 4 and one
+with it more; a post open only to its own staff at most 4; a licence trained for or to be obtained never caps, one
+"essential" or "or equivalent" does; part-qualified ACCA is not capped on "ACA, ACCA or CIMA qualified", none of them
+is; a German table CV's "Elektroniker" is a role, its address, "Persönliche Daten" and employer are not.
+
+### Next
+
+A third held-out set, weighted to licensed and registered trades (owner, 2026-11-16, night: "take the extra test
+set"), is being built the same way; version 2 is read on it once.
+
 ## 2026-11-16, night — The offer said as the owner set it: jobs 7 or 3 days or older, "Everything in" first, a question mark that says more; Starter sold on Upgrade; the match filter a row of numbers; kept scores go with their job; nothing left to get stuck
 
 The owner: "jobs that are 7 days or older appear to users on the free plan, and 3 days or older on the starter

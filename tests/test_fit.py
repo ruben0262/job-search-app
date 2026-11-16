@@ -63,6 +63,101 @@ def test_a_changed_profile_changes_the_score(db):
     assert after > before + 0.5, (before, after)
 
 
+# ── a job they cannot take, and the roles a CV names (VERSION 2, owner 2026-11-16, night) ─────────────────
+
+DENTAL_CV = """Amy Clarke
+Trainee Dental Nurse    2024 - present
+Bright Smile Dental, Leeds
+- Chairside support for two dentists, sterilising instruments, decontamination
+- Patient records, appointments and reception cover"""
+DENTAL_NURSE = ("Dental Nurse", """We are looking for a qualified dental nurse to join our practice.
+Requirements:
+You must be GDC registered.
+Experience of chairside support and decontamination.""")
+WAREHOUSE_CV = """Jan Kowal
+Warehouse Operative    2021 - present
+Northern Foods, Leeds
+- Picking and packing orders, loading lorries, stock counts, pallet wrapping"""
+WAREHOUSE_JOB = """Picking and packing orders, loading and unloading lorries, stock counts.
+Requirements:
+"""
+FINANCE_CV = """Priya Shah
+Assistant Finance Manager    2020 - present
+Harlow Logistics Ltd
+- Month-end close, management accounts, budgeting and forecasting
+"""
+FINANCE_MANAGER = ("Finance Manager", """Lead month-end close, management accounts and budgeting.
+Requirements:
+ACA, ACCA or CIMA qualified.
+Experience of month-end close and management accounts.""")
+
+
+@needs_db
+def test_a_job_needing_a_registration_they_lack_shows_at_most_four_and_holding_it_lifts_it(db):
+    """The rubric's rule for a blocker: a trainee dental nurse is not the qualified, registered one the
+    practice must hire, however alike the work. With the registration, it is her job."""
+    without = _scores(db, fit.person({"cv": [DENTAL_CV]}, "Amy Clarke"), {"job": DENTAL_NURSE})["job"]
+    db.fit_scratch.drop()
+    registered = DENTAL_CV + "\nGDC registered dental nurse, GDC number 123456"
+    with_it = _scores(db, fit.person({"cv": [registered]}, "Amy Clarke"), {"job": DENTAL_NURSE})["job"]
+    assert fit.shown(without) <= 4 < fit.shown(with_it), (without, with_it)
+
+
+@needs_db
+def test_a_post_open_only_to_its_own_staff_shows_at_most_four(db):
+    made = fit.person({"cv": [NURSE_CV]}, "Sinead Byrne")
+    title, text = STAFF_NURSE
+    internal = (title, text + "\nInternal applicants only.")
+    scores = _scores(db, made, {"open": STAFF_NURSE, "internal": internal})
+    assert fit.shown(scores["internal"]) <= 4 < fit.shown(scores["open"]), scores
+
+
+@needs_db
+def test_a_licence_the_employer_trains_for_never_caps_and_one_it_requires_does(db):
+    """"We will train you" and "or willing to obtain" offer the licence; "essential" and "or equivalent" ask
+    for it, or for what counts as it."""
+    made = fit.person({"cv": [WAREHOUSE_CV]}, "Jan Kowal")
+    lines = {"trained": "Counterbalance forklift licence: we will train you.",
+             "willing": "A counterbalance forklift licence, or willing to obtain one.",
+             "essential": "A counterbalance forklift licence is essential.",
+             "equivalent": "Counterbalance forklift licence or equivalent."}
+    postings = {name: ("Warehouse Operative", WAREHOUSE_JOB + line) for name, line in lines.items()}
+    scores = _scores(db, made, postings)
+    shown = {name: fit.shown(score) for name, score in scores.items()}
+    assert shown["trained"] > 4 and shown["willing"] > 4, shown
+    assert shown["essential"] <= 4 and shown["equivalent"] <= 4, shown
+
+
+@needs_db
+def test_part_qualified_in_one_of_the_alternatives_asked_is_not_capped(db):
+    """"ACA, ACCA or CIMA qualified" is one requirement met by any of the three, and someone working towards
+    one is not barred from it; someone with none of them is."""
+    part = fit.person({"cv": [FINANCE_CV + "ACCA part-qualified, two papers to go"]}, "Priya Shah")
+    none = fit.person({"cv": [FINANCE_CV + "AAT Level 4"]}, "Priya Shah")
+    on_way = _scores(db, part, {"job": FINANCE_MANAGER})["job"]
+    db.fit_scratch.drop()
+    without = _scores(db, none, {"job": FINANCE_MANAGER})["job"]
+    assert fit.shown(without) <= 4 < fit.shown(on_way), (without, on_way)
+
+
+def test_a_cv_names_its_role_and_not_its_address_or_its_employer():
+    """A German CV laid out as a table: the role is the line that names a job, not "Persönliche Daten" or an
+    address in its first lines, and not the employer beside the role. The first lines were read as roles until
+    2026-11-16, and a German electrician's list scored 3.1 points too low for it."""
+    from libs.fit.text import words
+
+    cv = """Lebenslauf
+Persönliche Daten
+Anschrift: Hauptstraße 12, 80331 München
+Berufserfahrung
+03/2019 - heute | Elektroniker für Betriebstechnik | Stadtwerke München GmbH
+- Wartung und Instandhaltung von Schaltanlagen"""
+    made = fit.person({"cv": [cv]}, "Lukas Bauer")
+    roles = {word for word, weight in made["title"].items() if weight == 1.0}
+    assert set(words("Elektroniker")) <= roles, roles
+    assert not roles & set(words("Anschrift Persönliche Daten Stadtwerke München Hauptstraße")), roles
+
+
 @needs_db
 def test_the_filter_and_the_number_on_a_card_agree_at_every_score(db):
     """A job is in "Match N+" exactly when its card shows N or more: just under a half, at it and just over,

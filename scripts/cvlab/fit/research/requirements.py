@@ -1,6 +1,9 @@
 """Candidates 1-3 and the eligibility rules: what a posting requires (a credential, a degree, a number of
 years, being on its staff, being a student) and what a person holds, read by rules in the corpus's languages.
 
+**Shipped**, the credentials, staff and students only, as `libs.fit.requirements` (VERSION 2, 2026-11-16,
+night): this is the copy that was measured, kept to reproduce it. The site reads `libs.fit`.
+
 **Required or a plus.** A posting's lines are read in order. A heading opens a section that requires
 ("Requirements", "Essential", "Wymagania", "Anforderungen", "Elvárások", "Vereisten", "Requisiti",
 "Requisitos"...), that would like ("Desirable", "Nice to have", "Mile widziane", "Von Vorteil", "Előny"...),

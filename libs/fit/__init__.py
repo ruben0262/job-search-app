@@ -2,14 +2,17 @@
 call (owner, 2026-11-15 and 2026-11-16; CLAUDE.md §0). Not the learned model under the tag
 `model-on-postgres` (CLAUDE.md §3): nothing here learns per person.
 
-**What it compares.** A job's title, read for the job it names, against the words a person uses for their own
-roles (headline, job titles, summary); and the job's text, less what it says about the company and the
-package, against everything they wrote, as two vectors of words weighted by how rare each is in the corpus, in
-its own language. A title that matches while the text does not counts less. A job a level or two above them,
-or one that needs a language they do not speak, counts less. Those four signals, weighted and mapped to 1 to
-10 by `model.json`, which `scripts/cvlab/fit/model.py` fits to readings of real postings against made-up
-people of every trade. On 12 people nothing was fitted to, it orders a list better than the Jobs page's own
-order for 10 of 12 (CHANGELOG 2026-11-16, evening).
+**What it compares.** A job's title, read for the job it names, against the words of a person's own roles,
+the phrases of their CVs that name a job (`roles`); and the job's text, less what it says about the company
+and the package, against everything they wrote, as two vectors of words weighted by how rare each is in the
+corpus, in its own language. A title that matches while the text does not counts less. A job a level or two
+above them, or one that needs a language they do not speak, counts less. Those four signals, weighted and
+mapped to 1 to 10 by `model.json`, which `scripts/cvlab/fit/model.py` fits to readings of real postings
+against made-up people of every trade. A job they cannot take, one requiring a credential they hold no part
+of or open only to its own staff or to students, shows at most `CEILING` (`requirements`). On 12 people
+nothing was fitted to, it orders a list better than the Jobs page's own order for 10 of 12 (CHANGELOG
+2026-11-16, evening); on 24, the number is 0.12 nearer the readers' than without the last two (2026-11-16,
+night).
 
 **Where it runs.** A job's features are worked out once, with its text (`job`); a person's profile once after
 their documents change (`profile`); the score is the database comparing the two (`expression`), so the site
@@ -41,6 +44,8 @@ from libs.corpus.langfilter import detect_language
 from libs.db import now
 from libs.db.models import CorpusJob, FitScore, User
 from libs.documents.read import fold, read
+from libs.fit import requirements
+from libs.fit.roles import role_phrases
 from libs.fit.text import (
     IDENTITY,
     MIDDLE,
@@ -57,8 +62,9 @@ from libs.fit.text import (
 logger = logging.getLogger(__name__)
 
 # What a job's features and a person's profile are made by: a change to how either is read moves it, and every
-# posting is read again (`catch_up`) and every profile on its next use (`profile`).
-VERSION = 1
+# posting is read again (`catch_up`) and every profile on its next use (`profile`). 2: roles read from role
+# phrases, and what a posting requires (2026-11-16, night).
+VERSION = 2
 # Postings written per round trip by `catch_up`.
 _BATCH = 500
 # The positions a word can take in the arrays a request sends: 8,192 measured the same as exact words (0.673
@@ -74,6 +80,10 @@ CAP = 3.5
 ELSEWHERE, NEGATED = 0.4, 0.5
 # A title that matches counts fully only when their texts are at least this alike.
 GATE = 0.02
+# The most a job scores that they cannot take: one requiring a credential they hold no part of, one open only
+# to its own staff, or only to students when they are not one (`requirements`). The rubric's own rule for a
+# blocker; measured flat from 3.5 to 4.5 (2026-11-16, night).
+CEILING = 4.0
 # The documents read as what they have done; the rest is read as what they say about it.
 _CV_KINDS = ("cv", "linkedin")
 # A language with fewer postings than this is counted with every language together.
@@ -118,26 +128,31 @@ def job(title: str, description: str | None, language: str | None) -> dict:
     return {"th": [position(word) for word in head],
             "tw": [round(rarity(word, language) / total, 4) for word in head],
             "vh": [position(word) for word, _ in top], "vw": [round(value / norm, 4) for _, value in top],
-            "level": title_level(title), "needs": sorted(needs | ({language} if language else set()))}
+            "level": title_level(title), "needs": sorted(needs | ({language} if language else set())),
+            **requirements.posting(title, description)}
 
 
 def catch_up(db: Database, *, deadline: float) -> int:
     """Features for the postings whose text was stored without them, or by an older `VERSION`, newest first,
     until `deadline` (`time.monotonic`): a column nothing writes is the feature missing (CLAUDE.md §6). Run
     after each harvest pass, beside `libs.corpus.terms.catch_up`."""
-    corpus, given = db[CorpusJob.COLLECTION], 0
+    corpus, given, asked = db[CorpusJob.COLLECTION], 0, Counter()
     while monotonic() < deadline:
         rows = list(corpus.find({"described_at": {"$ne": None}, "fit_version": {"$ne": VERSION}},
                                 {"title": 1, "description": 1, "language": 1},
                                 sort=[("first_seen_at", -1)]).limit(_BATCH))
         if not rows:
             break
-        corpus.bulk_write([UpdateOne({"_id": row["_id"]}, {"$set": {
-            "fit": job(row["title"], row.get("description"), row.get("language")), "fit_version": VERSION}})
-            for row in rows], ordered=False)
+        made = {row["_id"]: job(row["title"], row.get("description"), row.get("language")) for row in rows}
+        corpus.bulk_write([UpdateOne({"_id": key}, {"$set": {"fit": features, "fit_version": VERSION}})
+                           for key, features in made.items()], ordered=False)
         given += len(rows)
+        asked.update(name for features in made.values() for group in features["req"] for name in group)
     if given:
-        logger.info("fit: %d posting(s) given their features", given)
+        # Which credentials the postings require, so one the list never finds shows by its absence: a
+        # credential it does not know never caps a score (CLAUDE.md §5).
+        logger.info("fit: %d posting(s) given their features; credentials required %s", given,
+                    dict(asked.most_common()))
     return given
 
 
@@ -160,21 +175,26 @@ def person(documents: Mapping[str, Sequence[str]], name: str | None = None) -> d
     for kind, kept in documents.items():
         for text in kept or ():
             read_.document(kind, text)
-    counts, roles = read_.counts, read_.roles
+    counts = read_.counts
     spoken = set(facts.languages) | languages_spoken(texts) | read_.spoken
     for held in facts.jobs:
-        found = set(words(held.title)) - NOISE - identity
-        roles |= found
-        for word in found:
+        for word in set(words(held.title)) - NOISE - identity:
             counts[word] += 2
-    for summary in facts.profiles:
-        roles.update(word for word in words(summary.split(".")[0]) if word not in NOISE | identity)
     for skill in facts.skills:
         for word in set(words(skill)) - identity:
             counts[word] += 1
+    # Their roles: the phrases of their CVs that name a job (`roles.role_phrases`), not a CV's first lines,
+    # which gave "Leeds" and an address as roles (2026-11-16, night).
+    roles: set[str] = set()
+    for kind in _CV_KINDS:
+        for text in documents.get(kind) or ():
+            for phrase in role_phrases(text, facts.name or name):
+                roles.update(word for word in words(phrase) if word not in NOISE and word not in identity)
     title = {word: 1.0 if word in roles else round(ELSEWHERE * min(1.0, count / 2), 4)
              for word, count in counts.items()}
-    title.update(dict.fromkeys(read_.negated - set(counts), -ELSEWHERE * NEGATED))
+    for word in roles:
+        title.setdefault(word, 1.0)
+    title.update(dict.fromkeys(read_.negated - set(counts) - roles, -ELSEWHERE * NEGATED))
     vector = {word: (1 + math.log(count)) * rarity(word, read_.language_of.get(word))
               for word, count in counts.items() if word not in NOISE}
     norm = math.sqrt(sum(value * value for value in vector.values())) or 1.0
@@ -186,19 +206,18 @@ def person(documents: Mapping[str, Sequence[str]], name: str | None = None) -> d
     if held_levels and max(held_levels) >= 3:
         level = max(level, *held_levels)
     return {"title": title, "vector": {word: round(value / norm, 5) for word, value in vector.items()},
-            "level": level, "spoken": sorted(spoken)}
+            "level": level, "spoken": sorted(spoken), **requirements.person(documents)}
 
 
 class _Read:
-    """One person's documents read a line at a time: how often each word comes, in which language, which words
-    they said they lack, and the words of the first lines of a CV, which name their role."""
+    """One person's documents read a line at a time: how often each word comes, in which language, and which
+    words they said they lack. A CV's first four lines count twice."""
 
     def __init__(self, identity: set[str], name: str | None):
         self.identity, self.name = identity, name
         self.counts: Counter = Counter()
         self.language_of: dict[str, str] = {}
         self.negated: set[str] = set()
-        self.roles: set[str] = set()
         self.spoken: set[str] = set()
 
     def document(self, kind: str, text: str) -> None:
@@ -218,8 +237,6 @@ class _Read:
             for word in found:
                 self.counts[word] += 2 if head else 1
                 self.language_of.setdefault(word, language)
-            if head:
-                self.roles.update(word for word in found if word not in NOISE)
 
 
 def profile(db: Database, user: User) -> dict | None:
@@ -394,16 +411,27 @@ def gated(title: str, cos: str) -> dict:
 def expression(made: dict, fitted: dict | None = None) -> dict:
     """How well each posting fits this person, 1 to 10 with a fraction that orders the ones that round alike,
     worked out by the database from the posting's `fit` (`job`); None for a posting not read yet. Pages show
-    it rounded. `fitted` is a model other than `model.json`, for the evaluation that judges one before it is
-    written."""
+    it rounded. A job they cannot take shows at most `CEILING`. `fitted` is a model other than `model.json`,
+    for the evaluation that judges one before it is written."""
     weights, steps = (fitted or model())["weights"], (fitted or model())["steps"]
     raw = {"$add": [weights["const"], {"$multiply": [weights["title"], gated("$$title", "$$cos")]},
                     *({"$multiply": [weights[name], f"$${name}"]} for name in ("cos", "up", "blocked"))]}
     calibrated = {"$switch": {"branches": [{"case": {"$lt": ["$$raw", upper]}, "then": value}
                                            for upper, value in steps[:-1]], "default": steps[-1][1]}}
+    shown = {"$cond": [barred(made), {"$min": [calibrated, CEILING]}, calibrated]}
     return {"$cond": [{"$eq": [{"$ifNull": ["$fit", None]}, None]}, None, {"$let": {
         "vars": signals(made),
         "in": {"$let": {"vars": {"raw": raw},
-                        "in": {"$add": [calibrated, {"$multiply": [1e-3, "$$raw"]}]}}}}}]}
+                        "in": {"$add": [shown, {"$multiply": [1e-3, "$$raw"]}]}}}}}]}
+
+
+def barred(made: dict) -> dict:
+    """Whether a posting is one they cannot take, as an expression over its `fit`: it requires a credential of
+    which they hold none of the alternatives, half held counting as held; it is open only to its own staff; or
+    only to students, and they are not one (`requirements`)."""
+    lacking = {"$anyElementTrue": [{"$map": {"input": {"$ifNull": ["$fit.req", []]}, "as": "group", "in": {
+        "$eq": [{"$size": {"$setIntersection": ["$$group", {"$literal": made["has"]}]}}, 0]}}}]}
+    return {"$or": [lacking, {"$eq": ["$fit.staff", True]},
+                    {"$and": [{"$eq": ["$fit.student", True]}, {"$literal": not made["student"]}]}]}
 
 

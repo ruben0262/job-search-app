@@ -1,6 +1,9 @@
 """Candidate 5: what a person's role is, and what a posting's title names, read by the occupation words of
 nine languages rather than by where a line sits.
 
+**Shipped** as `libs.fit.roles` (VERSION 2, 2026-11-16, night): this is the copy that was measured, kept
+to reproduce the measurement while the held-out sets are read with it. The site reads `libs.fit`.
+
 **Occupation heads** (`HEADS`): the nouns that name a job in the languages the corpus is written in, from
 general knowledge of each language's job titles, not from the evaluation set. A word is a head when it is one,
 or when it ends in one of five letters or more ("servicetechniker", "magazijnmedewerker", "targoncavezeto"):

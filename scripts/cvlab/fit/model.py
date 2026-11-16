@@ -94,10 +94,12 @@ def fitted(x: dict, truth: dict, keys: list) -> dict:
     # the numbers spread over the scale as the readers' do. The mean label at each sum (isotonic) showed a 9
     # or 10 as 6 or 7 and a 1 or 2 as 3 or 4; by rank it is 1.9 and 1.1 off, a 7+ given to 66% of the jobs
     # readers put there against 38%, the order the same and the mean error 1.76 against 1.68 (2026-11-16).
+    # Each step begins at a sum a reading sits on, kept whole: rounded to four places it fell just above that
+    # reading's own sum, which took the step below, 10 of 922 pairs (2026-11-16, night).
     steps: list[list] = []
     for raw, label in zip(raws, sorted(truth[key] for key in keys), strict=True):
         if not steps or label > steps[-1][1]:
-            steps.append([round(raw, 4), label])
+            steps.append([raw, label])
     return {"weights": weights,
             "steps": [[steps[i + 1][0], steps[i][1]] for i in range(len(steps) - 1)] + [[None, steps[-1][1]]]}
 
