@@ -14,6 +14,132 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-16, evening — Free, Starter and Member fixed in code; every route and page by plan; each card says what its plan gives
+
+The owner's final definition, "make sure this remains from now on": **Free** sees each job once it is at least
+7 days old, with application tracking, bookmarks, every Jobs page filter and red words; **Starter** has
+everything in Free, sees jobs once they are 3 days old, and has job alerts and job match scores; **Member** has
+everything in Starter, the jobs the moment they are posted, CVs and cover letters with ATS checks for both, a
+job added by its link and direct access to the people who build the site, a link to a chat the owner runs.
+The tiers fixed in code, Starter's switches removed, "make sure the limits are applied to each tier type",
+and the cards in plain words saying what each thing does for the person, Starter crossing out what Member
+adds and Free the paid ones, in the value framing of $100M Offers with no unsourced figure and no promise the
+site does not keep.
+
+### The plans: one definition
+
+- **`libs.membership.PLANS`**: Free none of the paid areas; Starter `alerts` and `match_scores`; Member all of
+  them (`early_jobs`, `alerts`, `match_scores`, `cvs`, `covers`, `add_job`, `team_access`). Every route and
+  page asks it by area (`has`, `having`); none asks which plan. `having` no longer takes the database, since
+  nothing about a plan is a setting now.
+- **How long a job waits, per plan** (`WAITS`): `free_delay_hours` (168, as it was) and the new
+  `starter_delay_hours` (72), both in Admin → Subscriptions → The plans; a member's list has a job at once
+  (`early_jobs`). `delay_hours` and `jobs_as_of` read it by plan, so the Jobs page, a job's text and its marks
+  asked by number, Admin's count of an account's jobs, the alerts and the daily email all follow it: Starter
+  hears of a job when its own list has it, three days after a member (`tests/test_billing.py`).
+- Admin refuses a wait no shorter than the job shelf life for either plan (the guard Free had since
+  2026-11-13) and a Starter wait longer than Free's: Starter has everything Free has.
+- **`match_scores`** is defined and given to Starter and Member, with its card line and the tests of who has
+  it. The score itself, and showing it on the job cards to whoever `has` it, is the main session's
+  (`libs/fit`).
+- **`team_access`**: `members_channel_url`, a web address or nothing (Admin → The plans), shown on the Help
+  page to an account that has the area (`GET /contact` → `channel`). Empty, nothing shows and no card says it.
+
+### Every route and page, by plan
+
+- As before: making a CV or a cover letter (`POST /documents/build`) and adding a job by its link
+  (`POST /jobs/link`, `/jobs/link/save`) answer 402 to Free and Starter.
+- **New: what turns an alert on answers 402 without alerts** (`services.api.deps.with_alerts`):
+  `PUT /telegram/bot`, `POST /telegram/check` (which sends "New jobs that match your search will arrive here"
+  — a promise to an account nothing would be sent to), `POST /telegram/test`, `POST /push/subscribe`, and
+  `PATCH /account` switching the daily email on. Turning any of them off is anybody's, so an account whose
+  plan ended can stop what it set up. The lanes asked `having("alerts")` already. The walk of the whole API as
+  a free account now expects exactly those four to be closed, and no other.
+- **The words where a plan or a locked thing is named**: the Jobs page says "You see each job 3 days after we
+  find it" by plan, and Free's banner the same of 7; My documents says CVs and cover letters come with a
+  membership, with its button, where it said "Tap Make my CV" to an account that cannot; Help's answers say
+  which plan alerts and documents come with, and a member with the chat set sees "Talk to the team"; Settings
+  names Starter in a Starter trial and its own price after it (it said the membership's); the Upgrade page
+  lists what Member gives as its card says it, and for an account on Starter what Member adds; Admin names
+  the plan on each subscription and account, counts Starter, and prices each paying account at its own plan's
+  price — Starter's were counted at the membership's, overstating what came in.
+- The landing page: alerts are "on a paid plan" (they said "as a member", and Starter has them), and
+  applying "in a job's first days" is a paid plan's, since a free account waits a week.
+
+### The cards
+
+- **What a card says of its plan is worked out, never typed** (`pricing_routes.lines_of`): how soon it sees a
+  job first, so the three read across ("See every new job 7 days after we find it"; "… 3 days after we find
+  it, 4 days before Free accounts do"; "… the moment we find it, 7 days before Free accounts do"), then each
+  thing its plan gives, ticked, then each it lacks, crossed out — the paid ones on Free's, what Member adds on
+  Starter's. Member's lists all it gives (the value stack) and "Everything in Free", so it reads whole whether
+  or not Starter has a price to be shown beside it. The waits are the settings', so a changed wait changes the
+  cards, and a wait of 0 crosses nothing out that the plan has.
+- **The words** (`libs.membership.AREAS`): "See every new job the moment we find it"; "New jobs sent to your
+  phone or inbox: no more checking"; "A match score on each job, so the best fits stand out"; "A CV for each
+  job in one tap with your own AI account, ATS‑checked"; "A cover letter for each job in one tap,
+  ATS‑checked"; "Any job you find elsewhere, added by its link"; "A members' chat with the people who build
+  Mahoraga". Free's own lines: "Every job that fits you, from every job site, in one list"; "Every filter, and
+  words that hide the jobs you don't want"; "Bookmarks, and every application tracked to the offer". "Found"
+  rather than "posted": the site reads a board every 15 minutes, and a company's board when its turn comes, so
+  the moment a job is posted is not the moment anybody here can have it. Prices, the crossed-out "was" prices,
+  the trial lines and the bands are unchanged.
+- **ATS, as production does it** (`services.docgen.pdf.inspect_pdf`): every document is checked before it is
+  delivered, and **not the same way**: a CV's extracted text, its headings in order and its email; a cover
+  letter's text only (that there is enough of it, and in lines rather than scrambled columns). Neither check
+  stops a delivery; the answer is kept (`ats_ok`). So both cards say "ATS‑checked", neither says "passes", and
+  the landing page's 99% stays a figure about CVs.
+- **A test holds every card to the site**: for each plan, with three sets of waits and with and without the
+  chat, an account on that plan has every area its card ticks and none it crosses out, and sees jobs at once
+  exactly when its card says so (`tests/test_pricing.py::test_what_each_card_promises_is_what_an_account_on_that_plan_gets`).
+  Checked against a broken rule: giving Starter the CVs in `having` alone failed it six times.
+- The operator's own words per card stay in Admin: the name, the band, `also` (ticked after the plan's lines),
+  the button and the small print.
+
+### Deleted (CLAUDE.md §3), with the evidence
+
+- **The Starter switches**: `starter_areas` (the setting, `DEFAULT_STARTER_AREAS`, `libs.membership.starter_areas`),
+  its ticks in Admin → Subscriptions and their CSS, `Pricing.areas` and its `Area`, and the tests of a switch
+  moving an area. The owner fixed the tiers in code; a switch beside a fixed tier is a second source of truth
+  (§5), the one the panel shows and the code would not read. Built and removed the same day; 7dc5085 has it.
+- **The cards' typed lists** `benefits` and `left_out`, and the Admin editor's crossed-out list: they were the
+  second place a plan's contents were written, where a card could promise what its plan holds back. A card
+  saved with them keeps its name, band, button and small print; its lists are not read
+  (`test_cards_saved_before_the_plans_were_fixed_keep_their_own_words_and_lose_their_old_lists`).
+- `Pricing.free_delay_hours` (read only for Free's line under its price, now the server's first line) and
+  `Plan.free_delay_hours`, which no page read: `/billing/plan` is fetched by nothing in the site, and it said
+  one of what are now two waits.
+
+### Raised, unprompted (§5)
+
+- **Match scores are promised from this commit** on Starter's and Member's cards: the score on the job cards
+  must reach the live site with it.
+- **A free account cannot pick Starter after signing up**: the Upgrade page sells the membership, and Starter
+  is offered only between the email link and setting up. Its locked places say "comes with a membership",
+  which is true and leads where it says.
+- **The help chat's prompt does not know the plans** (`libs/prompts/support.md`): it tells everybody alerts
+  are a tap away in Settings, and describes a free "instant" CV removed on 2026-11-08. Not edited (§3a); a
+  wording is proposed to the owner.
+- `GET /billing/plan` and `Plan.trial_days` are read by no page; kept, as a public route somebody may call.
+- The waits' choices in Admin are fixed lists (0, 1, 3, 7, 14 days, and the value set), as Free's were.
+
+### What the owner does in Admin
+
+- **Pricing cards**: the lists saved on the live site are no longer read; the names, buttons and small print
+  saved there are kept. The Member card saved before today keeps its older small print until its new one
+  ("Card needed. Free to cancel in the trial.") is typed and saved.
+- **The members' chat**: its link, under The plans. Until then nobody is promised it.
+- **Starter's wait**: 3 days, under The plans, beside Free's 7, if it should be otherwise.
+
+### Gates (local; Actions is unavailable, CLAUDE.md §7)
+
+Run on the commit itself (a14bb57): `lint-imports` 2 kept, 0 broken; `ruff check .` clean; `python -m libs.db
+--prune` on an empty local database applied (28 collections); the contract regenerated from it with no diff (92
+paths); `npm --prefix web run build` built; `pytest tests/ -q -rs` with `MONGODB_URI` (a local mongod) and
+`CHROME_BIN` only: **1,578 passed, 7 skipped, 0 failed** (five skips need Stripe test keys, one a Postgres to
+copy from, one the reference instance). The cards were also looked at in a browser at 1280 and 390 px wide.
+Nothing pushed.
+
 ## 2026-11-16, evening — A fit score measured before it is shown: 39 people, 706 readings, a score by rules that orders a list better than the Jobs page does, kept off the site
 
 The owner: a score on every job for every person, 1 to 10, from their CV, cover letter and About you, "realistic and

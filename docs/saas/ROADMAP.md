@@ -3637,14 +3637,25 @@ work, or opening and closing sessions faster, would help):
       `STRIPE_STARTER_PRICE_ID` on the server; the portal set to switch between the two prices. Until then
       the live site has no Starter plan. (The sandbox has one since 2026-11-16, `price_1UcNvz…`, set on the
       owner's laptop only, and a Starter checkout opened on it.)
-    - What Starter includes beyond the jobs at once and alerts, and whether any area is given as a number a
-      month: the owner's, later ("for another chat", 2026-11-16).
+    - **What each plan includes: decided, and done** (owner, 2026-11-16, evening: "make sure this remains
+      from now on"). Fixed in code (`libs.membership.PLANS`), the switches gone: Free, each job once it is 7
+      days old; Starter, once it is 3 days old (`starter_delay_hours`), alerts and match scores; Member, at
+      once, CVs and cover letters, a job added by its link and the members' chat. Numbers a month per plan
+      (`libs.limits`) were not part of it.
     - 29.99 and 18.99 as crossed-out prices: confirmed by the owner as the plans' prices before the offer
       (2026-11-16). The offer is what Stripe charges, and a subscriber keeps it for as long as they stay.
     - Reviews: the section and 18 stand-ins are built; a stand-in is never shown on the live site. The
       real ones go in `web/src/landing/reviews.ts`, or tell Claude to move them to Admin.
-    - If the pricing cards were ever saved in Admin on the live site, the Member and Free cards keep those
-      words: add "Any job you find elsewhere, added by its link" and the one-line small print there.
+    - **The members' chat**: its link in Admin → Subscriptions → The plans. Until it is there, no card
+      promises it and Help shows nothing.
+    - **Saved pricing cards**: the lists saved on the live site are no longer read (each card now says what
+      its plan gives by itself); a name, button and small print saved there are kept. To have the small
+      print of 2026-11-16 ("Card needed. Free to cancel in the trial."), type it on each paid card and save.
+    - **Match scores are promised** on Starter's and Member's cards from the commit that fixed the plans: the
+      score on the job cards (`libs/fit`, the main session's) must reach the live site with them, not after.
+    - **A free account cannot pick Starter after signing up**: the Upgrade page sells the membership, and
+      Starter is offered only on the plan page after the email link. Whether Upgrade offers it too is the
+      owner's.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 
