@@ -1,0 +1,12 @@
+pharmacy-technician    rho +0.647 -> +0.633  pairs 0.922 -> 0.922  top5 7.90 -> 7.90  mae 2.17 -> 1.83
+healthcare-assistant   rho +0.816 -> +0.801  pairs 1.000 -> 1.000  top5 4.80 -> 4.80  mae 1.75 -> 1.03
+nursery-practitioner   rho +0.770 -> +0.762  pairs 0.934 -> 0.912  top5 6.80 -> 6.80  mae 1.36 -> 1.31
+apprentice-electrician rho +0.777 -> +0.758  pairs 0.947 -> 0.934  top5 5.20 -> 5.20  mae 1.22 -> 1.28
+accounts-assistant     rho +0.868 -> +0.874  pairs 0.943 -> 0.943  top5 8.50 -> 8.50  mae 1.33 -> 1.50
+kierowca               rho +0.345 -> +0.345  pairs 0.706 -> 0.706  top5 1.90 -> 1.90  mae 1.06 -> 1.06
+pflegehelferin         rho +0.369 -> +0.367  pairs 0.641 -> 0.603  top5 3.30 -> 2.80  mae 1.47 -> 1.53
+heftruckchauffeur      rho +0.599 -> +0.547  pairs 0.794 -> 0.775  top5 6.60 -> 7.40  mae 3.36 -> 2.75
+oss                    rho +0.253 -> +0.233  pairs 0.000 -> 0.000  top5 1.20 -> 1.20  mae 1.00 -> 0.89
+villanyszerelo         rho +0.020 -> +0.181  pairs 0.741 -> 0.815  top5 7.60 -> 8.00  mae 3.42 -> 2.42
+vigilante              rho +0.598 -> +0.595  pairs 0.929 -> 0.893  top5 3.20 -> 3.20  mae 1.53 -> 1.53
+groundworker           rho +0.717 -> +0.778  pairs 0.962 -> 0.962  top5 3.50 -> 3.70  mae 1.11 -> 1.11

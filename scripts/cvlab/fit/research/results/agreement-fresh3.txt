@@ -1,0 +1,3 @@
+216 pairs: exact 0.76, within 1 1.00, within 2 1.00, 3 or more apart 0; mean a-b -0.14, mean |a-b| 0.24
+quadratic weighted kappa 0.983
+rater a against rater b            rho 0.904 [0.85, 0.95]  pairs 0.999 [1.00, 1.00]  top5 5.95 of 6.05  good P 0.96 R 1.00  poor P 0.96 R 0.98  mae 0.24 ±1 1.00 bias -0.14

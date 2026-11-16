@@ -1,0 +1,162 @@
+candidate vs current, fresh3 12        rho 0.573 +0.008 [-0.016,+0.042] 3/8  pairs 0.860 -0.005 [-0.020,+0.014] 1/5  top5 5.117 +0.075 [-0.083,+0.233] 3/1  mae 1.519 -0.213 [-0.426,-0.028]  p7 0.679 +0.140 [-0.018,+0.362]  r7 0.432 +0.114 [-0.080,+0.234]
+  current, fresh3 12                   rho 0.565  pairs 0.865  top5 5.042  mae 1.731  p7 0.538  r7 0.318  bias -0.009  p3 0.771  r3 0.759
+  candidate, fresh3 12                 rho 0.573  pairs 0.860  top5 5.117  mae 1.519  p7 0.679  r7 0.432  bias 0.069  p3 0.810  r3 0.767
+candidate vs current, all 36 held out  rho 0.608 +0.007 [-0.009,+0.022] 15/17  pairs 0.838 +0.000 [-0.008,+0.009] 10/12  top5 5.897 +0.031 [-0.072,+0.142] 5/5  mae 1.663 -0.145 [-0.255,-0.043]  p7 0.672 +0.096 [+0.004,+0.202]  r7 0.513 +0.039 [-0.060,+0.143]
+  current, all 36 held out             rho 0.601  pairs 0.838  top5 5.867  mae 1.808  p7 0.576  r7 0.474  bias -0.208  p3 0.698  r3 0.770
+  candidate, all 36 held out           rho 0.608  pairs 0.838  top5 5.897  mae 1.663  p7 0.672  r7 0.513  bias -0.189  p3 0.714  r3 0.761
+
+fresh3: the cap fired on 17 of 216 pairs; 0 of them read 5 or more
+  healthcare-assistant   Community Addictions Advanced Nurse Practitioner - I label  3.0 old  6 new  4  [missing prescribing; staff only]  has ['driving licence']
+                         readers' blocker: registered nurse with advanced practice and prescribing training / first-level registered nurse with advanced practice training
+  healthcare-assistant   234003 (LI) Family Nurse                             label  3.0 old  4 new  4  [missing nursing registration]  has ['driving licence']
+                         readers' blocker: NMC registration and degree / NMC registration and a relevant degree
+  healthcare-assistant   Clinical Nurse Specialist Endometriosis              label  3.0 old  6 new  4  [missing prescribing]  has ['driving licence']
+                         readers' blocker: nursing degree and registration / nursing degree and registration
+  healthcare-assistant   CAMHS Practitioner - GP in Reach                     label  3.0 old  4 new  4  [missing hcpc/nursing registration]  has ['driving licence']
+                         readers' blocker: registered core profession (nurse, psychologist, OT or social worker) / registered core profession (NMC, HCPC or social work)
+  healthcare-assistant   Consultant in Emergency Medicine                     label  2.5 old  5 new  4  [missing gmc]  has ['driving licence']
+                         readers' blocker: GMC specialist registration in emergency medicine / GMC specialist registration in emergency medicine
+  healthcare-assistant   Protect Practitioner INTERNAL                        label  3.0 old  3 new  3  [missing hcpc; missing nursing registration; staff only]  has ['driving licence']
+                         readers' blocker: NMC, HCPC or UKPHR registration / registration as a nurse, AHP or public health practitioner, with a degree
+  healthcare-assistant   Community Nurse - Buckley District Nursing Team      label  4.0 old  6 new  4  [missing nursing registration]  has ['driving licence']
+                         readers' blocker: NMC registration / NMC registration
+  healthcare-assistant   Health Visitor - Flying Start                        label  3.0 old  4 new  4  [missing nursing registration]  has ['driving licence']
+                         readers' blocker: NMC registration and SCPHN health visiting qualification / NMC registration and SCPHN health visiting qualification
+  healthcare-assistant   ADOS Assessor                                        label  3.0 old  4 new  4  [missing hcpc; missing nursing registration]  has ['driving licence']
+                         readers' blocker: professional registration and ADOS-2 training / professional registration and ADOS-2 training
+  healthcare-assistant   Nurse (Nights) - Hurlingham (Zero Hour Contract)     label  4.0 old  7 new  4  [missing nursing registration]  has ['driving licence']
+                         readers' blocker: NMC registration (active PIN) / NMC registration as an RGN
+  healthcare-assistant   ADHD Nurse Prescriber                                label  3.0 old  5 new  4  [missing prescribing]  has ['driving licence']
+                         readers' blocker: non-medical prescribing qualification / non-medical prescribing qualification
+  healthcare-assistant   Registered Nurse                                     label  3.0 old  5 new  4  [missing nursing registration]  has ['driving licence']
+                         readers' blocker: registered nurse status / registered nurse status
+  pflegehelferin         Pflegefachkraft (w/m/d), Chirurgie                   label  4.0 old  1 new  1  [missing nursing registration]  has ['driving licence', 'trade certificate (de)']
+                         readers' blocker: not a registered nurse: requires completed three-year nursing training (Pflegefachfrau/Gesundheits- und Krankenpflegerin) / three-year nursing qualification (Pflegefachkraft)
+  pflegehelferin         Pflegeexperte (m/w/d) für außerklinische Kinderinten label  3.0 old  3 new  3  [missing nursing registration]  has ['driving licence', 'trade certificate (de)']
+                         readers' blocker: requires a registered nurse with three years in ventilation care and the 200-hour ventilation expert course / Pflegefachkraft with three years in ventilation care and the 200-hour ventilation expert course
+  pflegehelferin         Procurement Intern (m/f/d)                           label  1.0 old  1 new  1  [students only]  has ['driving licence', 'trade certificate (de)']
+                         readers' blocker: requires business or economics studies (enrolled or graduate) and very good English / very good English (she has basic) and business studies
+  pflegehelferin         Werkstudent HR / People Management (m/w/d)           label  1.5 old  2 new  2  [students only]  has ['driving licence', 'trade certificate (de)']
+                         readers' blocker: a working-student post: requires university enrolment and very good English / None
+  pharmacy-technician    Pharmacy Clinical Services & Patient Safety Lead - I label  3.0 old  7 new  4  [staff only]  has ['driving licence', 'gphc']
+                         readers' blocker: needs a registered pharmacist with a master's in pharmacy and managerial experience / not a registered pharmacist (pharmacist registration and a pharmacy masters required)
+
+fresh3 pairs a reader blocked that the cap did not fire on:
+  apprentice-electrician Project Engineer - Mechanical                        label  2.0 old  4 new  3
+                         a: a degree or HND in mechanical engineering | b: degree or HND in mechanical engineering
+  apprentice-electrician 2027 Graduate Electrical Engineer - Edinburgh        label  4.0 old  6 new  6
+                         a: a 2:1 degree in electrical engineering (IET/CIBSE accredited) or equivalent | b: IET or CIBSE accredited electrical engineering degree
+  apprentice-electrician Graduate Infrastructure Electrical Engineer ( Energy label  3.5 old  5 new  5
+                         a: a 2:1 bachelor's or master's degree in electrical engineering | b: 2:1 degree in electrical engineering
+  apprentice-electrician Principal Electrical Engineer                        label  3.0 old  4 new  5
+                         a: acting as NICEIC Qualified Supervisor, which needs a completed Level 3 and an inspection-and-testing qualification | b: eligibility to act as NICEIC Qualified Supervisor
+  apprentice-electrician Technical Helpdesk Engineer Automotive 100% remote   label  3.0 old  3 new  3
+                         a: Master Technician (automotive) certification | b: automotive Master Technician status
+  groundworker           Project Engineer - Mechanical                        label  2.0 old  4 new  3
+                         a: None | b: a degree, HND or equivalent in mechanical engineering, listed as essential
+  groundworker           Legal Director - National PI                         label  1.0 old  1 new  1
+                         a: qualified solicitor | b: qualified solicitor in England and Wales
+  groundworker           Asset & Construction Manager – Commercial Rooftop So label  2.0 old  3 new  3
+                         a: None | b: a degree in electrical, mechanical or renewable-energy engineering
+  healthcare-assistant   Neonatal Staff Nurse                                 label  3.0 old  6 new  6
+                         a: NMC registration | b: NMC registration as a nurse
+  healthcare-assistant   Respiratory Nurse/ Physiotherapist                   label  4.0 old  7 new  6
+                         a: NMC or HCPC registration | b: registration as a nurse or physiotherapist
+  healthcare-assistant   Veterinary Surgeon                                   label  2.0 old  4 new  4
+                         a: RCVS membership | b: membership of the Royal College of Veterinary Surgeons
+  heftruckchauffeur      Medewerker Customer Service & Ordermanagement        label  3.5 old  3 new  3
+                         a: None | b: C-level English is required; his English is fair
+  heftruckchauffeur      NetSuite Consultant                                  label  2.5 old  2 new  2
+                         a: a completed HBO or WO degree | b: a completed HBO or WO degree is required; he has MBO 2
+  heftruckchauffeur      Financial Controller                                 label  1.0 old  2 new  2
+                         a: an HBO degree in accountancy or finance and control | b: an HBO degree in accountancy or finance and control is required
+  kierowca               IT Solution Architect (Software Development)         label  1.0 old  2 new  2
+                         a: English C1 | b: English at C1 is required; his English is basic
+  kierowca               AI Marketing Manager                                 label  1.0 old  1 new  1
+                         a: English C1 | b: English at C1 is required; his English is basic
+  kierowca               Solution Architect                                   label  1.0 old  2 new  2
+                         a: English B2 | b: English at B2 is required; his English is basic
+  kierowca               Solution Designer / Solution Architect               label  1.0 old  2 new  2
+                         a: English B2/C1 | b: English at B2/C1 is required; his English is basic
+  kierowca               Analityk systemów transportowych (k/m/x)             label  3.0 old  3 new  3
+                         a: English B2 | b: English at B2 is required; his English is basic
+  kierowca               Specjalista/ka ds. Ochrony Środowiska                label  1.0 old  3 new  3
+                         a: degree in environmental protection | b: a degree in environmental protection and a year of environmental work are mandatory
+  kierowca               Junior Product Manager                               label  3.0 old  1 new  1
+                         a: fluent English | b: English for free communication is required; his English is basic
+  kierowca               Java Tech Lead                                       label  1.0 old  1 new  1
+                         a: English C1 | b: English at C1 is required; his English is basic
+  kierowca               Principal / Expert Go Engineer                       label  1.0 old  1 new  1
+                         a: English B2/C1 | b: fluent English (B2/C1) is required; his English is basic
+  nursery-practitioner   Risk Analyst                                         label  1.0 old  2 new  2
+                         a: a degree in a quantitative field such as maths, physics or engineering | b: a degree in a quantitative field, listed as essential
+  nursery-practitioner   Senior Legal Counsel (UK & Germany)                  label  1.0 old  1 new  1
+                         a: qualified to practise law in Germany, with fluent German | b: qualified to practise law in Germany, and fluent German
+  oss                    Life Cycle Service Regional Manager | America Latina label  1.0 old  1 new  1
+                         a: an engineering degree and excellent English | b: engineering degree
+  oss                    Servizio Assistenza Tecnica                          label  1.0 old  4 new  4
+                         a: a diploma in electrotechnics, electronics or IT | b: electrical or electronics diploma
+  oss                    Addetto/a assistenza tecnica                         label  1.0 old  3 new  3
+                         a: a diploma as an electrical technician (perito elettrotecnico) | b: electrical technical diploma (perito elettrotecnico)
+  oss                    EXPORT AREA MANAGER AFRICA E MIDDLE EAST             label  1.0 old  1 new  1
+                         a: advanced English and good French | b: advanced English and good French
+  oss                    Fatmacista                                           label  2.5 old  2 new  2
+                         a: a pharmacy degree, the pharmacist's licence and registration with the Albo | b: pharmacy degree, licence and registration with the Albo dei Farmacisti
+  oss                    NEOLAUREATI/E IN ECONOMIA O GIURISPRUDENZA           label  1.5 old  2 new  2
+                         a: a degree in economics or law | b: degree in economics or law
+  oss                    Executive Office Assistant                           label  1.5 old  1 new  1
+                         a: excellent English, written and spoken | b: excellent written and spoken English (she has A1-A2)
+  pflegehelferin         Nachrichtenredakteur (m/w/d) - Lebensmittel Zeitung  label  1.0 old  2 new  2
+                         a: requires journalism training and experience at a business publication | b: journalism training
+  pflegehelferin         Mitarbeiter im Vertriebsinnendienst(m/w/d)           label  1.5 old  2 new  2
+                         a: requires a completed commercial training and good written English | b: completed commercial training
+  pflegehelferin         Business Process Analyst (m/w/d)                     label  1.0 old  2 new  2
+                         a: requires a business or IT degree and fluent English | b: degree in business, information systems or industrial engineering
+  pflegehelferin         Modelpflege Koordinator (m/w/d) PU System Tractor (X label  1.0 old  2 new  2
+                         a: requires a mechanical engineering degree or technician qualification | b: engineering degree or Techniker qualification
+  pflegehelferin         Mitarbeiter Grundstücks- und Gesellschaftsverwaltung label  1.5 old  2 new  2
+                         a: requires training as a legal or notary clerk or a comparable commercial qualification | b: legal, notary or commercial assistant training
+  pharmacy-technician    Senior Pharmacy Technician & Product Approver        label  4.0 old  9 new  9
+                         a: requires aseptic manufacturing experience, radiopharmaceuticals and the in-process checker qualification, none of which she has | b: no aseptic or pharmacy manufacturing experience and not a qualified in-process checker
+  pharmacy-technician    Advanced Pharmacist - Renal                          label  3.0 old  8 new  8
+                         a: not a pharmacist: needs an MPharm and GPhC registration as a pharmacist | b: not a registered pharmacist (MPharm and GPhC pharmacist registration required)
+  pharmacy-technician    Advanced Pharmacist - Unscheduled Care               label  3.5 old  8 new  8
+                         a: not a pharmacist: needs an MPharm and GPhC registration as a pharmacist | b: not a registered pharmacist (MPharm and GPhC pharmacist registration required)
+  pharmacy-technician    Clinical Monitoring Excellence Lead - FSP EMEA       label  2.0 old  2 new  3
+                         a: requires a bachelor's degree and 12 years in clinical research, which she does not have | b: no degree and no clinical research experience (12 years required)
+  vigilante              CONSULTOR/A EN SEGURIDAD INDUSTRIAL - Barcelona      label  1.0 old  5 new  5
+                         a: industrial engineering degree and fluent Catalan | b: an industrial engineering degree and high-level Catalan are required
+  vigilante              Administrador/a de Sistemas | Seguridad de Redes – C label  1.0 old  4 new  4
+                         a: CCNP Security certification | b: a current CCNP Security certification is required
+  vigilante              TÉCNICO/A AUDITOR/A DE SEGURIDAD AERONÁUTICA (TASA), label  2.5 old  4 new  4
+                         a: aeronautical engineering degree | b: an aeronautical engineering degree and five years as an aviation safety auditor are required
+  vigilante              Ingeniero de Sistemas de Mando y Control             label  1.0 old  3 new  3
+                         a: None | b: an engineering degree is required
+  vigilante              Consultor de Movilidad, Seguridad Vial, Transporte y label  3.0 old  3 new  3
+                         a: None | b: a university degree or higher vocational diploma in risk prevention, transport or logistics is required; he has ESO
+  vigilante              Supervisor/a de enfermería                           label  1.0 old  1 new  1
+                         a: nursing degree and registration | b: a nursing qualification and nursing team supervision are required
+  vigilante              Dpto. Calidad y Seguridad Alimentaria | Prácticas y  label  1.5 old  3 new  3
+                         a: university science or engineering degree | b: a university degree in biology, chemistry or similar is required
+  vigilante              Entrenador/a Personal a Domicilio INDEFINIDO         label  1.5 old  3 new  3
+                         a: None | b: a sports science degree or personal trainer qualification is expected
+
+fresh3 pairs whose shown number moved 2 or more:
+  villanyszerelo         Villanyszerelő                                       old  5 new  9 label  7.0  capped False
+  pharmacy-technician    Pharmacy Clinical Services & Patient Safety Lead - I old  7 new  4 label  3.0  capped True
+  healthcare-assistant   Nurse (Nights) - Hurlingham (Zero Hour Contract)     old  7 new  4 label  4.0  capped True
+  heftruckchauffeur      Logistiek medewerker                                 old  5 new  8 label 10.0  capped False
+  villanyszerelo         Villanyszerelő munkatárs (folyamatos műszak)         old  4 new  7 label  8.0  capped False
+  villanyszerelo         Villanyszerelő/Elektrikus                            old  3 new  6 label  7.0  capped False
+  villanyszerelo         Villanyszerelő / elektronikai műszerész              old  5 new  8 label  7.0  capped False
+  healthcare-assistant   Community Nurse - Buckley District Nursing Team      old  6 new  4 label  4.0  capped True
+  healthcare-assistant   Clinical Nurse Specialist Endometriosis              old  6 new  4 label  3.0  capped True
+  healthcare-assistant   Community Addictions Advanced Nurse Practitioner - I old  6 new  4 label  3.0  capped True
+  nursery-practitioner   Early Years Educator                                 old  8 new 10 label 10.0  capped False
+  heftruckchauffeur      Logistiek coördinator                                old  3 new  5 label  5.5  capped False
+  heftruckchauffeur      Teamleider Logistiek CityHub Inhouse | Den Bosch     old  2 new  4 label  7.0  capped False
+  villanyszerelo         Villanyszerelő karbantartó                           old  4 new  6 label  7.0  capped False
+  villanyszerelo         Villanyszerelő- karbantartó                          old  4 new  6 label  8.0  capped False
+  villanyszerelo         Villanyszerelő Technikus - Debrecen és vonzáskörzete old  4 new  6 label  8.0  capped False
+  villanyszerelo         Villanyszerelő munkatárs                             old  5 new  7 label  8.0  capped False
+  villanyszerelo         Karbantartó/Villanyszerelő                           old  4 new  6 label  6.0  capped False
