@@ -16,10 +16,11 @@ npm run build    # tsc --noEmit, then vite build
 |---|---|
 | `src/api.ts` | every request, the single-flight refresh, and `Schema<"Name">` for the generated types |
 | `src/App.tsx` | routing, the top bar, and where a signed-in user belongs |
-| `src/places.tsx` | the five places and the picture each is on the tab bar of a phone or tablet |
+| `src/places.tsx` | the places, the picture of each, and the four a phone's tab bar holds before More |
+| `src/more.tsx` | More, the phone bar's last tab: the other places, help and the theme, in a sheet |
 | `src/landing/` | the landing page, and the job card that works on it (`Demo.tsx`) |
 | `src/wheel.tsx` | the wheel, drawn once: the landing's halo, the sign-in art, the brand's mark |
-| `src/pages/Onboarding.tsx` | the three screens: your CV, what we found, done |
+| `src/pages/Onboarding.tsx` | the four screens: your CV (and cover letter), about you, what we found, done |
 | `src/pages/{Jobs,Words,Documents,Settings}Page.tsx` | the places after signup; Help is the support chat's |
 | `src/documents.ts` | a CV or cover letter for a job: start it, show it being made, hand over the PDF |
 | `src/pages/AlertsPage.tsx` | the person's named alerts: made, changed, switched off, and what each found |
@@ -60,8 +61,10 @@ one on the landing's root restyled every element under it on every frame (96% of
 2026-11-06). Animate `transform` and `opacity`; a `backdrop-filter` on an element also makes it the box its
 fixed children are placed against, which once moved the phone's tab bar.
 
-**Sizes.** A phone and a tablet held upright (to 900px) get the tab bar at the foot, pictures only; a
-laptop gets the words up top. The landing's hero follows the screen's height as well as its width, so a
+**Sizes.** A phone and a tablet held upright (to 900px) get an app's tab bar at the foot: four places and
+More, each a picture over its word, and only the name and the bell up top. A laptop gets the words up top.
+A tap shows no box of the phone's own (`-webkit-tap-highlight-color`), and a box under 16px makes an iPhone
+zoom in on it, so none is. The landing's hero follows the screen's height as well as its width, so a
 phone on its side shows the title and a 720px-tall laptop the buttons. Checked at 23 widths from 320 to
 2560px and five short screens (`tests/test_e2e_site.py` keeps the edge and the bars honest).
 

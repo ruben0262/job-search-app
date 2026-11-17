@@ -84,6 +84,24 @@
   box-sizing: border-box;
 }
 
+/* A tap answers in the control, not with the phone's own grey or blue box over whatever was touched (owner,
+   2026-11-17: "the clicks also bring up a blue box all over the site ... really disturbing"). A tap is a tap:
+   no wait to see whether a second makes it a zoom. And a control held down picks up no text and opens no
+   link menu, as in an app. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:is(a, button, input, select, textarea, label, summary, [role="button"], [role="switch"]) {
+  touch-action: manipulation;
+}
+
+:is(button, .button, nav a, summary) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 /* Colour only, and only on the elements that change with the theme or on hover. Transitioning
    `all` would animate layout on every re-render, which is how a simple page starts feeling slow. */
 body,
@@ -302,7 +320,9 @@ body {
   box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.45);
 }
 
-.place-short {
+.place-short,
+.place-icon,
+.more-tab {
   display: none;
 }
 
@@ -551,10 +571,10 @@ button.danger {
    **A new kind of plain button goes on this list**, or it borrows the purple's light at rest. */
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
-    .look-card, .toast-close, .bookmark, .bar-action, .again, .swatch),
+    .look-card, .toast-close, .bookmark, .bar-action, .again, .swatch, .more-tab, .more-row),
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
-    .look-card, .toast-close, .bookmark, .bar-action, .again, .swatch):hover:not([disabled]) {
+    .look-card, .toast-close, .bookmark, .bar-action, .again, .swatch, .more-tab, .more-row):hover:not([disabled]) {
   box-shadow: none;
 }
 
@@ -2083,7 +2103,8 @@ button.making::after {
   background: rgba(var(--accent-rgb), 0.06);
 }
 
-.drop:focus-within {
+/* Reached by the keyboard only: a tap focuses its hidden file box too, and put a box round it on a phone. */
+.drop:has(:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -2494,53 +2515,94 @@ button.toast-close:hover:not([disabled]) {
 
 /* ── the tab bar: phones and tablets ─────────────────────────────────────────────────────────── */
 
-/* The places become a tab bar along the bottom: where every phone app keeps them, in reach of the thumb.
-   A word each (owner, 2026-11-12: no pictures; before, a picture over the word), the one you are on lit
-   in the purple; frosted, and clear of the edges, as the landing page's dock is. Up to a tablet held
-   upright too: five or six words and three buttons do not fit a bar narrower than about 900px, and they
-   overran it there. Never wider than a phone's, so a tablet's is not a strip of far-apart pictures. */
+/* The places become an app's tab bar (owner, 2026-11-17: "doesn't look very app like ... too many buttons"):
+   across the foot of the screen, in reach of the thumb, four places and More, each a picture over its word.
+   The one you are on has its picture in a pill of the purple, as Android's own apps draw it. Frosted, and
+   clear of whatever the phone puts under it. Up to a tablet held upright too: the laptop's row of names does
+   not fit a bar narrower than about 900px. On a tablet the five keep to the middle, not a strip of
+   far-apart pictures. */
 @media (max-width: 900px) {
   /* Clear of the tab bar, whatever the phone puts under it. */
   .app {
-    padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
   }
 
   .places {
     position: fixed;
     z-index: 30;
-    left: 0.75rem;
-    right: 0.75rem;
-    bottom: calc(0.75rem + env(safe-area-inset-bottom));
-    max-width: 30rem;
-    margin-inline: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: 1fr;
-    gap: 2px;
-    padding: 0.25rem;
-    border: 1px solid var(--glass-line);
-    border-radius: 22px;
-    background: var(--glass);
+    grid-auto-columns: minmax(0, 6rem);
+    justify-content: center;
+    padding: 0.3rem max(0.5rem, env(safe-area-inset-right)) calc(0.3rem + env(safe-area-inset-bottom))
+      max(0.5rem, env(safe-area-inset-left));
+    border-top: 1px solid var(--glass-line);
+    /* Nearly solid: at the glass's 78%, the page's words read through the tabs' own in the light theme. */
+    background: rgba(var(--bg-rgb), 0.94);
     -webkit-backdrop-filter: blur(18px) saturate(160%);
     backdrop-filter: blur(18px) saturate(160%);
-    box-shadow: 0 16px 30px -16px rgb(0 0 0 / 60%);
   }
 
-  /* An admin's six fit a 320px phone: its widest word, "Settings", is about 44px at 11px, and a tab is
-     46px. The words grow to 13px by a 390px one. */
-  .places a {
-    position: relative;
+  .places a.in-more {
+    display: none;
+  }
+
+  /* A tab: its picture over its word, as tall as a thumb. More is a button that looks like the rest. */
+  .places :is(a, .more-tab) {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
-    min-height: 2.75rem;
-    padding: 0.3rem 0;
-    border-radius: 16px;
+    gap: 0.2rem;
+    min-width: 0;
+    min-height: 3.4rem;
+    padding: 0.2rem 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
     color: var(--dim);
-    font-size: clamp(0.6875rem, 3.35vw, 0.8125rem);
-    line-height: 1.2;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.1;
   }
 
-  .places a.on {
+  .places :is(a, .more-tab):hover {
+    background: none;
     color: var(--ink);
+  }
+
+  .places :is(a, .more-tab).on {
+    color: var(--ink);
+    background: none;
+    box-shadow: none;
+  }
+
+  .place-icon {
+    display: block;
+    width: 3.5rem;
+    height: 2rem;
+    padding: 0.25rem 1.125rem;
+    border-radius: 999px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: background-color 0.25s var(--out), color 0.25s var(--out), transform 0.2s var(--out);
+  }
+
+  .places :is(a, .more-tab).on .place-icon {
+    background: rgba(var(--accent-rgb), 0.2);
+    color: var(--accent-text);
+  }
+
+  /* Pressed: the picture gives a little, in place of the phone's own box. */
+  .places :is(a, .more-tab):active .place-icon {
+    transform: scale(0.9);
   }
 
   /* The short name: "My documents" is twice a tab's width on a small phone. Cut short rather than spill
@@ -2556,9 +2618,110 @@ button.toast-close:hover:not([disabled]) {
     text-overflow: ellipsis;
   }
 
-  .toasts {
-    bottom: calc(5.75rem + env(safe-area-inset-bottom));
+  .more-tab {
+    display: flex;
   }
+
+  /* Help and the theme are in More here, so the bar up top is the name and the bell. */
+  .nav-icons :is(.help, .theme-toggle) {
+    display: none;
+  }
+
+  .toasts {
+    bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* More's sheet: a row a place, help and the theme, each a picture, its name and, for a place, an arrow. */
+.more-list {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 0.75rem;
+}
+
+.more-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0.5rem 0.8rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  box-shadow: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  text-decoration: none;
+}
+
+.more-row:hover,
+.more-row:active,
+.more-row[aria-current="page"] {
+  background: rgba(var(--ink-rgb), 0.06);
+}
+
+.more-row:active {
+  transform: none;
+}
+
+.more-row > svg:first-child,
+.more-row .chevron {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.more-row > svg:first-child {
+  width: 1.4rem;
+  height: 1.4rem;
+  color: var(--muted);
+}
+
+.more-row > span {
+  flex: 1;
+}
+
+.more-row .chevron {
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--dim);
+}
+
+/* The theme's row ends in a switch, on for dark. */
+.more-row .knob {
+  position: relative;
+  flex: none;
+  width: 2.6rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--faint);
+  transition: background-color 0.2s var(--out);
+}
+
+.more-row .knob::after {
+  content: "";
+  position: absolute;
+  top: 0.1875rem;
+  left: 0.1875rem;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s var(--out);
+}
+
+.more-row[aria-checked="true"] .knob {
+  background: var(--accent);
+}
+
+.more-row[aria-checked="true"] .knob::after {
+  transform: translateX(1.1rem);
 }
 
 /* A laptop's narrow end: the words fit the bar if the spaces between them give a little. */
@@ -4877,6 +5040,12 @@ input[type="checkbox"]:disabled {
   align-items: start;
   font-size: 0.9375rem;
   line-height: 1.55;
+}
+
+/* The token's box at the page's size, not the step's: under 16px, an iPhone zooms the page in when it is
+   tapped (measured: the one box on the site under 16px, at 15px). */
+.telegram-steps input {
+  font-size: 1rem;
 }
 
 .telegram-steps .step-number {

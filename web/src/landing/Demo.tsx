@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 
 import { NEXT, STEPS } from "../pages/AppliedPage";
 import { MORE_PICTURES, PICTURES } from "../pages/JobsPage";
-import { PLACES } from "../places";
+import { MORE_ICON, PLACES, TABS } from "../places";
 import { Prompt } from "../ui";
 import { Mark } from "../wheel";
 
@@ -296,10 +296,11 @@ export function Phone() {
         await tap(".demo-card .job-bar .bar-action:not(.apply):not(.skip)", true);
         await pause(1600, timers);
         if (stopped) return;
-        for (const to of ["applied", "words", "jobs"] as const) {
+        // My search is under More, as in the app.
+        for (const to of ["applied", "more", "jobs"] as const) {
           await tap(`.phone-tabs [data-tab="${to}"]`);
           if (stopped) return;
-          go(to);
+          go(to === "more" ? "words" : to);
           if (to === "jobs") {
             setRound((n) => n + 1);
             continue;
@@ -334,8 +335,8 @@ export function Phone() {
       <div className="phone-screen" ref={screen}>
         <div className="phone-bar" aria-hidden="true">
           <span className="brand"><Mark />Mahoraga</span>
+          {/* The bell alone, as a phone's bar has it: help and the theme are in More. */}
           <span className="phone-icons">
-            <i><svg viewBox="0 0 24 24"><path d="M9.5 9.2a2.6 2.6 0 115 1c-.6 1-2.5 1.5-2.5 3M12 17h.01" /></svg></i>
             <i><svg viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 1112 0v5l1.5 2h-15zM10 20.5h4" /></svg></i>
           </span>
         </div>
@@ -361,14 +362,18 @@ export function Phone() {
             )}
           </div>
         </div>
-        {/* The app's tab bar: the tour taps it, and so can a visitor, for the three pages the phone has. */}
+        {/* The app's tab bar, as a phone draws it (`places.tsx`): the tour taps it, and so can a visitor, for the
+            three pages the phone has. My search is in More, so More opens it and is lit on it. */}
         <div className="phone-tabs" aria-hidden="true">
-          {PLACES.filter(([key]) => key !== "admin").map(([key, , , short]) => (
-            <span key={key} data-tab={key} className={key === page ? "on" : undefined}
-                  onClick={key === "jobs" || key === "applied" || key === "words" ? () => setPage(key) : undefined}>
-              {short}
-            </span>
-          ))}
+          {[...PLACES.filter(([key]) => TABS.includes(key)), ["more", "More", MORE_ICON, "More"] as const].map(
+            ([key, , icon, short]) => (
+              <span key={key} data-tab={key} className={(key === "more" ? page === "words" : key === page) ? "on" : undefined}
+                    onClick={key === "jobs" || key === "applied" ? () => setPage(key)
+                      : key === "more" ? () => setPage("words") : undefined}>
+                <svg viewBox="0 0 24 24">{icon}</svg>
+                {short}
+              </span>
+            ))}
         </div>
         {touch ? <span key={touch.n} className="phone-touch" style={{ left: touch.x, top: touch.y }} /> : null}
       </div>

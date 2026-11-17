@@ -8,6 +8,10 @@ import { App } from "./App";
 // First, before any page: the browser offers to install the site once, early, and the offer is kept there.
 import "./install";
 import "./styles.css";
+import { paintBars } from "./theme";
+
+// The phone's bars in the page's colour, once its stylesheet is in.
+paintBars();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

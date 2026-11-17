@@ -1,22 +1,30 @@
 /** Dark by default, light by choice. */
-import { useState, type MouseEvent } from "react";
+import { useSyncExternalStore, type MouseEvent } from "react";
 import { flushSync } from "react-dom";
 
 const KEY = "theme";
 type Choice = "light" | "dark";
 
-export function ThemeToggle() {
-  // `index.html` set it before the first paint, from the same key.
-  const [choice, setChoice] = useState<Choice>(
-    () => (document.documentElement.dataset.theme === "light" ? "light" : "dark"));
+// Who draws the theme: told when it changes, so the circle and More's row never disagree. Each kept its own
+// copy at first, and the circle switched to the theme the row had just switched to.
+const drawers = new Set<() => void>();
+
+/** The theme in use, and a switch to the other that grows it from what was tapped: the circle button, or More's
+ * row on a phone (`more.tsx`). Read from the page itself, where `index.html` set it before the first paint. */
+export function useTheme() {
+  const choice = useSyncExternalStore<Choice>((drawn) => {
+    drawers.add(drawn);
+    return () => void drawers.delete(drawn);
+  }, () => (document.documentElement.dataset.theme === "light" ? "light" : "dark"));
   const next = choice === "dark" ? "light" : "dark";
 
   // The new theme grows from the button as a circle where the browser can draw one; at once elsewhere.
-  const toggle = (event: MouseEvent<HTMLButtonElement>) => {
+  const toggle = (event: MouseEvent<HTMLElement>) => {
     const apply = () => {
       document.documentElement.dataset.theme = next;
       localStorage.setItem(KEY, next);
-      flushSync(() => setChoice(next));
+      flushSync(() => drawers.forEach((drawn) => drawn()));
+      paintBars();
     };
     if (!document.startViewTransition || matchMedia("(prefers-reduced-motion: reduce)").matches) {
       apply();
@@ -30,7 +38,18 @@ export function ThemeToggle() {
       { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${end}px at ${x}px ${y}px)`] },
       { duration: 650, easing: "cubic-bezier(.65, 0, .35, 1)", pseudoElement: "::view-transition-new(root)" }));
   };
+  return { choice, next, toggle };
+}
 
+/** The phone's own bars (the browser's, or the status bar of the app once installed) in the page's background,
+ * so the page runs to the edge of the screen: read from the stylesheet's `--bg`, never a second copy of it. */
+export function paintBars(): void {
+  const background = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  if (background) document.querySelector('meta[name="theme-color"]')?.setAttribute("content", background);
+}
+
+export function ThemeToggle() {
+  const { choice, next, toggle } = useTheme();
   return (
     <button
       type="button"

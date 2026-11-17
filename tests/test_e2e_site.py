@@ -193,6 +193,18 @@ def test_the_theme_button_is_a_circle_on_every_page_and_switches_the_theme(site,
         check(page, "membership")
         page.goto(f"{base}/#/")
         _onboard(page)
+        # Signed in on a phone, the theme is a switch in More, on for dark (owner, 2026-11-17), and the
+        # phone's own bars take the page's colour with it.
+        page.get_by_role("button", name="More", exact=True).click()
+        switch = page.get_by_role("dialog", name="More").get_by_role("switch", name="Dark mode")
+        expect(switch).to_have_attribute("aria-checked", "true")
+        expect(page.locator('meta[name="theme-color"]')).to_have_attribute("content", "#0f1013")
+        switch.click()
+        expect(page.locator("html")).to_have_attribute("data-theme", "light")
+        expect(switch).to_have_attribute("aria-checked", "false")
+        expect(page.locator('meta[name="theme-color"]')).to_have_attribute("content", "#f5f6f8")
+        page.keyboard.press("Escape")
+        page.set_viewport_size({"width": 1280, "height": 800})
         check(page, "jobs")
         browser.close()
 
@@ -203,10 +215,10 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
     after that was true. A big one is said as the round number it is at least, so it reads at a glance
     and stays true (owner, 2026-11-07). The promise is the biggest words on the page, and How it works says
     what the app does for them rather than how they sign up; the five market figures are gone (owner,
-    2026-11-17). Sign in and sign up follow the address, going back included. And
-    on a phone each tab is a word, with no picture (owner, 2026-11-12; a picture over the word from
-    2026-11-07), each opening its page. Its card says where people apply: on the job's own site, never here
-    (owner, 2026-11-06)."""
+    2026-11-17). Sign in and sign up follow the address, going back included. And on a phone the bar is an
+    app's (owner, 2026-11-17): four places and More, each a picture over its word, the rest in More's sheet,
+    and a tap shows no box of the phone's own. Its card says where people apply: on the job's own site, never
+    here (owner, 2026-11-06)."""
     from libs.db import database, insert
     from libs.db.models import AtsToken, CountryCount
     from libs.settings import HARVEST_SOURCES
@@ -281,14 +293,26 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
 
         _sign_up(page, base, email, capsys)
         _onboard(page)
-        places = page.locator("nav .places a")
-        expect(places).to_have_text(["Jobs", "Applied", "Search", "Alerts", "Docs", "Settings"],
-                                    use_inner_text=True)
-        expect(places.locator("svg")).to_have_count(0)
-        page.get_by_role("link", name="Search", exact=True).click()
-        expect(page.get_by_role("heading", name="The jobs you want", level=1)).to_be_visible()
-        expect(page.get_by_role("link", name="Search", exact=True)).to_have_attribute("aria-current", "page")
+        _a_phones_bar(page)
         browser.close()
+
+
+def _a_phones_bar(page) -> None:
+    """An app's (owner, 2026-11-17): four places and More, each a picture over its word, the rest in More's
+    sheet, More lit on one of them, and no box of the phone's own where a tab is tapped."""
+    bar = page.locator("nav .places > :is(a, button):visible")
+    expect(bar).to_have_text(["Jobs", "Applied", "Alerts", "Docs", "More"], use_inner_text=True)
+    expect(bar.locator("svg")).to_have_count(5)
+    assert bar.evaluate_all("tabs => tabs.map((tab) => getComputedStyle(tab).webkitTapHighlightColor)") \
+        == ["rgba(0, 0, 0, 0)"] * 5, "a tap draws the phone's own box"
+    page.get_by_role("button", name="More", exact=True).click()
+    more = page.get_by_role("dialog", name="More")
+    expect(more.locator(".more-row")).to_have_text(["My search", "Settings", "Help and contact", "Dark mode"],
+                                                    use_inner_text=True)
+    more.get_by_role("link", name="My search").click()
+    expect(page.get_by_role("heading", name="The jobs you want", level=1)).to_be_visible()
+    expect(more).to_have_count(0)
+    expect(page.get_by_role("button", name="More", exact=True)).to_have_class(re.compile(r"\bon\b"))
 
 
 def test_a_visitor_asks_a_person_a_question_from_the_foot_of_the_landing_page(site, capsys):
@@ -341,16 +365,18 @@ def test_the_phone_goes_through_the_site_by_itself_until_a_visitor_touches_it(si
         # It hears back on Applied, and the first application moves along its track (owner, 2026-11-17).
         track = page.locator(".phone .progress ol").first
         expect(track.locator("li.done")).to_have_text(["Applied", "Interview"], timeout=6000)
-        expect(on).to_have_attribute("data-tab", "words", timeout=8000)
+        # My search, which is under More, as in the app (owner, 2026-11-17).
+        expect(on).to_have_attribute("data-tab", "more", timeout=8000)
+        expect(page.locator(".phone").get_by_text("The jobs you want")).to_be_visible()
         assert page.evaluate("scrollY") == where, "the tour moved the visitor's page"
         titles = page.locator(".alert-title")
         newest = titles.first.inner_text()
         expect(titles.nth(1)).to_have_text(newest, timeout=6000)
 
-        page.locator(".phone-tabs [data-tab=words]").click()
-        expect(on).to_have_attribute("data-tab", "words")
+        page.locator(".phone-tabs [data-tab=more]").click()
+        expect(on).to_have_attribute("data-tab", "more")
         page.wait_for_timeout(5000)
-        expect(on).to_have_attribute("data-tab", "words")
+        expect(on).to_have_attribute("data-tab", "more")
 
         still = browser.new_context(viewport={"width": 1280, "height": 900}, reduced_motion="reduce")
         page = still.new_page()
@@ -1053,18 +1079,23 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         if shot := os.environ.get("E2E_SHOT"):
             page.screenshot(path=shot, full_page=True)
 
-        # The smallest phone: an admin's seven tabs still fit, each a whole word, and the bar is
-        # at the very top of the screen (owner, 2026-11-07). Admin was hidden there, and a phone's page began
-        # 16px down.
+        # The smallest phone: the four tabs and More fit, each a whole word, an admin's Admin is in More
+        # (owner, 2026-11-17), and the bar up top is at the very top of the screen (owner, 2026-11-07: a
+        # phone's page began 16px down).
         page.set_viewport_size({"width": 320, "height": 640})
         page.goto(f"{base}/#/")
-        expect(tabs).to_have_text(["Jobs", "Applied", "Search", "Alerts", "Docs", "Admin", "Settings"],
-                                  use_inner_text=True)
-        expect(tabs.filter(has_text="Admin")).to_be_visible()
-        assert page.evaluate("""() => [...document.querySelectorAll("nav .places a")].every((tab) => {
-            const word = tab.querySelector(".place-short");
-            return word.scrollWidth <= word.clientWidth && tab.getBoundingClientRect().right <= innerWidth;
-        })"""), "a word cut short, or a tab past the screen's edge"
+        expect(page.locator("nav .places > :is(a, button):visible")).to_have_text(
+            ["Jobs", "Applied", "Alerts", "Docs", "More"], use_inner_text=True)
+        assert page.evaluate("""() => [...document.querySelectorAll("nav .places > :is(a, button)")]
+            .filter((tab) => tab.getClientRects().length).every((tab) => {
+                const word = tab.querySelector(".place-short");
+                return word.scrollWidth <= word.clientWidth
+                    && tab.getBoundingClientRect().right <= innerWidth;
+            })"""), "a word cut short, or a tab past the screen's edge"
+        page.get_by_role("button", name="More", exact=True).click()
+        expect(page.get_by_role("dialog", name="More").locator(".more-row")).to_have_text(
+            ["My search", "Admin", "Settings", "Help and contact", "Dark mode"], use_inner_text=True)
+        page.keyboard.press("Escape")
         page.evaluate("scrollTo(0, 0)")
         assert page.locator(".app > nav").bounding_box()["y"] == 0, "space above the bar"
         browser.close()

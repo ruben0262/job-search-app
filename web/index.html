@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- To the screen's edges, so the tab bar reaches the foot of a phone and keeps clear of what is there
+         (`env(safe-area-inset-bottom)`); the phone's own bars take the page's colour (`theme.tsx` paintBars). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1013" />
     <meta
       name="description"
       content="New jobs from LinkedIn, job boards and company career pages, in one list, the moment they're posted. A CV made for each in one tap, made to pass official ATS checks. Free to start."

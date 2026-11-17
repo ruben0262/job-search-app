@@ -1236,23 +1236,23 @@
 
 .landing .phone-tabs span[data-tab="jobs"],
 .landing .phone-tabs span[data-tab="applied"],
-.landing .phone-tabs span[data-tab="words"] {
+.landing .phone-tabs span[data-tab="more"] {
   cursor: pointer;
 }
 
+/* The app's tab bar on a phone (`styles.css`): across the foot of the screen, a picture over each word, the
+   page's own in a pill of the purple. */
 .landing .phone-tabs {
   position: absolute;
   z-index: 3;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  padding: 5px;
-  border: 1px solid var(--glass-line);
-  border-radius: 22px;
+  padding: 6px 6px 16px;
+  border-top: 1px solid var(--glass-line);
   background: rgba(var(--bg-rgb), 0.94);
-  box-shadow: 0 16px 30px -16px rgba(0, 0, 0, 0.6);
 }
 
 .landing .phone-tabs span {
@@ -1260,17 +1260,30 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  height: 40px;
-  border-radius: 16px;
+  gap: 3px;
   color: var(--dim);
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.landing .phone-tabs svg {
+  width: 44px;
+  height: 26px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .landing .phone-tabs span.on {
-  background: rgba(var(--accent-rgb), 0.16);
-  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.45);
+  color: var(--ink);
+}
+
+.landing .phone-tabs span.on svg {
+  background: rgba(var(--accent-rgb), 0.2);
   color: var(--accent-text);
 }
 

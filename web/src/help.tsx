@@ -35,7 +35,7 @@ const ANSWERS: [string, string][] = [
    "Sign out, then tap “Forgot your password?” on the sign-in page. We email you a link to set a new one."],
 ];
 
-/** The "?" beside the bell, and what it opens over the page. */
+/** The "?" beside the bell on a laptop, and what it opens over the page. A phone has it in More (`more.tsx`). */
 export function HelpButton() {
   const [open, setOpen] = useState(false);
   return (
@@ -43,13 +43,20 @@ export function HelpButton() {
       <button type="button" className="bell help" aria-label="Help and contact" title="Help and contact"
               onClick={() => setOpen(true)}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M7.8 8.6a4.2 4.2 0 1 1 6.1 3.8c-1.1.5-1.9 1.5-1.9 2.7v.7M12 20h.01" stroke="currentColor"
-                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={HELP_ICON} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
-      {open ? <Sheet title="Help and contact" onClose={() => setOpen(false)}><HelpAndContact /></Sheet> : null}
+      {open ? <HelpSheet onClose={() => setOpen(false)} /> : null}
     </>
   );
+}
+
+/** The question mark, here and in More. */
+export const HELP_ICON = "M7.8 8.6a4.2 4.2 0 1 1 6.1 3.8c-1.1.5-1.9 1.5-1.9 2.7v.7M12 20h.01";
+
+/** Help and contact over the page, wherever it was opened from. */
+export function HelpSheet({ onClose }: { onClose: () => void }) {
+  return <Sheet title="Help and contact" onClose={onClose}><HelpAndContact /></Sheet>;
 }
 
 function HelpAndContact() {

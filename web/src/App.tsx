@@ -26,7 +26,8 @@ import { UpgradePage } from "./pages/UpgradePage";
 import { Verify } from "./pages/Verify";
 import { REVIEW, WordsPage } from "./pages/WordsPage";
 import { NotificationBell } from "./notifications";
-import { PLACES } from "./places";
+import { More } from "./more";
+import { PLACES, TABS } from "./places";
 import { AI_ACCOUNTS } from "./aiaccounts";
 import { TEMPLATES } from "./templates";
 import { ThemeToggle } from "./theme";
@@ -162,16 +163,20 @@ export function App() {
       <div className="app">
         <nav>
           <Brand href="#/" />
-          {/* A row of links up top on a laptop; a tab bar along the bottom on a phone, in words alone: its short
-              name each (owner, 2026-11-12: no pictures, on any screen). */}
+          {/* A row of names up top on a laptop (owner, 2026-11-12). On a phone, an app's tab bar along the
+              bottom: the four in `TABS`, each a picture over its short name, and More for the rest, help and the
+              theme (owner, 2026-11-17). */}
           <div className="places">
-            {PLACES.filter(([key]) => key !== "admin" || dashboard.is_admin).map(([key, label, , short]) => (
-              <a key={key} href={key === "jobs" ? "#/" : `#/${key}`} className={section === key ? "on" : ""}
+            {PLACES.filter(([key]) => key !== "admin" || dashboard.is_admin).map(([key, label, icon, short]) => (
+              <a key={key} href={key === "jobs" ? "#/" : `#/${key}`}
+                 className={`${section === key ? "on" : ""}${TABS.includes(key) ? "" : " in-more"}`.trim()}
                  aria-current={section === key ? "page" : undefined}>
+                <svg className="place-icon" viewBox="0 0 24 24" aria-hidden="true">{icon}</svg>
                 <span className="place-name">{label}</span>
                 <span className="place-short">{short}</span>
               </a>
             ))}
+            <More admin={dashboard.is_admin} section={section} />
           </div>
           <div className="nav-icons">
             <HelpButton />

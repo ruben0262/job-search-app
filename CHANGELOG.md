@@ -14,6 +14,38 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17, last of all — A phone's menu is an app's, and a tap shows no box
+
+The owner: "the menu on the phone in app, should also be worked on because it doesn't look very app like ... we
+have too many buttons on the nav bar on phones". Asked, the owner chose pictures and words, four tabs and More,
+which ends 2026-11-12's "words alone". Then, mid-way: "on mobile the clicks also bring up a blue box all over the
+site, when we click nav bar icons, or dark/light mode button or most things on the site, can we please remove
+those because its really disturbing. lets smoothen the mobile experience here as well".
+
+- **The tab bar** (to 900px) runs across the foot of the screen, as an app's does: Jobs, Applied, Alerts, Docs
+  and More (`TABS` in `places.tsx`), each a picture over its word. The page you are on has its picture in a pill
+  of the purple, as Android's own apps draw it. It was six words (seven for an admin) in a floating dock. On a
+  tablet the five keep to the middle.
+- **More** (`more.tsx`) opens a sheet: My search, Settings, Admin for an admin, Help and contact, and a Dark mode
+  switch. It is lit while one of its places is open. The phone's bar up top is the name and the bell; a laptop's
+  is as it was. The sheet is drawn under the page's body, not inside the bar, whose own rules laid its rows out
+  as tabs.
+- **One theme, read from the page.** The circle and More's switch each kept their own copy of it, and the circle
+  switched to the theme the switch had just switched to (the theme test found it). Both now read the page's own
+  (`useTheme`). The phone's own bars, the browser's and an installed app's status bar, take the page's colour,
+  read from `--bg` (`paintBars`, `<meta name="theme-color">`).
+- **A tap shows no box.** The phone's own highlight is off (`-webkit-tap-highlight-color`); a tab's picture gives
+  a little when pressed instead. The upload area's outline shows for the keyboard only: a tap focused its hidden
+  file box and drew it. A tap no longer waits to see if a second makes a zoom (`touch-action: manipulation`),
+  and a control held down picks up no text. The page runs to the screen's edges (`viewport-fit=cover`), so the
+  bar reaches the foot and keeps clear of the home bar. The one box on the site under 16px, which an iPhone zooms
+  in on when it is tapped, is 16px: Telegram's bot token, at 15px (measured on every page).
+- **The landing page's phone** draws the same bar, and its tour reaches My search through More.
+- Tests: the phone's bar (five tabs with pictures, no tap box, More's rows, More lit on My search), the smallest
+  phone (whole words, Admin in More), the theme switch in More (and the bars' colour with it), the tour.
+- Gates: ruff clean over the whole tree; site built; test_e2e_site 34 passed (the theme test failed first, on
+  the two copies of the theme, and passed once they were one).
+
 ## 2026-11-17, last of all — Setting up shows the cover letter, and About you is a screen of its own
 
 The owner: "for the onboarding at the moment only the upload cv appears, we should give option for the user to
