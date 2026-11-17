@@ -2408,6 +2408,132 @@ def test_an_alert_is_made_for_a_company_and_shows_what_it_found(site, capsys):
         browser.close()
 
 
+
+def test_a_phone_is_asked_to_install_the_app_once_a_visit_until_it_is_and_told_why(site, capsys):
+    """Owner, 2026-11-17: installing the app pushed on a phone for Starter and Member, "in front of users
+    until they do install it", with the benefits. On an iPhone: the sheet rises by itself once a visit, saying
+    why and how (Share, Add to Home Screen); "Get the app" stays up top and first in More; a new visit asks
+    again; and once the app is opened from the home screen, no phone of theirs is asked again."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        context = browser.new_context(viewport={"width": 390, "height": 844}, user_agent=IPHONE,
+                                      has_touch=True, is_mobile=True)
+        page = context.new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+
+        sheet = page.get_by_role("dialog", name="Get the Mahoraga app")
+        expect(sheet).to_be_visible()
+        for why in ("Alerts on your lock screen", "One tap to your jobs", "Full screen"):
+            expect(sheet.get_by_text(why)).to_be_visible()
+        expect(sheet).to_contain_text("On an iPhone, they only arrive through the app.")
+        expect(sheet.get_by_role("list", name="How to add it").get_by_role("listitem")).to_have_count(3)
+        expect(sheet).to_contain_text("Tap Add to Home Screen")
+        sheet.get_by_role("button", name="Got it").click()
+        expect(sheet).to_have_count(0)
+        _asked_again_only_by_hand(page, sheet)
+
+        again = context.new_page()
+        again.goto(f"{base}/#/")
+        expect(again.get_by_role("dialog", name="Get the Mahoraga app")).to_be_visible()
+        again.close()
+        _opened_as_the_app(context, base, email)
+        browser.close()
+
+
+def _asked_again_only_by_hand(page, sheet) -> None:
+    """Said "not now", the same visit is not asked by itself again; "Get the app" is up top, fitting the bar
+    of the smallest phone, and first in More."""
+    page.reload()
+    expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+    page.wait_for_timeout(1500)
+    expect(sheet).to_have_count(0)
+    for width in (320, 360, 390):
+        page.set_viewport_size({"width": width, "height": 844})
+        assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"the bar with Get the app at {width}px"
+    page.get_by_role("button", name="Get the app").click()
+    expect(sheet).to_be_visible()
+    sheet.get_by_role("button", name="Got it").click()
+    page.get_by_role("button", name="More", exact=True).click()
+    expect(page.get_by_role("dialog", name="More").locator(".more-row").first).to_have_text("Get the app")
+    page.keyboard.press("Escape")
+
+
+def _opened_as_the_app(context, base: str, email: str) -> None:
+    """The site opened from the home screen says so (`install.tsx`, an iPhone's `navigator.standalone`), and
+    from then on a phone's browser is not asked either: an iPhone's cannot tell by itself."""
+    from libs.db import database
+    from libs.db.models import User
+
+    app = context.new_page()
+    app.add_init_script("Object.defineProperty(navigator, 'standalone', {get: () => true})")
+    app.goto(f"{base}/#/")
+    expect(app.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+    expect(app.get_by_role("button", name="Get the app")).to_have_count(0)
+    for _ in range(50):
+        if database()[User.COLLECTION].find_one({"email": email}).get("app_opened_at"):
+            break
+        app.wait_for_timeout(100)
+    else:
+        raise AssertionError("the app, opened, did not say so")
+    browser_tab = context.new_page()
+    browser_tab.goto(f"{base}/#/")
+    expect(browser_tab.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+    browser_tab.wait_for_timeout(1500)
+    expect(browser_tab.get_by_role("dialog", name="Get the Mahoraga app")).to_have_count(0)
+    expect(browser_tab.get_by_role("button", name="Get the app")).to_have_count(0)
+
+
+def test_the_browsers_offer_installs_the_app_and_a_laptop_or_a_free_plan_is_not_asked(site, capsys):
+    """Where the browser offers to install (`beforeinstallprompt`, Chrome on Android), the sheet's own button
+    asks it, and installed, it is said and asked no more. A laptop is not asked, nor a plan without alerts."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        phone = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+        page = phone.new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        sheet = page.get_by_role("dialog", name="Get the Mahoraga app")
+        expect(sheet.get_by_role("list", name="How to add it")).to_be_visible()
+
+        laptop = browser.new_context(viewport={"width": 1280, "height": 800})
+        laptop.add_cookies(phone.cookies())
+        desk = laptop.new_page()
+        desk.goto(f"{base}/#/")
+        expect(desk.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+        desk.wait_for_timeout(1500)
+        expect(desk.get_by_role("dialog", name="Get the Mahoraga app")).to_have_count(0)
+        expect(desk.get_by_role("button", name="Get the app")).to_have_count(0)
+
+        # The browser's offer, as Chrome makes it once the site can be installed.
+        page.evaluate("""() => {
+            const offer = new Event("beforeinstallprompt", {cancelable: true});
+            offer.prompt = async () => { window.asked = true; };
+            offer.userChoice = Promise.resolve({outcome: "accepted"});
+            window.dispatchEvent(offer);
+        }""")
+        sheet.get_by_role("button", name="Install the app").click()
+        assert page.evaluate("window.asked") is True, "the browser's own question was not asked"
+        page.evaluate("window.dispatchEvent(new Event('appinstalled'))")
+        expect(sheet).to_have_count(0)
+        expect(page.get_by_text("Mahoraga is on your home screen.")).to_be_visible()
+        expect(page.get_by_role("button", name="Get the app")).to_have_count(0)
+        _a_free_phone_is_not_asked(browser, base, f"free.{email}", capsys)
+        browser.close()
+
+
+def _a_free_phone_is_not_asked(browser, base: str, email: str, capsys) -> None:
+    """The app carries alerts, which a free plan has none of (owner: "users that are starter or member")."""
+    phone = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+    page = phone.new_page()
+    _sign_up(page, base, email, capsys, member=False)
+    _onboard(page)
+    page.wait_for_timeout(1500)
+    expect(page.get_by_role("dialog", name="Get the Mahoraga app")).to_have_count(0)
+    expect(page.get_by_role("button", name="Get the app")).to_have_count(0)
+
 def test_the_site_installs_as_an_app_and_a_job_it_pushes_shows_the_wheel(site, capsys, tmp_path):
     """Alerts on the phone without an app store (owner, 2026-11-17: "download it through chrome as a mini
     app"): Chrome finds nothing missing to install the site, and the Alerts page offers it; a job pushed to

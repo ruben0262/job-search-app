@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api, type Dashboard } from "./api";
 import { HelpButton } from "./help";
+import { GetAppButton, InstallSheet, useAsked } from "./install";
 import { Landing } from "./landing/Landing";
 import { stopped } from "./leave";
 import { forgetMarks } from "./marks";
@@ -100,6 +101,8 @@ export function App() {
   // list: Jobs is where everybody lands, and it reads that itself (measured locally: 71 ms, the rest
   // under 10 ms each).
   const ready = session.state === "in" && session.dashboard.stage === "ready";
+  // Whether to ask this phone to install the app (`install.tsx`): here, before any page returns, as a hook is.
+  const asked = useAsked(session.state === "in" && session.dashboard.stage === "ready" ? session.dashboard : null);
   const admin = session.state === "in" && session.dashboard.stage === "ready" && session.dashboard.is_admin;
   useEffect(() => {
     if (ready) {
@@ -176,9 +179,10 @@ export function App() {
                 <span className="place-short">{short}</span>
               </a>
             ))}
-            <More admin={dashboard.is_admin} section={section} />
+            <More admin={dashboard.is_admin} section={section} asked={asked} />
           </div>
           <div className="nav-icons">
+            {asked ? <GetAppButton /> : null}
             <HelpButton />
             <NotificationBell />
             <ThemeToggle />
@@ -215,6 +219,7 @@ export function App() {
         </main>
       </div>
       <Toasts />
+      <InstallSheet asked={asked} />
     </>
   );
 }

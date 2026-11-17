@@ -25,7 +25,7 @@ npm run build    # tsc --noEmit, then vite build
 | `src/documents.ts` | a CV or cover letter for a job: start it, show it being made, hand over the PDF |
 | `src/pages/AlertsPage.tsx` | the person's named alerts: made, changed, switched off, and what each found |
 | `src/alerts.tsx`, `src/push.ts`, `public/sw.js` | where alerts reach somebody: Telegram through their own bot, and this phone's or browser's notifications |
-| `src/install.ts`, `public/manifest.webmanifest` | the site as an app on a phone's home screen: the browser's offer kept from the first moment; the icons are `branding/build.py`'s |
+| `src/install.tsx`, `public/manifest.webmanifest` | the site as an app on a phone's home screen: the browser's offer kept from the first moment, and a phone asked once a visit until the app is opened (`POST /account/app`), with "Get the app" up top and in More; the icons are `branding/build.py`'s |
 | `src/ui.tsx` | the pieces every page needs: word chips, the upload button, errors |
 
 ## Look

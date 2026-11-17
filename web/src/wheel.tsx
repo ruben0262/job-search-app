@@ -61,9 +61,10 @@ export function Mark() {
 
 /** The wordmark: a link home, or only the name where there is nowhere else to go yet (onboarding). */
 export function Brand({ href }: { href?: string }) {
+  // The name apart, so a narrow phone's bar can keep the wheel alone when "Get the app" is beside it.
   return href ? (
-    <a className="brand" href={href}><Mark />Mahoraga</a>
+    <a className="brand" href={href} aria-label="Mahoraga"><Mark /><span className="brand-name">Mahoraga</span></a>
   ) : (
-    <span className="brand"><Mark />Mahoraga</span>
+    <span className="brand"><Mark /><span className="brand-name">Mahoraga</span></span>
   );
 }

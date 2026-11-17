@@ -14,6 +14,44 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17, last of all — A phone is asked to install the app until it does, and told why
+
+The owner: "I think we can make the app more obvious to install on phones through the browser, when logging in,
+for users that are starter or member ... alerts page is good but it isn't good enough ... issue with a popup you
+can 'x' is that it goes, we need to make sure its infront of users until they do install it, perhaps when we tell
+them we show the benefits too."
+
+- **A sheet, once a visit** (`web/src/install.tsx`), on a touch screen, for a plan with alerts, until the app is
+  installed. It rises a moment after the page draws: the app's own icon with a job waiting on it, then why (alerts
+  on the lock screen, and on an iPhone "they only arrive through the app"; one tap to your jobs; full screen), then
+  how. Where the browser offers to install (Chrome, Edge, Samsung Internet) the how is one button, its own
+  question. On an iPhone or iPad it is three steps drawn as the phone draws them: Share, Add to Home Screen, open
+  it from the home screen and sign in once. Elsewhere it is the browser's menu, then Install app. "Not now" or
+  "Got it" closes it for this visit only (`sessionStorage`); the next visit asks again.
+- **"Get the app", always there until then**: up top beside the bell, in the purple, and first in More. Under
+  360px the bar was wider than the screen with it, and the bell went off the edge, so the wheel stands for the
+  name there. The Alerts page's button opens the same sheet: one way to install, not two.
+- **Done is the app opened from a home screen** (`display-mode: standalone`, or an iPhone's `navigator.standalone`),
+  or installed from the browser's offer (`appinstalled`). Either is said to the server once (`POST /account/app`,
+  `User.app_opened_at`), and the dashboard's `app_installed` stops the asking on every phone of theirs. An iPhone's
+  browser cannot tell that the app is on the home screen, and a link in an email opens there.
+- **Not asked**: a laptop, a plan without alerts (the owner: "users that are starter or member"), the app itself.
+- Help's answer about phones says to get the app first.
+- `look_colour`'s comment in `libs/db/models/user.py` was 4 characters over ruff's line, committed so with the
+  colour, whose "ruff clean" covered the files it named and not the model. Wrapped here, and ruff ran over the
+  whole tree before this commit.
+- Tests: the API (`app_installed` false, then true once said, the first time kept, signed out refused); an iPhone
+  (the sheet by itself with the three reasons and the three steps, not by itself again that visit, "Get the app"
+  fitting the bar at 320, 360 and 390 px and first in More, asked again on a new visit, and never again once the
+  app is opened); Chrome's offer (the sheet's button asks the browser's question, and installed it is said and
+  asked no more); a laptop and a free plan not asked.
+- Gates: lint-imports 2 kept; ruff clean over the whole tree; the schema on an empty local database; the contract
+  regenerated and current; the site built. The full suite twice. First: 5 failed, 1,684 passed, 7 skipped. The 5
+  were waits of 5 to 8 s for a page, all in the same 30 s while four workers drew every look's PDF, and all 5
+  passed alone. Then: 1 failed, 1,688 passed, 7 skipped. The one was the sign-up test's 1.5 s bound (sign in took
+  1.63 s under four workers); it passed alone, as it had earlier the same day. Skipped: Stripe's test keys (5),
+  the Postgres copy and the reference instance, none of them here.
+
 ## 2026-11-17, last of all — A phone's menu is an app's, and a tap shows no box
 
 The owner: "the menu on the phone in app, should also be worked on because it doesn't look very app like ... we

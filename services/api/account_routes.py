@@ -185,6 +185,17 @@ class AccountOut(BaseModel):
     consent_version: str | None
 
 
+@router.post("/account/app", status_code=status.HTTP_204_NO_CONTENT)
+def app_opened(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> Response:
+    """The site was opened as an app from a home screen, or installed from the browser's offer: it stops
+    asking them to install it (`ReadyDashboard.app_installed`). Kept the first time, said once."""
+    first = db[User.COLLECTION].update_one({"_id": user_id, "app_opened_at": None},
+                                           {"$set": {"app_opened_at": now()}}).modified_count
+    if first:
+        audit(logger, "account.app_opened", user=user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/account")
 def account(db: Database = Depends(get_db),
             user_id: _uuid.UUID = Depends(current_user)) -> AccountOut:

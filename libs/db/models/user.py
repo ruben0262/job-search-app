@@ -75,9 +75,13 @@ class User(Document):
     # picked in My documents (owner, 2026-11-07). None until they pick one: `libs.templates.DEFAULT`.
     cv_template: str | None = None
     cover_template: str | None = None
-    # The colour both are made in: an id in `libs.templates.COLOURS`, picked beside the looks (owner, 2026-11-17).
-    # None until they pick one: each look's own.
+    # The colour both are made in: an id in `libs.templates.COLOURS`, picked beside the looks (owner,
+    # 2026-11-17). None until they pick one: each look's own.
     look_colour: str | None = None
+    # When the site was first opened as an app from a phone's home screen, or installed from the browser's
+    # own offer (`POST /account/app`): from then on it stops asking them to install it, on every phone (owner,
+    # 2026-11-17: "in front of users until they do install it"). An iPhone's browser cannot tell otherwise.
+    app_opened_at: datetime | None = None
     # This account's data key, wrapped by the platform key (`libs.secrets`).
     wrapped_dek: bytes | None = None
     # Their membership: a Stripe subscription, seven days free and then billed (owner, 2026-11-11). Stripe is

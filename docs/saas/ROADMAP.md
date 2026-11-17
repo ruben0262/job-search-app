@@ -3794,8 +3794,10 @@ there. Built:
 
 - The manifest's icons, the brand kit's (`branding/build.py` writes the site's copies): Chrome's own check finds
   nothing missing and offers to install, where before it found two icons missing.
-- An "Install the app" button on the Alerts page, from the browser's own offer (`web/src/install.ts`), and Share →
-  Add to Home Screen said in words on an iPhone or iPad.
+- An "Install the app" button on the Alerts page, from the browser's own offer (`web/src/install.tsx`), and Share →
+  Add to Home Screen said in words on an iPhone or iPad. ✅ 2026-11-17, last of all: asked of a phone for Starter
+  and Member until the app is opened from a home screen (`POST /account/app`): a sheet once a visit with why and
+  how, and "Get the app" up top and in More (owner: "in front of users until they do install it").
 - The notification's icon and its status-bar badge, and a tap that takes the open tab, or the installed app, to the
   job (the worker takes charge of the tab at once).
 

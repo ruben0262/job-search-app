@@ -571,10 +571,12 @@ button.danger {
    **A new kind of plain button goes on this list**, or it borrows the purple's light at rest. */
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
-    .look-card, .toast-close, .bookmark, .bar-action, .again, .swatch, .more-tab, .more-row),
+    .look-card, .toast-close, .bookmark, .bar-action, .again, .swatch, .more-tab, .more-row,
+    .get-app-pill),
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
-    .look-card, .toast-close, .bookmark, .bar-action, .again, .swatch, .more-tab, .more-row):hover:not([disabled]) {
+    .look-card, .toast-close, .bookmark, .bar-action, .again, .swatch, .more-tab, .more-row,
+    .get-app-pill):hover:not([disabled]) {
   box-shadow: none;
 }
 
@@ -2630,6 +2632,203 @@ button.toast-close:hover:not([disabled]) {
   .toasts {
     bottom: calc(5rem + env(safe-area-inset-bottom));
   }
+}
+
+/* Under 360px the name, "Get the app" and the bell are wider than the bar, and the bell went off the screen:
+   the wheel stands for the name there while "Get the app" is up. */
+@media (max-width: 359px) {
+  .app > nav:has(.get-app-pill) .brand-name {
+    display: none;
+  }
+}
+
+/* "Get the app", up top on a phone until it is installed (`install.tsx`): the one thing in the bar in the
+   purple, beside the bell. */
+.get-app-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  padding: 0 0.85rem;
+  border: 1px solid rgba(var(--accent-rgb), 0.55);
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--ink);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.get-app-pill svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Its sheet: the app's own icon, with a job waiting on it; why, a picture each; then how. */
+.get-app {
+  display: grid;
+  gap: 1.1rem;
+  margin-top: 0.5rem;
+}
+
+.get-app-icon {
+  position: relative;
+  justify-self: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  animation: get-app-in 0.7s var(--spring) both;
+}
+
+.get-app-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 22%;
+  box-shadow: 0 16px 36px -14px rgba(var(--accent-rgb), 0.95);
+}
+
+.get-app-icon b {
+  position: absolute;
+  top: -0.45rem;
+  right: -0.45rem;
+  display: grid;
+  place-items: center;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 0.8125rem;
+  box-shadow: 0 0 0 3px var(--bg-raised);
+  animation: get-app-in 0.5s var(--spring) 0.45s both;
+}
+
+@keyframes get-app-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.6rem) scale(0.8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .get-app-icon,
+  .get-app-icon b {
+    animation: none;
+  }
+}
+
+.get-app .lede {
+  margin: 0;
+  text-align: center;
+}
+
+.get-app-why {
+  display: grid;
+  gap: 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.get-app-why li {
+  display: grid;
+  grid-template-columns: 2.5rem 1fr;
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.get-app-why li > span {
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.get-app-why strong {
+  display: block;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.get-app-why svg,
+.get-app-steps svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.get-app-why svg {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0.55rem;
+  border-radius: 0.8rem;
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent-text);
+}
+
+/* How, where the browser offers no button: a numbered step a line, each ending in the picture to tap. */
+.get-app-steps {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  background: rgba(var(--ink-rgb), 0.05);
+  list-style: none;
+  counter-reset: step;
+}
+
+.get-app-steps li {
+  display: grid;
+  grid-template-columns: 1.75rem 1fr 1.75rem;
+  gap: 0.75rem;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.get-app-steps li::before {
+  content: counter(step);
+  counter-increment: step;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.get-app-steps strong {
+  display: block;
+  color: var(--ink);
+  font-size: 0.9375rem;
+}
+
+.get-app-steps svg {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--accent-text);
+}
+
+.get-app .main {
+  width: 100%;
+  margin-top: 0;
+}
+
+.get-app .linklike {
+  justify-self: center;
 }
 
 /* More's sheet: a row a place, help and the theme, each a picture, its name and, for a place, an arrow. */

@@ -25,7 +25,8 @@ const ANSWERS: [string, string][] = [
   ["How do I get new jobs on my phone?",
    "Alerts come with a paid plan. On the Alerts page, make an alert for the words, companies or places you " +
    "want, then turn on notifications on this phone or connect Telegram. An alert can also send one email each " +
-   "morning. All are optional, and your Jobs page fills up either way."],
+   "morning. All are optional, and your Jobs page fills up either way. On a phone, tap “Get the app” first: " +
+   "on an iPhone, notifications only arrive through the app."],
   ["How do I stop seeing a job?",
    "Tap “Skip”, then “Skip it”. It leaves your Jobs page and does not come back, even after a refresh."],
   ["Where are the jobs I applied to?",

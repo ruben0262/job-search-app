@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 
 import { HELP_ICON, HelpSheet } from "./help";
+import { DOWN, openInstall } from "./install";
 import { MORE_ICON, PLACES, TABS } from "./places";
 import { useTheme } from "./theme";
 import { Sheet } from "./ui";
@@ -11,7 +12,12 @@ import { Sheet } from "./ui";
 const CHEVRON = <svg className="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6" /></svg>;
 const MOON = "M20 13.4A8 8 0 1110.6 4a6.3 6.3 0 009.4 9.4z";
 
-export function More({ admin, section }: { admin: boolean; section: string }) {
+export function More({ admin, section, asked }: {
+  admin: boolean;
+  section: string;
+  /** This phone is asked to install the app (`install.tsx`): More has it first. */
+  asked: boolean;
+}) {
   const [open, setOpen] = useState<"more" | "help" | null>(null);
   const { choice, toggle } = useTheme();
   const places = PLACES.filter(([key]) => !TABS.includes(key) && (key !== "admin" || admin));
@@ -28,6 +34,16 @@ export function More({ admin, section }: { admin: boolean; section: string }) {
       {open === "more" ? createPortal(
         <Sheet title="More" onClose={() => setOpen(null)}>
           <div className="more-list">
+            {asked ? (
+              <button type="button" className="more-row" onClick={() => {
+                setOpen(null);
+                openInstall();
+              }}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d={DOWN} /></svg>
+                <span>Get the app</span>
+                {CHEVRON}
+              </button>
+            ) : null}
             {places.map(([key, label, icon]) => (
               <a key={key} href={`#/${key}`} className="more-row" aria-current={key === section ? "page" : undefined}
                  onClick={() => setOpen(null)}>

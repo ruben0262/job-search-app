@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type Schema } from "./api";
-import { install, useInstallable } from "./install";
+import { openInstall, standalone, useInstallable } from "./install";
 import { useKept } from "./kept";
 import { ACCOUNT } from "./pages/SettingsPage";
 import { disablePush, enablePush, pushState } from "./push";
@@ -241,15 +241,10 @@ export function Alerts() {
   );
 }
 
-/** The site as an app on this phone or computer, where the browser offers it (`install.ts`); nothing where it
- * does not, or it is installed already. */
+/** The site as an app: the sheet that says why and how (`install.tsx`), on a phone or wherever the browser
+ * offers it; nothing once it is the app. */
 function InstallButton() {
   const installable = useInstallable();
-  const add = useAction(install);
-  if (!installable) return null;
-  return (
-    <button type="button" className="secondary" disabled={add.busy} onClick={() => void add.run()}>
-      Install the app
-    </button>
-  );
+  if (standalone() || (!installable && !matchMedia("(pointer: coarse)").matches)) return null;
+  return <button type="button" className="secondary" onClick={openInstall}>Install the app</button>;
 }
