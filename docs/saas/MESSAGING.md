@@ -53,7 +53,7 @@ numbers here are the PDF's.
 | **Likelihood** | "It won't work for me. Robots reject me. I'm one of hundreds." | A CV made for each job and checked the way an ATS reads it (99% passed all ATS checks, our tests), so a person gets to read it; a match score on every job | Hero: *Get seen first.*; How: CV tile with its figure; match tile |
 | **Time** | "I find jobs when hundreds have already applied. Every application takes an evening." | Every site read every 15 minutes; members see each job right away; instant alerts; a CV in seconds | Hero: *Get seen first.*; How: *New jobs in minutes, not days*, *Instant alerts on your phone*, the lede "Hours of searching, rewriting and tracking, done for you." |
 | **Effort** | "Six sites every morning. Rewriting my CV every night. A spreadsheet of where I applied." | One list from LinkedIn, job boards and company career pages; filters; red words hide what they don't want; never the same job twice; bookmarks; one-tap CV; tracking with no spreadsheet; no tutorial; any phone or laptop | What it is: *Every job site. One list for you.*; How: *You apply. We do the rest.*; Get started: "No complex setup, nothing to install." |
-| **Price** (shown, not said) | "I can't pay £100 for a CV writer or £30 a month for LinkedIn Premium." | Free plan with no card; Member at £4.99 with a 7-day trial | Pricing cards; "Free plan. No card needed." under each button |
+| **Price** (shown, not said) | "I can't pay £100 for a CV writer or £30 a month for LinkedIn Premium." | Free plan with no card; Member at £4.99 with a 7-day trial | Pricing cards; "No card needed." under each button |
 
 The one-sentence pitch: **Get seen first.** Hiring now starts with the first applicants, and only a CV that
 matches the job gets read. Mahoraga gets you there early, with that CV.
@@ -104,10 +104,13 @@ week"), with no figure beside them. The evidence for each stays linked in `Landi
 4. **Name the pain once, then answer it.** "Hours of searching, rewriting and tracking, done for you",
    then a tile for each.
 5. **Words a twelve-year-old reads.** Short sentences, everyday words, *you*.
-6. **True, to the plan.** Say which plan gives a thing ("as a member", "on a paid plan"). Every number
-   comes from the server, never typed. No outcome we haven't measured ("more interviews",
-   "3× replies").
-7. **Every button says what happens.** One main button a screen. "Free plan. No card needed." under it.
+6. **No plan named outside the pricing cards** (owner, 2026-11-17 late night: "people can tell by the
+   offers"): no "as a member", no "on a paid plan", no "Free plan". **No way of sending an alert named**
+   (no Telegram, no browser): "a notification" is enough. **Never how often the sites are read**
+   (confidential): jobs show up "the moment they're posted". The ATS checks are **official** (owner). Every
+   number comes from the server, never typed. No outcome we haven't measured ("more interviews", "3×
+   replies").
+7. **Every button says what happens.** One main button a screen. "No card needed." under it.
 
 ## 7. The page, section by section
 
@@ -117,9 +120,9 @@ How it works (the benefits). The onboarding steps now appear once, in Get starte
 
 ### Page title and link preview (`web/index.html`)
 - Title: **Mahoraga · The job search that runs itself**
-- Description: *New jobs from LinkedIn, job boards and company career pages, in one list, all day. A CV
-  made for each in one tap, checked the way an ATS reads it. Free to start.* The old description said
-  "every 15 minutes", a second copy of the server's interval, so this one gives no number.
+- Description: *New jobs from LinkedIn, job boards and company career pages, in one list, the moment
+  they're posted. A CV made for each in one tap, made to pass official ATS checks. Free to start.* It
+  gives no interval: how often the sites are read is confidential (owner, 2026-11-17).
 
 ### Hero
 - **Get seen first.** (the h1; "first." in the purple). One line of three words: the owner's "be first" and
@@ -131,7 +134,7 @@ How it works (the benefits). The onboarding steps now appear once, in Get starte
 - More people apply for every job, and hiring starts in its first week. Mahoraga gets you there
   **early**, with **a CV made for the job**.
 - Buttons: **Start free →** · How it works. "Sign in" left the hero because the bar already has it.
-- Under the buttons: *Free plan. No card needed.*
+- Under the buttons: *No card needed.*
 - The four counts, as the server gives them.
 
 ### What it is (`#what`): unchanged
@@ -142,34 +145,32 @@ How it works (the benefits). The onboarding steps now appear once, in Get starte
 ### How it works (`#how`): the benefits of how it works, not the sign-up
 - **You apply. We do the rest.** ("We do the rest." in the purple)
 - Hours of searching, rewriting and tracking, done for you.
-- Six tiles, each a title, a few lines and a moving picture, in the order a job goes through them. Every
-  tile says which plan gives it.
-  1. **New jobs in minutes, not days.** Every job site read every {N} minutes. As a member, you see each
-     new job right away and apply before the crowd. *(picture: the first week's bar, "You, day 1")*
-  2. **Instant alerts on your phone.** No more refreshing job sites. On a paid plan, you get a ping the
-     moment a job you want lands in your list, by Telegram or in your browser. *(picture: a job arriving
-     on a lock screen.)* "Lands in your list", not "is posted": an alert goes within a minute of a job
-     joining a list, and a Starter's list waits three days.
-  3. **A match score on every job.** On a paid plan, every job is scored out of 10 for how well it
-     fits you. Filter by score, country, remote or job site, in one tap. *(picture: the filters on, and
-     the jobs with their scores, the one under 7 leaving)*
+- Six tiles, each a title, a few lines and a moving picture, in the order a job goes through them. No
+  plan is named on them (rule 6).
+  1. **New jobs in minutes, not days.** Jobs show up the moment they're posted on the sites. Apply before
+     the crowd does. *(picture: the first week's bar, "You, day 1")*
+  2. **Instant alerts on your phone.** No more refreshing job sites. Get a notification the moment a job
+     you want is posted. *(picture: a job arriving on a lock screen)*
+  3. **A match score on every job.** Every job is scored out of 10 for how well it fits you. Filter by
+     score, country, remote or job site, in one tap. *(picture: the filters on, and the jobs with their
+     scores, the one under 7 leaving)*
   4. **Save jobs for later.** Not ready yet? Tap the bookmark and the job waits for you, every detail
-     kept, until you apply or it closes. On every plan, Free too. *(picture: a job's bookmark filling)*
-  5. **A CV made for each job, in seconds.** One tap, as a member: a CV and a cover letter for that job,
-     from your own CV. Nothing made up, nothing to rewrite. **99% passed all ATS checks.** (Served by
-     `/stats` only while the measured CV wording is live. Without it: **Made to pass ATS checks,** each
-     one checked before you get it. Owner, that night: no count of checks and no source line.)
-     *(picture: the CV read as an ATS reads it)*
+     kept, until you apply or it closes. *(picture: a job's bookmark filling)*
+  5. **A CV made for each job, in seconds.** One tap: a CV and a cover letter for that job, from your own
+     CV. Nothing made up, nothing to rewrite. **99% passed all official ATS checks.** (Served by `/stats`
+     only while the measured CV wording is live. Without it: **Made to pass official ATS checks,** each
+     one checked before you get it.) *(picture: the CV read as an ATS reads it, "Passes official ATS
+     checks")*
   6. **Every application tracked.** Applied, interview, offer, the job: one tap each. No more Excel or
-     Google Sheets to keep up. On every plan, Free too. *(picture: the track)*
+     Google Sheets to keep up. *(picture: the track)*
 - Under the tiles, small: *CVs and cover letters are written with your own ChatGPT, Claude or Gemini
   account.* (owner: "worth mentioning it for sure"). It sits under the tiles, not in the CV tile, which
   it made the tallest of its row.
 
 ### See it working (`#live`): unchanged
 - **See it working.** This is your Jobs page. Tap **Make my CV** and watch one written for this job.
-- **New jobs on your phone.** By Telegram, in your browser, or one email each morning. Each with a link
-  straight to its CV.
+- **New jobs on your phone.** A notification the moment a job you want is posted, with a link straight to
+  its CV. The phone's alerts come from "Mahoraga" under the site's wheel, with no platform's name or logo.
 
 ### Pricing (`#price`)
 - **Search smarter. Beat the crowd. Join now.** It was "Skip the grind…". Owner, that night: "the grind
@@ -180,10 +181,10 @@ How it works (the benefits). The onboarding steps now appear once, in Get starte
 - **Start in a few minutes.** Two steps. You do the first one, once.
 - *A few minutes, once:* **You set it up.** Upload your CV · Check the words we suggest · Pick your
   countries and languages
-- *Then every day:* **It runs itself.** New jobs that fit, every day · A CV for any of them in one tap,
-  as a member · Alerts on your phone, on a paid plan
+- *Then every day:* **It runs itself.** New jobs that fit, every day · A CV for any of them in one tap ·
+  Alerts on your phone
 - **No complex setup, nothing to install. Your jobs on your phone or laptop, wherever you are.** **Start
-  free →** *Free plan. No card needed.* It was "Your first jobs are there the moment you finish.", which
+  free →** *No card needed.* It was "Your first jobs are there the moment you finish.", which
   the owner found did not quite make sense. "No complex setup" is the owner's own wording, in place of
   "No tutorial".
 

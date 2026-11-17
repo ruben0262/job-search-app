@@ -27,7 +27,7 @@ from libs.membership import areas_of, choosing, delay_hours, has, is_admin, is_m
 from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
-from libs.settings import HARVEST_SOURCES, PLATFORM_TICK_MIN
+from libs.settings import HARVEST_SOURCES
 from libs.tenant import applications
 from services.api.deps import current_user, get_db
 from services.api.onboarding_routes import OnboardingSteps
@@ -270,7 +270,7 @@ class Reach(BaseModel):
     sources: int
     # Company boards still answering: a dead one is kept so it is not found again, and not counted.
     company_boards: int
-    every_minutes: int
+    # How often the sites are read is not served: confidential (owner, 2026-11-17), and no page says it.
     # New jobs found in the last seven days, counted as the admin's chart counts them (`CountryCount`, one
     # row a run a country): what was found, never a typed number.
     jobs_week: int
@@ -285,7 +285,7 @@ def stats(db: Database = Depends(get_db)) -> Reach:
     week = db[CountryCount.COLLECTION].aggregate([
         {"$match": {"hour": {"$gte": now() - timedelta(days=7)}}},
         {"$group": {"_id": None, "jobs": {"$sum": "$jobs"}}}])
-    return Reach(sources=len(HARVEST_SOURCES), every_minutes=PLATFORM_TICK_MIN,
+    return Reach(sources=len(HARVEST_SOURCES),
                  company_boards=db[AtsToken.COLLECTION].count_documents({"dead_at": None}),
                  jobs_week=next(week, {}).get("jobs", 0),
                  ats=ATS_MEASURED if prompts.version("write_cv.md") == ATS_MEASURED.prompt else None)

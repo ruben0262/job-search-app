@@ -3203,8 +3203,6 @@ export interface components {
             ats: components["schemas"]["AtsMeasured"] | null;
             /** Company Boards */
             company_boards: number;
-            /** Every Minutes */
-            every_minutes: number;
             /** Jobs Week */
             jobs_week: number;
             /** Sources */

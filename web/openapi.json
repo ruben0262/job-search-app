@@ -3622,10 +3622,6 @@
             "title": "Company Boards",
             "type": "integer"
           },
-          "every_minutes": {
-            "title": "Every Minutes",
-            "type": "integer"
-          },
           "jobs_week": {
             "title": "Jobs Week",
             "type": "integer"
@@ -3638,7 +3634,6 @@
         "required": [
           "sources",
           "company_boards",
-          "every_minutes",
           "jobs_week",
           "ats"
         ],

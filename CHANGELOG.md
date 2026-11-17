@@ -14,6 +14,43 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17, last thing — The landing page names no plan, no way an alert is sent and no interval; "official ATS checks"
+
+The owner, on the page:
+- "'on the paid plan ...' that's not good, you dont need to mention that because people can tell by the offers".
+- "For the notifications you don't need to say a platform like Telegram".
+- "You also don't need to tell users that we are searching for jobs every 15 mins thats confidential info really,
+  you just need to say that jobs show up instantly when they are posted on the sites".
+- "you don't need to mention anything about any plan either".
+- "I would also say offical ATS checks".
+- "If there are any other mistakes on the site like the ones I mentioned before, please correct them also".
+
+- **No plan is named outside the pricing cards.** How it works' tiles, Get started's steps and the line under each
+  button ("No card needed.") lost "as a member", "on a paid plan", "On every plan, Free too." and "Free plan". The
+  cards still say who gets what.
+- **No way of sending an alert is named.** The alerts tile and See it working say "a notification". The phone's
+  alerts come from "Mahoraga" under the site's wheel, where Telegram's plane and "Jordan's job bot" were.
+- **How often the sites are read is said nowhere.** Jobs show up "the moment they're posted". `/stats` no longer
+  serves `every_minutes`: it was public and confidential, and the page was its only reader.
+- **"Official ATS checks"**:
+  - The CV tile's figure and its fallback, the CV picture's badge, and the link preview.
+  - The cards' default line. "Official ATS check, every time" broke onto two lines at 320 px, so it is "Official
+    ATS checks".
+  - The cards' default alerts explanation names no platform.
+  - **Words saved in Admin win over these defaults.** On a server where Admin → Pricing was saved, the old lines
+    stay until they are changed there.
+- **Tests:**
+  - The landing e2e test reads every section but pricing and finds no plan, no Telegram and no interval.
+  - `/stats` serves no interval.
+  - The cards' ATS line.
+- **Gates:**
+  - ruff clean on these files.
+  - lint-imports 2 kept.
+  - Contract regenerated (only `every_minutes` removed).
+  - Site built.
+  - test_e2e_site, test_dashboard and test_pricing: 120 passed.
+  - The full suite was not run again: another session's alerts work, uncommitted, is in the same tree.
+
 ## 2026-11-17, late night — The landing page, round two: "Get seen first.", six tiles that say the time saved, a question for a person at the foot; each visitor counted apart; the owner's name out of the project
 
 The owner, on the first round:

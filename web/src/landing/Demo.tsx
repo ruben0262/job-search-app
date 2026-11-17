@@ -539,7 +539,7 @@ export function Alerts() {
           <div key={n} className={i === SHOWN ? "alert-slot leaving" : "alert-slot"}>
             <div className="alert-fold">
               <div className="alert-card">
-                <div className="alert-app"><i><Telegram /></i>Jordan's job bot<span>{i ? `${i * 3} min ago` : "now"}</span></div>
+                <div className="alert-app"><i><Mark /></i>Mahoraga<span>{i ? `${i * 3} min ago` : "now"}</span></div>
                 <div className="alert-title">{title}</div>
                 <div className="alert-meta">{from}<br />{place}<br />Matches: {words}</div>
                 <div className="alert-buttons"><span>Apply on LinkedIn</span><span>Make my CV</span></div>
@@ -552,11 +552,3 @@ export function Alerts() {
   );
 }
 
-/** Telegram's paper plane, in one colour. */
-function Telegram() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M21.94 4.6 18.9 18.95c-.23 1.01-.83 1.26-1.68.78l-4.64-3.42-2.24 2.15c-.25.25-.46.46-.94.46l.33-4.72 8.6-7.77c.37-.33-.08-.52-.58-.19L7.12 12.93l-4.57-1.43c-.99-.31-1.01-.99.21-1.47L20.5 3.4c.83-.31 1.55.19 1.44 1.2z" />
-    </svg>
-  );
-}

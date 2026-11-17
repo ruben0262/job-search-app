@@ -225,7 +225,13 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         # costs (owner, 2026-11-17).
         expect(page.locator("h1")).to_have_text("Get seen first.")
         expect(page.locator(".hero")).to_contain_text("The job search that runs itself.")
-        expect(page.locator(".hero")).to_contain_text("Free plan. No card needed.")
+        expect(page.locator(".hero")).to_contain_text("No card needed.")
+        # No plan named outside the cards, no way an alert is sent, and never how often the sites are read
+        # (owner, 2026-11-17 late night: "people can tell by the offers", "confidential").
+        said = page.evaluate("[...document.querySelectorAll('main section:not(#price)')]"
+                             ".map((part) => part.textContent).join(' ').toLowerCase()")
+        for unsaid in ("paid plan", "as a member", "free plan", "telegram", "every 15 minutes"):
+            assert unsaid not in said, f"{unsaid!r} is said outside the cards"
         # Its examples are work anyone does: every one was a software job until 2026-11-14 (owner).
         software = re.compile("python|backend|engineer|kubernetes", re.I)
         expect(page.locator("main")).not_to_contain_text(software)
@@ -250,7 +256,7 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         # the offers"): the title stands alone.
         expect(page.locator("#price .head")).to_have_text("Search smarter. Beat the crowd. Join now.")
         # Our own figure on the CV it is about, alone (owner, 2026-11-17 night), and whose AI writes it.
-        expect(page.locator("#how")).to_contain_text("99% passed all ATS checks.")
+        expect(page.locator("#how")).to_contain_text("99% passed all official ATS checks.")
         expect(page.locator("#how")).not_to_contain_text("our own tests")
         expect(page.locator("#how")).to_contain_text(
             "CVs and cover letters are written with your own ChatGPT, Claude or Gemini account.")
@@ -1442,7 +1448,7 @@ def test_a_free_account_buys_starter_or_member_from_the_upgrade_page(site, capsy
         expect(page.get_by_role("heading", name="Become a member")).to_be_visible()
         expect(page.locator(".plan-price")).to_have_text("£4.99 a month, after 7 days free")
         expect(page.locator(".adds li")).to_have_count(8)
-        expect(page.locator(".adds li").last).to_contain_text("ATS check, every time")
+        expect(page.locator(".adds li").last).to_contain_text("Official ATS checks")
 
         plans.get_by_role("button", name="Starter").click()
         expect(page.get_by_role("heading", name="Start with Starter")).to_be_visible()
@@ -1459,7 +1465,7 @@ def test_a_free_account_buys_starter_or_member_from_the_upgrade_page(site, capsy
         expect(page.locator(".adds li")).to_have_count(5)
         expect(page.locator(".adds li")).to_contain_text([
             "See new jobs right away", "A CV made for each job", "A cover letter for each job",
-            "Add jobs from any site", "ATS check, every time"])
+            "Add jobs from any site", "Official ATS checks"])
         browser.close()
 
 
@@ -1944,7 +1950,7 @@ def _crossed_out_and_the_bonus(cards) -> None:
         ["See new jobs right away", "A CV made for each job", "A cover letter for each job",
          "Add jobs from any site"])
     expect(cards.last.locator(".price-list li.out")).to_have_count(0)
-    expect(cards.last.locator(".price-list li.bonus .line")).to_have_text("ATS check, every time")
+    expect(cards.last.locator(".price-list li.bonus .line")).to_have_text("Official ATS checks")
 
 
 def _priced(cards) -> None:

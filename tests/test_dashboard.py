@@ -690,6 +690,8 @@ def test_the_landing_pages_numbers_are_counted_and_answer_anybody(db, monkeypatc
         answer = http.get("/stats")
     assert answer.status_code == 200
     body = answer.json()
-    assert {key: body[key] for key in ("sources", "company_boards", "every_minutes")} == {
-        "sources": len(HARVEST_SOURCES), "company_boards": 2, "every_minutes": PLATFORM_TICK_MIN}
+    assert {key: body[key] for key in ("sources", "company_boards")} == {
+        "sources": len(HARVEST_SOURCES), "company_boards": 2}
+    # How often the sites are read is the owner's to keep (2026-11-17: "confidential"): it is not served.
+    assert "every_minutes" not in body
     assert body["jobs_week"] == 8, "the week's new jobs, as the runs counted them, and not the week before"

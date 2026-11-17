@@ -41,31 +41,29 @@ const SECTIONS: [id: string, name: string, short: string, icon: ReactNode][] = [
 
 /** How it works, as what it does for them rather than how they sign up (owner, 2026-11-17: "the benefits of
  * how the app works"; that night, "mention saving time"): a tile each, in the order a job goes through
- * them, found, alerted, scored, kept, written for and followed. `often` is how often every site is read
- * ("every 15 minutes"), the server's. Each says which plan gives it, since a free account sees a job a week
- * after it is found and makes no CVs (`libs.membership.PLANS`): the page promises nobody what their plan does
- * not keep. Bookmarks and Applied are every plan's, and say so: what the Free plan already gives. */
-const perks = (often: string, ats: Reach["ats"] | undefined): [string, ReactNode, ReactNode][] => [
-  ["New jobs in minutes, not days", <>Every job site read {often}. As a member, you see each new job right away
-    and apply before the crowd.</>, <WeekArt />],
-  // "Lands in your list", not "is posted": an alert goes out within a minute of a job joining a list
-  // (`services/notifier` sweeps every 60 s), and a Starter's list waits three days for it
-  // (`starter_delay_hours`).
-  ["Instant alerts on your phone", <>No more refreshing job sites. On a paid plan, you get a ping the moment a job
-    you want lands in your list, by Telegram or in your browser.</>, <AlertArt />],
-  ["A match score on every job", <>On a paid plan, every job is scored out of 10 for how well it fits you. Filter
-    by score, country, remote or job site, in one tap.</>, <ScoreArt />],
+ * them, found, alerted, scored, kept, written for and followed. No plan is named on them, the cards say who
+ * gets what ("people can tell by the offers"); no way of sending an alert ("the user will just get
+ * notifications is enough"); and never how often the sites are read ("confidential"). Owner, that late night. */
+const perks = (ats: Reach["ats"] | undefined): [string, ReactNode, ReactNode][] => [
+  ["New jobs in minutes, not days", <>Jobs show up the moment they're posted on the sites. Apply before the crowd
+    does.</>, <WeekArt />],
+  ["Instant alerts on your phone", <>No more refreshing job sites. Get a notification the moment a job you want is
+    posted.</>, <AlertArt />],
+  ["A match score on every job", <>Every job is scored out of 10 for how well it fits you. Filter by score,
+    country, remote or job site, in one tap.</>, <ScoreArt />],
   ["Save jobs for later", <>Not ready yet? Tap the bookmark and the job waits for you, every detail kept, until
-    you apply or it closes. On every plan, Free too.</>, <BookmarkArt />],
+    you apply or it closes.</>, <BookmarkArt />],
   // The figure is our own tests', and only for the CV wording it was measured on (`/stats`): without it the
   // page claims no rate. Said alone (owner, 2026-11-17 night: no count of checks, nothing on where it is
-  // from), on a line of its own so an eye running down the tile lands on it.
-  ["A CV made for each job, in seconds", <>One tap, as a member: a CV and a cover letter for that job, from your
-    own CV. Nothing made up, nothing to rewrite.{" "}<span className="proof">{ats
-      ? <strong>{passRate(ats)}% passed all ATS checks.</strong>
-      : <><strong>Made to pass ATS checks,</strong> each one checked before you get it.</>}</span></>, <AtsArt />],
+  // from), on a line of its own so an eye running down the tile lands on it; "official" is the owner's
+  // (that late night: "we've done official research on the ATS checks").
+  ["A CV made for each job, in seconds", <>One tap: a CV and a cover letter for that job, from your own CV.
+    Nothing made up, nothing to rewrite.{" "}<span className="proof">{ats
+      ? <strong>{passRate(ats)}% passed all official ATS checks.</strong>
+      : <><strong>Made to pass official ATS checks,</strong> each one checked before you get it.</>}</span></>,
+    <AtsArt />],
   ["Every application tracked", <>Applied, interview, offer, the job: one tap each. No more Excel or Google
-    Sheets to keep up. On every plan, Free too.</>, <TrackArt />],
+    Sheets to keep up.</>, <TrackArt />],
 ];
 
 /** "99": the share of CVs that passed every check, never rounded up to all of them. */
@@ -83,8 +81,8 @@ function nothing(currency: string): string {
 const PATHS: [when: string, title: string, items: string[]][] = [
   ["A few minutes, once", "You set it up", ["Upload your CV", "Check the words we suggest",
                                            "Pick your countries and languages"]],
-  ["Then every day", "It runs itself", ["New jobs that fit, every day", "A CV for any of them in one tap, as a member",
-                                        "Alerts on your phone, on a paid plan"]],
+  ["Then every day", "It runs itself", ["New jobs that fit, every day", "A CV for any of them in one tap",
+                                        "Alerts on your phone"]],
 ];
 
 export function Landing() {
@@ -92,9 +90,6 @@ export function Landing() {
   const [reach, setReach] = useState<Reach | null>(null);
   const [pricing, setPricing] = useState<Pricing | null>(null);
   const [at, setAt] = useState(0);
-  // Counted by the server, never typed here: they went stale here before (`/stats`). Without an answer
-  // the page says no number rather than an old one.
-  const often = reach ? `every ${reach.every_minutes} minutes` : "all day";
 
   useEffect(() => {
     api.get<Reach>("/stats").then(setReach).catch(() => undefined);
@@ -259,12 +254,13 @@ export function Landing() {
               there <strong>early,</strong> with <strong>a CV made for the job.</strong>
             </p>
             {/* One button to start and one to see how (owner, 2026-10-28: one main button a screen); signing in
-                is the bar's. Under them, what starting costs: nothing, and no card, on the Free plan. */}
+                is the bar's. Under them, what starting asks: no card. No plan is named outside the cards (owner,
+                2026-11-17 late night). */}
             <div className="hero-ctas" data-reveal style={after(0.7)}>
               <a className="btn btn-primary" href="#/signup">Start free <Arrow /></a>
               <a className="btn btn-glass" href="#how" onClick={jump("how")}>How it works</a>
             </div>
-            <p className="lp-note" data-reveal style={after(0.75)}>Free plan. No card needed.</p>
+            <p className="lp-note" data-reveal style={after(0.75)}>No card needed.</p>
           </div>
           {reach ? (
             <dl className="reach">
@@ -274,7 +270,7 @@ export function Landing() {
                 <div><dt><AtLeast n={reach.company_boards} /></dt><dd>Company career pages</dd></div>
               ) : null}
               {reach.jobs_week ? <div><dt><AtLeast n={reach.jobs_week} /></dt><dd>New jobs this week</dd></div> : null}
-              {/* Every `every_minutes`, all day and night: said in the sections below to the minute. */}
+              {/* All day and night; how often is not said (owner, 2026-11-17: "confidential"). */}
               <div><dt>24/7</dt><dd>Rapid checks</dd></div>
             </dl>
           ) : null}
@@ -287,7 +283,7 @@ export function Landing() {
               It reads them all for you and keeps only the jobs that fit. No more checking sites one by one.
             </p>
           </div>
-          <Flow often={often} />
+          <Flow />
         </section>
 
         {/* What it does for them, not how they sign up (owner, 2026-11-17): the pains named once, in the line
@@ -299,7 +295,7 @@ export function Landing() {
             <p className="lp-lede">Hours of searching, rewriting and tracking, done for you.</p>
           </div>
           <div className="perks">
-            {perks(often, reach?.ats).map(([name, text, art], i) => (
+            {perks(reach?.ats).map(([name, text, art], i) => (
               <article key={name} className="tile perk" data-reveal data-spot style={after((i % 2) * 0.08)}>
                 <div className="perk-art" aria-hidden="true">{art}</div>
                 <h3>{name}</h3>
@@ -325,7 +321,7 @@ export function Landing() {
             <div data-reveal style={after(0.12)}>
               <h3 className="side-title">New jobs on your phone</h3>
               <p className="lp-lede">
-                By Telegram, in your browser, or one email each morning. Each with a link straight to its CV.
+                A notification the moment a job you want is posted, with a link straight to its CV.
               </p>
               <Alerts />
             </div>
@@ -377,7 +373,7 @@ export function Landing() {
             <Wheel ticks={0} />
             <p>No complex setup, nothing to install. Your jobs on your phone or laptop, wherever you are.</p>
             <a className="btn btn-primary btn-lg" href="#/signup">Start free <Arrow /></a>
-            <p className="lp-note">Free plan. No card needed.</p>
+            <p className="lp-note">No card needed.</p>
           </div>
         </section>
 
@@ -657,7 +653,7 @@ function AtsArt() {
           <span key={heading} style={{ "--i": i } as CSSProperties}>{heading}<em>✓</em></span>
         ))}
       </div>
-      <span className="ats-badge"><svg viewBox="0 0 20 20"><path d="M5.5 10.4l3 3 6-6.4" /></svg>Passes ATS checks</span>
+      <span className="ats-badge"><svg viewBox="0 0 20 20"><path d="M5.5 10.4l3 3 6-6.4" /></svg>Passes official ATS checks</span>
     </div>
   );
 }
@@ -760,7 +756,7 @@ function AtLeast({ n }: { n: number }) {
 
 /** What it is, drawn: the job sites, what is left out, and the list that is yours, jobs travelling from one
  * to the next on a loop. Said in words under each part, for anybody not looking at the picture. */
-function Flow({ often }: { often: string }) {
+function Flow() {
   return (
     <div className="flow" data-reveal>
       <div className="flow-step">
@@ -770,7 +766,7 @@ function Flow({ often }: { often: string }) {
           ))}
         </div>
         <h3>Every job site</h3>
-        <p>LinkedIn, job boards and company career pages, read {often}.</p>
+        <p>LinkedIn, job boards and company career pages, each new job the moment it's posted.</p>
       </div>
       <FlowOn />
       <div className="flow-step">

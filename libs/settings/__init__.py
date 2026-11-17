@@ -373,8 +373,7 @@ DEFAULT_PRICING_LINES: dict[str, object] = {
     "areas": {
         "alerts": [
             {"text": "Job alerts sent to you",
-             "more": "Each new job on your list sent to Telegram, your browser or your inbox, so you don't "
-                     "have to keep checking."}],
+             "more": "A notification for each new job on your list, so you don't have to keep checking."}],
         "match_scores": [
             {"text": "Match score on every job",
              "more": "Each job is scored out of 10 for how well it fits your CV, cover letter and About "
@@ -388,7 +387,7 @@ DEFAULT_PRICING_LINES: dict[str, object] = {
             {"text": "A cover letter for each job",
              "more": "One tap writes a cover letter for that job with your own AI account."}],
         "ats_checks": [
-            {"text": "ATS check, every time",
+            {"text": "Official ATS checks",
              "more": "Before you get it, every CV and cover letter is read back the way an applicant "
                      "tracking system (ATS) reads it: the software companies sort applications with."}],
         "add_job": [
