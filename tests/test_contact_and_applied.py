@@ -121,6 +121,38 @@ def test_an_empty_or_one_word_message_is_refused(api):
     assert http.post("/contact", json={"subject": "Hi", "message": "help"}).status_code == 422
 
 
+@needs_db
+def test_somebody_not_signed_in_reaches_the_same_inbox_from_the_landing_page(api):
+    """The landing page's form (owner, 2026-11-17: "to the same place where we have inside the app"): the
+    support inbox and the admin's list, the reply to the address given, which the inbox is told nobody
+    checked."""
+    http, db, _user, inbox, as_user = api
+    http.cookies.clear()
+
+    sent = http.post("/contact", json={"email": "sam@example.com",
+                                       "message": "Do I need a paid AI account to make a CV?"})
+
+    assert sent.status_code == 202
+    assert sent.json()["email"] == "sam@example.com" and sent.json()["reference"]
+    (mail,) = inbox.sent
+    assert mail["reply_to"] == "sam@example.com" and "not signed in" in mail["body"]
+    assert "Do I need a paid AI account" in mail["subject"], "without a subject, the message's words are one"
+    as_user(_admin(db))
+    (row,) = http.get("/admin/contact").json()
+    assert (row["reference"], row["email"], row["emailed"]) == (sent.json()["reference"], "sam@example.com",
+                                                                True)
+
+
+@needs_db
+def test_somebody_not_signed_in_says_where_the_reply_goes(api):
+    http, *_ = api
+    http.cookies.clear()
+    message = "Hello, is anybody there?"
+
+    assert http.post("/contact", json={"message": message}).status_code == 401
+    assert http.post("/contact", json={"email": "no address", "message": message}).status_code == 422
+
+
 # ── applied ───────────────────────────────────────────────────────────────────────────────────
 
 def _job(db, title: str):

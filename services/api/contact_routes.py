@@ -1,7 +1,9 @@
-"""The Help page's contact form: a message from a signed-in person to the people who run the site.
+"""The contact form: a message to the people who run the site, from the Help page signed in or from the
+landing page signed out (owner, 2026-11-17: "to the same place where we have inside the app").
 
 Kept as a row first and emailed second, so a message survives an email that did not go: the admin
-panel lists every one, and says which were emailed. The reply goes to the account's own address.
+panel lists every one, and says which were emailed. The reply goes to the account's own address, or to
+the one a visitor gave.
 """
 from __future__ import annotations
 
@@ -9,8 +11,8 @@ import logging
 import uuid as _uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, EmailStr, Field
 from pymongo.database import Database
 
 from libs import settings
@@ -27,9 +29,12 @@ router = APIRouter(tags=["contact"])
 
 
 class ContactRequest(BaseModel):
-    # One line: it becomes an email subject.
-    subject: str = Field(min_length=3, max_length=120, pattern=r"^[^\r\n]+$")
+    # One line: it becomes an email subject. The landing page's form asks for none, and the message's first
+    # words are the subject instead.
+    subject: str | None = Field(default=None, min_length=3, max_length=120, pattern=r"^[^\r\n]+$")
     message: str = Field(min_length=10, max_length=4000)
+    # Where to reply to somebody not signed in. A signed-in person's reply goes to their account's address.
+    email: EmailStr | None = None
 
 
 class ContactReceipt(BaseModel):
@@ -58,25 +63,35 @@ def contact_address(db: Database = Depends(get_db),
 
 @router.post("/contact", status_code=202)
 def contact(body: ContactRequest, request: Request, db: Database = Depends(get_db),
-            mailer: EmailSender = Depends(get_mailer),
-            user_id: _uuid.UUID = Depends(current_user)) -> ContactReceipt:
-    """Send a message to support."""
-    rate_limit(request, f"contact:{user_id}", limit=5, per_seconds=3600)
-    user = get(db, User, user_id)
-    message = insert(db, ContactMessage(user_id=user_id, email=user.email, subject=body.subject.strip(),
+            mailer: EmailSender = Depends(get_mailer)) -> ContactReceipt:
+    """Send a message to support, signed in or with an address to reply to."""
+    try:
+        user_id: _uuid.UUID | None = current_user(request)
+    except HTTPException:
+        # Not signed in: a visitor on the landing page, who says where the reply goes. Without that, the 401.
+        if body.email is None:
+            raise
+        user_id = None
+    # An account is counted by itself; a visitor by their address (`rate_limit`), whatever email they type.
+    rate_limit(request, f"contact:{user_id or 'visitor'}", limit=5, per_seconds=3600)
+    email = get(db, User, user_id).email if user_id else body.email
+    message = insert(db, ContactMessage(user_id=user_id, email=email,
+                                        subject=(body.subject or " ".join(body.message.split())[:80]).strip(),
                                         message=body.message.strip()))
     reference = f"M-{message.id}"
+    # Anybody can type any address, so the inbox is told this one was not checked by a sign-in.
+    sender = email if user_id else f"{email} (not signed in, so not checked)"
     try:
         send_within_cap(db, mailer, settings.get(db, "support_email"),
                         f"[Mahoraga {reference}] {message.subject}",
-                        f"From: {user.email}\nReference: {reference}\n\n{message.message}",
-                        purpose="contact", reply_to=user.email)
+                        f"From: {sender}\nReference: {reference}\n\n{message.message}",
+                        purpose="contact", reply_to=email)
         db[ContactMessage.COLLECTION].update_one({"_id": message.id}, {"$set": {"emailed_at": now()}})
     except MailError:
         logger.warning("contact: message %s from %s was kept but not emailed; it is in the admin panel",
-                       message.id, user_id, exc_info=True)
+                       message.id, user_id or "a visitor", exc_info=True)
     audit(logger, "contact.sent", user=user_id, message=message.id)
-    return ContactReceipt(reference=reference, email=user.email)
+    return ContactReceipt(reference=reference, email=email)
 
 
 class ContactRow(BaseModel):

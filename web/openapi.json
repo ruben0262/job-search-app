@@ -1083,6 +1083,18 @@
       },
       "ContactRequest": {
         "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
           "message": {
             "maxLength": 4000,
             "minLength": 10,
@@ -1090,15 +1102,21 @@
             "type": "string"
           },
           "subject": {
-            "maxLength": 120,
-            "minLength": 3,
-            "pattern": "^[^\\r\\n]+$",
-            "title": "Subject",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 3,
+                "pattern": "^[^\\r\\n]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
           }
         },
         "required": [
-          "subject",
           "message"
         ],
         "title": "ContactRequest",
@@ -7346,7 +7364,7 @@
         ]
       },
       "post": {
-        "description": "Send a message to support.",
+        "description": "Send a message to support, signed in or with an address to reply to.",
         "operationId": "contact_contact_post",
         "requestBody": {
           "content": {

@@ -1045,7 +1045,7 @@ export interface paths {
         put?: never;
         /**
          * Contact
-         * @description Send a message to support.
+         * @description Send a message to support, signed in or with an address to reply to.
          */
         post: operations["contact_contact_post"];
         delete?: never;
@@ -2309,10 +2309,12 @@ export interface components {
         };
         /** ContactRequest */
         ContactRequest: {
+            /** Email */
+            email?: string | null;
             /** Message */
             message: string;
             /** Subject */
-            subject: string;
+            subject?: string | null;
         };
         /** ContactRow */
         ContactRow: {

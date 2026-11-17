@@ -1,4 +1,5 @@
-"""A message sent from the Help page's contact form: kept here, and emailed to the support address."""
+"""A message sent from the Help page's contact form, or the landing page's: kept here, and emailed to the
+support address."""
 from __future__ import annotations
 
 import uuid
@@ -14,8 +15,9 @@ class ContactMessage(Document):
     SEQUENCE = True
 
     id: int | None = None
-    user_id: uuid.UUID
-    # Where the reply goes: the account's address when it was sent.
+    # None for somebody not signed in, writing from the landing page (owner, 2026-11-17).
+    user_id: uuid.UUID | None
+    # Where the reply goes: the account's address when it was sent, or the one a visitor gave.
     email: str
     subject: str
     message: str
