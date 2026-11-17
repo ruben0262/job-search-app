@@ -22,7 +22,7 @@ import pytest
 
 from libs import settings
 from libs.db import get, insert, now
-from libs.db.models import CorpusJob, QueueJob, User, UserConfig, UserNotification
+from libs.db.models import Alert, CorpusJob, QueueJob, User, UserConfig, UserNotification
 from libs.db.models.tenant import record_state
 
 stripe = pytest.importorskip("stripe")
@@ -247,7 +247,8 @@ def is_member(http) -> bool:
 
 # What turns an alert on: Telegram's three steps and a browser's subscription (the daily email is a field of
 # `PATCH /account`, asked below). Each is a plan's with alerts; turning one off is anybody's.
-ALERTS_ON = {"PUT /telegram/bot", "POST /telegram/check", "POST /telegram/test", "POST /push/subscribe"}
+ALERTS_ON = {"PUT /telegram/bot", "POST /telegram/check", "POST /telegram/test", "POST /push/subscribe",
+             "POST /alerts"}
 
 
 def test_a_free_account_reaches_every_page_of_the_site(db, http, monkeypatch):
@@ -347,10 +348,15 @@ def test_each_plan_gives_what_it_includes_and_refuses_the_rest(db, http, monkeyp
         assert gave(refused.status_code) is member, plan
         if not member:
             assert refused.json()["detail"] == "Adding a job by its link comes with a membership."
-        # Alerts: the daily email switched on, and Telegram past its plan check to its own (no bot yet).
-        assert gave(http.patch("/account", json={"email_alerts": True}).status_code) is (plan != "free"), plan
+        # Alerts: one made, and Telegram past its plan check to its own (no bot yet).
+        alert = {"name": "Python", "keywords": ["python"]}
+        assert gave(http.post("/alerts", json=alert).status_code) is (plan != "free"), plan
         assert http.post("/telegram/check").status_code == (402 if plan == "free" else 409), plan
-        assert http.patch("/account", json={"email_alerts": False}).status_code == 200, "off is anybody's"
+        mine = insert(db, Alert(user_id=account.id, name="My search", search=True))
+        switched = http.put(f"/alerts/{mine.id}", json={**alert, "on": True}).status_code
+        assert gave(switched) is (plan != "free"), plan
+        off = http.put(f"/alerts/{mine.id}", json={**alert, "on": False}).status_code
+        assert off == 200, "off is anybody's"
         assert has(db, account.id, "match_scores") is (plan != "free"), plan
         assert http.get("/contact").json()["channel"] == (CHAT if member else None), plan
 
@@ -439,16 +445,25 @@ def test_the_form_is_for_the_plan_asked_and_stripes_price_says_which_plan(db, ht
 
 
 def test_starter_is_alerted_of_a_job_when_its_own_list_has_it(db):
-    """Owner, 2026-11-16: alerts are Starter's too (who else's: the test of the lanes, below). What an alert
-    says is what reached the person's own list, so Starter hears of a job three days after a member does."""
-    from libs.notify import owed
+    """Owner, 2026-11-16: alerts are Starter's too (who else's: the test of the lanes, below); 2026-11-17: and
+    keep its three days. What an alert catches is what reached the person's own list, so Starter hears of a
+    job
+    three days after a member does."""
+    from libs.alerts import route
+    from libs.db.models import AlertCursor, UserJobState
 
-    alerts = {"telegram_status": "connected", "created_at": now() - timedelta(days=10)}
-    starter, member = on_starter(db, **alerts), searching(db, subscription_status="active", **alerts)
+    joined = {"telegram_status": "connected", "created_at": now() - timedelta(days=10)}
+    starter, member = on_starter(db, **joined), searching(db, subscription_status="active", **joined)
+    for user in (starter, member):
+        insert(db, Alert(user_id=user.id, name="My search", search=True, created_at=user.created_at))
     yesterday, four_days = insert(db, posting(1)).id, insert(db, posting(4)).id
+    for wait in ("0", "72"):
+        db[AlertCursor.COLLECTION].insert_one({"_id": wait, "at": now() - timedelta(days=5)})
+    route(db)
 
     def heard(user: User) -> set[int]:
-        return {match.job.id for match in owed(db, get(db, User, user.id))}
+        return set(db[UserJobState.COLLECTION].distinct(
+            "job_id", {"user_id": user.id, "alerted_at": {"$ne": None}}))
 
     assert (heard(starter), heard(member)) == ({four_days}, {yesterday, four_days})
 
@@ -943,15 +958,15 @@ def test_an_admin_deleting_an_account_ends_its_membership_too(db, http, fake):
 def test_alerts_and_the_daily_email_are_members_and_the_harvest_is_everybodys(db, monkeypatch):
     """Alerts come with a membership (owner, 2026-11-12: "no alerts on free") and with Starter (2026-11-16); a
     free account's words are still searched for, or its list a week behind would have nothing in it."""
-    from libs.db.models import CorpusJob
-    from libs.queue.queue import dispatch_due_digests, dispatch_due_notifications
+    from libs.alerts import route
+    from libs.corpus.terms import learn
+    from libs.db.models import AlertCursor
+    from libs.queue.queue import dispatch_due_digests
     from libs.tenant.repository import TenantRepository
 
     monkeypatch.setenv("ADMIN_EMAILS", ADMIN)
-    # Something new in the corpus, so the sweep asks whom it is for.
-    insert(db, CorpusJob(title="Engineer", company="Acme", url="https://example.com/1", source="greenhouse"))
-    alerts = {"telegram_status": "connected", "email_alerts": True, "timezone": "UTC",
-              "email_digest_at": None}
+    alerts = {"telegram_status": "connected", "timezone": "UTC", "email_digest_at": None,
+              "created_at": now() - timedelta(days=10)}
     paying = person(db, subscription_status="active", **alerts)
     starter = person(db, subscription_status="active", subscription_plan="starter", **alerts)
     lapsed = person(db, subscription_status="past_due", **alerts)
@@ -959,8 +974,17 @@ def test_alerts_and_the_daily_email_are_members_and_the_harvest_is_everybodys(db
     operator = person(db, email=ADMIN, **alerts)
     for each in (paying, starter, lapsed, let_in, operator):
         insert(db, UserConfig(user_id=each.id, config={"sections": []}))
+        insert(db, Alert(user_id=each.id, name="Engineers", keywords=["engineer"], created_at=each.created_at,
+                         channels=["bell", "telegram", "email"]))
+    learn(db, ["engineer"])
+    # Something new for those words, read before Starter's three days, so every plan with alerts hears of it.
+    read = now() - timedelta(days=4)
+    insert(db, CorpusJob(title="Engineer", company="Acme", url="https://example.com/1", source="greenhouse",
+                         description="We build things.", first_seen_at=read, described_at=read))
+    for wait in ("0", "72"):
+        db[AlertCursor.COLLECTION].insert_one({"_id": wait, "at": read - timedelta(minutes=1)})
 
-    dispatch_due_notifications(db)
+    route(db)
     notified = set(db[QueueJob.COLLECTION].distinct(
         "user_id", {"lane": "notify", "payload.digest": {"$ne": True}}))
     assert notified == {paying.id, starter.id, let_in.id, operator.id}

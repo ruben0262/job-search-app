@@ -108,6 +108,7 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
     from libs.db.models import (
         MODELS,
         AiRequest,
+        Alert,
         AuthToken,
         BuiltDocument,
         ContactMessage,
@@ -155,7 +156,8 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
             ContactMessage(user_id=user.id, email=user.email, subject="Hello",
                            message="A question for you."),
             UploadedFile(id=build.id, user_id=user.id, content=b"the CV as uploaded"),
-            FitScore(user_id=user.id, job_id=job.id, fit=7.5, key="their profile", expires_at=now())):
+            FitScore(user_id=user.id, job_id=job.id, fit=7.5, key="their profile", expires_at=now()),
+            Alert(user_id=user.id, name="My search", search=True)):
         insert(db, document)
 
     owned = [model for model in MODELS if model.OWNER]

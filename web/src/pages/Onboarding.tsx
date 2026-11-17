@@ -95,7 +95,7 @@ export function Onboarding({ state, member, onChanged }: {
               </button>
               <section className="optional">
                 <h2>Get alerts</h2>
-                <p className="small muted">Optional. New jobs by Telegram, in this browser, or by email.</p>
+                <p className="small muted">Optional. New jobs on this phone or by Telegram. More on the Alerts page.</p>
                 {member ? <Alerts /> : <AlertsForMembers />}
               </section>
             </>

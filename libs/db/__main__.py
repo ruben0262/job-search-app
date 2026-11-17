@@ -9,12 +9,15 @@ nothing once done: under the rules they were written with, since the new ones re
 row of a kind they no longer allow, and the prune changes every row it removes a retired field from.
 Then the chart's counts kept before 2026-11-10 are split by source (`libs.ops.countries.split_by_source`),
 which also does nothing once done. Then every account from before memberships began is given free access,
-once ever (`libs.membership.free_for_existing`).
+once ever (`libs.membership.free_for_existing`), and every account from before alerts were named its "My
+search"
+alert, once ever (`libs.alerts.alerts_for_existing`): before the prune, which removes the switch it reads.
 """
 from __future__ import annotations
 
 import sys
 
+from libs.alerts import alerts_for_existing
 from libs.db import database, ensure_schema
 from libs.db.models import MODELS
 from libs.llm.accounts import settle
@@ -29,6 +32,8 @@ def main() -> int:
         print(f"country_counts: {split} count(s) kept before sources were, split by source")
     if freed := free_for_existing(db):
         print(f"users: {freed} account(s) from before memberships given free access")
+    if alerted := alerts_for_existing(db):
+        print(f"alerts: {alerted} account(s) given their My search alert")
     ensure_schema(db, prune="--prune" in sys.argv[1:])
     for model in MODELS:
         indexes = len(list(db[model.COLLECTION].list_indexes()))

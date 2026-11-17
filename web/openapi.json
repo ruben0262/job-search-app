@@ -22,10 +22,6 @@
             "title": "Email",
             "type": "string"
           },
-          "email_alerts": {
-            "title": "Email Alerts",
-            "type": "boolean"
-          },
           "telegram_status": {
             "title": "Telegram Status",
             "type": "string"
@@ -35,7 +31,6 @@
           "email",
           "active",
           "telegram_status",
-          "email_alerts",
           "consent_version"
         ],
         "title": "AccountOut",
@@ -53,17 +48,6 @@
               }
             ],
             "title": "Active"
-          },
-          "email_alerts": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Email Alerts"
           }
         },
         "title": "AccountPatch",
@@ -639,6 +623,290 @@
         "title": "AiAccounts",
         "type": "object"
       },
+      "AlertIn": {
+        "description": "An alert as the page sends it. Every field given must hold for a job; any one value of a field will\ndo.",
+        "properties": {
+          "channels": {
+            "items": {
+              "enum": [
+                "bell",
+                "push",
+                "telegram",
+                "email"
+              ],
+              "type": "string"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "companies": {
+            "items": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Companies",
+            "type": "array"
+          },
+          "keywords": {
+            "items": {
+              "maxLength": 60,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Keywords",
+            "type": "array"
+          },
+          "min_fit": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Fit"
+          },
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "on": {
+            "default": true,
+            "title": "On",
+            "type": "boolean"
+          },
+          "places": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Places",
+            "type": "array"
+          },
+          "search": {
+            "default": false,
+            "title": "Search",
+            "type": "boolean"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "AlertIn",
+        "type": "object"
+      },
+      "AlertOut": {
+        "properties": {
+          "channels": {
+            "items": {
+              "enum": [
+                "bell",
+                "push",
+                "telegram",
+                "email"
+              ],
+              "type": "string"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "companies": {
+            "items": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Companies",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "found": {
+            "title": "Found",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "keywords": {
+            "items": {
+              "maxLength": 60,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Keywords",
+            "type": "array"
+          },
+          "last_found_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Found At"
+          },
+          "min_fit": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Fit"
+          },
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "on": {
+            "default": true,
+            "title": "On",
+            "type": "boolean"
+          },
+          "places": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Places",
+            "type": "array"
+          },
+          "search": {
+            "default": false,
+            "title": "Search",
+            "type": "boolean"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "search",
+          "keywords",
+          "companies",
+          "places",
+          "sources",
+          "min_fit",
+          "channels",
+          "on",
+          "id",
+          "created_at",
+          "found",
+          "last_found_at"
+        ],
+        "title": "AlertOut",
+        "type": "object"
+      },
+      "AlertsPage": {
+        "properties": {
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/AlertOut"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
+          "can": {
+            "title": "Can",
+            "type": "boolean"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "found_days": {
+            "title": "Found Days",
+            "type": "integer"
+          },
+          "most": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Most"
+          },
+          "places": {
+            "items": {
+              "$ref": "#/components/schemas/Choice"
+            },
+            "title": "Places",
+            "type": "array"
+          },
+          "scores": {
+            "title": "Scores",
+            "type": "boolean"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/Choice"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "alerts",
+          "can",
+          "most",
+          "scores",
+          "checked_at",
+          "found_days",
+          "places",
+          "sources"
+        ],
+        "title": "AlertsPage",
+        "type": "object"
+      },
       "AppliedJob": {
         "properties": {
           "applied_at": {
@@ -889,6 +1157,24 @@
           "client_secret"
         ],
         "title": "Checkout",
+        "type": "object"
+      },
+      "Choice": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "Choice",
         "type": "object"
       },
       "ConfigChoice": {
@@ -5207,7 +5493,7 @@
         ]
       },
       "patch": {
-        "description": "Settings the user may change directly. Only what is named is touched. The daily email is an alert, so\nit is switched on only for a plan with alerts; off, for anybody.",
+        "description": "Settings the user may change directly. Only what is named is touched.",
         "operationId": "patch_account_account_patch",
         "requestBody": {
           "content": {
@@ -6797,6 +7083,211 @@
         "summary": "Limits",
         "tags": [
           "ai accounts"
+        ]
+      }
+    },
+    "/alerts": {
+      "get": {
+        "description": "Their alerts, each with how much it found lately, and what the page offers to make one with.",
+        "operationId": "alerts_page_alerts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertsPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Alerts Page",
+        "tags": [
+          "alerts"
+        ]
+      },
+      "post": {
+        "description": "A new alert, from the next job that joins their list.",
+        "operationId": "make_alerts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Make",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/alerts/{alert_id}": {
+      "delete": {
+        "description": "An alert gone. What it found stays found; nothing more is sent for it.",
+        "operationId": "delete_alerts__alert_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "title": "Alert Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Alerts  Alert Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete",
+        "tags": [
+          "alerts"
+        ]
+      },
+      "put": {
+        "description": "An alert changed. Switching one on needs a plan with alerts; switching it off never does.",
+        "operationId": "change_alerts__alert_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "title": "Alert Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/alerts/{alert_id}/jobs": {
+      "get": {
+        "description": "What this alert found, the latest first, as the Jobs page shows a job: less a job they skipped or\napplied to, and one that closed.",
+        "operationId": "found_jobs_alerts__alert_id__jobs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "title": "Alert Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeedJob"
+                  },
+                  "title": "Response Found Jobs Alerts  Alert Id  Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Found Jobs",
+        "tags": [
+          "alerts"
         ]
       }
     },

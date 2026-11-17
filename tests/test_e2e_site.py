@@ -275,7 +275,8 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         _sign_up(page, base, email, capsys)
         _onboard(page)
         places = page.locator("nav .places a")
-        expect(places).to_have_text(["Jobs", "Applied", "Search", "Docs", "Settings"], use_inner_text=True)
+        expect(places).to_have_text(["Jobs", "Applied", "Search", "Alerts", "Docs", "Settings"],
+                                    use_inner_text=True)
         expect(places.locator("svg")).to_have_count(0)
         page.get_by_role("link", name="Search", exact=True).click()
         expect(page.get_by_role("heading", name="The jobs you want", level=1)).to_be_visible()
@@ -904,9 +905,11 @@ def test_every_tab_is_drawn_whole_the_moment_it_is_opened(site, capsys):
             time.sleep(0.4)
             route.continue_()
 
-        page.route(re.compile(r"/(applied|jobs/added|onboarding/\w+|documents|saved|templates|account|ai-accounts|feed)"),
-                   slow)
+        page.route(re.compile(
+            r"/(applied|jobs/added|onboarding/\w+|documents|saved|templates|account|ai-accounts|feed|alerts)"),
+            slow)
         for tab, drawn in (("Applied", "You applied to 0 jobs"), ("My search", "The jobs you want"),
+                           ("Alerts", "Hear about a job the moment it appears"),
                            ("My documents", "Each one you make is kept here"), ("Settings", email),
                            ("Jobs", "2 jobs match your words"), ("Add a job", "Found a job somewhere else?")):
             seen = page.evaluate("""(tab) => new Promise((done) => {
@@ -962,7 +965,7 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         _sign_up(page, base, email, capsys)
         _onboard(page)
         tabs = page.locator("nav .places a")
-        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Settings"],
+        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "Alerts", "My documents", "Settings"],
                                   use_inner_text=True)
 
         card = page.locator("article.job-card").filter(
@@ -987,8 +990,9 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
 
         database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
         page.reload()
-        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Admin", "Settings"],
-                                  use_inner_text=True)
+        expect(tabs).to_have_text(
+            ["Jobs", "Applied", "My search", "Alerts", "My documents", "Admin", "Settings"],
+            use_inner_text=True)
         tabs.filter(has_text="Admin").click()
         page.get_by_role("button", name="Messages").click()
         expect(page.get_by_text("My CV shows the wrong city")).to_be_visible()
@@ -1002,12 +1006,12 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         if shot := os.environ.get("E2E_SHOT"):
             page.screenshot(path=shot, full_page=True)
 
-        # The smallest phone: an admin's six tabs still fit, each a whole word, and the bar is
+        # The smallest phone: an admin's seven tabs still fit, each a whole word, and the bar is
         # at the very top of the screen (owner, 2026-11-07). Admin was hidden there, and a phone's page began
         # 16px down.
         page.set_viewport_size({"width": 320, "height": 640})
         page.goto(f"{base}/#/")
-        expect(tabs).to_have_text(["Jobs", "Applied", "Search", "Docs", "Admin", "Settings"],
+        expect(tabs).to_have_text(["Jobs", "Applied", "Search", "Alerts", "Docs", "Admin", "Settings"],
                                   use_inner_text=True)
         expect(tabs.filter(has_text="Admin")).to_be_visible()
         assert page.evaluate("""() => [...document.querySelectorAll("nav .places a")].every((tab) => {
@@ -1699,9 +1703,11 @@ def _made_documents(page, user_id, job_id: int) -> None:
     assert database().built_documents.count_documents({"user_id": user_id}) == 1, "the old one went"
 
 
-def test_telegram_is_three_steps_with_no_chat_id_and_the_email_is_one_switch(site, capsys, monkeypatch):
-    """Their own bot: paste its token, press Start in it, and the page says it is connected by itself.
-    Telegram's Bot API is the stand-in from the alerts tests; everything else is the real site."""
+def test_telegram_is_three_steps_with_no_chat_id_and_the_morning_email_is_one_tick(site, capsys,
+                                                                                    monkeypatch):
+    """Their own bot, on the Alerts page: paste its token, press Start in it, and the page says it is
+    connected by itself. Telegram's Bot API is the stand-in from the alerts tests; everything else is the real
+    site. The morning email is an alert's own (owner, 2026-11-17): one tick on My search."""
     from libs import telegram as bot_api
     from libs.secrets import generate_key
     from tests.test_alerts import FakeTelegram
@@ -1716,7 +1722,7 @@ def test_telegram_is_three_steps_with_no_chat_id_and_the_email_is_one_switch(sit
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         _sign_up(page, base, email, capsys)
         _onboard(page)
-        page.goto(f"{base}/#/settings")
+        page.goto(f"{base}/#/alerts")
 
         # Folded until opened, saying where it stands.
         expect(page.get_by_text("Make your bot.")).not_to_be_visible()
@@ -1736,12 +1742,15 @@ def test_telegram_is_three_steps_with_no_chat_id_and_the_email_is_one_switch(sit
         expect(page.get_by_text("Sent. Check Telegram.")).to_be_visible()
         assert [chat for _, chat, _ in fake.sent] == ["4242", "4242"], "the welcome, then the test"
 
-        summary = page.get_by_role("switch", name="A summary of new jobs each morning")
-        expect(summary).not_to_be_checked()
-        summary.click()
-        expect(summary).to_be_checked()
+        mine = page.locator("li.alert-card").filter(has=page.get_by_role("link", name="My search"))
+        expect(mine).not_to_contain_text("a morning email")
+        mine.get_by_role("button", name="Change").click()
+        form = page.get_by_role("dialog", name="Change “My search”")
+        form.get_by_label("Morning email").check()
+        form.get_by_role("button", name="Save").click()
+        expect(mine).to_contain_text("a morning email")
         page.reload()
-        expect(page.get_by_role("switch", name="A summary of new jobs each morning")).to_be_checked()
+        expect(mine).to_contain_text("a morning email")
         browser.close()
 
 
@@ -1858,14 +1867,14 @@ def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_wh
 
         page.goto(f"{base}/#/documents")
         expect(page.get_by_text("CVs and cover letters for each job come with a membership.")).to_be_visible()
-        page.goto(f"{base}/#/settings")
+        page.goto(f"{base}/#/alerts")
         expect(page.get_by_text("Alerts come with a membership.")).to_be_visible()
+        expect(page.get_by_role("button", name="Pause alerts")).to_have_count(0)
         # And so does bringing a job in by its link (owner, 2026-11-16): the tab says so, with the way there.
         page.goto(f"{base}/#/add")
         expect(page.get_by_text("Adding a job by its link comes with a membership.")).to_be_visible()
         expect(page.get_by_label("The job's link")).to_have_count(0)
-        page.go_back()
-        expect(page.get_by_role("button", name="Pause alerts")).to_have_count(0)
+        page.goto(f"{base}/#/settings")
         expect(page.get_by_text("The free plan.")).to_be_visible()
 
         browser.close()
@@ -2158,8 +2167,9 @@ def _alert_links(page, base: str, ids: dict[str, int]) -> None:
 
 
 def _settings(browser, page, base: str) -> None:
-    """Alerts pause and resume; an iPhone outside its home screen is told what to do, not failed."""
-    page.goto(f"{base}/#/settings")
+    """Alerts pause and resume on the Alerts page; an iPhone outside its home screen is told what to do there,
+    not failed."""
+    page.goto(f"{base}/#/alerts")
     page.get_by_role("button", name="Pause alerts").click()
     expect(page.get_by_text("Alerts are paused")).to_be_visible()
     page.get_by_role("button", name="Turn alerts back on").click()
@@ -2168,7 +2178,7 @@ def _settings(browser, page, base: str) -> None:
     iphone = browser.new_context(storage_state=page.context.storage_state(), user_agent=IPHONE)
     iphone.add_init_script("delete window.PushManager")
     settings = iphone.new_page()
-    settings.goto(f"{base}/#/settings")
+    settings.goto(f"{base}/#/alerts")
     expect(settings.get_by_text("Add this site to your home screen first")).to_be_visible()
 
 
@@ -2242,3 +2252,64 @@ def _serve(app, monkeypatch):
             thread.join(timeout=10)
 
     return base, stop
+
+
+def test_an_alert_is_made_for_a_company_and_shows_what_it_found(site, capsys):
+    """Alerts (owner, 2026-11-17), on a phone: every account starts with My search; a new alert follows a
+    company in a country, made from one form; and once a job of theirs is read, the alert's own page lists
+    it."""
+    from libs.alerts import route
+    from libs.db import database, insert, now
+    from libs.db.models import Alert, AlertCursor, CorpusJob
+
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        database().users.update_one({"email": email},
+                                    {"$set": {"subscription_status": "active", "active": True}})
+        page.goto(f"{base}/#/alerts")
+        expect(page.get_by_role("heading", name="Alerts", exact=True)).to_be_visible()
+        expect(page.get_by_role("link", name="My search", exact=True)).to_be_visible()
+
+        page.get_by_role("button", name="New alert").click()
+        form = page.get_by_role("dialog", name="New alert")
+        form.get_by_label("Name").fill("LEGO in Denmark")
+        form.get_by_label("Add to: Companies").fill("LEGO")
+        form.get_by_label("Add to: Companies").press("Enter")
+        form.get_by_label("Add to: Places").fill("Denmark")
+        form.get_by_label("Add to: Places").press("Enter")
+        form.get_by_role("button", name="Make this alert").click()
+        expect(form).to_have_count(0)
+        card = page.locator("li.alert-card").filter(has=page.get_by_role("link", name="LEGO in Denmark"))
+        expect(card).to_contain_text("LEGO · Denmark")
+        expect(card).to_contain_text("Nothing found yet")
+        _fits(page)
+
+        db = database()
+        read = now() - timedelta(minutes=5)
+        # Made before the job was read: an alert announces what is new after it.
+        db[Alert.COLLECTION].update_many({}, {"$set": {"created_at": read - timedelta(hours=1)}})
+        insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="linkedin", country="DK",
+                             title="Brick Designer", company="The LEGO Group",
+                             description="Design bricks. " * 30,
+                             first_seen_at=read, described_at=read, posted_at=read))
+        db[AlertCursor.COLLECTION].update_one({"_id": "0"}, {"$set": {"at": read - timedelta(minutes=1)}},
+                                             upsert=True)
+        assert route(db) == 1
+
+        page.reload()
+        card.get_by_role("link", name="See what it found").click()
+        expect(page.get_by_role("heading", name="LEGO in Denmark")).to_be_visible()
+        expect(page.get_by_role("button", name="Brick Designer", exact=True)).to_be_visible()
+        page.get_by_role("link", name="← All alerts").click()
+        card.get_by_role("switch").uncheck()
+        expect(card.get_by_text("Off", exact=True)).to_be_visible()
+        browser.close()
+
+
+def _fits(page) -> None:
+    """Nothing wider than the screen: a phone scrolls down, never across."""
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "the page scrolls sideways"

@@ -11,6 +11,7 @@ from pydantic import BaseModel, EmailStr, Field
 from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
+from libs.alerts import first_alert
 from libs.auth import (
     MIN_PASSWORD_LENGTH,
     SessionExpired,
@@ -115,6 +116,8 @@ def signup(body: SignupRequest, request: Request, background: BackgroundTasks,
     except DuplicateKeyError:
         logger.info("signup for an existing address; answering opaquely")
         return OPAQUE_SIGNUP
+    # Their Jobs list, as it fills: the alert every account starts with, waiting for a plan that has alerts.
+    first_alert(db, user.id)
 
     token = issue_token(db, user.id, "verify_email")
     background.add_task(_send_verification, db, mailer, email, token, body.plan)

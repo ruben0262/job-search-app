@@ -206,7 +206,7 @@ def _listed(db: Database, user_id: _uuid.UUID, since: str, *, why: bool = False)
     rows = db[UserJobState.COLLECTION].find(
         {"user_id": user_id, since: {"$ne": None}, "applied_at": None, "dismissed_at": None},
         {"job_id": 1}, sort=[(since, -1)], limit=MARKED_SHOWN)
-    return _jobs(db, user_id, [row["job_id"] for row in rows], open_only=True, why=why)
+    return job_cards(db, user_id, [row["job_id"] for row in rows], open_only=True, why=why)
 
 
 def _theirs_to_add(db: Database, user_id: _uuid.UUID) -> None:
@@ -259,17 +259,19 @@ def _answer(db: Database, user_id: _uuid.UUID, outcome: str, job_id: int, url: s
     record_state(db, user_id, job_id, added_at=now(), dismissed_at=None)
     audit(logger, "job.link", user=user_id, outcome=outcome, job=job_id, host=urlparse(url).hostname,
           typed=typed)
-    return LinkAnswer(outcome=outcome, job=_jobs(db, user_id, [job_id])[0])
+    return LinkAnswer(outcome=outcome, job=job_cards(db, user_id, [job_id])[0])
 
 
-def _jobs(db: Database, user_id: _uuid.UUID, ids: list[int], *, open_only: bool = False,
-          why: bool = False) -> list[FeedJob]:
+def job_cards(db: Database, user_id: _uuid.UUID, ids: list[int], *, open_only: bool = False,
+              why: bool = False, words: list[str] | None = None) -> list[FeedJob]:
     """Cards for these jobs, in this order, with the documents made for each. `why` says which of the
     person's words each has, as its card on the Jobs page does and by the same rule (`words.terms_of`): a
     bookmarked job is shown as it was there. A job brought by its link is listed for that, not its words.
     Each is scored as a card on the Jobs page is (`libs.fit.scored`), for a plan with match scores, so a job
-    shows one number wherever it is listed (owner, 2026-11-16: "the same job postings")."""
-    mine = green_words(TenantRepository(db).get_config(user_id)) if why else []
+    shows one number wherever it is listed (owner, 2026-11-16: "the same job postings"). `words` are the ones
+    to say instead of theirs: an alert's, on the Alerts page."""
+    mine = words if words is not None else (
+        green_words(TenantRepository(db).get_config(user_id)) if why else [])
     where: dict[str, Any] = {"_id": {"$in": ids}, **({"closed_at": None} if open_only else {})}
     user = get(db, User, user_id) if has(db, user_id, "match_scores") else None
     made = fit.profile(db, user) if user is not None else None

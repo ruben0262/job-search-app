@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 from html import escape
+from itertools import groupby
 
 VERIFY_SUBJECT = "Confirm your email"
 RESET_SUBJECT = "Reset your password"
@@ -158,6 +159,13 @@ class DigestJob:
     words: tuple[str, ...]
     # The job on the site.
     url: str
+    # The alert that caught it, which the email lists it under.
+    alert: str = ""
+
+
+def _digest_heading(alert: str) -> str:
+    return (f'<tr><td style="padding:20px 0 4px;color:{INK};font:700 13px/1.4 {EMAIL_FONT};'
+            f'letter-spacing:.02em;text-transform:uppercase">{escape(alert)}</td></tr>')
 
 
 def _digest_row(job: DigestJob) -> str:
@@ -178,28 +186,32 @@ def _digest_row(job: DigestJob) -> str:
 
 
 def digest_email(jobs: list[DigestJob], *, total: int, site: str, settings: str) -> tuple[str, str, str]:
-    """Subject, text and HTML of the daily email: `jobs` listed, best matches first, out of `total` found
-    since the last one, with the rest on the site."""
+    """Subject, text and HTML of the daily email: `jobs` listed under the alert that caught each, in the order
+    given, out of `total` caught since the last one, with the rest on the site."""
     plural = "s" if total != 1 else ""
     subject = f"{total} new job{plural} for you"
-    more = total - len(jobs)
+    more = total - len({job.url for job in jobs})
 
-    lines = [f"{total} new job{plural} match your search:", ""]
-    for job in jobs:
-        lines += [f"• {job.title}" + (f" — {job.where}" if job.where else ""), f"  {job.url}", ""]
+    lines, rows = [f"Your alerts found {total} new job{plural}:", ""], ""
+    for alert, caught in groupby(jobs, key=lambda job: job.alert):
+        if alert:
+            lines += [alert.upper(), ""]
+            rows += _digest_heading(alert)
+        for job in caught:
+            lines += [f"• {job.title}" + (f" — {job.where}" if job.where else ""), f"  {job.url}", ""]
+            rows += _digest_row(job)
     if more > 0:
-        lines.append(f"And {more} more on your jobs page: {site}")
-    lines += ["", f"Turn this email off in Settings: {settings}"]
+        lines.append(f"And {more} more on the site: {site}")
+    lines += ["", f"Choose which alerts send this email: {settings}"]
 
-    rows = "".join(_digest_row(job) for job in jobs)
     table = ('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
              f'style="margin-top:8px">{rows}</table>')
     html = _page(
-        preview=f"{total} new job{plural} matching your words, best matches first.",
+        preview=f"Your alerts found {total} new job{plural}.",
         heading=subject,
-        body=(_para("Found since your last email, best matches first. The green words are yours.") + table
-              + _button(f"See all {total} on your jobs page" if more > 0 else "Open your jobs", site)),
-        footer=(f"You get this email once a day because it is on. "
-                f'<a href="{escape(settings)}" style="color:{MUTED}">Turn it off in Settings</a>.'
+        body=(_para("Found since your last email, under the alert that found each. The green words are why.")
+              + table + _button(f"See all {total} on the site" if more > 0 else "Open your alerts", site)),
+        footer=(f"You get this email once a day because an alert of yours sends to it. "
+                f'<a href="{escape(settings)}" style="color:{MUTED}">Change that on the Alerts page</a>.'
                 f"<br>{_FOOTER}"))
     return subject, "\n".join(lines), html

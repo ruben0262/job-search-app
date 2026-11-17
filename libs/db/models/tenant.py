@@ -16,10 +16,16 @@ class UserJobState(Document):
     COLLECTION = "user_job_state"
     INDEXES = (IndexModel([("user_id", 1), ("job_id", 1)], unique=True, name="one_per_job"),
                IndexModel("job_id", name="by_job"),
-               IndexModel([("user_id", 1), ("notified_at", 1)], name="sent"))
+               IndexModel([("user_id", 1), ("notified_at", 1)], name="sent"),
+               # What one alert of theirs found, the latest first: the Alerts page's list of it.
+               IndexModel([("user_id", 1), ("alerts", 1), ("alerted_at", -1)], name="found_by_alert"))
 
     user_id: uuid.UUID
     job_id: int
+    # When one of their alerts caught it (`libs.alerts.route`), and which: owed until `notified_at`, the
+    # moment the notifier sent it wherever those alerts send.
+    alerted_at: datetime | None = None
+    alerts: list[int] = field(default_factory=list)
     notified_at: datetime | None = None
     applied_at: datetime | None = None
     cover_built: bool = False

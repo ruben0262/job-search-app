@@ -66,6 +66,11 @@ LIMITS: tuple[Limit, ...] = (
           "How many green words this account may have. No board is asked for them: they are matched on the "
           "jobs already collected, so more words cost nothing to collect.",
           choices=(10, 25, 50, 100)),
+    # Each alert costs a set lookup a new job, not a query (`libs.alerts`), so the ceiling is about a page a
+    # person can still read, and a chat they can still follow, not about load.
+    Limit("alerts_per_account", "Alerts", 10, "alerts",
+          "How many named alerts this account may have, its My search alert included.",
+          choices=(3, 5, 10, 20, 50)),
     Limit("documents", "Uploaded documents", 25, "files",
           "The CVs and cover letters they upload, which their suggestions and documents are read from.",
           choices=(10, 25, 50, 100)),

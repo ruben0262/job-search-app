@@ -29,7 +29,8 @@ class User(Document):
     # Whether the person could open the profile files the setup agents wrote: nothing read it once the
     # file tiles left the site, and the admin's switch for it went on 2026-11-04. And when the account's
     # own LinkedIn search was next due: LinkedIn is read for everybody at once since 2026-11-04.
-    RETIRED = ("profile_files_visible", "linkedin_next_run_at")
+    # And the switch for the daily email, which each alert has of its own since 2026-11-17 (`Alert.channels`).
+    RETIRED = ("profile_files_visible", "linkedin_next_run_at", "email_alerts")
 
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     email: str
@@ -53,9 +54,8 @@ class User(Document):
     telegram_bot_name: str | None = None
     # When their chat was connected: alerts start from then, not with every match already waiting.
     telegram_connected_at: datetime | None = None
-    # A daily email of their new jobs (owner's decision, 2026-11-01: one summary a day, since every
-    # email shares the mailbox's daily cap with sign-up mail), and when the last one was sent.
-    email_alerts: bool = False
+    # When their daily email was last sent (`libs.notify.digest`): one a day, since every email shares the
+    # mailbox's daily cap with sign-up mail (owner, 2026-11-01). Which alerts it lists is theirs to say.
     email_digest_at: datetime | None = None
     # The old profile schema: nothing reads it (tests/test_columns_have_producers.py, KNOWN_UNWRITTEN).
     profile: dict | None = None

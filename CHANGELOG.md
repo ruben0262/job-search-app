@@ -14,6 +14,73 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17, night — Alerts are named, and one pass a minute catches for everybody
+
+The owner: "allow full custom notifications to be set up for users based on keywords (that they personally select,
+one or more), locations, cities, companies, match score, and job sites"; "someone should be able to set up to follow
+a company and receive all of their job postings as soon as they appear"; "100s of users or more ... sending messages
+constantly ... virtually no load ... we don't need heaps of code"; a tab of their own, Starter or Member. Asked and
+answered the same evening: Starter keeps its three days ("when the job essentially appears in their feed"); today's
+alerts become a default "My search" alert; every alert goes to the one Telegram chat, headed by its name; email stays
+one a day, grouped by alert ("our address would be flagged").
+
+**What a person gets.** An **Alerts** tab (`web/src/pages/AlertsPage.tsx`), one main button, New alert. An alert has
+a name and any of: words (title or text, as My search matches them), companies (whole words of the employer's name:
+"LEGO" is "The LEGO Group", not "Legoland"), places (countries or cities, any of them), job sites, a lowest match
+score, and "only jobs on my Jobs list". Every field given must hold. It sends to any of the bell, this phone or
+browser, Telegram and the morning email, and its own page lists what it found (`#/alerts?alert=<id>`, where its bell
+line and cards go). A place or a job site alone is refused (thousands a day nobody reads). At most
+`alerts_per_account` (10, the operator's, in Admin). Connecting Telegram and the phone, and the pause, moved here
+from Settings, whose Alerts card is gone.
+
+**How it is caught: once for everybody, not once a person** (`libs/alerts.py`). Once a minute, on the notifier's
+sweep, the jobs that joined a list since the last pass are read once (`described_at` after the pass's cursor, only
+the fields an alert looks at) and every alert is tested against each in memory: a word is a lookup in the words the
+posting already carries (`terms`), a company, a place and a site a field each. Only what got that far asks the
+database, once for everybody: "on my Jobs list" is `libs.matching.on_lists`, each person's `_asked` conditions as a
+facet over just those jobs (the Jobs page's own conditions, split out of `_read`, so the two cannot disagree; a test
+holds `on_lists` to `their_jobs` for red words, places, salary, a skipped job and Starter's wait, and fails when
+either the skip or the wait is taken out of it), and a match score is one facet query likewise. A wait is a cursor of
+its own (`AlertCursor`, one per plan wait), so Starter's pass reads the jobs that joined its list three days late.
+What is caught goes on the person's row for the job (`UserJobState.alerted_at`, `alerts`), and they are queued in
+one write (`libs.queue.enqueue_many`; `enqueue` is it for one).
+
+**Measured** on a copy of the dev corpus (39,059 postings) with 500 made-up accounts, each with two words in two
+countries and 300 jobs already sent, and for the new path My search plus two alerts each (1,500 alerts), the newest
+50 jobs being one production minute at ~70,000 a day; three runs each, medians:
+
+| A minute's work | Before (per account) | After (one pass) |
+| --- | --- | --- |
+| Deciding who is owed what | 18.5 s (`owed` 35 ms × 500; 25 ms of it reading every job ever sent) + 1.1 s dispatch | 0.74 s (1,251 caught for 428 accounts) |
+| Growth | with each account's sent history, every minute | with new jobs × alerts; nothing reads history |
+| Sending (`deliver`) | `owed` again, then the sends | 15.6 ms an account median, 27 ms p95; 5.7 ms a job |
+
+Got there in three steps, each kept only for its number: the per-person Jobs-list query (13.6 ms × 428 = 6.9 s a
+pass) became one facet query (1.36 s); 428 single enqueues (1.2 s) became one `insert_many` (0.76 s). A day's backlog
+after a stop (1,442 jobs, 101,339 caught) is a 19 s pass, read `PASS_JOBS` (2,000) a pass. The test's accounts are
+deliberately broad (428 of 500 caught something every minute); real ones mostly catch nothing in a given minute and
+cost nothing then.
+
+**What did not move:** what My search sends. Its alert holds to the Jobs list exactly as before, red words and all.
+
+**Gaps closed while here, both silent:** a posting whose text was stored without its words is given them in the
+pass (`terms_of`, as `set_description` finds them) rather than missed; and a My search word not in the words index
+yet (saved by a path that does not learn it) leaves the word check to the Jobs-list query and is learnt for every
+later posting. My search's save now learns its words at once (`libs.corpus.terms.learn`), as an alert's does.
+
+**Replaced and removed:** `dispatch_due_notifications` (a run per reachable account per minute), `libs.notify.owed`'s
+watermark (`sent_up_to`, `NOTIFY_SCAN`) for `owed` as the caught rows not yet sent, `users.email_alerts` (retired;
+each alert has the email; the deploy's one-time `alerts_for_existing` gives every account "My search" sending where
+theirs went, the email too if it was on, before the prune removes the switch), `EmailAlerts`, the Settings card,
+`PATCH /account`'s `email_alerts`. Signing up makes "My search" (`first_alert`).
+
+**Left as they are, said here (CLAUDE.md §5):** `PASS_JOBS` 2,000 (a backlog's pace, not a ceiling on anything a
+person sees), `SETTLE` 10 s (the gap between a job's stamp and its write; a shorter one risks passing a job by for
+good), `FOUND_DAYS` 7 (the count on each card), and the sweep, `libs.alerts.EVERY_SECONDS` 60, now the one clock: the
+notifier's sweep and the pass's lease both read it.
+
+---
+
 ## 2026-11-17, last thing — The landing page names no plan, no way an alert is sent and no interval; "official ATS checks"
 
 The owner, on the page:

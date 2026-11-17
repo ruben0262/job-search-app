@@ -23,8 +23,9 @@ const ANSWERS: [string, string][] = [
    "No, you apply on the job's own site, and we make that quick. Tap “Apply on …” " +
    "under the job: it opens on the site it was posted on, and you apply there. Then tap “Mark as applied”."],
   ["How do I get new jobs on my phone?",
-   "Alerts come with Starter and the membership. In Settings, turn on notifications in this browser, connect " +
-   "Telegram, or get one email each morning. All are optional, and your Jobs page fills up either way."],
+   "Alerts come with a paid plan. On the Alerts page, make an alert for the words, companies or places you " +
+   "want, then turn on notifications on this phone or connect Telegram. An alert can also send one email each " +
+   "morning. All are optional, and your Jobs page fills up either way."],
   ["How do I stop seeing a job?",
    "Tap “Skip”, then “Skip it”. It leaves your Jobs page and does not come back, even after a refresh."],
   ["Where are the jobs I applied to?",

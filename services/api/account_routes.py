@@ -18,7 +18,7 @@ from libs.legal import DISCLOSURE_VERSION, disclosure, has_consented
 from libs.obs import audit
 from services.api.auth_routes import _clear_session_cookies
 from services.api.billing_routes import _stripe_answers, end_membership
-from services.api.deps import current_user, get_db, with_alerts
+from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["account"])
@@ -159,27 +159,18 @@ def delete_account(body: DeleteBody, db: Database = Depends(get_db),
 
 
 class AccountPatch(BaseModel):
-    # How often the feed is sent is no longer here.
+    # How often the feed is sent is no longer here; nor the daily email, which each alert sends or not.
     active: bool | None = None
-    # A daily email of new jobs.
-    email_alerts: bool | None = None
 
 
 @router.patch("/account")
 def patch_account(body: AccountPatch, db: Database = Depends(get_db),
                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Settings the user may change directly. Only what is named is touched. The daily email is an alert, so
-    it is switched on only for a plan with alerts; off, for anybody."""
-    if body.email_alerts:
-        with_alerts(db, user_id)
+    """Settings the user may change directly. Only what is named is touched."""
     if body.active is not None:
         _set(db, user_id, active=body.active)
         audit(logger, "account.delivery_toggled", user=user_id, active=body.active)
-    if body.email_alerts is not None:
-        _set(db, user_id, email_alerts=body.email_alerts)
-        audit(logger, "account.email_alerts_toggled", user=user_id, on=body.email_alerts)
-    user = get(db, User, user_id)
-    return {"status": "ok", "active": user.active, "email_alerts": user.email_alerts}
+    return {"status": "ok", "active": get(db, User, user_id).active}
 
 
 def _set(db: Database, user_id: _uuid.UUID, **fields) -> None:
@@ -191,8 +182,6 @@ class AccountOut(BaseModel):
     # Whether alerts are sent at all: the person's pause.
     active: bool
     telegram_status: str
-    # Whether they get the daily email of new jobs.
-    email_alerts: bool
     consent_version: str | None
 
 
@@ -203,4 +192,4 @@ def account(db: Database = Depends(get_db),
     `/onboarding/identity`, their words on `/onboarding/review`."""
     user = get(db, User, user_id)
     return AccountOut(email=user.email, active=user.active, telegram_status=user.telegram_status,
-                      email_alerts=user.email_alerts, consent_version=user.processing_consent_version)
+                      consent_version=user.processing_consent_version)

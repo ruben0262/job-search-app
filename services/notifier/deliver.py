@@ -1,7 +1,9 @@
-"""Sending a person their new matches: to their Telegram chat, and to every browser they subscribed.
+"""Sending a person what their alerts caught: to the bell, their Telegram chat, and every browser they
+subscribed.
 
-What is new is `libs.notify.owed` — their `libs.matching` matches that had their whole text after
-the newest one already sent — so the alerts ask the jobs page's own question and keep no list of their own.
+What is owed is `libs.notify.owed` — what `libs.alerts.route` caught and nothing has sent — so this keeps no
+list of
+its own. Each job goes once, however many alerts caught it, wherever any of them sends, headed by their names.
 """
 from __future__ import annotations
 
@@ -15,19 +17,20 @@ from pymongo.database import Database
 
 from libs import limits
 from libs.db import find, get, now
-from libs.db.models import PushSubscription, QueueJob, User
+from libs.db.models import Alert, CorpusJob, PushSubscription, QueueJob, User
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN
 from libs.db.models.tenant import record_state
-from libs.matching import Match
-from libs.notify import TELEGRAM_BROKEN, notify, owed, sent_today
+from libs.matching import green_words
+from libs.notify import TELEGRAM_BROKEN, Event, notify, owed, sent_today
 from libs.obs import audit
 from libs.queue import enqueue
+from libs.tenant.repository import TenantRepository
 from services.notifier.card import keyboard, notification, render
 
 logger = logging.getLogger(__name__)
 
 # The whole claim is the send budget: delivery fetches nothing, so the only work between claiming and
-# sending is the match itself.
+# sending is reading what is owed.
 SEND_BUDGET_SECONDS = CLAIM_TIMEOUT_MIN["notify"] * 60 * 0.6
 
 # What Telegram says when it will never take a message for this chat again: any 403 ("bot was blocked
@@ -43,7 +46,7 @@ def unlimited_items(gap_seconds: float) -> int:
 def deliver(db: Database, user_id: _uuid.UUID, *,
             telegram: Callable[[str, str, dict], None] | None,
             push: Callable[[PushSubscription, dict], bool] | None) -> int:
-    """Send what this person is owed through every channel they have; how many jobs went.
+    """Send what this person is owed wherever the alerts that caught it send; how many jobs went.
 
     `telegram(chat_id, text, keyboard)` and `push(subscription, payload)` are the transports, `None`
     when the notifier holds no key for them. `push` answers False for a browser that has gone.
@@ -58,53 +61,84 @@ def deliver(db: Database, user_id: _uuid.UUID, *,
                        "bot token stored, or browsers with no VAPID keys set", user_id)
     if push is None:
         browsers = []
-    if not (chat and telegram) and not browsers:
-        return 0
 
     # The operator's ceilings for this account, and `None` means unlimited (`libs.limits`).
     gap, limit = _run_budget(db, user)
     if limit == 0:
         return 0
-    # Oldest first: what is owed starts after the newest job sent, so a run stopped part-way leaves
-    # exactly the rest owed, and nothing is skipped.
-    batch = owed(db, user)[:limit]
+    # Oldest first, so a run stopped part-way leaves exactly the rest owed, and nothing is skipped.
+    batch = owed(db, user_id)[:limit]
+    if not batch:
+        return 0
+    jobs = {job.id: job for job in find(db, CorpusJob, {"_id": {"$in": [row["job_id"] for row in batch]}})}
+    alerts = {alert.id: alert for alert in find(db, Alert, {"user_id": user_id})}
+    mine = set(green_words(TenantRepository(db).get_config(user_id)))
 
-    sent = 0
+    sent, chatted = 0, 0
     deadline = monotonic() + SEND_BUDGET_SECONDS
-    for match in batch:
+    for row in batch:
         # Stop before the claim does, and go straight back into the queue rather than wait.
         if monotonic() >= deadline:
             _deliver_again(db, user_id)
             logger.info("notify: %s sent %d and ran out of its send budget — continuing "
                         "immediately", user_id, sent)
             return sent
-        # Paced: Telegram takes about one message a second into a chat.
-        reached = _to_telegram(db, user, match, telegram, pause=gap if sent else 0)
-        if not (_to_browsers(db, user_id, browsers, match, push) or reached):
-            break
+        job = jobs.get(row["job_id"])
+        # An alert deleted since it caught the job sends nothing more.
+        theirs = [alerts[each] for each in row.get("alerts") or () if each in alerts]
+        if job is not None and theirs and _send(db, user, job, theirs, mine, browsers=browsers,
+                                                telegram=telegram, push=push, pause=gap if chatted else 0):
+            chatted += 1
         # Marked the moment it has gone, one job at a time.
-        record_state(db, user_id, match.job.id, notified_at=now())
+        record_state(db, user_id, row["job_id"], notified_at=now())
         sent += 1
 
     # A full batch means the limit bound rather than the supply, so there may be more behind it.
     if sent == len(batch) >= limit:
         _deliver_again(db, user_id)
-    if sent:
-        moment = now()
-        audit(logger, "notify.sent", user=user_id, items=sent, median_wait_min=round(
-            statistics.median((moment - m.job.first_seen_at).total_seconds() / 60
-                              for m in batch[:sent])))
+    moment = now()
+    waits = [(moment - jobs[row["job_id"]].first_seen_at).total_seconds() / 60
+             for row in batch[:sent] if row["job_id"] in jobs]
+    audit(logger, "notify.sent", user=user_id, items=sent, telegram=chatted,
+          median_wait_min=round(statistics.median(waits)) if waits else None)
     return sent
 
 
-def _to_telegram(db: Database, user: User, match: Match,
-                 telegram: Callable[[str, str, dict], None] | None, *, pause: float) -> bool:
+def _send(db: Database, user: User, job: CorpusJob, alerts: list[Alert], mine: set[str], *,
+          browsers: list[PushSubscription], telegram: Callable[[str, str, dict], None] | None,
+          push: Callable[[PushSubscription, dict], bool] | None, pause: float) -> bool:
+    """One job wherever any of the alerts that caught it sends, headed by their names; whether it went to
+    Telegram, which paces the next."""
+    ways = {way for alert in alerts for way in alert.channels}
+    names = [alert.name for alert in alerts]
+    if "push" in ways:
+        _to_browsers(db, user.id, browsers, job, names=names, push=push)
+    for alert in alerts:
+        if "bell" in alert.channels:
+            # One line an alert in the bell, brought up to date while it is unread rather than one a job.
+            notify(db, user.id, Event(f"alert.{alert.id}", "info", alert.name, f"#/alerts?alert={alert.id}"),
+                   " · ".join(filter(None, (job.title, job.company))))
+    # Paced: Telegram takes about one message a second into a chat.
+    return "telegram" in ways and _to_telegram(db, user, job, names=names, words=_words(job, alerts, mine),
+                                               telegram=telegram, pause=pause)
+
+
+def _words(job: CorpusJob, alerts: list[Alert], mine: set[str]) -> list[str]:
+    """Why it was caught: the alerts' words it has, and My search's for an alert that follows it."""
+    wanted = {word for alert in alerts for word in alert.keywords}
+    if any(alert.search for alert in alerts):
+        wanted |= mine
+    return sorted(wanted.intersection(job.terms))
+
+
+def _to_telegram(db: Database, user: User, job: CorpusJob, *, names: list[str], words: list[str],
+                 telegram: Callable[[str, str, dict], None] | None, pause: float) -> bool:
     """The job to their Telegram chat, if it still takes messages; whether it went."""
     if telegram is None or user.telegram_status != "connected" or not user.telegram_chat_id:
         return False
     sleep(pause)
     try:
-        telegram(user.telegram_chat_id, render(match.job, match.words), keyboard(match.job))
+        telegram(user.telegram_chat_id, render(job, words, names), keyboard(job))
     except Exception as exc:
         if not _is_terminal(exc):
             raise
@@ -113,11 +147,11 @@ def _to_telegram(db: Database, user: User, match: Match,
     return True
 
 
-def _to_browsers(db: Database, user_id: _uuid.UUID, browsers: list[PushSubscription],
-                 match: Match, push: Callable[[PushSubscription, dict], bool] | None) -> bool:
+def _to_browsers(db: Database, user_id: _uuid.UUID, browsers: list[PushSubscription], job: CorpusJob, *,
+                 names: list[str], push: Callable[[PushSubscription, dict], bool] | None) -> bool:
     """The job to every browser still open this run; whether any took it. A gone one is deleted."""
     reached = False
-    payload = notification(match.job)
+    payload = notification(job, names)
     for browser in list(browsers):
         try:
             if push(browser, payload):
@@ -127,7 +161,7 @@ def _to_browsers(db: Database, user_id: _uuid.UUID, browsers: list[PushSubscript
             db[PushSubscription.COLLECTION].delete_one({"endpoint": browser.endpoint})
         except Exception as exc:  # noqa: BLE001 - one browser failing must not cost the others
             logger.warning("push: a browser of %s refused job %s (%s); skipped for this run",
-                           user_id, match.job.id, type(exc).__name__)
+                           user_id, job.id, type(exc).__name__)
         browsers.remove(browser)
     return reached
 
@@ -168,7 +202,7 @@ def _telegram_gone(db: Database, user: User, exc: Exception) -> None:
     # The one failure Telegram itself cannot tell them about.
     notify(db, user.id, TELEGRAM_BROKEN,
            "Telegram stopped taking our messages, so jobs are not reaching you there. If you "
-           "blocked the bot, connect Telegram again under Your details.")
+           "blocked the bot, connect Telegram again on the Alerts page.")
     logger.warning("telegram: %s's chat refused delivery (%s); marked broken", user.id,
                    str(exc)[:200])
 

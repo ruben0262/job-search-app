@@ -23,6 +23,7 @@ from libs.corpus.geo import COUNTRIES
 from libs.corpus.repository import CorpusRepository
 from libs.db import delete_account, find, get, now
 from libs.db.models import (
+    Alert,
     AtsToken,
     BuiltDocument,
     CorpusJob,
@@ -401,7 +402,8 @@ def _usage(db: Database, user: User) -> AdminUsage:
     cvs = [row for row in documents if row["kind"] == "cv"]
     made = Counter(row["kind"] for row in db[BuiltDocument.COLLECTION].find({"user_id": user.id},
                                                                              {"kind": 1}))
-    alerts = [name for name, on in (("email", user.email_alerts),
+    emailed = db[Alert.COLLECTION].count_documents({"user_id": user.id, "on": True, "channels": "email"}) > 0
+    alerts = [name for name, on in (("email", emailed),
                                     ("Telegram", user.telegram_status == "connected"),
                                     ("browser", count(PushSubscription.COLLECTION) > 0)) if on]
     words = Counter(word for match in jobs for word in match.words)

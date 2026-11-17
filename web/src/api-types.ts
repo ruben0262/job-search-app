@@ -28,8 +28,7 @@ export interface paths {
         head?: never;
         /**
          * Patch Account
-         * @description Settings the user may change directly. Only what is named is touched. The daily email is an alert, so
-         *     it is switched on only for a plan with alerts; off, for anybody.
+         * @description Settings the user may change directly. Only what is named is touched.
          */
         patch: operations["patch_account_account_patch"];
         trace?: never;
@@ -695,6 +694,75 @@ export interface paths {
          * @description Where this account's plan limits stand: the 5-hour window and the weekly one (owner, 2026-11-14).
          */
         get: operations["limits_ai_accounts__account_id__limits_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Alerts Page
+         * @description Their alerts, each with how much it found lately, and what the page offers to make one with.
+         */
+        get: operations["alerts_page_alerts_get"];
+        put?: never;
+        /**
+         * Make
+         * @description A new alert, from the next job that joins their list.
+         */
+        post: operations["make_alerts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/{alert_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change
+         * @description An alert changed. Switching one on needs a plan with alerts; switching it off never does.
+         */
+        put: operations["change_alerts__alert_id__put"];
+        post?: never;
+        /**
+         * Delete
+         * @description An alert gone. What it found stays found; nothing more is sent for it.
+         */
+        delete: operations["delete_alerts__alert_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/{alert_id}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Found Jobs
+         * @description What this alert found, the latest first, as the Jobs page shows a job: less a job they skipped or
+         *     applied to, and one that closed.
+         */
+        get: operations["found_jobs_alerts__alert_id__jobs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1988,8 +2056,6 @@ export interface components {
             consent_version: string | null;
             /** Email */
             email: string;
-            /** Email Alerts */
-            email_alerts: boolean;
             /** Telegram Status */
             telegram_status: string;
         };
@@ -1997,8 +2063,6 @@ export interface components {
         AccountPatch: {
             /** Active */
             active?: boolean | null;
-            /** Email Alerts */
-            email_alerts?: boolean | null;
         };
         /** AdminAccount */
         AdminAccount: {
@@ -2151,6 +2215,94 @@ export interface components {
             /** Accounts */
             accounts: components["schemas"]["AiAccount"][];
         };
+        /**
+         * AlertIn
+         * @description An alert as the page sends it. Every field given must hold for a job; any one value of a field will
+         *     do.
+         */
+        AlertIn: {
+            /** Channels */
+            channels?: ("bell" | "push" | "telegram" | "email")[];
+            /** Companies */
+            companies?: string[];
+            /** Keywords */
+            keywords?: string[];
+            /** Min Fit */
+            min_fit?: number | null;
+            /** Name */
+            name: string;
+            /**
+             * On
+             * @default true
+             */
+            on: boolean;
+            /** Places */
+            places?: string[];
+            /**
+             * Search
+             * @default false
+             */
+            search: boolean;
+            /** Sources */
+            sources?: string[];
+        };
+        /** AlertOut */
+        AlertOut: {
+            /** Channels */
+            channels: ("bell" | "push" | "telegram" | "email")[];
+            /** Companies */
+            companies: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Found */
+            found: number;
+            /** Id */
+            id: number;
+            /** Keywords */
+            keywords: string[];
+            /** Last Found At */
+            last_found_at: string | null;
+            /** Min Fit */
+            min_fit: number | null;
+            /** Name */
+            name: string;
+            /**
+             * On
+             * @default true
+             */
+            on: boolean;
+            /** Places */
+            places: string[];
+            /**
+             * Search
+             * @default false
+             */
+            search: boolean;
+            /** Sources */
+            sources: string[];
+        };
+        /** AlertsPage */
+        AlertsPage: {
+            /** Alerts */
+            alerts: components["schemas"]["AlertOut"][];
+            /** Can */
+            can: boolean;
+            /** Checked At */
+            checked_at: string | null;
+            /** Found Days */
+            found_days: number;
+            /** Most */
+            most: number | null;
+            /** Places */
+            places: components["schemas"]["Choice"][];
+            /** Scores */
+            scores: boolean;
+            /** Sources */
+            sources: components["schemas"]["Choice"][];
+        };
         /** AppliedJob */
         AppliedJob: {
             /**
@@ -2244,6 +2396,13 @@ export interface components {
         Checkout: {
             /** Client Secret */
             client_secret: string;
+        };
+        /** Choice */
+        Choice: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
         };
         /** ConfigChoice */
         ConfigChoice: {
@@ -4897,6 +5056,158 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Limits"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    alerts_page_alerts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertsPage"];
+                };
+            };
+        };
+    };
+    make_alerts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_alerts__alert_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alert_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_alerts__alert_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alert_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    found_jobs_alerts__alert_id__jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alert_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedJob"][];
                 };
             };
             /** @description Validation Error */

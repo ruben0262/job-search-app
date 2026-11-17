@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+from collections.abc import Sequence
 
 from libs.contracts.config import WORKPLACE_NAMES
 from libs.corpus import salary as salarylib
@@ -46,9 +47,12 @@ def job_page(job: CorpusJob) -> str:
     return site_url(f"/#/feed?job={job.id}")
 
 
-def render(job: CorpusJob, words: tuple[str, ...]) -> str:
-    """The card, in Telegram HTML: the job, where it is, what it pays, and which of your words it has."""
+def render(job: CorpusJob, words: Sequence[str], alerts: Sequence[str] = ()) -> str:
+    """The card, in Telegram HTML: which of their alerts caught it, the job, where it is, what it pays, and
+    which of their words it has. Every alert goes to the one chat, each card headed by its alerts' names
+    (owner, 2026-11-17)."""
     esc = html.escape
+    heading = f"🔔 {esc(', '.join(alerts))}\n" if alerts else ""
 
     applicants = applicant_label(job.applicants, job.applicants_caption)
     applicants = f" · 👥{esc(applicants)}" if applicants else ""
@@ -66,10 +70,10 @@ def render(job: CorpusJob, words: tuple[str, ...]) -> str:
     place = " · ".join(part for part in [f"📍 {location}" if location else "", workplace] if part)
     place = f"{place}\n" if place else ""
 
-    return (f"<b>{esc((job.title or '')[:120])}</b>{easy}{repost}\n"
+    matches = f"\nMatches: {esc(', '.join(words))}" if words else ""
+    return (f"{heading}<b>{esc((job.title or '')[:120])}</b>{easy}{repost}\n"
             f"{esc((job.company or '')[:60])} · {esc(board_name(job.source or ''))}{applicants}{age}\n"
-            f"{place}{salary_line(job)}\n"
-            f"Matches: {esc(', '.join(words))}")
+            f"{place}{salary_line(job)}{matches}")
 
 
 def keyboard(job: CorpusJob) -> dict:
@@ -82,10 +86,11 @@ def keyboard(job: CorpusJob) -> dict:
     return {"inline_keyboard": [buttons]}
 
 
-def notification(job: CorpusJob) -> dict:
-    """The job as a browser notification: what the service worker shows, and where a tap goes."""
+def notification(job: CorpusJob, alerts: Sequence[str] = ()) -> dict:
+    """The job as a browser notification: what the service worker shows, and where a tap goes. The alerts
+    that caught it first, so a phone's list of them says which alert each one is."""
     return {"title": job.title or "A new job for you",
-            "body": " · ".join(part for part in (job.company, job.location) if part),
+            "body": " · ".join(part for part in (", ".join(alerts), job.company, job.location) if part),
             "url": job_page(job)}
 
 

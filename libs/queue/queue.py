@@ -8,17 +8,19 @@ from datetime import timedelta
 
 from pymongo import ReturnDocument
 from pymongo.database import Database
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import BulkWriteError
 
 from libs import settings
-from libs.db import find, insert, now
-from libs.db.models import CorpusJob, LanePause, QueueJob, User
+from libs.db import find, next_ids, now
+from libs.db.models import Alert, LanePause, QueueJob, User
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, LANES, MAX_ATTEMPTS
 from libs.membership import having
-from libs.notify import reachable
 from libs.notify.digest import due
 
 logger = logging.getLogger(__name__)
+
+# MongoDB's code for a write the unique index refused.
+DUPLICATE_KEY = 11000
 
 
 def lane_paused(db: Database, lane: str) -> bool:
@@ -30,16 +32,38 @@ def enqueue(db: Database, lane: str, user_id: _uuid.UUID, *,
             payload: dict | None = None, dedup_key: str | None = None,
             delay_min: int = 0) -> int | None:
     """Add work. `None` when the lane is paused or the same work (lane, user, dedup key) is pending."""
+    added = enqueue_many(db, lane, [user_id], payload=payload, dedup_key=dedup_key, delay_min=delay_min)
+    return added[0] if added else None
+
+
+def enqueue_many(db: Database, lane: str, user_ids: Sequence[_uuid.UUID], *,
+                 payload: dict | None = None, dedup_key: str | None = None,
+                 delay_min: int = 0) -> list[int]:
+    """The same work for each of these accounts, in one write: the ids of the jobs added. None while the lane
+    is
+    paused, and none for an account whose same work (lane, user, dedup key) is pending. One write, because the
+    alerts queue hundreds at once (`libs.alerts`): one at a time, 428 of them took 1.2 s (2026-11-17)."""
     _check_lane(lane)
+    if not user_ids:
+        return []
     if lane_paused(db, lane):
         # Refused at the door rather than claimed and dropped.
         logger.info("queue: %s is paused, not enqueuing", lane)
-        return None
+        return []
+    jobs = [QueueJob(id=job_id, lane=lane, user_id=user_id, dedup_key=dedup_key, payload=payload or {},
+                     run_after=now() + timedelta(minutes=delay_min))
+            for job_id, user_id in zip(next_ids(db, QueueJob.COLLECTION, len(user_ids)), user_ids,
+                                       strict=True)]
     try:
-        return insert(db, QueueJob(lane=lane, user_id=user_id, dedup_key=dedup_key, payload=payload or {},
-                                   run_after=now() + timedelta(minutes=delay_min))).id
-    except DuplicateKeyError:
-        return None
+        db[QueueJob.COLLECTION].insert_many([job.to_doc() for job in jobs], ordered=False)
+    except BulkWriteError as exc:
+        # The same work already pending is refused by the dedup index, and is not a fault; anything else is.
+        errors = exc.details["writeErrors"]
+        if any(error["code"] != DUPLICATE_KEY for error in errors):
+            raise
+        refused = {error["index"] for error in errors}
+        return [job.id for index, job in enumerate(jobs) if index not in refused]
+    return [job.id for job in jobs]
 
 
 def claim(db: Database, lane: str, worker: str) -> QueueJob | None:
@@ -85,39 +109,14 @@ def sweep_expired(db: Database, lane: str | None = None) -> int:
     return recovered
 
 
-def dispatch_due_notifications(db: Database) -> int:
-    """Enqueue a `notify` job for every reachable account the corpus has grown for since its last one.
-
-    **Nothing scores any more** (ROADMAP Phase 8), so there is no "match waiting" row to look for:
-    what is new for a person is the notify job's own question, answered by `libs.notify.owed`. This
-    pass only decides whether asking is worth a claim — a posting stored after the account's last
-    finished notify run — so a quiet corpus enqueues nothing, and a busy one enqueues one run per
-    account per harvest rather than one a minute.
-    """
-    newest = db[CorpusJob.COLLECTION].find_one({}, {"first_seen_at": 1}, sort=[("first_seen_at", -1)])
-    if newest is None:
-        return 0
-    # Whoever's plan has alerts (`libs.membership`): a job alert is the site's content, as the jobs page is.
-    accounts = db[User.COLLECTION].distinct(
-        "_id", {"$and": [{"active": True, "status": "active"}, reachable(db), having("alerts")]})
-    last_run = {row["_id"]: row["last"] for row in db[QueueJob.COLLECTION].aggregate([
-        {"$match": {"lane": "notify", "state": "done", "user_id": {"$in": accounts}}},
-        {"$group": {"_id": "$user_id", "last": {"$max": "$finished_at"}}}])}
-
-    enqueued = 0
-    for user_id in accounts:
-        if (last_run.get(user_id) is None or newest["first_seen_at"] > last_run[user_id]) and \
-                enqueue(db, "notify", user_id, dedup_key="due") is not None:
-            enqueued += 1
-    return enqueued
-
-
 def dispatch_due_digests(db: Database) -> int:
-    """Enqueue a daily email for everyone whose is due (`libs.notify.digest.due`). On the same sweep as
-    the alerts, so it has no clock of its own; the `digest` dedup key keeps it to one at a time."""
+    """Enqueue a daily email for everyone whose is due (`libs.notify.digest.due`): an alert of theirs sends
+    to it. On the same sweep as the alerts, so it has no clock of its own; the `digest` dedup key keeps it to
+    one at a time."""
     hour = settings.get(db, "email_digest_hour")
+    emailed = db[Alert.COLLECTION].distinct("user_id", {"on": True, "channels": "email"})
     enqueued = 0
-    for user in find(db, User, {"$and": [{"email_alerts": True, "active": True, "status": "active"},
+    for user in find(db, User, {"$and": [{"_id": {"$in": emailed}, "active": True, "status": "active"},
                                          having("alerts")]}):
         if due(db, user, hour) and enqueue(db, "notify", user.id, payload={"digest": True},
                                            dedup_key="digest") is not None:

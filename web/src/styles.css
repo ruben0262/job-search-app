@@ -2307,6 +2307,50 @@ button.toast-close:hover:not([disabled]) {
   }
 }
 
+/* Alerts: one card an alert, its name and its switch on one line, then what it follows and what it found. */
+.alert-list {
+  list-style: none;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.alert-card {
+  margin: 0;
+}
+
+.alert-card.off {
+  opacity: 0.65;
+}
+
+.alert-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.alert-name {
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--ink);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.alert-card p {
+  margin: 0.35rem 0 0;
+}
+
+.alert-card .row {
+  margin-top: 0.6rem;
+}
+
+.alert-form .main {
+  width: 100%;
+}
+
 /* Telegram, this browser, the pause: one row each, saying where it stands. */
 .channels {
   margin: 0.5rem 0 0;

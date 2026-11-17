@@ -22,10 +22,12 @@ from libs.contracts.config import (
     migrate_config,
 )
 from libs.contracts.onboarding import IdentitySchema, ProfileLink
+from libs.corpus.terms import learn
 from libs.db import find_one, get, insert, now
 from libs.db.models import User, UserDocument
 from libs.documents import UnsupportedDocument, extract_text
 from libs.documents.read import LANGUAGE_NAMES, Facts, read
+from libs.matching import green_words
 from libs.obs import audit
 from libs.onboarding import onboarding_state
 from libs.tenant.repository import TenantRepository
@@ -225,6 +227,7 @@ def save_config(db: Database, user_id: _uuid.UUID, body: UserConfigSchema) -> No
                    "remove a few, or ask us to raise it")
 
     TenantRepository(db).save_config(user_id, body.model_dump())
+    learn(db, green_words(body.model_dump()))
     # Same reason as identity: what they search for is hard data, and `label.md` and the role angles
     # were written against the previous answer.
     _stamp(db, user_id, hard_data_changed_at=now())

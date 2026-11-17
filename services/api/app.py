@@ -19,6 +19,7 @@ from libs.secrets import install
 from services.api.account_routes import router as account_router
 from services.api.admin_routes import router as admin_router
 from services.api.ai_account_routes import router as ai_account_router
+from services.api.alert_routes import router as alert_router
 from services.api.auth_routes import router as auth_router
 from services.api.billing_routes import router as billing_router
 from services.api.billing_routes import setup_problems
@@ -59,6 +60,7 @@ app.include_router(billing_router)
 app.include_router(contact_router)
 app.include_router(account_router)
 app.include_router(admin_router)
+app.include_router(alert_router)
 app.include_router(ai_account_router)
 app.include_router(document_router)
 app.include_router(onboarding_router)

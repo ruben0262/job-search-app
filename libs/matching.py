@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid as _uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -16,10 +17,12 @@ from pymongo.database import Database
 
 from libs.contracts.config import migrate_config
 from libs.corpus import pay
+from libs.corpus.freshness import platform_windows
 from libs.corpus.words import norm
-from libs.db.models import CorpusJob, User, UserJobState, Word
-from libs.membership import jobs_as_of
-from libs.tenant.filters import candidate_conditions, filters_for
+from libs.db import find
+from libs.db.models import CorpusJob, User, UserConfig, UserJobState, Word
+from libs.membership import FREE, MEMBER, STARTER, jobs_as_of, members, starters, wait_hours
+from libs.tenant.filters import UserFilters, candidate_conditions, filters_for
 from libs.tenant.repository import TenantRepository
 
 logger = logging.getLogger(__name__)
@@ -121,6 +124,23 @@ def _words(mine: list[str], pending: set[str]) -> dict:
                            "in_title": which("$title_terms", ("$title",))}}
 
 
+def _asked(config: dict | None, filters: UserFilters,
+           as_of: datetime | None) -> tuple[list[str], list[dict]] | None:
+    """What one person's list asks of a posting: their green words, one of which it must have, and every other
+    condition (`candidate_conditions`, the plan's wait, a minimum salary). None when they have no words. The
+    one definition behind `_read` and `on_lists`."""
+    mine = green_words(config)
+    if not mine:
+        return None
+    where = candidate_conditions(filters)
+    if as_of is not None:
+        # Found by then, which the words index reads by and stops at; and read by then, the rule itself.
+        where += [{"first_seen_at": {"$lte": as_of}}, {"described_at": {"$lte": as_of}}]
+    if (floor := pay.floor_eur(config)) is not None:
+        where.append({"$or": [{"salary_top_eur": None}, {"salary_top_eur": {"$gte": floor}}]})
+    return mine, where
+
+
 def _read(db: Database, user: User, *, described_since: datetime | None = None,
           since: datetime | None = None, scan: int = SCAN, text: bool = False, fit: bool = False,
           skip: set[int] | frozenset[int] = frozenset()) -> list[dict] | None:
@@ -146,21 +166,16 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
     A minimum salary is the top of a posting's stated pay (`libs.corpus.pay`), stored with its text: unknown
     is never underpaid."""
     config = TenantRepository(db).get_config(user.id)
-    mine = green_words(config)
-    if not mine:
+    asked = _asked(config, filters_for(db, user, config=config), jobs_as_of(db, user))
+    if asked is None:
         return None
-    where = candidate_conditions(filters_for(db, user))
-    if (as_of := jobs_as_of(db, user)) is not None:
-        # Found by then, which the words index reads by and stops at; and read by then, the rule itself.
-        where += [{"first_seen_at": {"$lte": as_of}}, {"described_at": {"$lte": as_of}}]
+    mine, where = asked
     if described_since is not None:
         where.append({"described_at": {"$gte": described_since}})
     if since is not None:
         where.append({"first_seen_at": {"$gte": since - timedelta(days=1)}})
     if skip:
         where.append({"_id": {"$nin": sorted(skip)}})
-    if (floor := pay.floor_eur(config)) is not None:
-        where.append({"$or": [{"salary_top_eur": None}, {"salary_top_eur": {"$gte": floor}}]})
     indexed = sorted(db[Word.COLLECTION].distinct("_id", {"_id": {"$in": mine}, "indexed_at": {"$ne": None}}))
     pending = {word for word in mine if word not in indexed}
 
@@ -295,3 +310,45 @@ def their_jobs(db: Database, user: User, *, described_since: datetime | None = N
     skipped, applied = marks(db, user.id)
     return matching_jobs(db, user, described_since=described_since, since=since, scan=scan,
                          skip=skipped | set(applied))
+
+
+def on_lists(db: Database, wanted: dict[_uuid.UUID, list[int]]) -> dict[_uuid.UUID, set[int]]:
+    """Which of these jobs each person's Jobs list has (`their_jobs`), asked of the database once for
+    everybody:
+    what an alert following My search catches (`libs.alerts`). Each person's conditions are `_asked`'s, as on
+    their Jobs page, run as a facet over only these jobs; what they all read (their configs, plans, skipped
+    jobs,
+    the words index) is read once rather than once a person. One query a pass, where a query a person cost
+    13.6 ms each for 428 people, 6.9 s, every minute (2026-11-17)."""
+    if not wanted:
+        return {}
+    people = sorted(wanted)
+    configs = {row["user_id"]: row["config"] for row in db[UserConfig.COLLECTION].find(
+        {"user_id": {"$in": people}}, {"user_id": 1, "config": 1})}
+    paying = set(db[User.COLLECTION].distinct("_id", {"$and": [{"_id": {"$in": people}}, members()]}))
+    waiting = set(db[User.COLLECTION].distinct("_id", {"$and": [{"_id": {"$in": people}}, starters()]}))
+    waits = {plan: wait_hours(db, plan) for plan in (FREE, STARTER, MEMBER)}
+    windows = platform_windows(db)
+    every = sorted({job for jobs in wanted.values() for job in jobs})
+    gone = {(row["user_id"], row["job_id"]) for row in db[UserJobState.COLLECTION].find(
+        {"user_id": {"$in": people}, "job_id": {"$in": every},
+         "$or": [{"dismissed_at": {"$ne": None}}, {"applied_at": {"$ne": None}}]},
+        {"user_id": 1, "job_id": 1})}
+    indexed = set(db[Word.COLLECTION].distinct("_id", {"indexed_at": {"$ne": None}}))
+    facets = {}
+    for user in find(db, User, {"_id": {"$in": people}}):
+        plan = STARTER if user.id in waiting else MEMBER if user.id in paying else FREE
+        config = configs.get(user.id)
+        asked = _asked(config, filters_for(db, user, windows=windows, config=config),
+                       jobs_as_of(db, user, waits[plan]))
+        jobs = [job for job in wanted[user.id] if (user.id, job) not in gone]
+        if asked is None or not jobs:
+            continue
+        mine, where = asked
+        facets[str(user.id)] = [{"$match": {"$and": [*where, {"_id": {"$in": jobs}}]}},
+                                _words(mine, {word for word in mine if word not in indexed}),
+                                {"$match": {"words.0": {"$exists": True}}}, {"$project": {"_id": 1}}]
+    if not facets:
+        return {}
+    [made] = db[CorpusJob.COLLECTION].aggregate([{"$match": {"_id": {"$in": every}}}, {"$facet": facets}])
+    return {_uuid.UUID(person): {row["_id"] for row in rows} for person, rows in made.items()}

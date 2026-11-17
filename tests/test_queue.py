@@ -12,7 +12,6 @@ from libs.db.models import QueueJob, User
 from libs.queue.queue import (
     claim,
     complete,
-    dispatch_due_notifications,
     enqueue,
     fail,
     sweep_expired,
@@ -189,93 +188,31 @@ def test_a_delayed_job_is_not_claimable_yet(db):
     assert claim(db, "notify", "w") is None
 
 
-# ── the notify dispatcher ─────────────────────────────────────────────────────────────────────
+# ── many at once ──────────────────────────────────────────────────────────────────────────────
 
-def _posting(db, *, minutes_ago: int = 0):
-    """A posting stored `minutes_ago`: what makes an account worth asking again, now nothing scores."""
-    from libs.db.models import CorpusJob
+def test_enqueue_many_adds_one_each_and_leaves_what_is_pending(db):
+    """The alerts queue everybody they caught a job for at once (`libs.alerts`): one write, and the same
+    work already waiting for somebody is not added twice."""
+    from libs.queue.queue import enqueue_many
 
-    return insert(db, CorpusJob(url=f"https://example.test/{uuid.uuid4().hex}", source="greenhouse",
-                                title="Backend Engineer",
-                                first_seen_at=now() - timedelta(minutes=minutes_ago)))
+    waiting, fresh, other = _user(db), _user(db), _user(db)
+    enqueue(db, "notify", waiting.id, dedup_key="due")
 
+    added = enqueue_many(db, "notify", [waiting.id, fresh.id, other.id], dedup_key="due")
 
-def _finished_run(db, user, *, minutes_ago: int) -> None:
-    insert(db, QueueJob(lane="notify", user_id=user.id, state="done", dedup_key="due",
-                        finished_at=now() - timedelta(minutes=minutes_ago)))
-
-
-def test_an_account_the_corpus_has_grown_for_is_queued(db):
-    """Nothing scores any more, so a posting stored since its last run is what makes one worth it."""
-    user = _user(db, active=True, status="active", telegram_status="connected")
-    _finished_run(db, user, minutes_ago=30)
-    _posting(db, minutes_ago=5)
-
-    assert dispatch_due_notifications(db) == 1
-    queued = db[QueueJob.COLLECTION].find_one({"user_id": user.id, "state": "ready"})
-    assert queued["lane"] == "notify"
+    assert len(added) == 2
+    assert {get(db, QueueJob, job_id).user_id for job_id in added} == {fresh.id, other.id}
+    assert db[QueueJob.COLLECTION].count_documents({"lane": "notify", "state": "ready"}) == 3
+    assert enqueue_many(db, "notify", [fresh.id], dedup_key="due") == [], "one waiting is enough"
 
 
-def test_an_account_with_nothing_new_since_its_last_run_is_not_queued(db):
-    """There is no cadence to fire on, so an unchanged corpus means an idle lane."""
-    user = _user(db, active=True, status="active", telegram_status="connected")
-    _posting(db, minutes_ago=30)
-    _finished_run(db, user, minutes_ago=5)
+def test_enqueue_many_adds_nothing_to_a_paused_lane(db):
+    from libs.db.models import LanePause
+    from libs.queue.queue import enqueue_many
 
-    assert dispatch_due_notifications(db) == 0, (
-        "a notify run with nothing new to look at is a claim, a query and a log line for no reason")
-
-
-def test_an_empty_corpus_queues_nobody(db):
-    """Before the first harvest there is nothing any account could be told."""
-    _user(db, active=True, status="active", telegram_status="connected")
-    assert dispatch_due_notifications(db) == 0
-
-
-def test_the_sweep_does_not_queue_a_second_run_while_one_is_pending(db):
-    """The dedup key is what stops forty postings becoming forty runs."""
-    _user(db, active=True, status="active", telegram_status="connected")
-    _posting(db)
-
-    assert dispatch_due_notifications(db) == 1
-    assert dispatch_due_notifications(db) == 0
-
-
-def test_an_account_reachable_only_by_its_browser_is_queued(db):
-    """Telegram is optional: a browser that asked for notifications is a channel on its own."""
-    from libs.db.models import PushSubscription
-
-    user = _user(db, active=True, status="active", telegram_status="unconfigured")
-    _posting(db)
-    assert dispatch_due_notifications(db) == 0, "the premise: no channel, no run"
-
-    insert(db, PushSubscription(user_id=user.id, endpoint=f"https://push.example.test/{uuid.uuid4()}",
-                                p256dh="k", auth="a"))
-    assert dispatch_due_notifications(db) == 1
-
-
-def test_a_user_whose_bot_is_broken_is_not_enqueued(db):
-    """Retrying a revoked token cannot succeed. The fix is a reconnect email, not a queue entry."""
-    _user(db, active=True, status="active", telegram_status="broken")
-    _posting(db)
-    assert dispatch_due_notifications(db) == 0
-
-
-def test_a_suspended_user_is_not_enqueued(db):
-    """A stopped account must stop costing anything, including delivery attempts."""
-    _user(db, active=True, status="suspended", telegram_status="connected")
-    _posting(db)
-    assert dispatch_due_notifications(db) == 0
-
-
-def test_an_unscheduled_account_still_obeys_every_other_gate(db):
-    """Reading "never run" as "due" must not become "due regardless of anything else"."""
-    _user(db, active=True, status="suspended", telegram_status="connected")
-    _user(db, active=True, status="active", telegram_status="broken")
-    _user(db, active=False, status="active", telegram_status="connected")
-    _posting(db)
-
-    assert dispatch_due_notifications(db) == 0
+    insert(db, LanePause(id="notify"))
+    assert enqueue_many(db, "notify", [_user(db).id], dedup_key="due") == []
+    assert db[QueueJob.COLLECTION].count_documents({}) == 0
 
 
 def test_every_lane_has_a_claim_timeout():

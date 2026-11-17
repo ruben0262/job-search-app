@@ -311,7 +311,7 @@ def _banners(db: Database, user: User, member: bool) -> list[DashboardBanner]:
     if user.telegram_status == "broken":
         return [DashboardBanner(level="warning", key="telegram_broken",
                                 text="Telegram stopped taking our messages.")]
-    if not db[User.COLLECTION].count_documents({"_id": user.id, **reachable(db, user.id)}, limit=1):
+    if not reachable(db, user):
         return [DashboardBanner(level="info", key="no_alerts",
                                 text="Get alerts on your phone when a new job matches your words.")]
     if not user.active:

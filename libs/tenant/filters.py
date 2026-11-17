@@ -72,7 +72,12 @@ class UserFilters:
         )
 
 
-def filters_for(session, user, *, windows: PlatformWindows | None = None) -> UserFilters:
+# `filters_for` reads the config itself unless it is given one: None is a config, an account that has none.
+_UNREAD: dict = {}
+
+
+def filters_for(session, user, *, windows: PlatformWindows | None = None,
+                config: dict | None = _UNREAD) -> UserFilters:
     """This account's pre-score conditions, with the operator's numbers already resolved.
 
     One construction site for the three lanes that ask the same question, so the ceiling an operator
@@ -80,7 +85,8 @@ def filters_for(session, user, *, windows: PlatformWindows | None = None) -> Use
 
     `windows` is the platform half, for a caller looping over accounts: pass it and the two settings
     are read once rather than once per account. Omit it and it is read here, so a caller with one
-    account stays a one-liner.
+    account stays a one-liner. `config` likewise: their stored config, for a caller that read everybody's
+    at once.
     """
     from libs import limits  # noqa: PLC0415 - avoids a cycle at import time
     from libs.tenant.repository import TenantRepository  # noqa: PLC0415 - avoids a cycle at import time
@@ -91,7 +97,7 @@ def filters_for(session, user, *, windows: PlatformWindows | None = None) -> Use
     # between the two hides the check from the guard as well as from a reader.
     cap = limits.resolve(user, "applicant_cap")
     return UserFilters.from_config(
-        TenantRepository(session).get_config(user.id),
+        TenantRepository(session).get_config(user.id) if config is _UNREAD else config,
         max_age_hours=windows.max_age_hours,
         applicant_cap=None if cap is None else int(cap),
         source_min_ages=windows.source_min_ages)

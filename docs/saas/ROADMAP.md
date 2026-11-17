@@ -3774,6 +3774,36 @@ membership's card; jobs kept thirty days; alerts are members'.
 **Done when** the first real member has started a trial on the live site and cancelled it in the portal
 without being charged.
 
+## Phase 11 — alerts of their own, and reaching the phone (added 2026-11-17)
+
+**Why.** The owner: alerts "based on keywords (that they personally select, one or more), locations, cities,
+companies, match score, and job sites", named, in a tab of their own, for Starter and Member; then reaching people
+"even when they are off platform", ideally as a phone notification from the web app installed "through chrome as a
+mini app", "without making an actual apk or ios app". For hundreds of accounts sending constantly, at virtually no
+load.
+
+**1. Setting them up ✅ built 2026-11-17 (CHANGELOG, night).** The Alerts tab; `libs.alerts` (one pass a minute for
+everybody, 0.74 s where the per-account way spent 19.6 s on 500 accounts); "My search" for every account; the email
+grouped by alert; Starter's three days kept. **Open:** a count of what an alert *would* have found this week, said as
+it is made, so an alert that finds nothing is seen to before days of silence (one query at save time over the
+week's postings, asked with the pass's own `Rule.catches` so there is no second definition).
+
+**2. Reaching the phone (next).** What is there already: Web Push (`services/notifier`, `web/public/sw.js`) reaches
+Chrome and Firefox on Android and every desktop browser, installed or not; an iPhone or iPad from iOS 16.4 once the
+site is added to the home screen and opened from there (the Alerts page says so). What installing as an app needs:
+
+- The manifest's icons (192 and 512 px, and a maskable one): Chrome offers "Install app" only with them, and they
+  are the icon on the home screen. `web/public/manifest.webmanifest` has none today.
+- An "Install the app" button on the Alerts page, from the browser's own `beforeinstallprompt` (Chrome, Edge,
+  Samsung Internet), and the two-tap Share → Add to Home Screen said in words on an iPhone, where there is no
+  prompt.
+- The notification's icon and badge in `sw.js`, and a tap that opens the alert's job in the installed app.
+- Measured before it is claimed: a notification on a locked Android phone and a locked iPhone, each through the
+  installed app, with the time from a job's text being read to the phone buzzing.
+
+**Not planned:** a native app; a Telegram channel per alert (owner, 2026-11-17: one chat, each card headed by its
+alert); an email per job (the mailbox's daily cap).
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.

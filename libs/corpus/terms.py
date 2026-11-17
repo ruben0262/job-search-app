@@ -54,6 +54,18 @@ class CatchUp:
     searched: int = 0
 
 
+def learn(db: Database, words: list[str]) -> None:
+    """Words to look for in every posting whose text is read from now on, so an alert using them, and My
+    search, has the very next one (`libs.alerts` reads a new posting's words and nothing else). Asked when
+    they
+    are saved, not left to `catch_up` after the next harvest pass. Words already known are left as they
+    are."""
+    if words:
+        db[Word.COLLECTION].bulk_write([
+            UpdateOne({"_id": word}, {"$setOnInsert": {"indexed_at": None, "searched_to": None}}, upsert=True)
+            for word in sorted(set(words))], ordered=False)
+
+
 def catch_up(db: Database, *, budget_seconds: float = TERMS_BUDGET_SECONDS) -> CatchUp:
     """Each account's new words into the vocabulary, and looked for in the postings that can still be
     shown, a stretch at a time, for at most `budget_seconds`."""

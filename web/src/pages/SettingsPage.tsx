@@ -1,12 +1,11 @@
-/** Settings: alerts, AI writing and your account. Help moved to the "?" beside the bell. */
+/** Settings: AI writing and your account. Help moved to the "?" beside the bell, and alerts to a page of their own
+ * (owner, 2026-11-17). */
 import { useState } from "react";
 
 import { AiAccounts } from "../aiaccounts";
-import { Alerts } from "../alerts";
 import { api, type Ready, type Schema } from "../api";
 import { useKept } from "../kept";
 import { MembershipCard } from "../membership";
-import { AlertsForMembers } from "../alerts";
 import { Card, Error, Field, Prompt, useAction, useNewPassword } from "../ui";
 
 type Account = Schema<"AccountOut">;
@@ -14,9 +13,8 @@ type Account = Schema<"AccountOut">;
 /** What Settings reads, as `kept.ts` keeps it: shown at once on every visit. */
 export const ACCOUNT = "/account";
 
-export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
+export function SettingsPage({ dashboard, onSignedOut }: {
   dashboard: Ready;
-  onChanged: () => void;
   onSignedOut: () => void;
 }) {
   const { data: account, reload: reloadAccount } = useKept<Account>(ACCOUNT);
@@ -24,16 +22,6 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
   const reload = () => {
     void reloadAccount();
   };
-  // A pause changes the jobs page's banner, which is the dashboard's.
-  const dashboardChanged = () => {
-    reload();
-    onChanged();
-  };
-
-  const pause = useAction(async () => {
-    await api.patch("/account", { active: !account?.active });
-    dashboardChanged();
-  });
   const withdraw = useAction(async () => {
     await api.del("/account/consent");
     reload();
@@ -48,31 +36,6 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
   return (
     <>
       <h1>Settings</h1>
-
-      <Card title="Alerts">
-        <p className="small muted">
-          Optional. New jobs that match your search reach you as they are found, or in one email each morning.
-        </p>
-        {dashboard.areas.includes("alerts") ? (
-          <>
-            <Alerts />
-            <div className="channel">
-              <span>
-                <span className="label">{account.active ? "Alerts are on" : "Alerts are paused"}</span>
-                <span className="hint">
-                  {account.active
-                    ? "Pausing stops alerts to Telegram and to this browser. Your jobs page keeps filling up."
-                    : "Nothing is sent to your phone. Your jobs page keeps filling up as usual."}
-                </span>
-              </span>
-              <button type="button" className="secondary" disabled={pause.busy} onClick={() => void pause.run()}>
-                {account.active ? "Pause alerts" : "Turn alerts back on"}
-              </button>
-            </div>
-            <Error>{pause.error}</Error>
-          </>
-        ) : <AlertsForMembers />}
-      </Card>
 
       <Card title="Your AI accounts">
         <AiAccounts />

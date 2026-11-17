@@ -10,6 +10,7 @@ import { MEMBERSHIP, backFromStripe } from "./membership";
 import { ADMIN_READS, AdminPage, CORPUS_FIRST, LATENCY_FIRST } from "./pages/AdminPage";
 import { forgetKept, readAhead } from "./kept";
 import { ADDED, AddJobPage } from "./pages/AddJobPage";
+import { ALERTS, AlertsPage } from "./pages/AlertsPage";
 import { BOOKMARKED, BookmarksPage } from "./pages/BookmarksPage";
 import { AdminUserPage } from "./pages/AdminUserPage";
 import { APPLIED, AppliedPage } from "./pages/AppliedPage";
@@ -101,8 +102,8 @@ export function App() {
   const admin = session.state === "in" && session.dashboard.stage === "ready" && session.dashboard.is_admin;
   useEffect(() => {
     if (ready) {
-      readAhead([ADDED, BOOKMARKED, APPLIED, REVIEW, DOCUMENTS, SAVED, HISTORY, IDENTITY, TEMPLATES, ACCOUNT, AI_ACCOUNTS,
-                 MEMBERSHIP]);
+      readAhead([ADDED, BOOKMARKED, APPLIED, REVIEW, ALERTS, DOCUMENTS, SAVED, HISTORY, IDENTITY, TEMPLATES, ACCOUNT,
+                 AI_ACCOUNTS, MEMBERSHIP]);
     }
   }, [ready]);
   // And Admin's, for whoever sees it: its first open draws at once too.
@@ -150,7 +151,7 @@ export function App() {
   }
 
   const [path, query = ""] = hash.split("?");
-  const section = ["applied", "words", "documents", "admin", "settings"]
+  const section = ["applied", "words", "alerts", "documents", "admin", "settings"]
     .find((name) => path?.startsWith(`/${name}`)) ?? "jobs";
   const focus = Number(new URLSearchParams(query).get("job")) || null;
 
@@ -189,10 +190,12 @@ export function App() {
             <AppliedPage />
           ) : section === "words" ? (
             <WordsPage />
+          ) : section === "alerts" ? (
+            <AlertsPage onChanged={reload} query={query} />
           ) : section === "documents" ? (
             <DocumentsPage makes={dashboard.areas.includes("cvs")} />
           ) : section === "settings" ? (
-            <SettingsPage dashboard={dashboard} onChanged={reload} onSignedOut={reload} />
+            <SettingsPage dashboard={dashboard} onSignedOut={reload} />
           ) : section === "admin" ? (
             // `#/admin/users/<id>` is its own page, not a panel that unfolds inside the list.
             hash.startsWith("/admin/users/") ? (

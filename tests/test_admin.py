@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from libs.db import get, insert, now
-from libs.db.models import User
+from libs.db.models import Alert, User
 
 pytest.importorskip("fastapi")
 
@@ -66,7 +66,8 @@ def test_an_account_page_says_what_they_do_with_the_site_and_nothing_of_the_setu
     TenantRepository(db).save_config(ordinary.id, {"languages": ["en", "de"], "sections": [
         {"platform": "all", "keywords": ["nurse", "midwife", "carer"], "exclude_keywords": ["night"],
          "locations": ["germany"], "workplaces": ["onsite"]}]})
-    _change(db, ordinary, last_active_at=now() - timedelta(hours=2), email_alerts=True)
+    _change(db, ordinary, last_active_at=now() - timedelta(hours=2))
+    insert(db, Alert(user_id=ordinary.id, name="My search", search=True, channels=["bell", "email"]))
     jobs = [insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title,
                                  location="Berlin, Germany", country="DE", description="A ward job. " * 30,
                                  first_seen_at=now() - timedelta(hours=hours),

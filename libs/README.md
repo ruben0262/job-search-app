@@ -22,6 +22,7 @@ What is here is what runs: what the platform no longer uses is in [`retired/`](.
 
 | Package | What it is |
 |---|---|
+| `alerts.py` | Named alerts: what each catches, asked of every new job once a minute for everybody at once (`route`), and "My search" for every account |
 | [`assistant/`](assistant/) | The help chat: a reply written by an AI on the key that pays, streamed into its row |
 | [`auth/`](auth/) | Password hashing, verification tokens and refresh sessions |
 | [`contracts/`](contracts/) | Pydantic models shared between services: the search config and onboarding |
@@ -36,7 +37,7 @@ What is here is what runs: what the platform no longer uses is in [`retired/`](.
 | [`llm/`](llm/) | The one seam to the AI providers: Anthropic, Google and OpenAI, on an API key or a signed-in account's own tool; each person's AI accounts and the one in use |
 | [`mail/`](mail/) | Transactional email |
 | `membership.py` | The three plans, Free, Starter and Member, fixed in code (`PLANS`), and who is on which: paid or in its trial (Stripe), free access from an admin, or an admin. What an account may do is asked by area (`has`, `having`); how long its jobs wait is `delay_hours` |
-| [`notify/`](notify/) | In-app notifications, and the new matches owed to a person off the site |
+| [`notify/`](notify/) | In-app notifications, what an account's alerts caught and is owed to it (`owed`), and the morning email |
 | [`obs/`](obs/) | Logging for every process |
 | [`onboarding/`](onboarding/) | What a new account must supply before it has jobs |
 | [`ops/`](ops/) | Seeing the platform, and being told when it needs a person |

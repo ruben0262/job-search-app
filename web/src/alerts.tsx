@@ -1,8 +1,10 @@
-/** Alerts off the site: Telegram through the person's own bot, this browser's notifications, and a
- * daily email. All optional; the site works the same without them. */
+/** Where alerts reach somebody off the site: Telegram through their own bot, and this phone's or browser's
+ * notifications; and the pause on every alert. All optional; the site works the same without them. */
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type Schema } from "./api";
+import { useKept } from "./kept";
+import { ACCOUNT } from "./pages/SettingsPage";
 import { disablePush, enablePush, pushState } from "./push";
 import { Error, useAction } from "./ui";
 
@@ -141,24 +143,31 @@ export function TelegramSetup() {
   );
 }
 
-/** The daily email of new jobs: on or off. */
-export function EmailAlerts() {
-  const [on, setOn] = useState<boolean | null>(null);
-  useEffect(() => {
-    api.get<Schema<"AccountOut">>("/account").then((account) => setOn(account.email_alerts)).catch(() => undefined);
-  }, []);
-  const toggle = useAction(async (next: boolean) => {
-    setOn((await api.patch<{ email_alerts: boolean }>("/account", { email_alerts: next })).email_alerts);
+/** Every alert at once: paused, nothing is sent anywhere, and the Jobs page fills up as usual. Was in Settings
+ * until alerts had a page of their own (owner, 2026-11-17). */
+export function Pause({ onChanged }: { onChanged: () => void }) {
+  const { data: account, reload } = useKept<Schema<"AccountOut">>(ACCOUNT);
+  const pause = useAction(async () => {
+    await api.patch("/account", { active: !account?.active });
+    await reload();
+    // The Jobs page's banner says when they are paused, and it is the dashboard's.
+    onChanged();
   });
+  if (!account) return null;
   return (
-    <>
-      <label className="pick">
-        <input type="checkbox" role="switch" checked={on === true} disabled={on === null || toggle.busy}
-               onChange={(event) => void toggle.run(event.target.checked)} />
-        <span>A summary of new jobs each morning</span>
-      </label>
-      <Error>{toggle.error}</Error>
-    </>
+    <div className="channel">
+      <span>
+        <span className="label">{account.active ? "Alerts are on" : "Alerts are paused"}</span>
+        <span className="hint">
+          {account.active ? "Pausing stops every alert. Your Jobs page keeps filling up."
+            : "Nothing is sent. Your Jobs page keeps filling up as usual."}
+        </span>
+      </span>
+      <button type="button" className="secondary" disabled={pause.busy} onClick={() => void pause.run()}>
+        {account.active ? "Pause alerts" : "Turn alerts back on"}
+      </button>
+      <Error>{pause.error}</Error>
+    </div>
   );
 }
 
@@ -202,7 +211,6 @@ export function PushButton() {
   );
 }
 
-/** Every channel, each with where it stands. */
 /** Where the alerts are, for an account without a membership: they come with one (owner, 2026-11-12), and a
  * channel set up without it would wait in silence, with nothing to say why. A button, not a link in the sentence
  * (owner, 2026-11-13), and a quiet one: it sits under the page's own main button, as on onboarding's last step. */
@@ -215,6 +223,8 @@ export function AlertsForMembers() {
   );
 }
 
+/** Where alerts can reach somebody off the site, each with where it stands. Which alert sends where is the
+ * alert's own (`AlertsPage`); the morning email needs no setting up, so it is only there. */
 export function Alerts() {
   return (
     <div className="channels">
@@ -222,12 +232,8 @@ export function Alerts() {
         <TelegramSetup />
       </div>
       <div className="channel">
-        <span className="label">This browser</span>
+        <span className="label">This phone or browser</span>
         <PushButton />
-      </div>
-      <div className="channel">
-        <span className="label">Email</span>
-        <EmailAlerts />
       </div>
     </div>
   );

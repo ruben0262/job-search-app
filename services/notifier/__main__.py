@@ -1,4 +1,6 @@
-"""The `notify` lane worker, its two transports (Telegram and Web Push), and the sweep that feeds it."""
+"""The `notify` lane worker, its two transports (Telegram and Web Push), and the sweep that feeds it: the
+alerts' pass
+over new jobs (`libs.alerts.route`) and the daily emails that are due."""
 from __future__ import annotations
 
 import json
@@ -8,12 +10,13 @@ import sys
 
 from pywebpush import WebPushException, webpush
 
+from libs.alerts import EVERY_SECONDS, route
 from libs.db import database, ensure_schema, get
 from libs.db.models import PushSubscription, QueueJob, User
 from libs.mail import sender_from_env
 from libs.notify.digest import send_digest
 from libs.obs import configure
-from libs.queue.queue import dispatch_due_digests, dispatch_due_notifications
+from libs.queue.queue import dispatch_due_digests
 from libs.queue.worker import run_worker
 from libs.secrets import SecretStore, install
 from libs.telegram import SEND_TIMEOUT_SEC, send
@@ -23,9 +26,8 @@ from services.notifier.deliver import deliver
 # alert is still worth reading the next morning.
 PUSH_TTL_SEC = 24 * 3600
 
-# How often the sweep asks "has the corpus grown for anybody since their last run"
-# (`libs.queue.queue`). A posting stored now reaches a person within about this long.
-DISPATCH_EVERY_SEC = 60.0
+# How often the sweep runs: the alerts' own interval (`libs.alerts.EVERY_SECONDS`), which their lease is too.
+DISPATCH_EVERY_SEC = EVERY_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +51,11 @@ def push(subscription: PushSubscription, payload: dict) -> bool:
 
 
 def _dispatch(db) -> None:
-    """The sweep: anybody the corpus has grown for since their last run, and anybody whose daily
-    email is due. Silent when it finds none."""
-    enqueued, emails = dispatch_due_notifications(db), dispatch_due_digests(db)
-    if enqueued or emails:
-        logger.info("sweep: enqueued %d notify job(s) and %d daily email(s)", enqueued, emails)
+    """The sweep: the alerts' pass, which queues whoever it caught a job for, and anybody whose daily email is
+    due. Silent when it finds none: the pass says what it caught itself."""
+    route(db)
+    if emails := dispatch_due_digests(db):
+        logger.info("sweep: enqueued %d daily email(s)", emails)
 
 
 _MAILER = None
@@ -90,8 +92,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if "--tick" in (argv if argv is not None else sys.argv[1:]):
         db = database()
-        enqueued, emails = dispatch_due_notifications(db), dispatch_due_digests(db)
-        logger.info("dispatcher: enqueued %d notify job(s) and %d daily email(s)", enqueued, emails)
+        caught, emails = route(db), dispatch_due_digests(db)
+        logger.info("dispatcher: %d job(s) caught by alerts, %d daily email(s) enqueued", caught, emails)
         return 0
 
     # The dispatcher runs inside the worker, not on its own timer.

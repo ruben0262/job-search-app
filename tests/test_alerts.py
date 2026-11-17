@@ -1,7 +1,9 @@
-"""Alerts: new matching jobs reach a person off the site, through one platform bot and their browsers.
+"""Alerts: named searches a person follows (owner, 2026-11-17), each sending the jobs it catches to the bell,
+their
+own Telegram bot, their browsers and the daily email.
 
-Connecting either is one tap: a `t.me` link and Start, or allowing notifications. What is sent is
-`libs.notify.owed` — the person's `libs.matching` matches first seen after the newest one already sent.
+A pass reads the jobs that joined a list since the last one and tests every alert against them
+(`libs.alerts.route`); the notifier sends what was caught (`services.notifier.deliver`).
 """
 from __future__ import annotations
 
@@ -22,40 +24,77 @@ pytest.importorskip("pywebpush")
 
 @pytest.fixture(autouse=True)
 def no_pacing(monkeypatch):
-    """The gap between Telegram messages is Telegram's rule; here it would only make the suite slow."""
+    """The gap between Telegram messages is Telegram's rule, and the settling moment is the database's; here
+    each would only make the suite slow."""
+    from libs import alerts
     from services.notifier import deliver
 
     monkeypatch.setattr(deliver, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(alerts, "SETTLE", timedelta(0))
 
 
-def _person(db, *, telegram=True, browsers=0, joined_minutes_ago=24 * 60):
-    """Somebody with one green word of their own, so no other test's posting can match them."""
+def _alert(db, user, **fields):
+    """An alert of theirs, made when they joined unless said otherwise: My search, unless it is given
+    something else to look for."""
+    from libs.db.models import Alert
+
+    fields.setdefault("search", not any(fields.get(key) for key in ("keywords", "companies", "min_fit")))
+    return insert(db, Alert(user_id=user.id, name=fields.pop("name", "My search"),
+                            created_at=fields.pop("created_at", user.created_at), **fields))
+
+
+def _person(db, *, telegram=True, browsers=0, joined_minutes_ago=24 * 60, alert=True, **fields):
+    """Somebody with one green word of their own, so no other test's posting can match them, and the My
+    search alert every account starts with."""
+    from libs.corpus.terms import learn
     from libs.db.models import PushSubscription, User, UserConfig
 
     word = f"wrangler{uuid.uuid4().hex[:8]}"
     user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
-                           subscription_status="active", status="active",
+                           subscription_status=fields.pop("subscription_status", "active"), status="active",
                            active=True, telegram_status="connected" if telegram else "unconfigured",
                            telegram_chat_id="555" if telegram else None,
-                           created_at=now() - timedelta(minutes=joined_minutes_ago)))
+                           created_at=now() - timedelta(minutes=joined_minutes_ago), **fields))
     insert(db, UserConfig(user_id=user.id, schema_version=2,
                           config={"sections": [{"platform": "all", "keywords": [word]}]}))
-    # Subscribed since they joined: when a browser subscribed is when its alerts start.
+    # Saving My search learns its words (`onboarding_routes.save_config`).
+    learn(db, [word])
     for _ in range(browsers):
         insert(db, PushSubscription(user_id=user.id, endpoint=f"https://push.example.com/{uuid.uuid4()}",
                                     p256dh="k", auth="a", created_at=user.created_at))
+    if alert:
+        _alert(db, user)
     return user, word
 
 
-def _posting(db, title, *, minutes_ago=5, described=True):
-    """A posting found `minutes_ago`, and described then too unless `described` is False: what a
-    board that sends the whole text gives, and what a LinkedIn posting is before it is opened."""
-    from libs.db.models import CorpusJob
+def _posting(db, title, *, minutes_ago=5, described=True, **fields):
+    """A posting found `minutes_ago`, and its whole text read then too unless `described` is False: what a
+    board that sends the whole text gives, and what a LinkedIn posting is before it is opened. Its words are
+    found as the text is stored (`libs.corpus.words.terms_of`), against the words index."""
+    from libs.corpus.words import terms_of
+    from libs.db.models import CorpusJob, Word
 
     seen = now() - timedelta(minutes=minutes_ago)
-    return insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="test", title=title,
-                                company="Acme", description="Build APIs", is_remote=True, posted_at=seen,
-                                first_seen_at=seen, described_at=seen if described else None))
+    description = fields.pop("description", "Build APIs")
+    words = terms_of(title, description, sorted(db[Word.COLLECTION].distinct("_id"))) if described else {}
+    return insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}",
+                                source=fields.pop("source", "test"),
+                                title=title, company=fields.pop("company", "Acme"), description=description,
+                                is_remote=True, posted_at=seen, first_seen_at=seen,
+                                described_at=seen if described else None,
+                                terms_at=seen if described else None,
+                                **words, **fields))
+
+
+def _catch(db, *, back=timedelta(days=5)):
+    """One pass of the alerts, from `back` ago for every wait: a test's jobs are minutes or days old, and the
+    first pass of a fresh database starts from now. Reading a job again catches nothing twice."""
+    from libs.alerts import route
+    from libs.db.models import AlertCursor
+
+    for wait in ("0", "72"):
+        db[AlertCursor.COLLECTION].update_one({"_id": wait}, {"$set": {"at": now() - back}}, upsert=True)
+    return route(db)
 
 
 def _notified(db, user) -> set[int]:
@@ -63,6 +102,14 @@ def _notified(db, user) -> set[int]:
 
     return set(db[UserJobState.COLLECTION].distinct(
         "job_id", {"user_id": user.id, "notified_at": {"$ne": None}}))
+
+
+def _caught(db, user) -> dict[int, list[int]]:
+    """Which jobs their alerts caught, and which alerts caught each."""
+    from libs.db.models import UserJobState
+
+    return {row["job_id"]: sorted(row["alerts"]) for row in db[UserJobState.COLLECTION].find(
+        {"user_id": user.id, "alerted_at": {"$ne": None}})}
 
 
 def _endpoints(db, user) -> list[str]:
@@ -95,13 +142,15 @@ class Outbox:
 
 
 def run(db, user, outbox, **transports):
+    """A pass of the alerts, then this person's notify run."""
     from services.notifier.deliver import deliver
 
+    _catch(db)
     return deliver(db, user.id, telegram=transports.get("telegram", outbox.tg),
                    push=transports.get("push", outbox.push))
 
 
-# ── what is sent ──────────────────────────────────────────────────────────────────────────────
+# ── what is caught ────────────────────────────────────────────────────────────────────────────
 
 @needs_db
 def test_a_new_match_reaches_telegram_and_every_browser_once(db):
@@ -116,26 +165,23 @@ def test_a_new_match_reaches_telegram_and_every_browser_once(db):
 
     [(chat, text, keyboard)] = outbox.telegram
     assert chat == "555"
+    assert text.startswith("🔔 My search\n"), "every alert goes to the one chat, headed by its name"
     assert f"Senior {word}" in text and f"Matches: {word}" in text
     # Plain links, so a tap opens something rather than waiting on a webhook.
     page = site_url(f"/#/feed?job={match.id}")
     assert [(b["text"], b["url"]) for b in keyboard["inline_keyboard"][0]] == [
         ("Apply on Test", match.url), ("See it on the site", page)]
     assert [payload["url"] for _, payload in outbox.browsers] == [page, page]
+    assert all(payload["body"].startswith("My search · ") for _, payload in outbox.browsers)
     assert _notified(db, user) == {match.id}
     assert run(db, user, Outbox()) == 0, "sent once, and never again"
 
 
 @needs_db
 def test_the_telegram_card_reads_the_salary_off_the_jobs_text(db):
-    """Matching keeps the text in the database unless asked; the alert asks, or its card says
-    "not listed" for a job whose text names the pay."""
-    from libs.db.models import CorpusJob
-
+    """The card says "not listed" for a job whose text names the pay unless it reads the text."""
     user, word = _person(db)
-    job = _posting(db, f"Senior {word}")
-    db[CorpusJob.COLLECTION].update_one({"_id": job.id}, {"$set": {
-        "description": "Build APIs. Pays €60,000 - €80,000 per year."}})
+    _posting(db, f"Senior {word}", description="Build APIs. Pays €60,000 - €80,000 per year.")
     outbox = Outbox()
 
     assert run(db, user, outbox) == 1
@@ -144,10 +190,10 @@ def test_the_telegram_card_reads_the_salary_off_the_jobs_text(db):
 
 
 @needs_db
-def test_a_job_is_alerted_once_it_has_its_text_not_when_it_is_found(db):
-    """A job without its description is not a whole job yet (owner, 2026-11-02). And one described
-    after a newer one was sent is still sent: the watermark is when jobs were described, not found,
-    or a LinkedIn posting found early and opened late would fall behind it for good."""
+def test_a_job_is_caught_once_it_has_its_text_not_when_it_is_found(db):
+    """A job without its description is not a whole job yet (owner, 2026-11-02), and it joins a list when its
+    text is read: one opened after a newer one was sent is still caught, or a LinkedIn posting found early and
+    opened late would fall behind for good."""
     from libs.corpus.repository import CorpusRepository
 
     user, word = _person(db)
@@ -157,86 +203,325 @@ def test_a_job_is_alerted_once_it_has_its_text_not_when_it_is_found(db):
     run(db, user, Outbox())
     assert _notified(db, user) == {later.id}, "not the one with no text yet"
 
-    CorpusRepository(db).set_description(early.id, "The whole posting. " * 20)
+    CorpusRepository(db).set_description(early.id, f"The whole {word} posting. " * 20)
     run(db, user, Outbox())
     assert _notified(db, user) == {later.id, early.id}
 
 
 @needs_db
-def test_only_jobs_described_after_the_newest_one_sent_go_out(db):
-    from libs.db.models.tenant import record_state
+def test_an_alert_announces_what_joins_the_list_after_it_was_made(db):
+    """Not the backlog the Jobs page already shows: a job read before the alert existed is not sent."""
+    user, word = _person(db, alert=False)
+    _posting(db, word, minutes_ago=60)
+    _alert(db, user, created_at=now() - timedelta(minutes=30))
+    new = _posting(db, word, minutes_ago=10)
+
+    run(db, user, Outbox())
+
+    assert _notified(db, user) == {new.id}
+
+
+@needs_db
+def test_a_company_alert_catches_that_employer_by_its_name_and_nothing_else(db):
+    """Follow a company (owner, 2026-11-17): whole words of its name, in any case, whatever its search."""
+    user, _ = _person(db, alert=False)
+    lego = _alert(db, user, name="LEGO", companies=["LEGO"])
+    theirs = _posting(db, "Brick Designer", company="The LEGO Group")
+    _posting(db, "Ride Operator", company="Legoland Billund")
+    _posting(db, "Designer", company="Acme")
+
+    _catch(db)
+
+    assert _caught(db, user) == {theirs.id: [lego.id]}
+
+
+@needs_db
+def test_places_are_countries_or_cities_and_job_sites_narrow_them(db):
+    """A place is a country or a city; any of them will do. Every field given must hold."""
+    user, word = _person(db, alert=False)
+    alert = _alert(db, user, name="Here", keywords=[word], places=["denmark", "berlin"],
+                   sources=["greenhouse"])
+    copenhagen = _posting(db, word, country="DK", source="greenhouse")
+    berlin = _posting(db, word, country="DE", city="berlin", source="greenhouse")
+    _posting(db, word, country="DE", city="munich", source="greenhouse")
+    _posting(db, word, country="DK", source="linkedin")
+    _posting(db, "Nurse", country="DK", source="greenhouse")
+
+    _catch(db)
+
+    assert _caught(db, user) == {copenhagen.id: [alert.id], berlin.id: [alert.id]}
+
+
+@needs_db
+def test_a_word_is_found_in_the_text_as_well_as_the_title(db):
+    """Words are matched as My search's are: anywhere in the posting, whole words."""
+    user, word = _person(db, alert=False)
+    alert = _alert(db, user, name="Words", keywords=[word])
+    in_text = _posting(db, "Engineer", description=f"You will run {word} every day.")
+    _posting(db, "Engineer", description=f"You will run {word}x every day.")
+
+    _catch(db)
+
+    assert _caught(db, user) == {in_text.id: [alert.id]}
+
+
+@needs_db
+def test_a_posting_stored_without_its_words_is_still_caught_by_them(db):
+    """Its words are found in the pass, as they would have been with its text, not passed over."""
+    from libs.db.models import CorpusJob
+
+    user, word = _person(db, alert=False)
+    alert = _alert(db, user, name="Words", keywords=[word])
+    job = _posting(db, word)
+    db[CorpusJob.COLLECTION].update_one({"_id": job.id}, {"$set": {"terms": [], "terms_at": None}})
+
+    _catch(db)
+
+    assert _caught(db, user) == {job.id: [alert.id]}
+
+
+@needs_db
+def test_my_search_holds_to_the_jobs_list_and_another_alert_does_not(db):
+    """"My search" sends what the Jobs page lists, red words and all; an alert of its own is its own
+    search."""
+    from libs.db.models import UserConfig
 
     user, word = _person(db)
-    sent = _posting(db, word, minutes_ago=60)
-    record_state(db, user.id, sent.id, notified_at=now())
-    _posting(db, word, minutes_ago=90)
-    newer = _posting(db, word, minutes_ago=10)
+    db[UserConfig.COLLECTION].update_one({"user_id": user.id}, {"$set": {"config": {"sections": [
+        {"keywords": [word], "exclude_keywords": ["senior"]}]}}})
+    words = _alert(db, user, name="Anything", keywords=[word])
+    [mine] = [alert for alert in _alerts(db, user) if alert.search]
+    junior, senior = _posting(db, f"Junior {word}"), _posting(db, f"Senior {word}")
 
-    run(db, user, Outbox())
+    _catch(db)
 
-    assert _notified(db, user) == {sent.id, newer.id}
-
-
-@needs_db
-def test_somebody_never_sent_anything_gets_what_was_found_since_they_joined(db):
-    """Not the backlog the jobs page already shows them."""
-    user, word = _person(db, joined_minutes_ago=30)
-    _posting(db, word, minutes_ago=60)
-    new = _posting(db, word, minutes_ago=10)
-
-    run(db, user, Outbox())
-
-    assert _notified(db, user) == {new.id}
+    assert _caught(db, user) == {junior.id: sorted([mine.id, words.id]), senior.id: [words.id]}
 
 
 @needs_db
-def test_alerts_start_when_telegram_is_connected_not_when_they_joined(db):
-    """Turning alerts on weeks after joining must not fire every match still in its window at once."""
+def test_my_search_catches_a_word_the_index_does_not_have_yet_and_learns_it(db):
+    """A word saved some other way than My search's own page is not looked for in the postings yet; the Jobs
+    list still has their jobs, so the alert must too, and the next posting is searched for it."""
+    from libs.db.models import UserConfig, Word
+
+    user, _ = _person(db)
+    word = f"unindexed{uuid.uuid4().hex[:6]}"
+    db[UserConfig.COLLECTION].update_one({"user_id": user.id},
+                                         {"$set": {"config": {"sections": [{"keywords": [word]}]}}})
+    job = _posting(db, f"Senior {word}")
+
+    _catch(db)
+
+    assert list(_caught(db, user)) == [job.id]
+    assert db[Word.COLLECTION].count_documents({"_id": word}) == 1
+
+
+@needs_db
+def test_on_lists_says_what_each_persons_jobs_page_lists(db):
+    """The one question asked twice: the alerts ask it of everybody at once (`on_lists`), the Jobs page one
+    person at a time (`their_jobs`). Red words, places, a minimum salary, a skipped job and a plan's wait all
+    decide; the two answers must be the same for everybody."""
+    from libs.db.models import User, UserConfig
+    from libs.db.models.tenant import record_state
+    from libs.matching import on_lists, their_jobs
+
+    word = f"wrangler{uuid.uuid4().hex[:8]}"
+    configs = [{"sections": [{"keywords": [word]}]},
+               {"sections": [{"keywords": [word], "exclude_keywords": ["senior"]}]},
+               {"sections": [{"keywords": [word], "locations": ["denmark"]}]},
+               {"sections": [{"keywords": [word]}], "min_salary": 90000, "salary_currency": "EUR"}]
+    people = []
+    for index, config in enumerate([*configs, configs[0]]):
+        user, _ = _person(db, alert=False, **({"subscription_plan": "starter"} if index == 4 else {}))
+        db[UserConfig.COLLECTION].update_one({"user_id": user.id}, {"$set": {"config": config}})
+        people.append(get(db, User, user.id))
+    jobs = [_posting(db, f"Senior {word}", country="DK"), _posting(db, f"Junior {word}", country="DE"),
+            _posting(db, word, description="Build APIs. Pays €40,000 - €50,000 per year.", country="DK"),
+            _posting(db, word, minutes_ago=4 * 24 * 60, country="DE"), _posting(db, "Nurse")]
+    record_state(db, people[0].id, jobs[1].id, dismissed_at=now())
+    ids = [job.id for job in jobs]
+
+    batched = on_lists(db, {person.id: ids for person in people})
+
+    for person in people:
+        listed = {match.job.id for match in their_jobs(db, person)} & set(ids)
+        assert batched.get(person.id, set()) == listed, person.email
+    assert any(batched.values()), "the premise: some of these are on somebody's list"
+
+
+@needs_db
+def test_a_match_score_needs_the_documents_it_is_made_from(db, monkeypatch):
+    """A minimum score is read from the person's documents (`libs.fit`): without them it catches nothing, and
+    with them a job at or above it is caught."""
+    from libs import fit
+    from libs.db.models import CorpusJob
+
+    user, word = _person(db, alert=False)
+    alert = _alert(db, user, name="Good fits", keywords=[word], min_fit=1)
+    job = _posting(db, f"Python {word} developer", description="Build Python APIs. " * 30)
+    db[CorpusJob.COLLECTION].update_one({"_id": job.id}, {"$set": {
+        "fit": fit.job(job.title, job.description, "en"), "fit_version": fit.VERSION}})
+
+    monkeypatch.setattr(fit, "profile", lambda _db, _user: None)
+    _catch(db)
+    assert _caught(db, user) == {}, "no documents, no score, nothing caught"
+
+    made = fit.person({"cv": ["Python developer building APIs."]})
+    monkeypatch.setattr(fit, "profile", lambda _db, _user: made)
+    _catch(db)
+    assert _caught(db, user) == {job.id: [alert.id]}
+
+
+@needs_db
+def test_starter_hears_of_a_job_when_its_own_list_has_it(db):
+    """Owner, 2026-11-17: Starter's alerts keep its three days. A job reaches an alert when it joins the
+    person's list: at once for a member, three days later for Starter."""
+    member, word = _person(db, joined_minutes_ago=10 * 24 * 60)
+    starter, _ = _person(db, joined_minutes_ago=10 * 24 * 60, subscription_plan="starter")
+    from libs.db.models import UserConfig
+    db[UserConfig.COLLECTION].update_one({"user_id": starter.id}, {"$set": {"config": {"sections": [
+        {"keywords": [word]}]}}})
+    today, four_days = _posting(db, word, minutes_ago=60), _posting(db, word, minutes_ago=4 * 24 * 60)
+
+    _catch(db)
+
+    assert (set(_caught(db, starter)), set(_caught(db, member))) == ({four_days.id}, {today.id, four_days.id})
+
+
+@needs_db
+def test_nobody_without_alerts_or_with_them_paused_has_anything_caught(db):
+    """A free account has no alerts (`libs.membership`); a paused or switched-off one sends nothing."""
+    from libs.db.models import Alert, User
+
+    _free, word = _person(db, subscription_status=None)
+    paused, _ = _person(db)
+    off, _ = _person(db)
+    for user in (paused, off):
+        from libs.db.models import UserConfig
+        db[UserConfig.COLLECTION].update_one({"user_id": user.id}, {"$set": {"config": {"sections": [
+            {"keywords": [word]}]}}})
+    db[User.COLLECTION].update_one({"_id": paused.id}, {"$set": {"active": False}})
+    db[Alert.COLLECTION].update_many({"user_id": off.id}, {"$set": {"on": False}})
+    _posting(db, word)
+
+    assert _catch(db) == 0
+
+
+@needs_db
+def test_a_backlog_is_read_a_batch_a_pass_and_nothing_is_lost(db, monkeypatch):
+    """A notifier back from a stop reads what joined the lists meanwhile `PASS_JOBS` at a time, oldest first,
+    each pass from where the last one got to."""
+    from libs import alerts
+
+    monkeypatch.setattr(alerts, "PASS_JOBS", 2)
+    user, word = _person(db)
+    jobs = [_posting(db, word, minutes_ago=minutes) for minutes in (30, 20, 10)]
+
+    _catch(db)
+    assert set(_caught(db, user)) == {jobs[0].id}, "the oldest; the last moment read is the next pass's"
+    alerts.route(db)
+    alerts.route(db)
+    assert set(_caught(db, user)) == {job.id for job in jobs}
+
+
+@needs_db
+def test_the_first_pass_starts_from_now(db):
+    """A fresh notifier announces what is new, not every job the Jobs page already shows."""
+    from libs.alerts import route
+
+    user, word = _person(db)
+    _posting(db, word)
+
+    assert route(db) == 0
+    assert _caught(db, user) == {}
+
+
+# ── where it is sent ──────────────────────────────────────────────────────────────────────────
+
+@needs_db
+def test_a_job_two_alerts_caught_is_sent_once_headed_by_both(db):
+    user, word = _person(db, alert=False)
+    _alert(db, user, name="Python jobs", keywords=[word])
+    _alert(db, user, name="Acme", companies=["Acme"])
+    job = _posting(db, word)
+    outbox = Outbox()
+
+    assert run(db, user, outbox) == 1
+
+    [(_chat, text, _keyboard)] = outbox.telegram
+    assert text.startswith("🔔 Python jobs, Acme\n")
+    assert _notified(db, user) == {job.id}
+
+
+@needs_db
+def test_each_alert_sends_only_where_it_was_told(db):
+    """An alert's channels are its own: the bell alone, or Telegram alone."""
+    from libs.db.models import UserNotification
+
+    user, word = _person(db, browsers=1, alert=False)
+    quiet = _alert(db, user, name="Quiet", keywords=[word], channels=["bell"])
+    _posting(db, word)
+    outbox = Outbox()
+
+    assert run(db, user, outbox) == 1
+    assert outbox.telegram == [] and outbox.browsers == []
+    [bell] = db[UserNotification.COLLECTION].find({"user_id": user.id})
+    assert (bell["event"], bell["title"], bell["url"]) == (
+        f"alert.{quiet.id}", "Quiet", f"#/alerts?alert={quiet.id}")
+
+    loud = _alert(db, user, name="Loud", companies=["Acme"], channels=["telegram"])
+    _posting(db, "Engineer")
+    assert run(db, user, outbox) == 1
+    assert [text.split("\n", 1)[0] for _, text, _ in outbox.telegram] == ["🔔 Loud"]
+    assert db[UserNotification.COLLECTION].count_documents({"event": f"alert.{loud.id}"}) == 0
+
+
+@needs_db
+def test_the_bell_keeps_one_line_an_alert_not_one_a_job(db):
+    from libs.db.models import UserNotification
+
+    user, word = _person(db, telegram=False)
+    for minutes in (30, 20, 10):
+        _posting(db, f"Job {minutes} {word}", minutes_ago=minutes)
+
+    assert run(db, user, Outbox()) == 3
+    [bell] = db[UserNotification.COLLECTION].find({"user_id": user.id})
+    assert bell["body"].startswith(f"Job 10 {word}"), "brought up to date with the newest"
+
+
+@needs_db
+def test_a_deleted_alert_sends_nothing_more(db):
+    from libs.db.models import Alert
+
+    user, word = _person(db)
+    _posting(db, word)
+    _catch(db)
+    db[Alert.COLLECTION].delete_many({"user_id": user.id})
+    outbox = Outbox()
+
+    from services.notifier.deliver import deliver
+    deliver(db, user.id, telegram=outbox.tg, push=outbox.push)
+
+    assert outbox.telegram == [] and _notified(db, user) != set(), "handled, and nothing sent"
+
+
+@needs_db
+def test_connecting_telegram_later_does_not_send_what_was_already_caught(db):
+    """Turning Telegram on weeks after joining must not fire every job already caught at once: the bell had
+    those."""
     from libs.db.models import User
 
-    user, word = _person(db, joined_minutes_ago=3 * 24 * 60)
-    _posting(db, word, minutes_ago=5 * 60)  # inside every freshness window, before they connected
-    db[User.COLLECTION].update_one({"_id": user.id},
-                                   {"$set": {"telegram_connected_at": now() - timedelta(hours=1)}})
-    new = _posting(db, word, minutes_ago=10)
-
+    user, word = _person(db, telegram=False)
+    _posting(db, word, minutes_ago=60)
     run(db, user, Outbox())
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {
+        "telegram_status": "connected", "telegram_chat_id": "555", "telegram_connected_at": now()}})
+    new = _posting(db, word, minutes_ago=1)
+    outbox = Outbox()
 
-    assert _notified(db, user) == {new.id}
+    run(db, user, outbox)
 
-
-@needs_db
-def test_alerts_start_when_the_browser_subscribed(db):
-    from libs.db.models import PushSubscription
-
-    user, word = _person(db, telegram=False, joined_minutes_ago=3 * 24 * 60)
-    _posting(db, word, minutes_ago=5 * 60)  # inside every freshness window, before they connected
-    insert(db, PushSubscription(user_id=user.id, endpoint=f"https://push.example.com/{uuid.uuid4()}",
-                                p256dh="k", auth="a", created_at=now() - timedelta(hours=1)))
-    new = _posting(db, word, minutes_ago=10)
-
-    run(db, user, Outbox())
-
-    assert _notified(db, user) == {new.id}
-
-
-@needs_db
-def test_a_backlog_bigger_than_the_scan_is_skipped_out_loud_not_silently(db, monkeypatch, caplog):
-    """`owed` sends oldest first from what one scan saw, then the watermark passes it; anything older
-    the scan never reached is never alerted. After a long outage that is the right trade — the jobs
-    page still lists them — but it must be said, with the account and the count, not happen quietly."""
-    from libs import notify
-
-    monkeypatch.setattr(notify, "NOTIFY_SCAN", 2)
-    user, word = _person(db, joined_minutes_ago=60)
-    for minutes in (30, 20, 10):
-        _posting(db, word, minutes_ago=minutes)
-
-    with caplog.at_level("WARNING"):
-        assert len(notify.owed(db, user)) == 2
-
-    assert any(str(user.id) in record.getMessage() and record.levelname == "WARNING"
-               for record in caplog.records), "a backlog the scan cut off must be logged"
+    assert [text for _, text, _ in outbox.telegram if str(new.title) in text] and len(outbox.telegram) == 1
 
 
 @needs_db
@@ -252,7 +537,7 @@ def test_the_daily_cap_holds_the_rest_for_tomorrow(db):
     assert run(db, user, Outbox()) == 1
     assert _notified(db, user) == {first.id}, "oldest first"
     assert run(db, user, Outbox()) == 0
-    assert [match.job.id for match in owed(db, user)] == [second.id], "held, not dropped"
+    assert [row["job_id"] for row in owed(db, user.id)] == [second.id], "held, not dropped"
 
 
 @needs_db
@@ -292,7 +577,7 @@ def test_a_blocked_bot_marks_telegram_broken_and_the_browser_still_gets_the_job(
 
     assert run(db, user, outbox, telegram=blocked) == 1
     assert _account(db, user).telegram_status == "broken"
-    assert db[UserNotification.COLLECTION].distinct("event", {"user_id": user.id}) == ["telegram.broken"]
+    assert "telegram.broken" in db[UserNotification.COLLECTION].distinct("event", {"user_id": user.id})
     assert len(outbox.browsers) == 1
     assert _notified(db, user) == {job.id}
 
@@ -355,7 +640,7 @@ def test_a_run_stops_before_its_claim_expires_and_queues_the_rest(db, monkeypatc
     sent = run(db, user, outbox, telegram=slow)
 
     assert 0 < sent < 10
-    assert len(owed(db, user)) == 10 - sent, "what did not go is still owed, not lost"
+    assert len(owed(db, user.id)) == 10 - sent, "what did not go is still owed, not lost"
     assert db[QueueJob.COLLECTION].count_documents(
         {"lane": "notify", "user_id": user.id, "state": "ready"}) == 1
 
@@ -403,6 +688,13 @@ def test_the_push_transport_reads_404_and_410_as_gone(monkeypatch):
     monkeypatch.setattr(notifier, "webpush", answering(500))
     with pytest.raises(WebPushException):
         notifier.push(browser, alert)
+
+
+def _alerts(db, user):
+    from libs.db import find
+    from libs.db.models import Alert
+
+    return find(db, Alert, {"user_id": user.id})
 
 
 # ── connecting their own bot, through the API ─────────────────────────────────────────────────
@@ -573,10 +865,12 @@ def test_the_notifier_sends_each_person_their_jobs_through_their_own_bot(api, te
     db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {
         "active": True, "created_at": now() - timedelta(days=1),
         "telegram_connected_at": now() - timedelta(hours=1)}})
+    _alert(db, get(db, User, user.id))
     bob, _ = _person(db)
     bob_bot = telegram.make_bot("bob_jobs_bot")
     SecretStore(db).put(bob.id, "telegram_bot", bob_bot, validated=True)
     job = _posting(db, f"Senior {word}")
+    _catch(db)
 
     handle(db, insert(db, QueueJob(lane="notify", user_id=user.id)))
     handle(db, insert(db, QueueJob(lane="notify", user_id=bob.id)))
@@ -612,3 +906,147 @@ def test_a_push_endpoint_has_to_be_https(api):
     response = http.post("/push/subscribe", json={"endpoint": "http://169.254.169.254/latest",
                                                   "keys": {"p256dh": "k", "auth": "a"}})
     assert response.status_code == 422
+
+
+# ── the Alerts page, through the API ──────────────────────────────────────────────────────────
+
+LEGO = {"name": "LEGO jobs", "companies": ["LEGO"], "places": ["denmark", "berlin"], "sources": ["linkedin"],
+        "channels": ["bell", "telegram"]}
+
+
+@needs_db
+def test_an_alert_is_made_listed_changed_and_deleted(api):
+    http, _, _ = api
+
+    made = http.post("/alerts", json={**LEGO, "keywords": ["  Brick Designer ", "brick designer"]})
+    assert made.status_code == 200, made.text
+    alert = made.json()
+    assert (alert["name"], alert["keywords"], alert["companies"], alert["on"]) == (
+        "LEGO jobs", ["brick designer"], ["LEGO"], True), "words as words are compared, each once"
+
+    page = http.get("/alerts").json()
+    assert [each["name"] for each in page["alerts"]] == ["LEGO jobs"]
+    assert page["can"] is True and page["most"] == 10
+    assert {"value": "berlin", "label": "Berlin"} in page["places"]
+    assert {"value": "linkedin", "label": "LinkedIn"} in page["sources"]
+
+    off = http.put(f"/alerts/{alert['id']}", json={**LEGO, "on": False}).json()
+    assert off["on"] is False and off["keywords"] == []
+    assert http.delete(f"/alerts/{alert['id']}").status_code == 200
+    assert http.get("/alerts").json()["alerts"] == []
+
+
+@needs_db
+def test_an_alerts_words_are_looked_for_from_the_next_posting_on(api):
+    """Saving an alert learns its words, so the very next posting is searched for them
+    (`libs.corpus.terms`)."""
+    from libs.db.models import Word
+
+    http, db, _ = api
+    http.post("/alerts", json={"name": "Rust", "keywords": ["Rust Engineer"]})
+
+    assert db[Word.COLLECTION].count_documents({"_id": "rust engineer"}) == 1
+
+
+@needs_db
+def test_an_alert_must_look_for_something_somewhere_it_knows(api):
+    """A place or a job site alone is every job there; a place the page does not offer is a mistake."""
+    http, _, _ = api
+
+    nothing = http.post("/alerts", json={"name": "Denmark", "places": ["denmark"]})
+    assert nothing.status_code == 422 and "knows what to look for" in nothing.json()["detail"]
+    assert http.post("/alerts", json={**LEGO, "places": ["atlantis"]}).status_code == 422
+    assert http.post("/alerts", json={**LEGO, "sources": ["myspace"]}).status_code == 422
+    assert http.post("/alerts", json={**LEGO, "channels": ["carrier pigeon"]}).status_code == 422
+    assert http.post("/alerts", json={"name": "Good fits", "min_fit": 7}).status_code == 200, (
+        "a match score is a thing to look for")
+
+
+@needs_db
+def test_an_account_has_at_most_its_alerts_ceiling(api):
+    from libs import limits
+
+    http, db, user = api
+    limits.set_limit(db, user.id, "alerts_per_account", 3)
+    for index in range(3):
+        assert http.post("/alerts", json={**LEGO, "name": f"Alert {index}"}).status_code == 200
+
+    refused = http.post("/alerts", json=LEGO)
+    assert refused.status_code == 409 and "Delete one" in refused.json()["detail"]
+    limits.set_limit(db, user.id, "alerts_per_account", None)
+    assert http.post("/alerts", json=LEGO).status_code == 200, "unlimited is unlimited"
+
+
+@needs_db
+def test_an_alerts_page_lists_what_it_found_and_counts_it(api):
+    from libs.db.models import User
+    from libs.db.models.tenant import record_state
+
+    http, db, user = api
+    alert = http.post("/alerts", json={**LEGO, "places": [], "sources": []}).json()
+    found = _posting(db, "Brick Designer", company="The LEGO Group")
+    skipped = _posting(db, "Brick Sorter", company="The LEGO Group")
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"active": True}})
+    from libs.db.models import Alert
+    db[Alert.COLLECTION].update_one({"_id": alert["id"]}, {"$set": {"created_at": now() - timedelta(days=1)}})
+    _catch(db)
+    record_state(db, user.id, skipped.id, dismissed_at=now())
+
+    jobs = http.get(f"/alerts/{alert['id']}/jobs").json()
+    assert [job["id"] for job in jobs] == [found.id], "less the one they skipped"
+    [listed] = http.get("/alerts").json()["alerts"]
+    assert (listed["found"], listed["last_found_at"] is not None) == (2, True)
+
+
+@needs_db
+def test_somebody_elses_alert_is_not_there(api):
+    from libs.db.models import Alert
+
+    http, db, _ = api
+    stranger, _ = _person(db)
+    [theirs] = _alerts(db, stranger)
+
+    assert http.put(f"/alerts/{theirs.id}", json=LEGO).status_code == 404
+    assert http.delete(f"/alerts/{theirs.id}").status_code == 404
+    assert http.get(f"/alerts/{theirs.id}/jobs").status_code == 404
+    assert db[Alert.COLLECTION].count_documents({"_id": theirs.id}) == 1
+
+
+@needs_db
+def test_every_account_from_before_named_alerts_keeps_its_alerts_once(db):
+    """Nobody's alerts stop on the day they became named (`libs.alerts.alerts_for_existing`): each account
+    gets
+    My search, sending where theirs went, the daily email too if it was on; and it happens once ever."""
+    from libs.alerts import alerts_for_existing
+    from libs.db.models import User
+
+    emailed = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x"))
+    db[User.COLLECTION].update_one({"_id": emailed.id}, {"$set": {"email_alerts": True}})
+    plain = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x"))
+
+    assert alerts_for_existing(db) == 2
+    [(mine, theirs)] = [(_alerts(db, emailed), _alerts(db, plain))]
+    assert [(alert.name, alert.search, alert.channels) for alert in mine] == [
+        ("My search", True, ["bell", "push", "telegram", "email"])]
+    assert [alert.channels for alert in theirs] == [["bell", "push", "telegram"]]
+    insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x"))
+    assert alerts_for_existing(db) == 0, "once ever: an account made later gets its own at sign-up"
+
+
+@needs_db
+def test_signing_up_starts_an_account_with_my_search(db, monkeypatch):
+    os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
+    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
+    from fastapi.testclient import TestClient
+
+    from libs.db.models import User
+    from libs.legal import DISCLOSURE_VERSION
+    from services.api.app import app
+
+    email = f"{uuid.uuid4().hex[:10]}@example.com"
+    with TestClient(app, base_url="https://testserver") as http:
+        answered = http.post("/auth/signup", json={"email": email, "password": "a-long-Passw0rd-here!",
+                                                   "consent_version": DISCLOSURE_VERSION})
+    assert answered.status_code < 300, answered.text
+    user = User.from_doc(db[User.COLLECTION].find_one({"email": email}))
+    assert [(alert.name, alert.search) for alert in _alerts(db, user)] == [("My search", True)]

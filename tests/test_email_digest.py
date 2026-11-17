@@ -1,5 +1,6 @@
-"""The daily email of new jobs: on when a person turns it on, once a day at their morning, listing what
-was found since the last one — and nothing at all when nothing was."""
+"""The daily email: once a day at their morning for somebody with an alert that sends to it, listing what each
+such
+alert found since the last one under its name (owner, 2026-11-17) — and nothing at all when nothing was."""
 from __future__ import annotations
 
 import os
@@ -20,26 +21,43 @@ class Inbox:
         self.sent.append({"to": to, "subject": subject, "body": body, "html": html})
 
 
-def _person(db, **fields):
-    from libs.db.models import User, UserConfig
+def _person(db, *, emailed=True, **fields):
+    """Somebody with one green word of their own and My search, sending to the email unless `emailed` is
+    False."""
+    from libs.db.models import Alert, User, UserConfig
 
     word = f"wrangler{uuid.uuid4().hex[:8]}"
     user = insert(db, User(**{"email": f"{uuid.uuid4()}@example.com", "password_hash": "x",
-                              "subscription_status": "active",
-                              "status": "active", "active": True, "email_alerts": True,
+                              "subscription_status": "active", "status": "active", "active": True,
                               "created_at": now() - timedelta(days=3), **fields}))
     insert(db, UserConfig(user_id=user.id, schema_version=2,
                           config={"sections": [{"platform": "all", "keywords": [word]}]}))
+    insert(db, Alert(user_id=user.id, name="My search", search=True, created_at=user.created_at,
+                     channels=["bell", *(["email"] if emailed else [])]))
     return user, word
 
 
-def _posting(db, title, *, minutes_ago=5):
-    from libs.db.models import CorpusJob
+def _alert(db, user, name, *, emailed=True, **fields):
+    from libs.db.models import Alert
+
+    return insert(db, Alert(user_id=user.id, name=name, channels=["bell", *(["email"] if emailed else [])],
+                            created_at=user.created_at, **fields))
+
+
+def _found(db, user, title, *, alerts=None, minutes_ago=5):
+    """A job one or more of their alerts found `minutes_ago` (`libs.alerts.route`): My search unless said."""
+    from libs.corpus.words import terms_of
+    from libs.db.models import Alert, CorpusJob, UserJobState
 
     seen = now() - timedelta(minutes=minutes_ago)
-    return insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="test", title=title,
-                                company="Acme", location="Berlin", description="Build APIs",
-                                first_seen_at=seen, described_at=seen))
+    theirs = db[Alert.COLLECTION].find({"user_id": user.id})
+    words = sorted({word for alert in theirs for word in alert["keywords"]} | {title.split()[-1]})
+    job = insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="test", title=title,
+                               company="Acme", location="Berlin", description="Build APIs",
+                               first_seen_at=seen, described_at=seen, **terms_of(title, "Build APIs", words)))
+    ids = alerts or db[Alert.COLLECTION].distinct("_id", {"user_id": user.id, "search": True})
+    insert(db, UserJobState(user_id=user.id, job_id=job.id, alerted_at=seen, alerts=list(ids)))
+    return job
 
 
 # ── when ──────────────────────────────────────────────────────────────────────────────────────
@@ -60,15 +78,18 @@ def test_it_is_due_after_the_hour_of_their_own_day_and_only_once_a_day(db):
 
 
 @needs_db
-def test_it_is_never_due_when_turned_off_or_alerts_are_paused(db):
-    from libs.notify.digest import due
+def test_nobody_without_an_emailing_alert_or_with_alerts_paused_is_queued(db, monkeypatch):
+    from libs import settings
+    from libs.db.models import QueueJob
+    from libs.queue.queue import dispatch_due_digests
 
-    off, _ = _person(db, email_alerts=False)
-    paused, _ = _person(db, active=False)
-    noon = datetime(2026, 11, 2, 12, 0, tzinfo=UTC)
+    settings.put(db, "email_digest_hour", 0)
+    _person(db, emailed=False)
+    _person(db, active=False)
+    emailed, _ = _person(db)
 
-    assert not due(db, off, 8, moment=noon)
-    assert not due(db, paused, 8, moment=noon)
+    assert dispatch_due_digests(db) == 1
+    assert db[QueueJob.COLLECTION].distinct("user_id") == [emailed.id]
 
 
 @needs_db
@@ -82,7 +103,7 @@ def test_the_sweep_queues_one_email_each_and_the_notifier_sends_it(db, monkeypat
 
     settings.put(db, "email_digest_hour", 0)  # whatever the time now, it is past their hour
     user, word = _person(db)
-    _posting(db, f"Senior {word}")
+    _found(db, user, f"Senior {word}")
     inbox = Inbox()
     monkeypatch.setattr(notifier, "_mailer", lambda: inbox)
 
@@ -100,13 +121,13 @@ def test_the_sweep_queues_one_email_each_and_the_notifier_sends_it(db, monkeypat
 # ── what ──────────────────────────────────────────────────────────────────────────────────────
 
 @needs_db
-def test_it_lists_the_jobs_found_since_the_last_one_with_a_link_to_each(db, monkeypatch):
+def test_it_lists_what_was_found_since_the_last_one_with_a_link_to_each(db, monkeypatch):
     from libs.notify.digest import send_digest
 
     monkeypatch.setenv("PUBLIC_URL", "https://jobs.example.com")
     user, word = _person(db, email_digest_at=now() - timedelta(hours=3))
-    _posting(db, f"Old {word}", minutes_ago=4 * 60)
-    new = _posting(db, f"New {word}", minutes_ago=30)
+    _found(db, user, f"Old {word}", minutes_ago=4 * 60)
+    new = _found(db, user, f"New {word}", minutes_ago=30)
     inbox = Inbox()
 
     assert send_digest(db, inbox, user) == 1
@@ -115,18 +136,38 @@ def test_it_lists_the_jobs_found_since_the_last_one_with_a_link_to_each(db, monk
     assert mail["subject"] == "1 new job for you"
     assert f"New {word} — Acme · Berlin" in mail["body"] and f"Old {word}" not in mail["body"]
     assert f"https://jobs.example.com/#/feed?job={new.id}" in mail["body"]
-    assert "https://jobs.example.com/#/settings" in mail["body"], "and how to turn it off"
+    assert "https://jobs.example.com/#/alerts" in mail["body"], "and where to change it"
+
+
+@needs_db
+def test_each_alert_lists_its_own_under_its_name_and_one_without_the_email_is_left_out(db):
+    """Grouped by alert (owner, 2026-11-17): one email a day, each alert's jobs under its name."""
+    from libs.notify.digest import send_digest
+
+    user, word = _person(db)
+    lego = _alert(db, user, "LEGO", companies=["LEGO"])
+    quiet = _alert(db, user, "Quiet", emailed=False, keywords=[word])
+    _found(db, user, f"Senior {word}")
+    _found(db, user, "Brick Designer", alerts=[lego.id])
+    _found(db, user, "Hidden", alerts=[quiet.id])
+    inbox = Inbox()
+
+    assert send_digest(db, inbox, user) == 2
+
+    body = inbox.sent[0]["body"]
+    assert body.index("MY SEARCH") < body.index(f"Senior {word}") < body.index("LEGO") < body.index("Brick")
+    assert "Hidden" not in body and "QUIET" not in body
 
 
 @needs_db
 def test_its_designed_version_lists_each_job_linked_with_the_words_that_found_it(db, monkeypatch):
-    """The email as most people see it: each job a link to it on the site, with the words of theirs it has,
-    and a title that is markup shown as words, not run."""
+    """The email as most people see it: each job a link to it on the site under its alert, with the words of
+    theirs it has, and a title that is markup shown as words, not run."""
     from libs.notify.digest import send_digest
 
     monkeypatch.setenv("PUBLIC_URL", "https://jobs.example.com")
     user, word = _person(db)
-    job = _posting(db, f"<b>Lead</b> {word}")
+    job = _found(db, user, f"<b>Lead</b> {word}")
     inbox = Inbox()
 
     assert send_digest(db, inbox, user) == 1
@@ -136,7 +177,8 @@ def test_its_designed_version_lists_each_job_linked_with_the_words_that_found_it
     assert f'href="https://jobs.example.com/#/feed?job={job.id}"' in html
     assert f"&lt;b&gt;Lead&lt;/b&gt; {word}" in html and "<b>Lead</b>" not in html
     assert f">{word}</span>" in html, "the word that found it"
-    assert "Acme · Berlin" in html and 'href="https://jobs.example.com/#/settings"' in html
+    assert ">My search</td>" in html, "under the alert that found it"
+    assert "Acme · Berlin" in html and 'href="https://jobs.example.com/#/alerts"' in html
 
 
 @needs_db
@@ -165,7 +207,7 @@ def api(db, monkeypatch):
     from libs.db.models import UserConfig
     from services.api.app import app
 
-    user, word = _person(db, email_alerts=False, onboarding_completed_at=now(), full_name="Ada Example")
+    user, word = _person(db, emailed=False, onboarding_completed_at=now(), full_name="Ada Example")
     # A finished account's search: the jobs page waits for one missing a part.
     db[UserConfig.COLLECTION].update_one({"user_id": user.id}, {"$set": {"config": {
         "languages": ["en"], "sections": [{"platform": "all", "keywords": [word, "golang", "sql"],
@@ -176,15 +218,17 @@ def api(db, monkeypatch):
 
 
 @needs_db
-def test_turning_the_email_on_counts_as_having_alerts(api):
-    """The jobs page stops offering alerts to somebody who gets the email."""
+def test_an_alert_with_the_email_counts_as_having_alerts(api):
+    """The jobs page stops offering alerts to somebody whose alert sends the email."""
     def banners():
         return [banner["key"] for banner in api.get("/dashboard").json()["banners"]]
 
-    assert api.get("/account").json()["email_alerts"] is False
     assert "no_alerts" in banners()
+    [mine] = api.get("/alerts").json()["alerts"]
 
-    assert api.patch("/account", json={"email_alerts": True}).json()["email_alerts"] is True
+    changed = {key: mine[key] for key in ("name", "search", "keywords", "companies", "places", "sources",
+                                          "min_fit", "on")}
+    emailed = {**changed, "channels": ["bell", "email"]}
+    assert api.put(f"/alerts/{mine['id']}", json=emailed).status_code == 200
 
-    assert api.get("/account").json()["email_alerts"] is True
     assert "no_alerts" not in banners()
