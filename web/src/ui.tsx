@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { ApiError } from "./api";
+import { redrawToasts } from "./toast";
 
 /** A small question mark after a line that says more about it, pointed at, tapped or reached by keyboard
  * (owner, 2026-11-16: "a small hovering question mark and if users hover over it they can read it"). A tap
@@ -103,6 +104,8 @@ export function Prompt({ title, onClose, dismissable = true, children }: {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     dialog.current?.showModal();
+    // Gone, it takes any notice drawn inside it along: drawn again outside (`toast.tsx`).
+    return redrawToasts;
   }, []);
   return (
     <dialog ref={dialog} className="prompt" aria-label={title} onClose={onClose}
@@ -126,6 +129,8 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     dialog.current?.showModal();
+    // Gone, it takes any notice drawn inside it along: drawn again outside (`toast.tsx`).
+    return redrawToasts;
   }, []);
   return (
     // × and a tap outside close it themselves: the page that opened it takes it away, and an open

@@ -40,9 +40,8 @@ def enqueue_many(db: Database, lane: str, user_ids: Sequence[_uuid.UUID], *,
                  payload: dict | None = None, dedup_key: str | None = None,
                  delay_min: int = 0) -> list[int]:
     """The same work for each of these accounts, in one write: the ids of the jobs added. None while the lane
-    is
-    paused, and none for an account whose same work (lane, user, dedup key) is pending. One write, because the
-    alerts queue hundreds at once (`libs.alerts`): one at a time, 428 of them took 1.2 s (2026-11-17)."""
+    is paused, and none for an account whose same work (lane, user, dedup key) is pending. One write, because
+    the alerts queue hundreds at once (`libs.alerts`): one at a time, 428 of them took 1.2 s (2026-11-17)."""
     _check_lane(lane)
     if not user_ids:
         return []

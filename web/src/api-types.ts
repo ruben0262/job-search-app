@@ -2284,6 +2284,46 @@ export interface components {
             /** Sources */
             sources: string[];
         };
+        /** AlertSaved */
+        AlertSaved: {
+            /** Channels */
+            channels: ("bell" | "push" | "telegram" | "email")[];
+            /** Companies */
+            companies: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Found */
+            found: number;
+            /** Id */
+            id: number;
+            /** Keywords */
+            keywords: string[];
+            /** Last Found At */
+            last_found_at: string | null;
+            /** Min Fit */
+            min_fit: number | null;
+            /** Name */
+            name: string;
+            /**
+             * On
+             * @default true
+             */
+            on: boolean;
+            /** Places */
+            places: string[];
+            /**
+             * Search
+             * @default false
+             */
+            search: boolean;
+            /** Sources */
+            sources: string[];
+            /** Would Have Found */
+            would_have_found: number;
+        };
         /** AlertsPage */
         AlertsPage: {
             /** Alerts */
@@ -5108,7 +5148,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AlertOut"];
+                    "application/json": components["schemas"]["AlertSaved"];
                 };
             };
             /** @description Validation Error */
@@ -5143,7 +5183,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AlertOut"];
+                    "application/json": components["schemas"]["AlertSaved"];
                 };
             };
             /** @description Validation Error */

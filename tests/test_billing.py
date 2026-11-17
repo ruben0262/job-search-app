@@ -447,8 +447,7 @@ def test_the_form_is_for_the_plan_asked_and_stripes_price_says_which_plan(db, ht
 def test_starter_is_alerted_of_a_job_when_its_own_list_has_it(db):
     """Owner, 2026-11-16: alerts are Starter's too (who else's: the test of the lanes, below); 2026-11-17: and
     keep its three days. What an alert catches is what reached the person's own list, so Starter hears of a
-    job
-    three days after a member does."""
+    job three days after a member does."""
     from libs.alerts import route
     from libs.db.models import AlertCursor, UserJobState
 

@@ -3784,22 +3784,24 @@ load.
 
 **1. Setting them up ✅ built 2026-11-17 (CHANGELOG, night).** The Alerts tab; `libs.alerts` (one pass a minute for
 everybody, 0.74 s where the per-account way spent 19.6 s on 500 accounts); "My search" for every account; the email
-grouped by alert; Starter's three days kept. **Open:** a count of what an alert *would* have found this week, said as
-it is made, so an alert that finds nothing is seen to before days of silence (one query at save time over the
-week's postings, asked with the pass's own `Rule.catches` so there is no second definition).
+grouped by alert; Starter's three days kept. And ✅ built 2026-11-17 (CHANGELOG, late night): saving an alert says
+what it *would* have found in the last 7 days, asked as a pass asks (`libs.alerts.would_have_found`).
 
-**2. Reaching the phone (next).** What is there already: Web Push (`services/notifier`, `web/public/sw.js`) reaches
-Chrome and Firefox on Android and every desktop browser, installed or not; an iPhone or iPad from iOS 16.4 once the
-site is added to the home screen and opened from there (the Alerts page says so). What installing as an app needs:
+**2. Reaching the phone ✅ built 2026-11-17 (CHANGELOG, late night), less the measurement on a phone.** Web Push
+(`services/notifier`, `web/public/sw.js`) reaches Chrome and Firefox on Android and every desktop browser,
+installed or not, and an iPhone or iPad from iOS 16.4 once the site is added to the home screen and opened from
+there. Built:
 
-- The manifest's icons (192 and 512 px, and a maskable one): Chrome offers "Install app" only with them, and they
-  are the icon on the home screen. `web/public/manifest.webmanifest` has none today.
-- An "Install the app" button on the Alerts page, from the browser's own `beforeinstallprompt` (Chrome, Edge,
-  Samsung Internet), and the two-tap Share → Add to Home Screen said in words on an iPhone, where there is no
-  prompt.
-- The notification's icon and badge in `sw.js`, and a tap that opens the alert's job in the installed app.
-- Measured before it is claimed: a notification on a locked Android phone and a locked iPhone, each through the
-  installed app, with the time from a job's text being read to the phone buzzing.
+- The manifest's icons, the brand kit's (`branding/build.py` writes the site's copies): Chrome's own check finds
+  nothing missing and offers to install, where before it found two icons missing.
+- An "Install the app" button on the Alerts page, from the browser's own offer (`web/src/install.ts`), and Share →
+  Add to Home Screen said in words on an iPhone or iPad.
+- The notification's icon and its status-bar badge, and a tap that takes the open tab, or the installed app, to the
+  job (the worker takes charge of the tab at once).
+
+**Open:** measured on a real phone before it is claimed anywhere: a notification on a locked Android phone and a
+locked iPhone, each through the installed app, and the time from a job's text being read to the phone buzzing. The
+pass runs a minute apart (`libs.alerts.EVERY_SECONDS`), so the expectation is about a minute; no phone has said so.
 
 **Not planned:** a native app; a Telegram channel per alert (owner, 2026-11-17: one chat, each card headed by its
 alert); an email per job (the mailbox's daily cap).

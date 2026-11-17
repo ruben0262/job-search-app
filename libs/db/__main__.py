@@ -4,14 +4,13 @@ What a deploy runs before it restarts anything, so a rule or index the database 
 deploy rather than a service at start-up. `--prune` also drops indexes this code no longer declares:
 only the deploy passes it, from an image of the commit being deployed.
 
-First the AI accounts linked before 2026-11-09 are settled (`libs.llm.accounts.settle`), which does
-nothing once done: under the rules they were written with, since the new ones refuse any change to a
-row of a kind they no longer allow, and the prune changes every row it removes a retired field from.
-Then the chart's counts kept before 2026-11-10 are split by source (`libs.ops.countries.split_by_source`),
-which also does nothing once done. Then every account from before memberships began is given free access,
-once ever (`libs.membership.free_for_existing`), and every account from before alerts were named its "My
-search"
-alert, once ever (`libs.alerts.alerts_for_existing`): before the prune, which removes the switch it reads.
+First the AI accounts linked before 2026-11-09 are settled (`libs.llm.accounts.settle`), which does nothing
+once done: under the rules they were written with, since the new ones refuse any change to a row of a kind
+they no longer allow, and the prune changes every row it removes a retired field from. Then the chart's counts
+kept before 2026-11-10 are split by source (`libs.ops.countries.split_by_source`), which also does nothing
+once done. Then every account from before memberships began is given free access, once ever
+(`libs.membership.free_for_existing`), and every account from before alerts were named its "My search" alert,
+once ever (`libs.alerts.alerts_for_existing`): before the prune, which removes the switch it reads.
 """
 from __future__ import annotations
 

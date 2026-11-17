@@ -2,6 +2,7 @@
  * server — and the reverse. Only the plumbing; the button that calls these belongs to a page. */
 import { api } from "./api";
 import type { components } from "./api-types";
+import { onApple } from "./install";
 
 type PushKey = components["schemas"]["PushKey"];
 
@@ -13,7 +14,7 @@ export function pushSupported(): boolean {
 /** Whether this browser is on. "home-screen" is an iPhone or iPad, which can only once the site is
  * added to its home screen and opened from there. */
 export async function pushState(): Promise<"on" | "off" | "home-screen" | "unsupported"> {
-  if (!pushSupported()) return /iPhone|iPad|iPod/.test(navigator.userAgent) ? "home-screen" : "unsupported";
+  if (!pushSupported()) return onApple() ? "home-screen" : "unsupported";
   const subscription = await (await navigator.serviceWorker.getRegistration())?.pushManager
     .getSubscription();
   return subscription && Notification.permission === "granted" ? "on" : "off";

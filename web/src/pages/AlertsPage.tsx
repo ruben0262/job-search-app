@@ -7,11 +7,13 @@ import { Alerts, AlertsForMembers, Pause } from "../alerts";
 import { api, type Schema } from "../api";
 import { useKept } from "../kept";
 import { ago } from "../time";
+import { toast } from "../toast";
 import { Error, Field, Sheet, Words, useAction } from "../ui";
 import { useJobList } from "./JobsPage";
 
 type Page = Schema<"AlertsPage">;
 type Alert = Schema<"AlertOut">;
+type Saved = Schema<"AlertSaved">;
 /** An alert as the form holds it: every field, the server's defaults filled in. */
 type Draft = Required<Schema<"AlertIn">>;
 type Channel = Draft["channels"][number];
@@ -71,7 +73,12 @@ export function AlertsPage({ onChanged, query }: { onChanged: () => void; query:
       {editing ? (
         <Sheet title={editing === "new" ? "New alert" : `Change “${editing.name}”`} onClose={() => setEditing(null)}>
           <AlertForm page={page} alert={editing === "new" ? null : editing}
-                     onSaved={() => { setEditing(null); void reload(); onChanged(); }} />
+                     onSaved={(saved) => {
+                       setEditing(null);
+                       toast({ text: wouldHaveFound(saved, page.found_days) });
+                       void reload();
+                       onChanged();
+                     }} />
         </Sheet>
       ) : null}
     </>
@@ -140,18 +147,28 @@ function follows(alert: Alert, page: Page): string {
   ].filter(Boolean).join(" · ");
 }
 
+/** What an alert would have found lately, said as it is saved: one that finds nothing is seen to then, not after
+ * days of silence. */
+function wouldHaveFound(saved: Saved, days: number): string {
+  const count = saved.would_have_found;
+  return count ? `“${saved.name}” would have found ${count} job${count === 1 ? "" : "s"} in the last ${days} days.`
+    : `“${saved.name}” would have found nothing in the last ${days} days. Fewer words, companies or places find `
+      + "more.";
+}
+
 function draftOf(alert: Alert): Draft {
   const { name, search, keywords, companies, places, sources, min_fit, channels, on } = alert;
   return { name, search, keywords, companies, places, sources, min_fit, channels, on };
 }
 
 /** Making or changing an alert: a name, what to look for, where, and where to send it. */
-function AlertForm({ page, alert, onSaved }: { page: Page; alert: Alert | null; onSaved: () => void }) {
+function AlertForm({ page, alert, onSaved }: {
+  page: Page; alert: Alert | null; onSaved: (saved: Saved) => void;
+}) {
   const [draft, setDraft] = useState<Draft>(() => (alert ? draftOf(alert) : BLANK));
   const set = (change: Partial<Draft>) => setDraft((now) => ({ ...now, ...change }));
   const save = useAction(async () => {
-    await (alert ? api.put(`/alerts/${alert.id}`, draft) : api.post(ALERTS, draft));
-    onSaved();
+    onSaved(await (alert ? api.put<Saved>(`/alerts/${alert.id}`, draft) : api.post<Saved>(ALERTS, draft)));
   });
   const toggle = <T,>(values: T[], value: T) =>
     values.includes(value) ? values.filter((each) => each !== value) : [...values, value];

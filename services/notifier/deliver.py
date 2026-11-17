@@ -2,8 +2,8 @@
 subscribed.
 
 What is owed is `libs.notify.owed` — what `libs.alerts.route` caught and nothing has sent — so this keeps no
-list of
-its own. Each job goes once, however many alerts caught it, wherever any of them sends, headed by their names.
+list of its own. Each job goes once, however many alerts caught it, wherever any of them sends, headed by
+their names.
 """
 from __future__ import annotations
 

@@ -1,26 +1,21 @@
 """Alerts: named searches a person follows, each sending what it finds to the bell, their phone, Telegram or
-the
-daily email (owner, 2026-11-17). Starter and Member have them (`libs.membership`).
+the daily email (owner, 2026-11-17). Starter and Member have them (`libs.membership`).
 
 **One pass for everybody, not a query per person.** Once a minute (`route`, on the notifier's own clock) the
-jobs
-that joined a list since the last pass are read once, with only what an alert looks at, and every alert is
-tested
-against each of them in memory (`Rule.catches`): a word is a lookup in the words a posting already carries
-(`libs.corpus.terms`), a company, a place and a job site are a field each. Nobody costs a query unless
-something
-of theirs was caught, and nothing reads what was sent before. The two questions that need the database are
-asked only of what got that far: a match score (`libs.fit`) and "on my Jobs list" (`libs.matching`, the Jobs
-page's own question, so the alert and the page cannot disagree). On 500 accounts the per-account way it
-replaced spent 18.5 s a minute; see CHANGELOG 2026-11-17 for this one's number.
+jobs that joined a list since the last pass are read once, with only what an alert looks at, and every alert
+is tested against each of them in memory (`Rule.catches`): a word is a lookup in the words a posting already
+carries (`libs.corpus.terms`), a company, a place and a job site are a field each. Nobody costs a query unless
+something of theirs was caught, and nothing reads what was sent before. The two questions that need the
+database are asked only of what got that far: a match score (`libs.fit`) and "on my Jobs list"
+(`libs.matching`, the Jobs page's own question, so the alert and the page cannot disagree). On 500 accounts
+the per-account way it replaced spent 18.5 s a minute; see CHANGELOG 2026-11-17 for this one's number.
 
 What was caught goes on the person's row for the job (`UserJobState.alerted_at`, `alerts`), once however many
 of their alerts caught it, and the `notify` lane sends it (`services.notifier.deliver`).
 
 **When a job reaches an alert** is when it joins the person's list: as soon as its whole text is read for a
 member, and that long after for a plan that waits (`libs.membership.WAITS`; owner, 2026-11-17: Starter's
-alerts
-keep its three days). So a pass reads once per wait, each from its own cursor (`AlertCursor`).
+alerts keep its three days). So a pass reads once per wait, each from its own cursor (`AlertCursor`).
 """
 from __future__ import annotations
 
@@ -28,7 +23,7 @@ import logging
 import re
 import uuid as _uuid
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
 from pymongo import UpdateOne
@@ -57,12 +52,10 @@ PASS_JOBS = 2_000
 # apart, and a pass that read between the two would leave the job behind its cursor for good.
 SETTLE = timedelta(seconds=10)
 # How often a pass runs, on the notifier's own sweep (`services.notifier`): a job whose text is read now
-# reaches a
-# member's phone within about this long, and `SETTLE` more at most.
+# reaches a member's phone within about this long, and `SETTLE` more at most.
 EVERY_SECONDS = 60.0
 # The most one pass holds the lease for: its own interval, so a process that stopped mid-pass lets the next
-# one in
-# when it is due, and no second clock decides it (CLAUDE.md §6).
+# one in when it is due, and no second clock decides it (CLAUDE.md §6).
 LEASE_SECONDS = EVERY_SECONDS
 # What a posting is read with: all an alert looks at.
 _FIELDS = {"title": 1, "company": 1, "country": 1, "city": 1, "source": 1, "terms": 1, "terms_at": 1,
@@ -111,10 +104,8 @@ class Rule:
 
 def route(db: Database) -> int:
     """One pass: every job that joined somebody's list since the last pass against every alert that may hear
-    of
-    it; how many (person, job) were caught. Whoever had one caught is queued to be sent it. Run by one
-    notifier
-    at a time."""
+    of it; how many (person, job) were caught. Whoever had one caught is queued to be sent it. Run by one
+    notifier at a time."""
     with lease(db, "alerts.route", LEASE_SECONDS) as mine:
         if not mine:
             return 0
@@ -137,10 +128,7 @@ def _pass(db: Database, wait: int, alerts: list[Alert]) -> int:
     since = cursor["at"] if cursor else upto
     if since >= upto:
         return 0
-    rows = [] if not alerts else list(db[CorpusJob.COLLECTION].find(
-        {"$and": [{"described_at": {"$gt": since, "$lte": upto}}, {"closed_at": None},
-                  {"source": {"$ne": TYPED}}, showable(platform_windows(db))]},
-        _FIELDS, sort=[("described_at", 1)], limit=PASS_JOBS))
+    rows = _joined(db, since, upto, PASS_JOBS) if alerts else []
     reached = upto
     if len(rows) == PASS_JOBS:
         # Read up to the last whole moment; the jobs stamped with the one after are the next pass's.
@@ -164,6 +152,29 @@ def _pass(db: Database, wait: int, alerts: list[Alert]) -> int:
                     len(caught), len(people))
     db[AlertCursor.COLLECTION].update_one({"_id": str(wait)}, {"$set": {"at": reached}}, upsert=True)
     return len(caught)
+
+
+def would_have_found(db: Database, alert: Alert, days: int) -> int:
+    """How many jobs `alert` would have found in the last `days` days: said as it is made or changed, so an
+    alert that will find nothing is seen to at once rather than after days of silence. Asked as a pass asks,
+    of the jobs that joined their list in those days, so it cannot count by another rule than the one that
+    sends. A week is about 9,000 postings, read in 0.2 s (2026-11-17)."""
+    starter = db[User.COLLECTION].count_documents({"$and": [{"_id": alert.user_id}, starters()]}, limit=1)
+    wait = wait_hours(db, STARTER) if starter else 0
+    upto = now() - timedelta(hours=wait)
+    since = upto - timedelta(days=days)
+    # As if made before them: otherwise it hears only of what joins after it was made.
+    made_before = replace(alert, created_at=since)
+    return len(_caught(db, wait, [made_before], _with_words(db, _joined(db, since, upto))))
+
+
+def _joined(db: Database, since: datetime, upto: datetime, most: int = 0) -> list[dict]:
+    """The postings whose text was read in `(since, upto]`, the oldest first, with what an alert looks at;
+    `most` of them, or all."""
+    return list(db[CorpusJob.COLLECTION].find(
+        {"$and": [{"described_at": {"$gt": since, "$lte": upto}}, {"closed_at": None},
+                  {"source": {"$ne": TYPED}}, showable(platform_windows(db))]},
+        _FIELDS, sort=[("described_at", 1)], limit=most))
 
 
 def _with_words(db: Database, rows: list[dict]) -> list[dict]:
@@ -229,9 +240,8 @@ def _asking(hits: dict[tuple, list[Alert]], field: str) -> set[_uuid.UUID]:
 
 def _scores(db: Database, users: list[User], jobs_of: dict[_uuid.UUID, list[int]]) -> dict[_uuid.UUID, dict]:
     """These people's match scores for the jobs caught for them, as a card shows them (`libs.fit.shown`), in
-    one
-    query: a facet each. Nothing for somebody without the documents a score is made from: an alert asking for
-    one then catches nothing, and the Alerts page says why."""
+    one query: a facet each. Nothing for somebody without the documents a score is made from: an alert asking
+    for one then catches nothing, and the Alerts page says why."""
     facets = {}
     for user in users:
         if (made := fit.profile(db, user)) is not None:

@@ -1,12 +1,9 @@
 """The daily email: once a day per person with an alert that sends to it, at their own morning, listing what
-each
-such alert caught since the last one (owner, 2026-11-17: email stays one a day, grouped by alert, or the
-address
-is flagged for sending too much).
+each such alert caught since the last one (owner, 2026-11-17: email stays one a day, grouped by alert, or the
+address is flagged for sending too much).
 
 Independent of Telegram and the browser: it lists what was caught whether or not those jobs also went to a
-phone.
-Scheduled by the notifier's sweep (`libs.queue.dispatch_due_digests`), not by a clock of its own.
+phone. Scheduled by the notifier's sweep (`libs.queue.dispatch_due_digests`), not by a clock of its own.
 """
 from __future__ import annotations
 
@@ -45,8 +42,7 @@ def due(db: Database, user: User, hour: int, *, moment: datetime | None = None) 
 def send_digest(db: Database, mailer: EmailSender, user: User) -> int:
     """Email what their emailing alerts caught since the last one (a day, the first time), each alert's under
     its name; how many jobs it listed. None caught, nothing is sent. Marked sent either way, so a failure
-    costs
-    one day, not a retry a minute."""
+    costs one day, not a retry a minute."""
     since = user.email_digest_at or now() - timedelta(days=1)
     alerts = {alert.id: alert for alert in find(db, Alert, {"user_id": user.id, "channels": "email"},
                                                  sort=[("_id", 1)])}

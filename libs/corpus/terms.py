@@ -57,8 +57,7 @@ class CatchUp:
 def learn(db: Database, words: list[str]) -> None:
     """Words to look for in every posting whose text is read from now on, so an alert using them, and My
     search, has the very next one (`libs.alerts` reads a new posting's words and nothing else). Asked when
-    they
-    are saved, not left to `catch_up` after the next harvest pass. Words already known are left as they
+    they are saved, not left to `catch_up` after the next harvest pass. Words already known are left as they
     are."""
     if words:
         db[Word.COLLECTION].bulk_write([

@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from pymongo.database import Database
 
 from libs import fit, limits
-from libs.alerts import last_read, tidy_names, tidy_words
+from libs.alerts import last_read, tidy_names, tidy_words, would_have_found
 from libs.contracts.config import location_search_name
 from libs.corpus.boards import board_name
 from libs.corpus.geo import CITIES, COUNTRIES
@@ -65,6 +65,12 @@ class AlertOut(AlertIn):
     last_found_at: datetime | None
 
 
+class AlertSaved(AlertOut):
+    # How many jobs it would have found in the last `FOUND_DAYS` days, said as it is saved: an alert that will
+    # find nothing is seen to then, not after days of silence.
+    would_have_found: int
+
+
 class Choice(BaseModel):
     value: str
     label: str
@@ -113,7 +119,7 @@ def alerts_page(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(cu
 
 @router.post("")
 def make(body: AlertIn, db: Database = Depends(get_db),
-         user_id: _uuid.UUID = Depends(with_alerts)) -> AlertOut:
+         user_id: _uuid.UUID = Depends(with_alerts)) -> AlertSaved:
     """A new alert, from the next job that joins their list."""
     most = limits.resolve(get(db, User, user_id), "alerts_per_account")
     if most is not None and db[Alert.COLLECTION].count_documents({"user_id": user_id}) >= most:
@@ -122,19 +128,19 @@ def make(body: AlertIn, db: Database = Depends(get_db),
                                    "another.")
     alert = insert(db, Alert(user_id=user_id, **_tidy(db, user_id, body)))
     audit(logger, "alerts.made", user=user_id, alert=alert.id, channels=",".join(alert.channels))
-    return _out(alert, None)
+    return _saved(db, alert, None)
 
 
 @router.put("/{alert_id}")
 def change(alert_id: int, body: AlertIn, db: Database = Depends(get_db),
-           user_id: _uuid.UUID = Depends(current_user)) -> AlertOut:
+           user_id: _uuid.UUID = Depends(current_user)) -> AlertSaved:
     """An alert changed. Switching one on needs a plan with alerts; switching it off never does."""
     if body.on:
         with_alerts(db, user_id)
     _theirs(db, user_id, alert_id)
     db[Alert.COLLECTION].update_one({"_id": alert_id}, {"$set": _tidy(db, user_id, body)})
     audit(logger, "alerts.changed", user=user_id, alert=alert_id, on=body.on)
-    return _out(_theirs(db, user_id, alert_id), _found(db, user_id, alert_id))
+    return _saved(db, _theirs(db, user_id, alert_id), _found(db, user_id, alert_id))
 
 
 @router.delete("/{alert_id}")
@@ -197,6 +203,11 @@ def _found(db: Database, user_id: _uuid.UUID, alert_id: int) -> dict | None:
                     "alerted_at": {"$gte": now() - timedelta(days=FOUND_DAYS)}}},
         {"$group": {"_id": None, "n": {"$sum": 1}, "last": {"$max": "$alerted_at"}}}]))
     return rows[0] if rows else None
+
+
+def _saved(db: Database, alert: Alert, found: dict | None) -> AlertSaved:
+    return AlertSaved(**_out(alert, found).model_dump(),
+                      would_have_found=would_have_found(db, alert, FOUND_DAYS))
 
 
 def _out(alert: Alert, found: dict | None) -> AlertOut:

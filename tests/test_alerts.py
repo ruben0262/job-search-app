@@ -1,6 +1,5 @@
 """Alerts: named searches a person follows (owner, 2026-11-17), each sending the jobs it catches to the bell,
-their
-own Telegram bot, their browsers and the daily email.
+their own Telegram bot, their browsers and the daily email.
 
 A pass reads the jobs that joined a list since the last one and tests every alert against them
 (`libs.alerts.route`); the notifier sends what was caught (`services.notifier.deliver`).
@@ -999,6 +998,29 @@ def test_an_alerts_page_lists_what_it_found_and_counts_it(api):
 
 
 @needs_db
+def test_an_alert_says_what_it_would_have_found_this_week_as_it_is_saved(api):
+    """Said as it is made or changed (owner, 2026-11-17), so an alert that will find nothing is seen to then
+    rather than after days of silence: the postings of the last week it catches, by the rule that sends them,
+    and for Starter the week its own list had, three days behind."""
+    from libs.db.models import User
+
+    http, db, user = api
+    company = f"Brickworks {uuid.uuid4().hex[:6]}"
+    for days in (1, 2, 5, 11):
+        _posting(db, f"Brick Designer {days}", company=company, minutes_ago=days * 24 * 60)
+    _posting(db, "Brick Designer", company="Somebody Else")
+    bricks = {"name": "Bricks", "companies": [company]}
+
+    made = http.post("/alerts", json=bricks).json()
+    assert made["would_have_found"] == 3, "this week's three, not the one before it nor another employer's"
+    nobody = http.put(f"/alerts/{made['id']}", json={**bricks, "companies": ["Nobody Hires Here"]}).json()
+    assert nobody["would_have_found"] == 0
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"subscription_plan": "starter"}})
+    assert http.put(f"/alerts/{made['id']}", json=bricks).json()["would_have_found"] == 1, (
+        "Starter's list had only the five-day-old one this week")
+
+
+@needs_db
 def test_somebody_elses_alert_is_not_there(api):
     from libs.db.models import Alert
 
@@ -1015,8 +1037,7 @@ def test_somebody_elses_alert_is_not_there(api):
 @needs_db
 def test_every_account_from_before_named_alerts_keeps_its_alerts_once(db):
     """Nobody's alerts stop on the day they became named (`libs.alerts.alerts_for_existing`): each account
-    gets
-    My search, sending where theirs went, the daily email too if it was on; and it happens once ever."""
+    gets My search, sending where theirs went, the daily email too if it was on; and it happens once ever."""
     from libs.alerts import alerts_for_existing
     from libs.db.models import User
 

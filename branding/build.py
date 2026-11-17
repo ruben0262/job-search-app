@@ -22,6 +22,9 @@ from PIL import Image
 from playwright.sync_api import sync_playwright
 
 HERE = Path(__file__).parent
+# The site's own copies of the icons a phone shows: on its home screen, in its list of apps, and beside a
+# notification (`web/public/manifest.webmanifest`, `web/public/sw.js`).
+SITE = HERE.parent / "web/public"
 FONTS = HERE.parent / "web/node_modules/@fontsource-variable"
 SORA = FONTS / "sora/files/sora-latin-wght-normal.woff2"
 INTER = FONTS / "inter/files/inter-latin-wght-normal.woff2"
@@ -241,6 +244,10 @@ def icons(out: Out) -> None:
         out.png(full, s, s, fav / f"{name}.png")
     # Android crops this one to any shape inside the middle 80%; the wheel keeps well inside it.
     out.png(tile(PURPLE, WHITE, d=0.5), 512, 512, fav / "icon-maskable-512.png")
+    # A notification's small icon in Android's status bar, which draws only its shape: the wheel alone.
+    out.png(doc(wheel(50, 50, 100, WHITE), 0, 0, 100, 100)[0], 96, 96, fav / "badge-96.png")
+    for name in ("apple-touch-icon", "icon-192", "icon-512", "icon-maskable-512", "badge-96"):
+        (SITE / f"{name}.png").write_bytes((fav / f"{name}.png").read_bytes())
     out.all(HERE / "social/avatar", full, 100, 100, 800, jpg=PURPLE)
 
 

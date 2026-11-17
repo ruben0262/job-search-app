@@ -55,6 +55,9 @@ NO_ACCOUNT = "To make your CV, first link your AI account in Settings."
 TOAST_MS = 8000
 IPHONE = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 "
           "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1")
+# An iPad's Safari, which says it is a Mac, and is told apart by its touch screen.
+IPAD = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+        "Version/18.0 Safari/605.1.15")
 
 
 @pytest.fixture()
@@ -2175,11 +2178,13 @@ def _settings(browser, page, base: str) -> None:
     page.get_by_role("button", name="Turn alerts back on").click()
     expect(page.get_by_text("Alerts are on")).to_be_visible()
 
-    iphone = browser.new_context(storage_state=page.context.storage_state(), user_agent=IPHONE)
-    iphone.add_init_script("delete window.PushManager")
-    settings = iphone.new_page()
-    settings.goto(f"{base}/#/alerts")
-    expect(settings.get_by_text("Add this site to your home screen first")).to_be_visible()
+    for agent in (IPHONE, IPAD):
+        apple = browser.new_context(storage_state=page.context.storage_state(), user_agent=agent)
+        apple.add_init_script("delete window.PushManager;"
+                              "Object.defineProperty(navigator, 'maxTouchPoints', {get: () => 5})")
+        settings = apple.new_page()
+        settings.goto(f"{base}/#/alerts")
+        expect(settings.get_by_text("Add this site to your home screen first")).to_be_visible()
 
 
 def _more(page, base: str) -> None:
@@ -2283,6 +2288,8 @@ def test_an_alert_is_made_for_a_company_and_shows_what_it_found(site, capsys):
         form.get_by_label("Add to: Places").press("Enter")
         form.get_by_role("button", name="Make this alert").click()
         expect(form).to_have_count(0)
+        said = "“LEGO in Denmark” would have found nothing in the last 7 days."
+        expect(page.get_by_text(said)).to_be_visible()
         card = page.locator("li.alert-card").filter(has=page.get_by_role("link", name="LEGO in Denmark"))
         expect(card).to_contain_text("LEGO · Denmark")
         expect(card).to_contain_text("Nothing found yet")
@@ -2308,6 +2315,66 @@ def test_an_alert_is_made_for_a_company_and_shows_what_it_found(site, capsys):
         card.get_by_role("switch").uncheck()
         expect(card.get_by_text("Off", exact=True)).to_be_visible()
         browser.close()
+
+
+def test_the_site_installs_as_an_app_and_a_job_it_pushes_shows_the_wheel(site, capsys, tmp_path):
+    """Alerts on the phone without an app store (owner, 2026-11-17: "download it through chrome as a mini
+    app"): Chrome finds nothing missing to install the site, and the Alerts page offers it; a job pushed to
+    the phone shows the app's icon, and the wheel in the status bar; and the tab that turned notifications on
+    is the service worker's at once, so tapping one can take that tab to the job. Before: two icons missing,
+    so never offered, a notification with neither, and a tab the worker could not move."""
+    import json
+
+    base, email, ids = site
+    with sync_api.sync_playwright() as playwright:
+        # A profile of its own: Chrome offers no install to a private window, which a new context is.
+        context = playwright.chromium.launch_persistent_context(
+            tmp_path, executable_path=CHROME, headless=True, viewport={"width": 390, "height": 844})
+        context.grant_permissions(["notifications"], origin=base)
+        page = context.new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        cdp = context.new_cdp_session(page)
+        assert cdp.send("Page.getInstallabilityErrors")["installabilityErrors"] == []
+        page.goto(f"{base}/#/alerts")
+        expect(page.get_by_role("button", name="Install the app")).to_be_visible()
+        _fits(page)
+
+        workers: list[dict] = []
+        cdp.on("ServiceWorker.workerRegistrationUpdated",
+               lambda event: workers.extend(event["registrations"]))
+        cdp.send("ServiceWorker.enable")
+        # What turning notifications on registers (`src/push.ts`); the subscription itself needs a push
+        # service, which a headless browser has none of.
+        assert page.evaluate("""async () => {
+          await navigator.serviceWorker.register("/sw.js");
+          await navigator.serviceWorker.ready;
+          if (!navigator.serviceWorker.controller) await new Promise((taken) => {
+            navigator.serviceWorker.addEventListener("controllerchange", taken);
+            setTimeout(taken, 3000);
+          });
+          return navigator.serviceWorker.controller !== null;
+        }"""), "the tab that turned notifications on is not the worker's, so a tap cannot take it to the job"
+        worker = next(each for each in workers if not each.get("isDeleted"))
+        job = ids[TITLES[0]]
+        # What the notifier sends (`services.notifier.card.notification`), as a push service delivers it.
+        sent = {"title": "Backend Engineer", "body": "My search · Acme", "url": f"/#/feed?job={job}"}
+        cdp.send("ServiceWorker.deliverPushMessage", {
+            "origin": base, "registrationId": worker["registrationId"], "data": json.dumps(sent)})
+        shown = page.evaluate("""async () => {
+          const worker = await navigator.serviceWorker.ready;
+          for (let tries = 0; tries < 50; tries++) {
+            const [shown] = await worker.getNotifications();
+            if (shown) return {title: shown.title, body: shown.body, icon: shown.icon, badge: shown.badge,
+                               url: shown.data.url};
+            await new Promise((later) => setTimeout(later, 100));
+          }
+          return null;
+        }""")
+        assert shown == {**sent, "icon": f"{base}/icon-192.png", "badge": f"{base}/badge-96.png"}
+        for picture in (shown["icon"], shown["badge"]):
+            assert page.request.get(picture).headers["content-type"] == "image/png", picture
+        context.close()
 
 
 def _fits(page) -> None:

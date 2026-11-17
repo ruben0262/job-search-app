@@ -1,6 +1,5 @@
 """The `notify` lane worker, its two transports (Telegram and Web Push), and the sweep that feeds it: the
-alerts' pass
-over new jobs (`libs.alerts.route`) and the daily emails that are due."""
+alerts' pass over new jobs (`libs.alerts.route`) and the daily emails that are due."""
 from __future__ import annotations
 
 import json

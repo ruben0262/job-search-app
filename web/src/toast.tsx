@@ -33,6 +33,12 @@ export function toast(notice: Toast): void {
 
 const dismiss = (id: number) => changed(shown.filter((each) => each.id !== id));
 
+/** Drawn again where the person now is. A dialog calls it as it goes (`ui.tsx`): a notice said as one closes,
+ * "saved" as a form shuts, was drawn inside it and went with it (2026-11-17). */
+export function redrawToasts(): void {
+  if (shown.length) changed([...shown]);
+}
+
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
   return () => void listeners.delete(listener);
@@ -58,7 +64,8 @@ function Stack({ list }: { list: Shown[] }) {
   // Into the top layer before it is painted; where popovers are unknown it is a plain fixed box.
   useLayoutEffect(() => {
     const element = stack.current;
-    if (element && !element.matches?.(":popover-open")) element.showPopover?.();
+    // Not when the dialog it was drawn into closed in the same moment: it is drawn again outside.
+    if (element?.isConnected && !element.matches?.(":popover-open")) element.showPopover?.();
   }, []);
   return (
     <div ref={stack} className="toasts" popover="manual">

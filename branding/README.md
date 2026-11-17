@@ -62,24 +62,18 @@ at any size.
 
 ## For the website
 
-The site still uses its own `web/public/favicon.svg`. To switch to this kit, copy the `favicon/`
-files into `web/public/` and add:
+The icons a phone shows are this kit's: on the home screen and in the list of apps once the site is
+installed (`icon-192`, `icon-512`, `icon-maskable-512`, `apple-touch-icon`), and in the status bar beside
+a job alert (`badge-96`, the wheel alone in white, since Android draws only its shape). `build.py`
+writes them into `web/public/` as well, so the site's copies are never older than the kit's.
+
+The browser tab still shows the site's own `web/public/favicon.svg`. To switch that too, copy
+`favicon.ico` and `favicon.svg` from `favicon/` into `web/public/` and add:
 
 ```html
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:image" content="https://<your domain>/og-image.png">
-```
-
-Then add these to `manifest.webmanifest`:
-
-```json
-"icons": [
-  { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-  { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
-  { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
-]
 ```
 
 ## Changing anything

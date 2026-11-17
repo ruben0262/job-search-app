@@ -1,6 +1,6 @@
 """The daily email: once a day at their morning for somebody with an alert that sends to it, listing what each
-such
-alert found since the last one under its name (owner, 2026-11-17) — and nothing at all when nothing was."""
+such alert found since the last one under its name (owner, 2026-11-17) — and nothing at all when nothing
+was."""
 from __future__ import annotations
 
 import os

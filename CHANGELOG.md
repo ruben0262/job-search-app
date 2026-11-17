@@ -14,6 +14,70 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17, late night — The site installs as an app, a pushed job shows the wheel, and an alert says what it would have found
+
+The owner, once the alerts were committed: "start the phone notification next, your ideas are sound and we should
+follow them" (ROADMAP Phase 11, part 2: installing as an app, the notification's icon, and a count of what an alert
+would have found).
+
+**It installs.** Chrome's own check (`Page.getInstallabilityErrors`, in a normal profile), on the build before and
+after:
+
+| | Before | After |
+| --- | --- | --- |
+| What Chrome finds missing | `manifest-missing-suitable-icon`, `no-acceptable-icon` | nothing |
+| Chrome offers to install (`beforeinstallprompt`) | never | yes |
+| A pushed job's icon and status-bar badge | none, none | the app icon, the wheel |
+| The tab that turned notifications on is the worker's | no (`controller` null) | yes |
+
+- **Icons.** The manifest has the brand kit's icons (192, 512, a maskable 512), an `id` and a `scope`, and the page
+  an `apple-touch-icon` for an iPhone's home screen. They are `branding/build.py`'s: the kit made on 2026-11-13,
+  whose README already described this switch. The kit now also makes a notification badge (`badge-96`, the wheel
+  alone in white, since Android's status bar draws only a shape). It writes the site's copies into `web/public`
+  itself, so the two cannot drift.
+  - Only its icon step was run, and every existing kit file came out byte for byte the same.
+  - The browser tab keeps the site's own `favicon.svg`; switching it is in the kit's README.
+- **An "Install the app" button** on the Alerts page, beside notifications, wherever Chrome, Edge or Samsung
+  Internet offer it. The browser offers once, early, on whatever page is open, so `web/src/install.ts` keeps the
+  offer from the first moment (`main.tsx` imports it before any page).
+  - An iPhone is told Share, then Add to Home Screen, as before.
+  - An iPad, whose Safari says it is a Mac, was told "This browser cannot show notifications". It is now told what
+    an iPhone is.
+- **The notification** (`web/public/sw.js`) shows the app icon, and the wheel in Android's status bar.
+- **Tapping one now moves the open tab to the job.** The worker now takes charge of the tab that registered it
+  (`clients.claim`), and a new version takes over at once (`skipWaiting`). Before, that tab was not the worker's
+  until it was reloaded, and a worker cannot move a tab it does not control. So tapping a notification brought the
+  tab forward and left it where it was.
+
+**What an alert would have found.** Saving an alert says how many jobs it would have found in the last 7 days:
+"“LEGO in Denmark” would have found nothing in the last 7 days. Fewer words, companies or places find more." An
+alert that will never find anything is seen to then, rather than after days of silence.
+- `libs.alerts.would_have_found` asks exactly as a pass does (`_caught`), over the postings that joined the
+  person's list in those days, three days behind for Starter. The pass and the count read those postings through
+  one query (`_joined`), so they cannot count differently.
+- Read on the local copy of the corpus: 9,308 postings in a week, read in 0.19–0.20 s and tested in 8 ms.
+
+**A toast raised as a dialog closed was lost, and stopped the page.** The count is a toast, raised as the alert
+form shuts. It was drawn inside the closing dialog, and `showPopover` threw on the detached element ("Invalid on
+disconnected popover elements"). That error also stopped the Alerts page reloading its alerts: the e2e walk saw
+the card keep its old channels. Now a dialog redraws any toasts as it goes (`ui.tsx`, `toast.tsx`
+`redrawToasts`), and a toast is never shown inside a dialog that closed in the same moment.
+
+**Not measured, so not claimed:** a notification on a real locked Android phone or iPhone, and the time from a
+job's text being read to the phone buzzing. Both need a phone; ROADMAP Phase 11 keeps them open.
+
+Also in this commit: the comments that the alerts commit's line wrapping left with one word on a line, reflowed.
+
+Tests:
+- `test_e2e_site.py::test_the_site_installs_as_an_app_and_a_job_it_pushes_shows_the_wheel`: no installability
+  errors, the button, a push delivered through Chrome's DevTools shown with its icon, badge and link, and the tab
+  controlled. It fails on the build before on all of them.
+- The iPad beside the iPhone, and the toast in the alert walk.
+- `test_alerts.py::test_an_alert_says_what_it_would_have_found_this_week_as_it_is_saved`: 3 this week, 0 for
+  another employer, 1 for Starter.
+
+---
+
 ## 2026-11-17, night — Alerts are named, and one pass a minute catches for everybody
 
 The owner: "allow full custom notifications to be set up for users based on keywords (that they personally select,

@@ -1,8 +1,7 @@
 """Telling a person something: an in-app notification, and the jobs their alerts caught that are owed to them.
 
 What is owed is defined once, here (`owed`): what `libs.alerts` caught and the notifier has not sent. It stays
-in
-`libs` beside the in-app notifications the API writes.
+in `libs` beside the in-app notifications the API writes.
 """
 from __future__ import annotations
 

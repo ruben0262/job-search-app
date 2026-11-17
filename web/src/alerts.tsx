@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type Schema } from "./api";
+import { install, useInstallable } from "./install";
 import { useKept } from "./kept";
 import { ACCOUNT } from "./pages/SettingsPage";
 import { disablePush, enablePush, pushState } from "./push";
@@ -233,8 +234,22 @@ export function Alerts() {
       </div>
       <div className="channel">
         <span className="label">This phone or browser</span>
+        <InstallButton />
         <PushButton />
       </div>
     </div>
+  );
+}
+
+/** The site as an app on this phone or computer, where the browser offers it (`install.ts`); nothing where it
+ * does not, or it is installed already. */
+function InstallButton() {
+  const installable = useInstallable();
+  const add = useAction(install);
+  if (!installable) return null;
+  return (
+    <button type="button" className="secondary" disabled={add.busy} onClick={() => void add.run()}>
+      Install the app
+    </button>
   );
 }

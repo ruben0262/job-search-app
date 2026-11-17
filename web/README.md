@@ -22,7 +22,9 @@ npm run build    # tsc --noEmit, then vite build
 | `src/pages/Onboarding.tsx` | the three screens: your CV, what we found, done |
 | `src/pages/{Jobs,Words,Documents,Settings}Page.tsx` | the places after signup; Help is the support chat's |
 | `src/documents.ts` | a CV or cover letter for a job: start it, show it being made, hand over the PDF |
-| `src/alerts.tsx`, `src/push.ts` | Telegram through the person's own bot, and this browser's notifications |
+| `src/pages/AlertsPage.tsx` | the person's named alerts: made, changed, switched off, and what each found |
+| `src/alerts.tsx`, `src/push.ts`, `public/sw.js` | where alerts reach somebody: Telegram through their own bot, and this phone's or browser's notifications |
+| `src/install.ts`, `public/manifest.webmanifest` | the site as an app on a phone's home screen: the browser's offer kept from the first moment; the icons are `branding/build.py`'s |
 | `src/ui.tsx` | the pieces every page needs: word chips, the upload button, errors |
 
 ## Look

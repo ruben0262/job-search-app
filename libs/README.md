@@ -22,7 +22,7 @@ What is here is what runs: what the platform no longer uses is in [`retired/`](.
 
 | Package | What it is |
 |---|---|
-| `alerts.py` | Named alerts: what each catches, asked of every new job once a minute for everybody at once (`route`), and "My search" for every account |
+| `alerts.py` | Named alerts: what each catches, asked of every new job once a minute for everybody at once (`route`), and "My search" for every account, and what one would have found lately (`would_have_found`) |
 | [`assistant/`](assistant/) | The help chat: a reply written by an AI on the key that pays, streamed into its row |
 | [`auth/`](auth/) | Password hashing, verification tokens and refresh sessions |
 | [`contracts/`](contracts/) | Pydantic models shared between services: the search config and onboarding |

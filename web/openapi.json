@@ -835,6 +835,135 @@
         "title": "AlertOut",
         "type": "object"
       },
+      "AlertSaved": {
+        "properties": {
+          "channels": {
+            "items": {
+              "enum": [
+                "bell",
+                "push",
+                "telegram",
+                "email"
+              ],
+              "type": "string"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "companies": {
+            "items": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Companies",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "found": {
+            "title": "Found",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "keywords": {
+            "items": {
+              "maxLength": 60,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Keywords",
+            "type": "array"
+          },
+          "last_found_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Found At"
+          },
+          "min_fit": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Fit"
+          },
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "on": {
+            "default": true,
+            "title": "On",
+            "type": "boolean"
+          },
+          "places": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Places",
+            "type": "array"
+          },
+          "search": {
+            "default": false,
+            "title": "Search",
+            "type": "boolean"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Sources",
+            "type": "array"
+          },
+          "would_have_found": {
+            "title": "Would Have Found",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "search",
+          "keywords",
+          "companies",
+          "places",
+          "sources",
+          "min_fit",
+          "channels",
+          "on",
+          "id",
+          "created_at",
+          "found",
+          "last_found_at",
+          "would_have_found"
+        ],
+        "title": "AlertSaved",
+        "type": "object"
+      },
       "AlertsPage": {
         "properties": {
           "alerts": {
@@ -7125,7 +7254,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AlertOut"
+                  "$ref": "#/components/schemas/AlertSaved"
                 }
               }
             },
@@ -7221,7 +7350,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AlertOut"
+                  "$ref": "#/components/schemas/AlertSaved"
                 }
               }
             },
