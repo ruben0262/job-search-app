@@ -14,6 +14,159 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17 — Every word of the pricing in Admin; Starter shown worth more than Free; "Skip the grind. Beat the crowd. Join now."; the phone says what each part does
+
+The owner: "make sure the bullet points and the benefits as well as the crossed out sections appear in admin all the
+time and i dont have to type it in because you hardcoded it in the backend, you should add it yourself in the admin
+and save it there"; "we should offer more in the starter than the free, and right now we have more ticks in free";
+the title's "start for free part is not good, we should CTA for them to join us", relating it to "the tedious process
+... and compete with a larger pool"; the reviews without "sample" and "example"; the phone "to match our new design
+... if a user hovers, we should stop the animation and ... what that section actually does in a short description";
+and the site to stress "a simple, high quality, fast app", taking $100M Offers (in the owner's downloads) as the guide.
+This replaces parts of the late-night entry below, none of it pushed: the lines' words leave `libs.membership`.
+
+### The lines in Admin (`pricing_lines`; `pricing_routes`; `AdminPricing.tsx`)
+
+- **Every line of every card is a setting**, `pricing_lines`, its defaults in `libs.settings.DEFAULT_PRICING_LINES`
+  and shown filled in by Admin → Subscriptions, so nothing is typed from nothing: how soon (`wait`, `now`), what every
+  account has (`everyone`), and each paid area's lines (`areas`, one or more each). **Which card ticks a line and which
+  crosses it out stays with the plans in code** (`libs.membership.PLANS`): a line about alerts is ticked where alerts
+  are given, whatever it says. `libs.membership.AREAS` is the areas' names alone; `Said` and `EVERYONE` are gone.
+- `{wait}` in the "how soon" line is each plan's own wait ("7 days"), so no number is typed twice; a wait line without
+  it is refused (422), as is a kind left empty or an area missing or unknown. Saved words that no longer read are the
+  defaults, said in the log; an area that came after a save shows in its default words.
+- The editor groups the lines by kind, says on which plans each is ticked (`ticked_on`, from `PLANS`) and what
+  {wait} becomes (`waits`), adds and removes lines, warns in amber when a line is too wide for one line on a phone
+  (measured in the cards' font against 204 px, the narrowest card's room at 16 px), and previews the cards as the
+  server works them out (`POST /admin/pricing/preview`, nothing saved). `GET /admin/pricing` reads every word;
+  `PUT` saves the cards and the lines together.
+- **Saved on the local copy through Admin's own save, as the owner's account.** On the server the editor shows them
+  filled in from the defaults; a save there keeps them.
+
+### Starter shown worth more than Free (owner's word; the book: tiers differ by delay, Member wins on a longer stack)
+
+Free ticked five lines and Starter four, counting "Everything in Free". Now Free ticks three ("See new jobs after 7
+days", "Every job site in one list", "Save, filter and track jobs"), Starter "Everything in Free" and four (after 3
+days, alerts, "Match score on every job", "Filter by match score": the filter is the match score's, Starter's and
+Member's), and Member "Everything in Starter" and five. A test holds Free below Starter and Starter below Member. The
+"sooner than Free" clause of Starter's question mark is gone: the three cards side by side say it.
+
+### Words on the page
+
+- **Pricing title**: "Skip the grind. Beat the crowd. Join now." (the slog of applying, the crowd applying, then the
+  call to join; each phrase kept whole as the title wraps).
+- **The hero leads with "Simple, fast, and made for each job."** before what shows it: one list, one tap, apply on the
+  job's own site. From the book (p80 to 93: of the value equation's four parts, time and effort are the ones to push;
+  "fast beats free", p89), as a subagent read it; no number or outcome is promised that the page cannot source.
+- **Reviews**: the stand-ins are named by initial ("Aoife M.", was "Aoife Example"). Still marked `sample`, so still
+  shown on the development site only, never on the built one, until real reviews replace them.
+
+### The phone (`Demo.tsx`)
+
+- **As the app now is**: Jobs with its three tabs, its search, "Posted" and Filters, and the card with its bookmark,
+  match score, tags and foot; Applied with the question under each track, answered there, and Undo; the tour hears
+  back on Applied each time round, so the track moves.
+- **Pointed at, it stands still** and the part under the pointer is ringed, with a line to a note beside the phone
+  saying what it does (23 parts: the tabs, the search, the match score, Make my CV, Skip, the track, the tab bar and the
+  rest); it goes on when the pointer leaves. **Tapped**, or with no room beside it, the note is under the phone. Under
+  the phone: "Point at any part of the phone to see what it does" ("Tap" where nothing points).
+- A landing style for the "What it is" picture's rows (`.match`) caught the card's match score; scoped to its own rows.
+
+### Tests
+
+`test_pricing.py`: the cards in the saved words; Starter more than Free, Member more than Starter; an admin words a
+line and each card ticks or crosses it by its plan; Admin shows every word filled in, where each area is ticked and
+each wait; lines that cannot be said truly are refused and nothing saved (6 cases); the preview saves nothing; saved
+lines that no longer read. `test_e2e_site.py`: the title; Admin's line edit in the preview and on the landing page;
+the phone's note tapped under it on a phone and beside it on a laptop; the tour hearing back on Applied, standing still
+while pointed at, and going on after; the Upgrade page's 8 and 4 lines.
+
+Two of the project's own relationship tests caught this work before it went anywhere: a `PAID` of the pricing's own
+(the paid areas) beside `libs.membership.PAID` (paid subscription states), now `LINED_AREAS`; and the editor no longer
+naming the settings it is the control of, now said in its header.
+
+### The suite on four workers (owner: "reduce the runtime ... running it in parallel")
+
+`pytest tests/ -q -rs -n 4` (`pytest-xdist`, capped `>=3.8,<3.9` in `requirements-dev.txt`, CLAUDE.md §7): 3 min 30 s
+against 6 min 30 s one at a time, on this 8-core laptop with 14 GB. Each worker is a process of its own, so its own
+`test_<pid>` database and ports; four, because each browser test runs a Chromium and a server and memory runs out first.
+The first run in company failed one test the serial runs never had: the theme button measured in a second call after
+the one that waited for it, while the Jobs page drew its bar again just after setting up. It is measured in the call
+that waits now. `tests/README.md` gives the command; CLAUDE.md §7's own line is the owner's to change.
+
+**Gates**: lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db --prune` clean; the contract current (two
+admin routes and their models added); the site built; pytest on four workers 1,626 passed, 7 skipped (the usual
+seven), in 3 min 30 s.
+
+## 2026-11-16, late night — The offer in plain words, a line each; the Jobs page's filters behind one button; the job cards, Applied, Bookmarks and Add a job redrawn
+
+The owner: "improve the wording on the offers ... make every benefit point so it doesn't bump on the lines", "a
+better title ... take example from alex hormozis book $100m offers", people "confused on the members benefits 'New
+jobs the moment we find them' ... with alerts"; the three marks under the title "only keep them inside the offers";
+the filters "a little messed up ... simplify it ... not clunky"; job posts "interpretable ... they know what all
+buttons do exactly just by scrolling through or looking"; Applied has "lots of buttons shoved together ... when we
+undo its a writing or a hyperlink"; "carry these redesigns over to the bookmarks tab and the add a job tab". Then,
+mid-way: "add the ATS check as a separate benefit for the member benefits ... its high value".
+
+### The offer (`libs.membership.AREAS`, `EVERYONE`; `pricing_routes._soon`; `Landing.tsx`)
+
+- **How soon, said one way on all three cards**: "See new jobs after 7 days" (Free), "after 3 days" (Starter), "See
+  new jobs right away" (Member), so the line Member was confused by reads as the third of a row, not as an alert.
+  Alerts are "Job alerts sent to you", their question mark saying they come as a job joins the list (a Starter's
+  three days later, `libs.notify.owed` reads `libs.matching`).
+- **Plain words, one thing a line**: "Every job site in one list", "Hide jobs you don't want", "Save jobs for later",
+  "Track every application" (was one line, "Bookmarks and application tracking"), "Match score on every job", "A CV
+  made for each job", "A cover letter for each job", **"ATS check, every time"**, "Add jobs from any site". The ATS
+  check is an area of its own (`ats_checks`) that nothing asks for by name, since every document is checked as it is
+  made: `tests/test_pricing.py` holds the plans to having it exactly where they make CVs or letters.
+- **A line each, measured**: a line had 182 to 254 px of room by screen, and the old lines needed up to 300; the new
+  ones fit at every width from 320 to 1920 px (14 widths checked), the cards three to a row from 1024 px. Where
+  three cards share a 900 to 1000 px page, or one a 320 px phone, the words step down to 15 px rather than break.
+  `tests/test_e2e_site.py` (`_one_line_each`) measures it at 320, 390, 1024 and 1280 px.
+- **Title**: "Beat the crowd. Start free." (was "Start free. Lock in your price for life."): what every plan buys, a
+  head start on the other applicants, and that every plan starts free. The three marks under it (`Offer`,
+  `.price-offer`) are gone; the saving, "Price locked for life" and the free days stay on the cards.
+- **Free's small print**: "No card needed. Upgrade when you like." (was "whenever"). A saved `pricing_cards` keeps its
+  own words over the default: the local copy's was the old default and was changed to match; **on the server, if the
+  cards were saved in Admin, Free's small print is retyped there.**
+- The free plan's banner and the Jobs page say it the same way: "You see new jobs after 7 days." and "Members see new
+  jobs right away, and can apply among the first."
+
+### The Jobs page's filters (`JobsPage.FilterSheet`, `narrowing`)
+
+The search, "Posted" and one **Filters** button in a row (the search a row of its own on a phone); every other filter
+behind the button, over the page, each kind under a heading that says what it is: Match score, Where (country, city,
+remote), Your words (which, how many), More (job site, no CV yet), Sort by. The list behind follows each change, and
+the way back says how many jobs it holds ("Show 68 jobs"). Each filter that is on is a chip under the search that
+takes it off, with "Clear all"; the button counts them. "Posted" and the order stay when the rest is cleared, as
+before. Six rows of controls in three styles (`.filters`, `.score-filter`, `.words-filter`) are gone.
+
+### The job card, and Applied
+
+- **A card**: title, then who, where and when, then tags (match score, new, pay), the start of the text, "Your words:"
+  (was "Why:"), the CV and cover letter as an equal pair, and along the foot, quieter, "Apply on <board>", "Mark as
+  applied" and Skip apart at the end. "CV made" and "Cover letter made" are gone: the card's own "Download CV" says
+  it, beside the coloured edge. "Make it again" and every Undo are buttons with a picture, never a link.
+- **Marked applied**: a green line, "Moved to Applied: <title>", with an Undo button.
+- **Applied**: the track unchanged; the question and its two answers in a panel under it, with Undo; the documents
+  as a pair; "Open the job" and "I did not apply" along the foot, the second asking first ("Take this off Applied?").
+- **Bookmarks and Add a job** draw the same card, and now with its match score, worked out as the Jobs page's are
+  (`link_routes._jobs` reads `libs.fit.scored`): before, a job showing "Match 9/10" on Jobs showed none there.
+- The landing page's working card and its "What it is" picture follow ("Your words:", the foot, the tags).
+
+### Tests
+
+`test_pricing.py` (the new words; `test_the_ats_check_is_promised_exactly_where_documents_are_made`, which fails for
+Member without the line), `test_billing.py` (the banner; a member's areas), `test_fit.py`
+(`test_a_job_shows_the_same_score_under_bookmarks_and_add_a_job_as_on_jobs`: against the code before, Bookmarks
+answered `{1: None, 2: None}` for `{1: 10, 2: 3}`), `test_e2e_site.py` (the filters behind their button and their
+chips, the match score's chip, one line a benefit, the offer said on the cards alone, the Undo button, "I did not
+apply" asking first and the job back on Jobs after).
+
+**Gates**: lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db --prune` clean; the contract unchanged;
+the site built; pytest 1,616 passed, 7 skipped (the usual seven: Stripe's sandbox without keys, five; the Postgres
+copy; the reference instance).
+
 ## 2026-11-16, night — The match score, version 2: roles read from the lines that name a job, and at most 4 for a job they cannot take; a second held-out set
 
 The owner: "run a lot more tests ... other criteria that we can extract from the jobs or the users and compare ...
