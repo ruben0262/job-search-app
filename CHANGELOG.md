@@ -14,6 +14,147 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17, late night — The landing page, round two: "Get seen first.", six tiles that say the time saved, a question for a person at the foot; each visitor counted apart; the owner's name out of the project
+
+The owner, on the first round:
+- On the h1: "we can make something even better". Then, on "Be first. Be seen. Get the call.": "way too long, we
+  need to find something powerful, punchy, one liner".
+- "add the fact that there are alerts", and "something about filters".
+- On "Skip the grind. Beat the crowd. Join now.": "the grind remains but we beat the way most people are
+  searching for jobs".
+- "Your first jobs are there the moment you finish." "doesn't quite make sense".
+- "a good approach is to mention saving time".
+- "a contact form somewhere at the bottom, to the same place where we have inside the app".
+- "remove [their name] from the site and the project completely".
+- "how should we set up the server side for more logins, signups, change passwords or using the site".
+- "for the 5 mins i mean the freshness of the jobs".
+- "we will write the privacy page which should be legal and full later on".
+
+The copy is in `docs/saas/MESSAGING.md` §7. A design-engineer agent built most of the page, and this session
+finished it.
+
+- **The h1 is "Get seen first."** It is one line of three words, the owner's "be first" and "be seen" in one, with
+  "first." glowing. A phone breaks it before "first.", and there the whole hero, buttons included, now fits on
+  the first screen. Other candidates are in MESSAGING.md.
+- **How it works has six tiles, and every one says which plan gives it.**
+  - "Instant alerts on your phone" (paid plans). It says "lands in your list", not "is posted": an alert goes
+    within a minute of a job joining a list (`DISPATCH_EVERY_SEC`), and a Starter's list waits three days.
+  - Filters are in the match-score tile.
+  - "Save jobs for later" is new.
+  - Bookmarks and tracking end with "On every plan, Free too.", which is what Free already gives.
+  - The line under the title says the time: "Hours of searching, rewriting and tracking, done for you."
+  - On a laptop there are three tiles to a row, with the titles a size down so each takes two lines. The
+    shorter tiles in a row used to end in up to ~190 px of empty space; now at most 69 px.
+- **The ATS figure stands alone: "99% passed all ATS checks."** The owner asked for "288 CVs in 8 looks, our own
+  tests, November 2026" to go. `/stats` no longer serves `checks`, `looks` and `month`, which nothing read any
+  more. What was measured stays in the comment beside `ATS_MEASURED`, and the figure still shows only while the
+  measured CV wording is live.
+- **Their own AI account is said on the page**, as one line under the tiles: "CVs and cover letters are written
+  with your own ChatGPT, Claude or Gemini account." In the CV tile it had made that tile its row's tallest.
+- **The pricing title is "Search smarter. Beat the crowd. Join now."** **Get started ends with** "No complex
+  setup, nothing to install. Your jobs on your phone or laptop, wherever you are." ("No complex setup" is the
+  owner's own edit.)
+- **Ask us (`#ask`, new, last on the page).** Two fields and one button, and a receipt in place of the form.
+  - `POST /contact` now takes a visitor who is not signed in, with an address to reply to. The message goes to
+    the same row (`contact_messages`, `user_id` None), the same support inbox and the same Admin list.
+  - Without a subject, the message's first words are the subject.
+  - A visitor gets 5 an hour from their own address (below), whatever email they type. An account gets 5 an
+    hour, as before.
+  - The email to the inbox says the address was not checked by a sign-in.
+  - A signed-in person's form is unchanged, and so is the 401 an expired session gets.
+  - The footer's last link, to the owner's own site, became "Contact".
+- **The owner's name is out of the project's files** (34 files, as bytes, so the CRLF files kept CRLF).
+  - Docs and deploy docs say "the owner" and use `mahoraga.example.com`.
+  - Test fixtures use `sam@example.com`, and the bench's candidate is `owner`.
+  - The test that keeps the name out of every account's prompts now holds it as digests
+    (`tests/test_prompt_templates.py`), and it was checked to catch every form of it still.
+  - Not done, and the owner's to decide: the live domain, the GitHub account, and git history (commit author
+    emails), which only a rewrite and a force-push could change.
+- **Each visitor is counted apart.**
+  - `rate_limit` keyed every count on the peer address. Behind the tunnel the peer is the tunnel, the same for
+    everybody. So sign-up was five an hour for the whole site, per API process, and resetting a password by its
+    link ten a quarter-hour.
+  - It now keys on Cloudflare's `CF-Connecting-IP`, else the peer. Cloudflare's edge sets that header, so it
+    cannot be forged through the tunnel, and it can be trusted because the API publishes no port of its own.
+  - Sign-in, "forgot" and "resend" were already counted per email, and still are.
+  - Sign-up is now 20 an hour per address (it was 5), because a campus, an office or a phone network shares one
+    address.
+  - Nothing changes on the server: it ships with the next deploy.
+- **Settled (owner):** the crossed-out prices are the plans' original prices, reduced, so there is no legal
+  question. "Every job site" and the reviews are left for now. The owner will write the full, legal privacy page
+  later.
+- **Tests:**
+  - Two new in `test_contact_and_applied.py`: a visitor reaches the same inbox, and a visitor must say where the
+    reply goes. Both fail against HEAD (401 where 202 and 422 are expected).
+  - A new e2e test: a visitor's question, from the footer's link to the receipt, the inbox and the row.
+  - The landing e2e test asserts the new h1, the six titles, the ATS line alone and the AI-account line.
+  - `tests/test_rate_limit.py` (new, needs no database): two visitors through the tunnel are counted apart.
+    Against HEAD the second visitor got a 429.
+- **Gates, run locally:**
+  - lint-imports: 2 kept.
+  - ruff: clean.
+  - Schema: applied to an empty database (30 collections).
+  - Contract: unchanged by regeneration.
+  - Build: passes.
+  - Full suite: 1,648 passed, 7 skipped (the usual seven), 4 min 56 s on four workers.
+- **Noticed, not changed** (CLAUDE.md §5):
+  - Each API process counts on its own (`_WINDOWS`), so with four workers a limit is up to four times its number.
+    Counts in the database would make it exact. That is worth doing when a limit moves to Admin, where a number
+    on screen must be the one enforced. The limits are typed in the routes today.
+  - Freshness: by the steps' own timings, a job reaches a member's list roughly 10–30 minutes after it goes up.
+    It is found at the next 15-minute run (`PLATFORM_TICK_MIN`), then its text is read. Admin → Latency shows the
+    live p50 and p90. A "5 minutes" line would need runs every 5 minutes, about three times the proxy's requests,
+    so the page keeps "in minutes" and the server's interval.
+  - The privacy text says nothing of contact messages. The full privacy page the owner will write should cover
+    them.
+
+## 2026-11-17, night — The landing page sells: the promise first, How it works says what the app does for people, the figures gone
+
+The owner: "we need to add better copywriting to the site, that sells it all ... work out the audience that we are
+targeting ... the pain points of these people, problems and finally what it is our solutions does and how to help
+them ... I think that we can remove the 'why it works' section ... keep the 'Be first. Be seen.' part ... the how it
+works should not say the onboarding but the benefits of how the app works ... we need to remove these stats". Read
+against Hormozi's *$100M Offers*, as the owner asked. A design-engineer agent built the page from the copy.
+
+- **`docs/saas/MESSAGING.md` (new) is where the copy comes from.** It sets out who the page speaks to (the graduate,
+  the school leaver, the stuck searcher, the lost), what triggers them, what hurts on Hormozi's value equation, the
+  words they use, the rules every line keeps, the page section by section, and what is open for the owner. A copy
+  change starts there.
+- **The promise is the biggest words on the page.** The h1 is "Be first. Be seen." (it was "Mahoraga": in the three
+  seconds a visitor gives the top, the name told them nothing, and it is in the bar). "The job search that runs
+  itself." stays under it. The lede is the owner's own "Be first" words of 2026-11-12. "Sign in" left the hero, since
+  the bar has it and a screen has one main button. Under the buttons sits "Free plan. No card needed.", which is
+  true of Free and takes the risk away where the choice is made.
+- **Why it works is gone, with its five figures** (ISE 140, LinkedIn 65% and ~60%, Ashby ~2×, Greenhouse 14M+). The
+  hero keeps two of them in words ("more people apply", "hiring starts in its first week"). Their sources are in a
+  comment beside those words: the evidence is kept, not shown.
+- **How it works says what the app does for them, not how they sign up** (the sign-up steps were already said
+  again in Get started). The title is "You apply. We do the rest." with one line naming the pains: "No more finding
+  jobs late, rewriting your CV for every one, or losing track." Four tiles follow, each with the plan that gives
+  it: new jobs in minutes (member), a match score on every job (paid plans), a CV made for each job in seconds
+  (member, with the ATS figure from `/stats`), and every application tracked.
+- **Removed:**
+  - The sticky card stack and its scroll code. Each card took a screen of scrolling, and the page is now read at a
+    fast scroll.
+  - Six pictures.
+  - "Straight from company sites" and "Filters that do the reading": What it is already shows both.
+
+  The page is 8,106 px tall at 1440 (10,428 before) and 11,548 at 390 (14,878 before). `Landing.tsx` and
+  `landing.css` are about 575 lines shorter. Their diff against HEAD also holds the other session's bonus and phone
+  hunks.
+- **`web/index.html`:** the title is now "Mahoraga · The job search that runs itself". The description, which link
+  previews show, no longer says "every 15 minutes", a typed copy of the server's interval.
+- **Test:** the landing page's e2e test asserts the promise as the h1, the free-plan line, the five sections, the
+  four tiles and the ATS figure in How it works. It failed against the page before the change (h1 "Mahoraga").
+- **Gates, run locally:** lint-imports 2 kept; ruff clean; schema applied to an empty database; contract unchanged
+  by regeneration; build passes; full suite 1,644 passed, 7 skipped (the usual seven: no Postgres copy source, no
+  Stripe test keys, no reference instance).
+- **Open for the owner** (MESSAGING.md §8):
+  - "Every job site": Indeed, Reed and Totaljobs are not read directly.
+  - The landing page does not say that a CV needs the member's own AI account.
+  - The crossed-out prices are a reference-price claim.
+  - Real reviews.
+
 ## 2026-11-17, night — Free and Starter cross out four each, picked in Admin; the ATS check a bonus on the membership; the phone's notes gone, its tour bookmarks and marks a job applied
 
 The owner: "lets add some crossed out parts into the free part because we have more crosses now in the starter than
