@@ -5,7 +5,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
 import { STEPS } from "../pages/AppliedPage";
-import { PICTURES } from "../pages/JobsPage";
+import { MORE_PICTURES, PICTURES } from "../pages/JobsPage";
 import { PLACES } from "../places";
 import { Prompt } from "../ui";
 import { Mark } from "../wheel";
@@ -94,10 +94,11 @@ export function Demo({ auto = 0 }: { auto?: number }) {
 
   if (mark) {
     return (
-      <article className="job-card gone">
-        <span className="muted small">{mark === "applied" ? "Moved to Applied" : "Skipped"}: {TITLE}</span>
-        <button type="button" className="linklike" onClick={() => setMark(null)}>
-          {mark === "applied" ? "Undo" : "Show it again"}
+      <article className={mark === "applied" ? "job-card gone" : "job-card gone skipped"}>
+        <span className="gone-mark">{mark === "applied" ? PICTURES.applied : PICTURES.skip}</span>
+        <p><strong>{mark === "applied" ? "Moved to Applied" : "Skipped"}:</strong> {TITLE}</p>
+        <button type="button" className="secondary small undo" onClick={() => setMark(null)}>
+          {MORE_PICTURES.undo}{mark === "applied" ? "Undo" : "Show it again"}
         </button>
       </article>
     );
@@ -106,9 +107,11 @@ export function Demo({ auto = 0 }: { auto?: number }) {
   const slot = (kind: Kind) => made.has(kind) && making !== kind ? (
     <span className="make">
       {/* Theirs to download once they have an account. */}
-      <a className="button" href="#/signup">Download your {NAME[kind]}</a>
-      <button type="button" className="linklike small" disabled={making !== null} onClick={() => make(kind)}>
-        Make it again
+      <a className={kind === "cover" ? "button secondary" : "button"} href="#/signup">
+        {MORE_PICTURES.download}Download {NAME[kind]}
+      </a>
+      <button type="button" className="again" disabled={making !== null} onClick={() => make(kind)}>
+        {MORE_PICTURES.again}Make it again
       </button>
     </span>
   ) : (
@@ -124,38 +127,36 @@ export function Demo({ auto = 0 }: { auto?: number }) {
     <article className={["job-card demo-card", made.has("cv") && "made-cv", made.has("cover") && "made-cover"]
       .filter(Boolean).join(" ")}>
       <h3>{TITLE}</h3>
-      <p className="made-badges">
-        <span className="made-badge new">New</span>
-        {made.has("cv") ? <span className="made-badge cv">CV made</span> : null}
-        {made.has("cover") ? <span className="made-badge cover">Cover letter made</span> : null}
-      </p>
       <p className="job-meta">
         <strong className="company">Acme Logistics</strong>
         <span className="country">Germany</span>
         Berlin · Posted 2 hours ago
       </p>
-      <p className="job-meta">€38–44k a year</p>
+      <p className="job-tags">
+        <span className="tag new">New</span>
+        <span className="tag">€38–44k a year</span>
+      </p>
       <p className="summary">
         Lead a shift of 12 at our Berlin depot: picking, loading and every lorry out on time. Forklift
         licence needed.
       </p>
       <p className="why">
-        Why: <span className="word green">warehouse</span> <span className="word green">team leader</span>
+        Your words: <span className="word green">warehouse</span> <span className="word green">team leader</span>
       </p>
-      <div className="job-actions">
+      <div className="job-docs">
         {slot("cv")}
         {slot("cover")}
       </div>
       {shown ? <Paper lines={LINES[shown]} written={written} /> : null}
-      <div className="job-actions marks">
+      <div className="job-bar">
         {/* A made-up job has nowhere to open, so it says where a real one does. */}
-        <button type="button" className="secondary small" onClick={() => setTold(true)}>
+        <button type="button" className="bar-action apply" onClick={() => setTold(true)}>
           Apply on LinkedIn{PICTURES.apply}
         </button>
-        <button type="button" className="secondary small" onClick={() => setMark("applied")}>
+        <button type="button" className="bar-action" onClick={() => setMark("applied")}>
           {PICTURES.applied}Mark as applied
         </button>
-        <button type="button" className="secondary small skip" onClick={() => setAsking(true)}>
+        <button type="button" className="bar-action skip" onClick={() => setAsking(true)}>
           {PICTURES.skip}Skip
         </button>
       </div>

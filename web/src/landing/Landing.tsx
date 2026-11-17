@@ -774,7 +774,7 @@ function Flow({ often }: { often: string }) {
         <div className="flow-art flow-list" aria-hidden="true">
           {[["Staff Nurse", "nurse"], ["Care Home Nurse", "nurse · care"],
             ["Care Coordinator", "care"]].map(([title, why], i) => (
-            <span key={title} style={{ "--i": i } as CSSProperties}><b>{title}</b><small>Why: {why}</small></span>
+            <span key={title} style={{ "--i": i } as CSSProperties}><b>{title}</b><small>Your words: {why}</small></span>
           ))}
         </div>
         <h3>One list for you</h3>
@@ -811,8 +811,8 @@ function MatchArt() {
   return (
     <div className="match-art">
       <span className="match-new">3 new jobs</span>
-      <div className="match"><b>Warehouse <mark>Team Leader</mark></b><small>Acme · Berlin · Why: team leader</small></div>
-      <div className="match"><b><mark>Warehouse</mark> Supervisor</b><small>Contoso · Kiel · Why: warehouse</small></div>
+      <div className="match"><b>Warehouse <mark>Team Leader</mark></b><small>Acme · Berlin · Your words: team leader</small></div>
+      <div className="match"><b><mark>Warehouse</mark> Supervisor</b><small>Contoso · Kiel · Your words: warehouse</small></div>
     </div>
   );
 }

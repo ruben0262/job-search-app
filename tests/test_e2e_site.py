@@ -113,7 +113,7 @@ def test_a_new_person_goes_from_sign_up_to_their_jobs(site, capsys):
         expect(cards).to_have_count(2)
         for title in TITLES[:2]:
             card = cards.filter(has=page.get_by_role("button", name=title, exact=True))
-            expect(card.locator(".why")).to_have_text("Why: backend engineer")
+            expect(card.locator(".why")).to_have_text("Your words: backend engineer")
         expect(page.get_by_text(TITLES[2])).to_have_count(0)
 
         # No AI account of their own yet: the buttons are there all the same, and a toast says what is
@@ -976,16 +976,16 @@ def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents
             return page.locator("article.job-card").filter(
                 has=page.get_by_role("button", name=TITLES[0], exact=True))
 
-        expect(card().get_by_text("CV made")).to_have_count(0)
+        expect(card()).not_to_have_class(re.compile(r"\bmade-cv\b"))
         user = database().users.find_one({"email": email})
         insert(database(), BuiltDocument(id=900_101, user_id=user["_id"], job_id=ids[TITLES[0]], kind="cv",
                                          mode="ai", filename="cv.pdf", content=b"%PDF-1.4 kept", size=13,
                                          saved=True, created_at=now()))
 
         page.reload()
-        expect(card().get_by_role("link", name="Download your CV")).to_be_visible()
-        expect(card().get_by_text("CV made")).to_be_visible()
-        expect(card().get_by_role("link", name="Download your cover letter")).to_have_count(0)
+        expect(card().get_by_role("link", name="Download CV")).to_be_visible()
+        expect(card()).to_have_class(re.compile(r"\bmade-cv\b"))
+        expect(card().get_by_role("link", name="Download cover letter")).to_have_count(0)
 
         card().get_by_role("button", name="Mark as applied").click()
         expect(page.get_by_text(f"Applied: {TITLES[0]}")).to_be_visible()
@@ -1310,7 +1310,7 @@ def test_the_match_score_filter_is_a_row_of_numbers_that_keeps_the_jobs_scored_t
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         _sign_up(page, base, email, capsys)
         _onboard(page)
-        badges = page.locator("article.job-card .made-badge.match")
+        badges = page.locator("article.job-card .tag.match")
         expect(badges).to_have_count(3)
         shown = [int(text.split()[1].split("/")[0]) for text in badges.all_inner_texts()]
         page.get_by_role("button", name="Filters").click()
@@ -1941,7 +1941,7 @@ def _bookmarks(page) -> None:
 
     tabs.get_by_role("link", name="Bookmarks").click()
     expect(page.get_by_role("heading", name="1 bookmarked job")).to_be_visible()
-    expect(card(TITLES[0]).locator(".why")).to_have_text("Why: backend engineer")
+    expect(card(TITLES[0]).locator(".why")).to_have_text("Your words: backend engineer")
     expect(card(TITLES[0]).get_by_role("button", name="Make my CV")).to_be_visible()
     card(TITLES[0]).get_by_role("button", name="Remove bookmark").click()
     card(TITLES[0]).get_by_role("button", name="Bookmark this job").click()

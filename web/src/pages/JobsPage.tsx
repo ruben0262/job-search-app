@@ -588,7 +588,7 @@ function Focused({ id, card }: { id: number; card: (job: Job) => ReactNode }) {
   return (
     <article className="job-card focus">
       <p>This job is not in your list any more. You may have skipped it or applied, or it is too old.</p>
-      <div className="job-actions">
+      <div className="job-docs">
         <MakeDocument doc={cv} kind="cv" />
         <MakeDocument doc={cover} kind="cover" />
       </div>
@@ -642,16 +642,22 @@ export function JobCard({ job, focus, done, fresh, onMark }: {
     setSaved(!saved);
     void bookmark(job.id, !saved);
   };
-  // Made before (kept, so a refresh still shows it) or made now: what colours the card.
+  // Made before (kept, so a refresh still shows it) or made now: what colours the card's edge, beside its
+  // "Download CV", which says it in words.
   const made = new Set(job.documents.map((each) => each.kind));
   if (cv.build?.state === "ready") made.add("cv");
   if (cover.build?.state === "ready") made.add("cover");
 
+  // Marked applied a moment ago: said in a line, with an Undo that is a button like any other (owner,
+  // 2026-11-16: "when we undo its a writing or a hyperlink").
   if (done) {
     return (
       <article className="job-card gone">
-        <span className="muted small">Moved to Applied: {job.title}</span>
-        <button type="button" className="linklike" onClick={() => onMark(job, done, false)}>Undo</button>
+        <span className="gone-mark">{PICTURES.applied}</span>
+        <p><strong>Moved to Applied:</strong> {job.title}</p>
+        <button type="button" className="secondary small undo" onClick={() => onMark(job, done, false)}>
+          {MORE_PICTURES.undo}Undo
+        </button>
       </article>
     );
   }
@@ -659,51 +665,52 @@ export function JobCard({ job, focus, done, fresh, onMark }: {
   // For everyone (owner, 2026-11-10): pressed without what a document needs, a toast says what.
   const existing = latest(job.documents);
   const documents = (
-    <div className="job-actions">
+    <div className="job-docs">
       <MakeDocument doc={cv} kind="cv" existing={existing.cv} />
       <MakeDocument doc={cover} kind="cover" existing={existing.cover} />
     </div>
   );
   // Nobody applies here: the job opens where it was posted, and they apply there, then say so here
-  // (owner, 2026-11-06). In that order, and Skip, the way out, apart from both.
+  // (owner, 2026-11-06). In that order along the card's foot, each its picture and its words, quieter than the
+  // documents above them, and Skip, the way out, apart at the far end (owner, 2026-11-16: what every button
+  // does is read off it "just by scrolling through").
   const marks = (
-    <div className="job-actions marks">
-      <a className="button secondary small" href={job.url} target="_blank" rel="noreferrer">
-        Apply on {job.apply_on}
-        {PICTURES.apply}
+    <div className="job-bar">
+      <a className="bar-action apply" href={job.url} target="_blank" rel="noreferrer">
+        Apply on {job.apply_on}{PICTURES.apply}
       </a>
-      <button type="button" className="secondary small" onClick={() => onMark(job, "applied", true)}>
+      <button type="button" className="bar-action" onClick={() => onMark(job, "applied", true)}>
         {PICTURES.applied}Mark as applied
       </button>
-      <button type="button" className="secondary small skip" onClick={() => setSkipping(true)}>
+      <button type="button" className="bar-action skip" onClick={() => setSkipping(true)}>
         {PICTURES.skip}Skip
       </button>
     </div>
   );
+  // Who, where and when, then what is worth a glance, each in a tag: how well it fits, whether it is new, the
+  // pay.
   const head = (
     <>
-      {made.size || fresh || job.fit != null ? (
-        <p className="made-badges">
+      <Where job={job} />
+      {job.fit != null || fresh || job.salary ? (
+        <p className="job-tags">
           {job.fit != null ? (
-            <span className="made-badge match" style={{ "--fit": job.fit } as CSSProperties}
+            <span className="tag match" style={{ "--fit": job.fit } as CSSProperties}
                   title="How well this job fits your CV, cover letter and About you, from 1 to 10"
                   aria-label={`Match score: ${job.fit} out of 10`}>
               Match {job.fit}/10
             </span>
           ) : null}
-          {fresh ? <span className="made-badge new">New</span> : null}
-          {made.has("cv") ? <span className="made-badge cv">CV made</span> : null}
-          {made.has("cover") ? <span className="made-badge cover">Cover letter made</span> : null}
+          {fresh ? <span className="tag new">New</span> : null}
+          {job.salary ? <span className="tag">{money(job.salary)}</span> : null}
         </p>
       ) : null}
-      <Where job={job} />
-      {job.salary ? <p className="job-meta">{money(job.salary)}</p> : null}
     </>
   );
   // A job somebody added by its link is on the page for that, not for their words.
   const why = job.words.length > 0 && (
     <p className="why">
-      Why:{" "}
+      Your words:{" "}
       {job.words.map((word) => <span key={word} className="word green">{word}</span>)}
     </p>
   );
@@ -763,25 +770,25 @@ function MakeDocument({ doc, kind, existing }: { doc: Build; kind: "cv" | "cover
   const { build, making, start, error, needsConsent } = doc;
   const name = kind === "cv" ? "CV" : "cover letter";
   const ready = build?.state === "ready" && build.download_url ? build.download_url : null;
+  // The CV is the one most people need, so the cover letter is the quieter of the two, made or not.
   if (ready || (!build && existing)) {
     return (
       <span className="make">
-        <a className="button" href={ready ?? existing!.download_url} download>
-          Download your {name}
+        <a className={kind === "cover" ? "button secondary" : "button"} href={ready ?? existing!.download_url} download>
+          {MORE_PICTURES.download}Download {name}
         </a>
         {build?.saved === false ? (
           <span className="small muted">
             Not kept: your storage is full. <a href="#/documents">Make room</a>
           </span>
         ) : (
-          <button type="button" className="linklike small" onClick={() => void start()}>Make it again</button>
+          <button type="button" className="again" onClick={() => void start()}>{MORE_PICTURES.again}Make it again</button>
         )}
       </span>
     );
   }
   return (
     <span className="make">
-      {/* The CV is the one most people need, so the cover letter is the quieter of the two. */}
       <button type="button" disabled={making} onClick={() => void start()}
               className={[making && "making", kind === "cover" && "secondary"].filter(Boolean).join(" ")}>
         {making ? `Making your ${name}…` : `Make my ${name}`}

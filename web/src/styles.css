@@ -551,10 +551,10 @@ button.danger {
    **A new kind of plain button goes on this list**, or it borrows the purple's light at rest. */
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
-    .look-card, .toast-close, .bookmark),
+    .look-card, .toast-close, .bookmark, .bar-action, .again),
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
-    .look-card, .toast-close, .bookmark):hover:not([disabled]) {
+    .look-card, .toast-close, .bookmark, .bar-action, .again):hover:not([disabled]) {
   box-shadow: none;
 }
 
@@ -1637,17 +1637,59 @@ button.main {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--score) 18%, transparent);
 }
 
+/* Marked applied a moment ago: Applied's tick, what happened in a line, and Undo, a button like any other. */
 .job-card.gone {
   display: flex;
-  justify-content: space-between;
+  align-self: start;
   align-items: center;
-  gap: 1rem;
-  padding: 0.5rem 1.25rem;
+  gap: 0.75rem;
+  padding: 0.7rem 0.8rem 0.7rem 1.1rem;
+  border-color: color-mix(in srgb, var(--score) 40%, transparent);
+  background: color-mix(in srgb, var(--score) 7%, var(--bg-raised));
+}
+
+.job-card.gone p {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.job-card.gone strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.gone-mark {
+  display: grid;
+  flex: none;
+  color: var(--score);
+}
+
+.gone-mark svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* "Undo" whole, however long the title beside it: squeezed by one, it broke as "Und / o". */
-.job-card.gone button {
+.job-card.gone .undo {
   flex: none;
+}
+
+/* Skipped (the landing page's working card): said in the card's own colours, not Applied's green. */
+.job-card.gone.skipped {
+  border-color: var(--hairline);
+  background: var(--bg-raised);
+}
+
+.gone.skipped .gone-mark {
+  color: var(--muted);
 }
 
 .job-meta {
@@ -1693,12 +1735,77 @@ button.main {
   margin-top: 0.6rem;
 }
 
+/* What is worth a glance, each in a tag of its own under where the job is: how well it fits, whether it is
+   new, the pay. */
+.job-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.55rem 0 0;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: rgba(var(--ink-rgb), 0.05);
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 550;
+  line-height: 1.5;
+}
+
+/* How well the job fits them (`FeedJob.fit`, 1 to 10, set as --fit): the number says it, and its colour runs
+   from red at 1 to green at 10, at one lightness, so every score reads as clearly as the next. */
+.tag.match {
+  --fit-hue: calc(25 + (var(--fit) - 1) * 13.3);
+  border-color: currentColor;
+  background: none;
+  color: oklch(0.8 0.13 var(--fit-hue));
+  font-variant-numeric: tabular-nums;
+}
+
+[data-theme="light"] .tag.match {
+  color: oklch(0.5 0.14 var(--fit-hue));
+}
+
+.tag.match::before,
+.tag.new::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tag.new {
+  border-color: currentColor;
+  background: none;
+  color: var(--accent-text);
+}
+
+/* A CV and a cover letter for the job, side by side where both fit on one line, one over the other where they
+   do not, each as wide as its half: two buttons that read as a pair, not a heap. */
+.job-docs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.job-docs :is(button, .button) {
+  width: 100%;
+}
+
 /* A document's button, and under it the other way to make it or why it could not be made. */
 .make {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.15rem;
+  align-items: stretch;
+  gap: 0.2rem;
 }
 
 .make .error {
@@ -1707,17 +1814,75 @@ button.main {
   max-width: 22rem;
 }
 
-/* Where a job goes next: applied on the site it was posted on, marked here, or skipped. Each has a
-   picture, seen before its words are read, and Skip, the way out, stands apart at the far end. Not greyed:
-   grey read as a button that cannot be pressed. */
-.marks :is(button, .button) {
-  gap: 0.45rem;
+/* "Make it again" under a download: a quiet button with its picture, never a link (owner, 2026-11-16). */
+.make .again {
+  align-self: center;
+  width: auto;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.7rem;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  font-size: 0.825rem;
+  font-weight: 550;
 }
 
-.marks svg {
+.make .again:hover:not([disabled]) {
+  background: rgba(var(--ink-rgb), 0.06);
+  color: var(--ink);
+  transform: none;
+}
+
+/* Where a job goes next, along the card's foot: applied on the site it was posted on, marked here, or skipped.
+   Quieter than the documents above, each a picture and its words, and Skip, the way out, apart at the far end.
+   Not greyed: grey read as a button that cannot be pressed. */
+.job-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0.9rem -0.45rem -0.35rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.bar-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.7rem;
+  border: none;
+  border-radius: 11px;
+  background: none;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.bar-action:hover:not([disabled]) {
+  background: rgba(var(--ink-rgb), 0.06);
+  color: var(--ink);
+}
+
+/* The way to the job's own site, where they apply: the one in the purple's ink. */
+.bar-action.apply {
+  color: var(--accent-text);
+}
+
+.bar-action.skip {
+  margin-left: auto;
+}
+
+/* The pictures in the job lists' buttons, in each button's colour. */
+:is(.bar-action, .job-docs, .undo) svg {
   flex: none;
-  width: 1.05rem;
-  height: 1.05rem;
+  width: 1.1rem;
+  height: 1.1rem;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -1725,8 +1890,12 @@ button.main {
   stroke-linejoin: round;
 }
 
-.marks .skip {
-  margin-left: auto;
+/* On a phone, beside two others, the way to the job's site has the foot's first row to itself, so a long board
+   name never pushes them apart. */
+@media (max-width: 520px) {
+  .job-bar:has(> :nth-child(3)) .bar-action.apply {
+    flex-basis: 100%;
+  }
 }
 
 /* Being made: the words say what, a light passing over the button says it has not stopped. */
@@ -4363,7 +4532,7 @@ input[type="checkbox"]:disabled {
 /* ── documents made for a job ─────────────────────────────────────────────────────────────────
 
    Green for a CV made, blue for a cover letter: a mark on the card's edge you can see while
-   scrolling, and a word saying which, so the colour is never the only way to tell. */
+   scrolling, beside the card's own "Download your CV", so the colour is never the only way to tell. */
 
 :root {
   --made-cv: var(--score);
@@ -4385,47 +4554,6 @@ input[type="checkbox"]:disabled {
 
 .job-card.made-cv.made-cover {
   box-shadow: inset 3px 0 0 var(--made-cv), inset 6px 0 0 var(--made-cover);
-}
-
-.made-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin: 0 0 0.5rem;
-}
-
-.made-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid currentColor;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.made-badge::before {
-  content: "";
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.made-badge.cv { color: var(--made-cv); }
-.made-badge.cover { color: var(--made-cover); }
-.made-badge.new { color: var(--accent-text); }
-/* How well the job fits them (`FeedJob.fit`, 1 to 10, set as --fit): the number says it, and its colour runs
-   from red at 1 to green at 10, at one lightness, so every score reads as clearly as the next. */
-.made-badge.match {
-  --fit-hue: calc(25 + (var(--fit) - 1) * 13.3);
-  color: oklch(0.8 0.13 var(--fit-hue));
-  font-variant-numeric: tabular-nums;
-}
-
-[data-theme="light"] .made-badge.match {
-  color: oklch(0.5 0.14 var(--fit-hue));
 }
 
 .storage {
