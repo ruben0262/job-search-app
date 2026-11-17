@@ -47,8 +47,9 @@ const SECTIONS: [id: string, name: string, short: string, icon: ReactNode][] = [
 const perks = (ats: Reach["ats"] | undefined): [string, ReactNode, ReactNode][] => [
   ["New jobs in minutes, not days", <>Jobs show up the moment they're posted on the sites. Apply before the crowd
     does.</>, <WeekArt />],
-  ["Instant alerts on your phone", <>No more refreshing job sites. Get a notification the moment a job you want is
-    posted.</>, <AlertArt />],
+  // What an alert follows, as the Alerts page makes one (`pages/AlertsPage.tsx`: words, companies, places).
+  ["Instant alerts on your phone", <>No more refreshing job sites. Follow a company, a city or a kind of job, and
+    know the moment one is posted.</>, <AlertArt />],
   ["A match score on every job", <>Every job is scored out of 10 for how well it fits you. Filter by score,
     country, remote or job site, in one tap.</>, <ScoreArt />],
   ["Save jobs for later", <>Not ready yet? Tap the bookmark and the job waits for you, every detail kept, until
@@ -612,15 +613,16 @@ function TrackArt() {
 }
 
 /** A job arriving on a phone's lock screen, as a browser alert says it (`services/notifier/card.py`: the title,
- * then the company and the place), over the ones before it. It drops in, rests and comes again; still, it
- * rests. */
+ * then the name of the alert that caught it, the company and the place), over the ones before it. It drops in,
+ * rests and comes again; still, it rests. */
 function AlertArt() {
   return (
     <div className="alert-art">
       <span className="alert-clock">9:41</span>
       <span className="alert-note">
         <i><Mark /></i>
-        <span><small>Mahoraga<em>now</em></small><b>Warehouse Team Leader</b><small>Acme Logistics · Leeds</small></span>
+        <span><small>Mahoraga<em>now</em></small><b>Warehouse Team Leader</b>
+          <small>Team leader jobs · Acme Logistics · Leeds</small></span>
       </span>
     </div>
   );

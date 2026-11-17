@@ -261,6 +261,10 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         # Our own figure on the CV it is about, alone (owner, 2026-11-17 night), and whose AI writes it.
         expect(page.locator("#how")).to_contain_text("99% passed all official ATS checks.")
         expect(page.locator("#how")).not_to_contain_text("our own tests")
+        # What an alert follows, as the Alerts page makes one (owner, 2026-11-17: "something specific on the
+        # landing page of what we just made").
+        expect(page.locator("#how")).to_contain_text(
+            "Follow a company, a city or a kind of job, and know the moment one is posted.")
         expect(page.locator("#how")).to_contain_text(
             "CVs and cover letters are written with your own ChatGPT, Claude or Gemini account.")
         # A review nobody wrote never reaches a visitor: the section waits for the first real one

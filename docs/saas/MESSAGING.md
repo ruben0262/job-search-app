@@ -149,8 +149,9 @@ How it works (the benefits). The onboarding steps now appear once, in Get starte
   plan is named on them (rule 6).
   1. **New jobs in minutes, not days.** Jobs show up the moment they're posted on the sites. Apply before
      the crowd does. *(picture: the first week's bar, "You, day 1")*
-  2. **Instant alerts on your phone.** No more refreshing job sites. Get a notification the moment a job
-     you want is posted. *(picture: a job arriving on a lock screen)*
+  2. **Instant alerts on your phone.** No more refreshing job sites. Follow a company, a city or a kind of
+     job, and know the moment one is posted. *(picture: a job arriving on a lock screen, under the name of
+     the alert that caught it, as `services/notifier/card.py` writes it)*
   3. **A match score on every job.** Every job is scored out of 10 for how well it fits you. Filter by
      score, country, remote or job site, in one tap. *(picture: the filters on, and the jobs with their
      scores, the one under 7 leaving)*

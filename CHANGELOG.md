@@ -14,6 +14,24 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17, after the alerts — The landing page's alerts tile says what an alert follows, and its picture is headed as a real one is
+
+The owner, once the named alerts were in: "If we can add to alerts something specific on the landing page of what we
+just made, that would be nice as well, even if its small".
+
+- **The tile** says "No more refreshing job sites. Follow a company, a city or a kind of job, and know the moment one
+  is posted.": the companies, places and words an alert follows on the Alerts page. It names no plan, no way of
+  sending and no interval (the entry "last thing" below). It took room the tile already had: no row of tiles grew at
+  800, 1120 or 1440 px, and on a 320 px phone the tile is one line longer.
+- **Its picture** is the notification as `services/notifier/card.py` now writes it: the job's title, then the name of
+  the alert that caught it ("Team leader jobs"), the company and the place. That line is cut to one with "…", as a
+  lock screen cuts it; measured, it had taken two lines at every width from 320 to 1440 px.
+- The landing test reads the new line, which the page before did not have.
+- Gates: ruff clean on the test, the site built (tsc and vite), `test_e2e_site.py` 33 passed on its second run. The
+  first run had one failure, the sign-up test's 1.5 s bound on a step while four workers shared the machine; alone
+  it passed, and on the second run every test did. Nothing imported or served changed, so lint-imports and the
+  contract were not run again.
+
 ## 2026-11-17, late night — The site installs as an app, a pushed job shows the wheel, and an alert says what it would have found
 
 The owner, once the alerts were committed: "start the phone notification next, your ideas are sound and we should
