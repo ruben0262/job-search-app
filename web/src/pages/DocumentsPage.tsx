@@ -294,8 +294,21 @@ export function Files({ kind, list, onChanged }: {
   );
 }
 
-/** The text about themselves they can always edit: what a CV leaves out. */
-export function AboutYou({ onSaved }: { onSaved: () => void }) {
+const ABOUT_HINT = "What your CV leaves out: projects, what you did day to day, what you want next. "
+  + "A sentence is enough.";
+
+/** The text about themselves they can always edit: what a CV leaves out. Setting up gives it a screen of its
+ * own, with its own reason and button (`Onboarding`); My documents, a card. */
+export function AboutYou({ onSaved, label = "About you", action = "Save", main = false, hint = ABOUT_HINT,
+                           placeholder }: {
+  onSaved: () => void;
+  label?: string;
+  action?: string;
+  /** The screen's one thing to do, in the purple, rather than a quiet save. */
+  main?: boolean;
+  hint?: string;
+  placeholder?: string;
+}) {
   const { data, reload } = useKept<Schema<"HistoryText">>(HISTORY);
   // What they typed, until it is saved: a fresh read never writes over it.
   const [typed, setText] = useState<string | null>(null);
@@ -315,13 +328,12 @@ export function AboutYou({ onSaved }: { onSaved: () => void }) {
         void save.run();
       }}
     >
-      <Field label="About you"
-             hint="What your CV leaves out: projects, what you did day to day, what you want next. A sentence is enough.">
-        <textarea value={text} onChange={(event) => setText(event.target.value)} />
+      <Field label={label} hint={hint}>
+        <textarea value={text} placeholder={placeholder} onChange={(event) => setText(event.target.value)} />
       </Field>
       <Error>{save.error}</Error>
-      <button type="submit" className="secondary" disabled={save.busy || !text.trim()}>
-        {save.busy ? "Saving…" : "Save"}
+      <button type="submit" className={main ? "main" : "secondary"} disabled={save.busy || !text.trim()}>
+        {save.busy ? "Saving…" : action}
       </button>
     </form>
   );

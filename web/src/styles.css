@@ -2039,9 +2039,11 @@ button.making::after {
 }
 
 /* Onboarding's three steps as a bar: where they are, what is done, what is left before their jobs. */
+/* A column a step, however many there are: three fixed columns put a fourth on a line of its own. */
 .setup-steps {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: 0.4rem;
   margin: 0.25rem 0 1.25rem;
   padding: 0;
@@ -2380,6 +2382,36 @@ button.toast-close:hover:not([disabled]) {
   margin-top: 3rem;
   padding-top: 1.5rem;
   border-top: 1px solid var(--hairline);
+}
+
+/* Setting up's About you: what to write about, a dot each, before the box. */
+.about-asks {
+  display: grid;
+  gap: 0.45rem;
+  margin: -0.5rem 0 1.25rem;
+  padding: 0;
+  list-style: none;
+}
+
+.about-asks li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.about-asks li::before {
+  content: "";
+  flex: none;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Skip, under the one thing to do: plainly there, and plainly second. */
+.wizard .skip {
+  display: flex;
+  margin-top: 0.5rem;
 }
 
 /* "Add more", "Change your password", "Advanced": there when wanted, out of the way when not. */

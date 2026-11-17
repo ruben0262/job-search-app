@@ -573,9 +573,9 @@ def test_step_two_says_what_it_found_with_its_words_ready_and_a_plain_way_to_add
 
         # Said to be setting up their profile, with the steps left before their jobs.
         steps = page.get_by_role("list", name="Set up your profile")
-        expect(steps.get_by_role("listitem")).to_have_text(["Your CV", "Your search", "Done"])
+        expect(steps.get_by_role("listitem")).to_have_text(["Your CV", "About you", "Your search", "Done"])
         expect(steps.locator("[aria-current=step]")).to_have_text("Your search")
-        for title in ("About you", "The jobs you want", "Where and how you work"):
+        for title in ("Your name and links", "The jobs you want", "Where and how you work"):
             expect(page.get_by_role("heading", name=title)).to_be_visible()
         # Two of their own job titles are filters already, so the list reads as one they can add to.
         for word in ("backend engineer", "software engineer"):
@@ -629,6 +629,46 @@ def test_step_two_says_what_it_found_with_its_words_ready_and_a_plain_way_to_add
     assert section["locations"] == ["france"], "what the buttons said is what was saved"
     assert section["workplaces"] == ["remote", "hybrid", "onsite"]
     assert db[UserConfig.COLLECTION].find_one({"user_id": user["_id"]})["config"]["languages"] == ["en"]
+
+
+def test_setting_up_shows_the_cover_letter_and_asks_about_you_on_a_screen_of_its_own(site, db, capsys):
+    """Owner, 2026-11-17: the cover letter is offered on the CV's screen, not folded away, and About you is a
+    screen of its own that says what it is for, which can be skipped (asked: "can skip"). What is written
+    there is read at once: a job title boards use, written in it, is offered on the very next screen."""
+    from libs.suggestions import DRIFT_MIN
+
+    base, email, _ = site
+    # A title enough postings here use to be offered when it is written (`libs.suggestions._written`).
+    _jobs(db, uuid.uuid4().hex[:8], ["Registered Nurse"] * DRIFT_MIN)
+    wrote = "Next I want to work as a registered nurse, nights included."
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+
+        expect(page.locator("label.drop", has_text="Upload a cover letter")).to_be_visible()
+        page.locator("label.drop", has_text="Upload your CV").locator("input").set_input_files(
+            files=[{"name": "cv.txt", "mimeType": "text/plain", "buffer": CV.encode()}])
+        expect(page.get_by_text("cv.txt")).to_be_visible()
+        page.get_by_role("button", name="Next").click()
+
+        expect(page.get_by_role("heading", name="About you")).to_be_visible()
+        steps = page.get_by_role("list", name="Set up your profile")
+        expect(steps.locator("[aria-current=step]")).to_have_text("About you")
+        tops = steps.get_by_role("listitem").evaluate_all("items => items.map((item) => item.offsetTop)")
+        assert len(tops) == 4 and len(set(tops)) == 1, f"the four steps are not on one line: {tops}"
+        expect(page.get_by_text("We use it to score every job for you")).to_be_visible()
+        save = page.get_by_role("button", name="Save and continue")
+        expect(save).to_be_disabled()
+        page.get_by_label("In your own words").fill(wrote)
+        save.click()
+
+        expect(page.get_by_role("heading", name="What we found")).to_be_visible()
+        expect(page.locator(".suggestion", has_text="registered nurse")).to_be_visible()
+        page.get_by_role("button", name="← About you").click()
+        expect(page.get_by_label("In your own words")).to_have_value(wrote)
+        assert page.evaluate(FAULTS) == {"off": [], "over": []}, "About you at 390px"
+        browser.close()
 
 
 def _readable_under_the_pointer(button) -> None:
@@ -2072,17 +2112,19 @@ def test_sign_up_confirm_sign_in_and_reset_the_password_each_step_at_once(site, 
 
 
 def _upload(page) -> None:
-    """The first screen: the CV, then on to what was read off it."""
+    """The first screen: the CV, About you skipped, then on to what was read off it."""
     expect(page.get_by_role("heading", name="Your CV")).to_be_visible()
     page.locator("label.drop", has_text="Upload your CV").locator("input").set_input_files(
         files=[{"name": "cv.txt", "mimeType": "text/plain", "buffer": CV.encode()}])
     expect(page.get_by_text("cv.txt")).to_be_visible()
     page.get_by_role("button", name="Next").click()
+    expect(page.get_by_role("heading", name="About you")).to_be_visible()
+    page.get_by_role("button", name="Skip for now").click()
     expect(page.get_by_role("heading", name="What we found")).to_be_visible()
 
 
 def _onboard(page) -> None:
-    """The three screens: the CV, what was read off it, done."""
+    """The screens: the CV, About you, what was read off them, done."""
     _upload(page)
     # Read off the CV by rules: their name, and the job they do as a green word.
     expect(page.get_by_label("Your name")).to_have_value("Jordan Ellery")

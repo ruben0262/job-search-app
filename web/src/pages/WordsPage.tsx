@@ -137,7 +137,8 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
     >
       {withIdentity ? (
         <section className="form-section">
-          <h2>About you</h2>
+          {/* Named as My documents names it: "About you" is setting up's screen before this one. */}
+          <h2>Your name and links</h2>
           <p className="section-lede">On top of every CV we make.</p>
           <IdentityFields name={name} links={links} onName={setName} onLinks={setLinks} />
         </section>
@@ -155,7 +156,7 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
                hint={`At least ${choices.min_words}, more is better. Like “nurse” or “excel”.`}
                placeholder="Add a job title or skill"
                values={section.keywords} suggested={suggestions.green}
-               suggestedTitle="Suggested from your CV — tap one to add it"
+               suggestedTitle="Suggested for you — tap one to add it"
                onChange={(keywords) => patch({ keywords })} />
         <Words tone="red" label="Hide jobs with these words" warnLong
                hint="Like “senior” or “sales”. Optional." placeholder="Add a word to hide"

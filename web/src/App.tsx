@@ -147,7 +147,8 @@ export function App() {
   if (hash.startsWith("/upgrade")) return <UpgradePage onChanged={reload} />;
   if (dashboard.stage === "onboarding") {
     // Deliberately not routable past: a half-configured account produces a bad feed and the user concludes.
-    return <Onboarding state={dashboard.onboarding} member={dashboard.areas.includes("alerts")} onChanged={reload} />;
+    return <Onboarding state={dashboard.onboarding} member={dashboard.areas.includes("alerts")}
+                       scores={dashboard.areas.includes("match_scores")} onChanged={reload} />;
   }
 
   const [path, query = ""] = hash.split("?");

@@ -14,6 +14,30 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17, last of all — Setting up shows the cover letter, and About you is a screen of its own
+
+The owner: "for the onboarding at the moment only the upload cv appears, we should give option for the user to
+upload the cover as well as motivate the user to write a quick 'about you' section because we will be using key
+words for the job match score as well as to get more accurate job recommendations". Asked, the owner chose a
+screen of its own that can be skipped.
+
+- **The cover letter is offered on the CV's screen**, under its own heading, where an "Add more (optional)" fold
+  had hidden it with About you: "Optional. Your cover letters are written from it."
+- **About you is the second of four screens** (Your CV, About you, Your search, Done). It says what the words are
+  for: "We use it to score every job for you and to find more jobs that fit", or, for a plan without match
+  scores, only the second half. It lists three things to write about and gives an example, with "Save and
+  continue" and "Skip for now". Nothing new on the server: About you was already a document, read by the match
+  score (`libs.fit`) and the suggestions (`libs.suggestions`), and saving it already refreshed both. Being saved
+  before the next screen, its words are offered there: a job title boards use, written in it, is suggested.
+- The next screen's part with the name and links is called "Your name and links", as My documents calls it, so
+  "About you" means one thing. Its lede says "Read from what you gave us", and the suggestions "Suggested for
+  you". The steps bar takes a column a step, however many there are: three fixed columns put "Done" on a line of
+  its own.
+- Tests: `test_setting_up_shows_the_cover_letter_and_asks_about_you_on_a_screen_of_its_own` (the letter's upload
+  in sight, four steps on one line of a phone, the save waiting for words, "registered nurse" written there offered
+  on the next screen, the text kept), and every other walk through setting up now skips About you.
+- Gates: ruff clean; site built; test_e2e_site, test_onboarding, test_documents, test_suggestions 113 passed.
+
 ## 2026-11-17, last of all — One colour for a person's CVs and cover letters, picked beside the looks
 
 The owner: "for the design of the cv and cover letter we have different styles, which stays but the colour at the
