@@ -75,6 +75,9 @@ class User(Document):
     # picked in My documents (owner, 2026-11-07). None until they pick one: `libs.templates.DEFAULT`.
     cv_template: str | None = None
     cover_template: str | None = None
+    # The colour both are made in: an id in `libs.templates.COLOURS`, picked beside the looks (owner, 2026-11-17).
+    # None until they pick one: each look's own.
+    look_colour: str | None = None
     # This account's data key, wrapped by the platform key (`libs.secrets`).
     wrapped_dek: bytes | None = None
     # Their membership: a Stripe subscription, seven days free and then billed (owner, 2026-11-11). Stripe is

@@ -1306,6 +1306,26 @@
         "title": "Choice",
         "type": "object"
       },
+      "ColourChoice": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ColourChoice",
+        "type": "object"
+      },
       "ConfigChoice": {
         "properties": {
           "hint": {
@@ -5285,6 +5305,29 @@
         "title": "TemplateChoice",
         "type": "object"
       },
+      "TemplateColour": {
+        "properties": {
+          "hex": {
+            "title": "Hex",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "hex"
+        ],
+        "title": "TemplateColour",
+        "type": "object"
+      },
       "TemplateGroup": {
         "properties": {
           "templates": {
@@ -5337,6 +5380,24 @@
       },
       "Templates": {
         "properties": {
+          "colour": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Colour"
+          },
+          "colours": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateColour"
+            },
+            "title": "Colours",
+            "type": "array"
+          },
           "cover": {
             "$ref": "#/components/schemas/TemplateShelf"
           },
@@ -5346,7 +5407,9 @@
         },
         "required": [
           "cv",
-          "cover"
+          "cover",
+          "colour",
+          "colours"
         ],
         "title": "Templates",
         "type": "object"
@@ -10033,6 +10096,48 @@
           }
         },
         "summary": "List Templates",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/templates/colour": {
+      "put": {
+        "description": "Every CV and cover letter made from now on is made in this colour; None, in each look's own.",
+        "operationId": "choose_colour_templates_colour_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ColourChoice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Templates"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Choose Colour",
         "tags": [
           "templates"
         ]

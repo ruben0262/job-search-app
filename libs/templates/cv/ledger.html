@@ -23,8 +23,11 @@ body {
 
 a { color: inherit; text-decoration: none; }
 
+/* The name, headings and rules in pure black and the words in a near-black: one black on paper, kept
+   apart so that a colour picked for the look takes the first alone (`accents` in libs/templates). */
+
 .cv-header { text-align: center; }
-.cv-name { font-size: 20pt; font-weight: 700; text-transform: uppercase; letter-spacing: 1pt; line-height: 1.05; }
+.cv-name { font-size: 20pt; font-weight: 700; color: #000; text-transform: uppercase; letter-spacing: 1pt; line-height: 1.05; }
 /* Room under the name, and not for looks alone. The name is centred, so a contact line wider than it
    starts further left, and a reader that orders text by where it sits (pdfminer) then took the contact
    line for the first thing on the page: "020 917 0126" before the name, for a person with a phone, an
@@ -35,7 +38,7 @@ a { color: inherit; text-decoration: none; }
    contact line out of order for that reader. */
 .cv-contact { font-size: 9.5pt; margin-top: 16pt; display: flex; justify-content: center; }
 .cv-contact span + span::before { content: "|"; margin: 0 6pt; color: #666; }
-.header-rule { border: none; border-top: 0.75pt solid #111; margin: 6pt 0 6pt; }
+.header-rule { border: none; border-top: 0.75pt solid #000; margin: 6pt 0 6pt; }
 
 .profile { text-align: justify; margin-bottom: 2pt; }
 
@@ -45,7 +48,8 @@ a { color: inherit; text-decoration: none; }
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.6pt;
-  border-bottom: 0.75pt solid #111;
+  color: #000;
+  border-bottom: 0.75pt solid #000;
   padding-bottom: 1pt;
   margin-bottom: 4pt;
 }

@@ -190,6 +190,20 @@ def test_the_look_picked_in_my_documents_is_the_look_the_next_document_is_made_i
         assert templates.find(kind, look).style in api.rendered[-1], f"the {kind} was not made in {look}"
 
 
+
+def test_the_colour_picked_in_my_documents_is_the_colour_the_next_document_is_made_in(ready):
+    """The colour's producer and its consumer, end to end: one pick, both kinds made in it."""
+    from libs import templates
+
+    api = ready
+    assert api.http.put("/templates/colour", json={"id": "wine"}).status_code == 200
+    wine = templates.COLOURS["wine"][1]
+    for kind in ("cv", "cover"):
+        assert _ask(api, kind).status_code == 202
+        assert _work(api)
+        assert wine in api.rendered[-1], f"the {kind} was not made in the colour picked"
+        assert templates.find(kind, "meridian").accents[0] not in api.rendered[-1]
+
 def test_making_a_document_is_not_applying(ready):
     """Only "Mark as applied" on the jobs page records an application."""
     from libs.db import find_one

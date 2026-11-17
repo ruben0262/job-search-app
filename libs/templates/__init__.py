@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -101,6 +101,22 @@ SECTORS = (
 )
 POPULAR_TITLE = "Most popular"
 
+# The colours a person can give their CVs and cover letters, one for both, by id (owner, 2026-11-17: "users
+# can select colour next to the design choice ... only changing colour, nothing else so design stays"); none
+# picked is each look's own. Each is dark enough that a heading in it reads as one in black does, and that
+# white reads on it where a look draws a band of its colour (Prism's header, Foundry's headings): 4.5:1
+# against white or more, which `tests/test_templates.py` holds every one to. Kept as `User.look_colour`.
+COLOURS: dict[str, tuple[str, str]] = {
+    "navy": ("Navy", "#1e3a8a"),
+    "blue": ("Blue", "#1d4ed8"),
+    "teal": ("Teal", "#0f766e"),
+    "green": ("Green", "#15803d"),
+    "purple": ("Purple", "#6d28d9"),
+    "wine": ("Wine", "#9f1239"),
+    "rust": ("Rust", "#c2410c"),
+    "graphite": ("Graphite", "#374151"),
+}
+
 
 @dataclass(frozen=True)
 class Template:
@@ -109,12 +125,20 @@ class Template:
     name: str
     sectors: tuple[str, ...]
     path: Path
+    # The look's own colours, its main one first: all a colour picked for it takes over (`recolour`). Its
+    # words, greys and white stay, so each of these is used in its stylesheet for nothing but its accents.
+    accents: tuple[str, ...] = ()
+    # The colour it is drawn in, from `COLOURS`; None, its own (`coloured`).
+    colour: str | None = None
 
     @property
     def style(self) -> str:
-        """Its `<style>` block, ending in what every look keeps for an ATS (`EVERY_LOOK`): what an AI CV
-        is given back after the model wrote its text. One block, as every step after expects one."""
+        """Its `<style>` block, in its colour, ending in what every look keeps for an ATS (`EVERY_LOOK`):
+        what an AI CV is given back after the model wrote its text. One block, as every step after expects
+        one."""
         block = split_style(load(self.path))[1]
+        if self.colour:
+            block = recolour(block, self.accents, self.colour)
         css, end, _ = block.rpartition("</style>")
         return f"{css}{EVERY_LOOK}{end}" if end else block
 
@@ -134,54 +158,97 @@ class Template:
         return match.group(1).strip() if match else "18mm"
 
 
-def _cv(id_: str, name: str, *sectors: str) -> Template:
+def _rgb(colour: str) -> tuple[int, int, int]:
+    digits = colour.lstrip("#")
+    if len(digits) == 3:
+        digits = "".join(digit * 2 for digit in digits)
+    return int(digits[0:2], 16), int(digits[2:4], 16), int(digits[4:6], 16)
+
+
+def _shade(main: tuple[int, int, int], accent: tuple[int, int, int], new: tuple[int, int, int]) -> str:
+    """What `accent` becomes when `main` becomes `new`: as far toward white, or black, as it was."""
+    toward = (255, 255, 255) if sum(accent) > sum(main) else (0, 0, 0)
+    span = [end - start for end, start in zip(toward, main, strict=True)]
+    moved = [now - start for now, start in zip(accent, main, strict=True)]
+    reach = sum(step * step for step in span)
+    share = sum(a * b for a, b in zip(span, moved, strict=True)) / reach if reach else 0.0
+    share = min(1.0, max(0.0, share))
+    return "#{:02x}{:02x}{:02x}".format(*(round(start + share * (end - start))
+                                           for start, end in zip(new, toward, strict=True)))
+
+
+def recolour(css: str, accents: tuple[str, ...], colour: str) -> str:
+    """A stylesheet with its accents in `colour`: the main one becomes it, and each other one stands to it as
+    it stood to the main (Prism's pale contact line on its band, Halcyon's darker name). In one pass, so a
+    colour just written in is never taken for an accent still to change."""
+    main, new = _rgb(accents[0]), _rgb(colour)
+    shades = {accent.lower(): _shade(main, _rgb(accent), new) for accent in accents}
+    pattern = "|".join(re.escape(accent) for accent in sorted(shades, key=len, reverse=True))
+    return re.sub(rf"(?i)(?:{pattern})(?![0-9a-f])", lambda found: shades[found.group(0).lower()], css)
+
+
+def _cv(id_: str, name: str, *sectors: str, accents: tuple[str, ...]) -> Template:
     path = SCAFFOLD_CV if id_ == "meridian" else _HERE / "cv" / f"{id_}.html"
-    return Template("cv", id_, name, sectors, path)
+    return Template("cv", id_, name, sectors, path, accents)
 
 
-def _cover(id_: str, name: str, *sectors: str) -> Template:
-    return Template("cover", id_, name, sectors, _HERE / "cover" / f"{id_}.html")
+def _cover(id_: str, name: str, *sectors: str, accents: tuple[str, ...]) -> Template:
+    return Template("cover", id_, name, sectors, _HERE / "cover" / f"{id_}.html", accents)
 
 
 # Every look, in the order research ranks them (README.md); each sector lists its own in this order.
 CATALOGUE: tuple[Template, ...] = (
     _cv("meridian", "Meridian",
         "IT and software", "Engineering", "Business and management", "Sales and customer service",
-        "Science and research", "Office and admin"),
+        "Science and research", "Office and admin",
+        accents=("#003399",)),
     _cv("kestrel", "Kestrel",
         "IT and software", "Engineering", "Business and management", "Marketing, media and design",
-        "Science and research"),
+        "Science and research",
+        accents=("#0e7490",)),
     _cv("ledger", "Ledger",
-        "Finance and accounting", "Business and management", "Law", "Government and charities"),
+        "Finance and accounting", "Business and management", "Law", "Government and charities",
+        accents=("#000",)),
     _cv("prism", "Prism",
-        "Marketing, media and design", "Sales and customer service", "Hospitality and retail"),
+        "Marketing, media and design", "Sales and customer service", "Hospitality and retail",
+        accents=("#5b21b6", "#7c3aed", "#c4b5fd", "#ede9fe")),
     _cv("tabula", "Tabula",
         "Engineering", "Finance and accounting", "Government and charities",
-        "Building, trades and logistics", "Office and admin"),
+        "Building, trades and logistics", "Office and admin",
+        accents=("#1f4e79", "#e8eef5")),
     _cv("halcyon", "Halcyon",
         "Sales and customer service", "Healthcare and care", "Teaching and education",
-        "Government and charities", "Hospitality and retail"),
+        "Government and charities", "Hospitality and retail",
+        accents=("#0f766e", "#134e4a", "#f0fdfa")),
     _cv("foundry", "Foundry",
-        "Hospitality and retail", "Building, trades and logistics"),
+        "Hospitality and retail", "Building, trades and logistics",
+        accents=("#1f2937",)),
     _cv("quill", "Quill",
-        "Teaching and education", "Science and research", "Law"),
+        "Teaching and education", "Science and research", "Law",
+        accents=("#7c2d12",)),
 
     _cover("meridian", "Meridian",
            "IT and software", "Engineering", "Business and management", "Sales and customer service",
-           "Teaching and education", "Science and research", "Office and admin"),
+           "Teaching and education", "Science and research", "Office and admin",
+           accents=("#003399",)),
     _cover("kestrel", "Kestrel",
            "IT and software", "Engineering", "Business and management", "Marketing, media and design",
-           "Science and research"),
+           "Science and research",
+           accents=("#0e7490",)),
     _cover("ledger", "Ledger",
-           "Finance and accounting", "Business and management", "Law", "Government and charities"),
+           "Finance and accounting", "Business and management", "Law", "Government and charities",
+           accents=("#000",)),
     _cover("tabula", "Tabula",
            "Engineering", "Finance and accounting", "Healthcare and care", "Government and charities",
-           "Building, trades and logistics", "Office and admin"),
+           "Building, trades and logistics", "Office and admin",
+           accents=("#1f4e79",)),
     _cover("halcyon", "Halcyon",
            "Sales and customer service", "Healthcare and care", "Teaching and education",
-           "Government and charities", "Hospitality and retail"),
+           "Government and charities", "Hospitality and retail",
+           accents=("#0f766e", "#134e4a")),
     _cover("prism", "Prism",
-           "Marketing, media and design", "Sales and customer service", "Hospitality and retail"),
+           "Marketing, media and design", "Sales and customer service", "Hospitality and retail",
+           accents=("#5b21b6", "#7c3aed", "#ede9fe")),
 )
 
 # About how many words of a CV one page of each look holds, below the header: what the CV prompt is told
@@ -209,7 +276,7 @@ def of_kind(kind: str) -> list[Template]:
 
 
 def chosen(user, kind: str) -> Template:
-    """The look this person's documents of `kind` are made in."""
+    """The look this person's documents of `kind` are made in, in the colour they picked for both."""
     picked = getattr(user, FIELD[kind])
     template = find(kind, picked or DEFAULT)
     if template is None:
@@ -217,7 +284,23 @@ def chosen(user, kind: str) -> Template:
         logger.warning("templates: %s picked %s template %r, which is gone; making it in %s",
                        getattr(user, "id", "?"), kind, picked, DEFAULT)
         template = find(kind, DEFAULT)
-    return template
+    return coloured(template, user)
+
+
+def colour_of(user) -> str | None:
+    """The id of the colour their CVs and letters are made in; None for each look's own, or for a colour
+    taken out of `COLOURS` after they picked it, which is said."""
+    picked = getattr(user, "look_colour", None)
+    if picked and picked not in COLOURS:
+        logger.warning("templates: %s picked the colour %r, which is gone; making each look in its own",
+                       getattr(user, "id", "?"), picked)
+    return picked if picked in COLOURS else None
+
+
+def coloured(template: Template, user) -> Template:
+    """The look in the colour this person picked, or in its own."""
+    picked = colour_of(user)
+    return replace(template, colour=COLOURS[picked][1]) if picked else template
 
 
 def groups(kind: str) -> list[tuple[str, list[str]]]:

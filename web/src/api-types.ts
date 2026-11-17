@@ -2024,6 +2024,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/templates/colour": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Choose Colour
+         * @description Every CV and cover letter made from now on is made in this colour; None, in each look's own.
+         */
+        put: operations["choose_colour_templates_colour_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/templates/{kind}": {
         parameters: {
             query?: never;
@@ -2443,6 +2463,11 @@ export interface components {
             label: string;
             /** Value */
             value: string;
+        };
+        /** ColourChoice */
+        ColourChoice: {
+            /** Id */
+            id: string | null;
         };
         /** ConfigChoice */
         ConfigChoice: {
@@ -3814,6 +3839,15 @@ export interface components {
             /** Id */
             id: string;
         };
+        /** TemplateColour */
+        TemplateColour: {
+            /** Hex */
+            hex: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** TemplateGroup */
         TemplateGroup: {
             /** Templates */
@@ -3832,6 +3866,10 @@ export interface components {
         };
         /** Templates */
         Templates: {
+            /** Colour */
+            colour: string | null;
+            /** Colours */
+            colours: components["schemas"]["TemplateColour"][];
             cover: components["schemas"]["TemplateShelf"];
             cv: components["schemas"]["TemplateShelf"];
         };
@@ -7147,6 +7185,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Templates"];
+                };
+            };
+        };
+    };
+    choose_colour_templates_colour_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ColourChoice"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Templates"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

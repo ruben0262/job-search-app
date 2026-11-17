@@ -1142,6 +1142,20 @@ def test_a_person_picks_how_their_cvs_and_letters_look_and_it_stays_picked(site,
         page.reload()
         expect(looks.locator(".look-name")).to_have_text(["Ledger", "Meridian"])
         assert page.evaluate(FAULTS) == {"off": [], "over": []}, "My documents at 390px"
+
+        # One colour for both, beside the looks (owner, 2026-11-17): a tap draws both pictures in it, the
+        # looks stay as they were, and it stays picked.
+        colours = looks.get_by_role("radiogroup")
+        expect(colours.get_by_role("radio", name="Each look's own")).to_have_attribute("aria-checked", "true")
+        colours.get_by_role("radio", name="Wine").click()
+        expect(looks).to_contain_text("Colour: Wine")
+        names = looks.locator(".look .picture .cv-name i")
+        expect(names).to_have_count(2)
+        expect(names.first).to_have_css("background-color", "rgb(159, 18, 57)")
+        expect(names.last).to_have_css("background-color", "rgb(159, 18, 57)")
+        page.reload()
+        expect(colours.get_by_role("radio", name="Wine")).to_have_attribute("aria-checked", "true")
+        expect(looks.locator(".look-name")).to_have_text(["Ledger", "Meridian"])
         browser.close()
 
 

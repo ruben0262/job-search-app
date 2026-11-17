@@ -168,6 +168,12 @@ drawn, each looking right on the page:
      before, none after (2026-11-15). `pre-wrap` was not enough: a justified line still wrote no space
      where it wrapped. With `break-spaces` the space takes its room at the line's end, so a justified
      line ends 2.5 pt short of the edge and now and then a word wraps a line sooner.
+9. **Its own colours are listed with it in the catalogue, the main one first** (`accents`), and used in its
+   stylesheet for its accents alone, never for its words. A colour picked for both documents (owner,
+   2026-11-17) takes every one of them over and nothing else (`recolour`): the main one becomes the colour,
+   and a paler or darker one stands to it as it stood to the main. So Ledger draws its name, headings and
+   rules in pure black and its words in a near-black, and Foundry's rule shares its bands' slate.
+   `test_a_colour_takes_every_accent_of_a_look_and_nothing_else` holds every look to it.
 
 ### What is measured, and what is not
 

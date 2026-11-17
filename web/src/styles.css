@@ -551,10 +551,10 @@ button.danger {
    **A new kind of plain button goes on this list**, or it borrows the purple's light at rest. */
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
-    .look-card, .toast-close, .bookmark, .bar-action, .again),
+    .look-card, .toast-close, .bookmark, .bar-action, .again, .swatch),
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
-    .look-card, .toast-close, .bookmark, .bar-action, .again):hover:not([disabled]) {
+    .look-card, .toast-close, .bookmark, .bar-action, .again, .swatch):hover:not([disabled]) {
   box-shadow: none;
 }
 
@@ -5243,6 +5243,39 @@ button.toggle[aria-pressed="true"]::before {
 
 .look-name {
   font-weight: 650;
+}
+
+/* The colour both documents are made in: a row of dots under the two looks, the one in use ringed in the
+   ink. "Each look's own" is the looks' own colours, turning round one dot. */
+.colours {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1.1rem;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.swatch {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 3px solid var(--bg-raised);
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: 0 0 0 1px var(--glass-line);
+}
+
+.swatch.own {
+  background: conic-gradient(#003399, #0f766e, #5b21b6, #7c2d12, #1f2937, #003399);
+}
+
+.swatch[aria-checked="true"],
+.swatch[aria-checked="true"]:hover:not([disabled]) {
+  box-shadow: 0 0 0 2px var(--ink);
 }
 
 .look-on {

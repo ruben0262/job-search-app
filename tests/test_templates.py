@@ -14,6 +14,7 @@ import pathlib
 import re
 import unicodedata
 import uuid
+from dataclasses import replace
 from html import unescape
 
 import pytest
@@ -512,6 +513,47 @@ def test_a_picture_is_the_look_in_abstract_shapes_with_nothing_written(template)
     assert all(f'class="{part}"' in body for part in parts)
 
 
+# ── the colour ────────────────────────────────────────────────────────────────────────────────
+
+def _has(css: str, colour: str) -> bool:
+    return re.search(rf"(?i){re.escape(colour)}(?![0-9a-f])", css) is not None
+
+
+@pytest.mark.parametrize("template", templates.CATALOGUE, ids=lambda each: f"{each.kind}-{each.id}")
+def test_a_colour_takes_every_accent_of_a_look_and_nothing_else(template):
+    """One colour picked for both documents (owner, 2026-11-17: "only changing colour, nothing else so design
+    stays"). The silent ways it fails: an accent the look no longer has, so part of it keeps its own colour;
+    an accent that is also its words' colour, so the text changes colour with the headings."""
+    own = template.style
+    words = re.search(r"(?is)\bbody\s*{[^}]*?[^-]color\s*:\s*(#[0-9a-f]{3,6})", own).group(1)
+    assert template.accents, f"{template.id} lists its own colours, the main one first"
+    for accent in template.accents:
+        assert _has(own, accent), f"{accent} is not in {template.kind} {template.id}'s stylesheet"
+        assert accent.lower() != words.lower(), f"{template.id}'s accent {accent} is its words' colour"
+    picked = replace(template, colour="#123456").style
+    assert _has(picked, "#123456")
+    assert not [accent for accent in template.accents if _has(picked, accent)]
+    assert _has(picked, words), "its words keep their colour"
+    assert picked.endswith(f"{templates.EVERY_LOOK}</style>"), "what an ATS needs is still last"
+
+
+def _luminance(colour: str) -> float:
+    def linear(value: int) -> float:
+        value /= 255
+        return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+    red, green, blue = (linear(int(colour[at:at + 2], 16)) for at in (1, 3, 5))
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def test_every_colour_reads_on_white_and_white_reads_on_it():
+    """A heading in it reads on the page, and Prism's and Foundry's white words read on a band of it: WCAG's
+    4.5:1 for text, both ways round."""
+    assert len(templates.COLOURS) >= 6
+    for name, colour in templates.COLOURS.values():
+        assert re.fullmatch(r"#[0-9a-f]{6}", colour), name
+        assert 1.05 / (_luminance(colour) + 0.05) >= 4.5, f"{name} is too pale to read on white"
+
+
 # ── the picker's API ──────────────────────────────────────────────────────────────────────────
 
 @pytest.fixture()
@@ -562,3 +604,31 @@ def test_a_look_that_does_not_exist_is_refused_and_nothing_changes(http):
     assert http.put("/templates/cv", json={"id": "nope"}).status_code == 404
     assert http.put("/templates/letter", json={"id": "meridian"}).status_code == 422
     assert http.get("/templates").json()["cover"]["chosen"] == "meridian"
+
+
+def test_one_colour_is_kept_for_both_kinds_and_every_picture_is_drawn_in_it(http, db, user):
+    """Picked beside the looks (owner, 2026-11-17: one colour for the CV and the cover letter), so every
+    picture shows what the next document will look like; none picked again, each look is its own."""
+    from libs.db import get
+    from libs.db.models import User
+
+    shelves = http.get("/templates").json()
+    assert shelves["colour"] is None
+    assert [each["id"] for each in shelves["colours"]] == list(templates.COLOURS)
+    navy = templates.COLOURS["navy"][1]
+    answer = http.put("/templates/colour", json={"id": "navy"})
+    assert answer.status_code == 200 and answer.json()["colour"] == "navy"
+    assert get(db, User, user.id).look_colour == "navy"
+    for kind in ("cv", "cover"):
+        cards = answer.json()[kind]["templates"]
+        assert cards and all(navy in card["picture"] for card in cards), f"a {kind} picture is not in navy"
+        assert answer.json()[kind]["chosen"] == "meridian", "a colour changes no look"
+    back = http.put("/templates/colour", json={"id": None}).json()
+    assert back["colour"] is None
+    assert all(navy not in card["picture"] for card in back["cv"]["templates"])
+
+
+def test_a_colour_that_does_not_exist_is_refused_and_nothing_changes(http):
+    assert http.put("/templates/colour", json={"id": "teal"}).status_code == 200
+    assert http.put("/templates/colour", json={"id": "beige"}).status_code == 404
+    assert http.get("/templates").json()["colour"] == "teal"

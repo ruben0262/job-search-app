@@ -1,17 +1,18 @@
 /** How your CVs and cover letters look: the one of each you use, and a sheet to pick another (owner,
  * 2026-11-07). The most popular first, then each job sector with its looks; one look can be in several.
+ * Under them, the one colour both are made in (owner, 2026-11-17): every picture is drawn in it.
  *
  * Each picture is the look drawn in abstract shapes, not a document, at a quarter of its size: laid out by
  * the look's own stylesheet, with nothing written in it. Each look is named, and nothing more.
  */
-import { useCallback, useState } from "react";
+import { type CSSProperties, useCallback, useState } from "react";
 
 import { api, type Schema } from "./api";
 import { useKept } from "./kept";
 import { Error, Sheet, useAction } from "./ui";
 
 type Templates = Schema<"Templates">;
-type Kind = keyof Templates;
+type Kind = "cv" | "cover";
 
 /** What this card reads, as `kept.ts` keeps it. */
 export const TEMPLATES = "/templates";
@@ -30,7 +31,7 @@ export function TemplatePicks() {
   if (!data) return <p className="muted small">Loading…</p>;
   return (
     <>
-      <p className="small muted">Every CV and cover letter we make for you is made in the look you pick.</p>
+      <p className="small muted">Every CV and cover letter we make for you is made in the looks and the colour you pick.</p>
       <div className="looks">
         {(["cv", "cover"] as const).map((kind) => {
           const shelf = data[kind];
@@ -53,6 +54,7 @@ export function TemplatePicks() {
           );
         })}
       </div>
+      <Colours data={data} onPicked={(next) => set(() => next)} />
       {said ? <p className="small" role="status">{said}</p> : null}
       {open ? (
         <Picker kind={open} shelf={data[open]} onClose={() => setOpen(null)}
@@ -63,6 +65,42 @@ export function TemplatePicks() {
                 }} />
       ) : null}
     </>
+  );
+}
+
+/** The colour of both, beside the looks: each look's own, or one of a few that print well and read on white
+ * (`libs.templates.COLOURS`). The dot is lit as it is tapped; the pictures follow, drawn in it by the server. */
+function Colours({ data, onPicked }: { data: Templates; onPicked: (next: Templates) => void }) {
+  // The one tapped, until the server answers: lit at once, not after a round trip.
+  const [tapped, setTapped] = useState<string | null | undefined>(undefined);
+  const now = tapped === undefined ? data.colour : tapped;
+  const pick = useAction(async (id: string | null) => {
+    setTapped(id);
+    try {
+      onPicked(await api.put<Templates>("/templates/colour", { id }));
+    } finally {
+      setTapped(undefined);
+    }
+  });
+  const choices: [string | null, string, string | undefined][] = [
+    [null, "Each look's own", undefined],
+    ...data.colours.map((each): [string, string, string] => [each.id, each.name, each.hex]),
+  ];
+  return (
+    <div className="colours">
+      <span className="small muted" id="colours-label">
+        Colour: <strong>{choices.find(([id]) => id === now)?.[1]}</strong>
+      </span>
+      <div className="swatches" role="radiogroup" aria-labelledby="colours-label">
+        {choices.map(([id, name, hex]) => (
+          <button key={id ?? "own"} type="button" role="radio" aria-checked={id === now} aria-label={name}
+                  title={name} className={hex ? "swatch" : "swatch own"} disabled={pick.busy}
+                  style={hex ? { "--swatch": hex } as CSSProperties : undefined}
+                  onClick={() => void pick.run(id)} />
+        ))}
+      </div>
+      <Error>{pick.error}</Error>
+    </div>
   );
 }
 

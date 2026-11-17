@@ -14,6 +14,35 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17, last of all — One colour for a person's CVs and cover letters, picked beside the looks
+
+The owner: "for the design of the cv and cover letter we have different styles, which stays but the colour at the
+moment is fixed, like purple, lets make sure users can select colour next to the design choice. here we are only
+changing colour, nothing else so design stays please." Asked, the owner chose one colour for both documents.
+
+- **Eight colours or each look's own**, under the two looks in My documents: Navy, Blue, Teal, Green, Purple,
+  Wine, Rust and Graphite (`libs.templates.COLOURS`). Each reads on white and white reads on it at 4.5:1 or more,
+  for the looks that draw a band of their colour with white words on it (Prism, Foundry). A test holds every one
+  to that. Kept on the account as `look_colour` (`PUT /templates/colour`). Every picture is drawn in it, so the
+  sheet shows what the next document will look like.
+- **Only the colour changes.** Each look lists its own accent colours in the catalogue, the main one first. A
+  colour picked takes all of them over and nothing else: the main one becomes the colour, and a paler or darker
+  one stands to it as it stood to the main (Prism's pale contact line, Halcyon's darker name). Words, greys and
+  white keep theirs. It is done on the stylesheet as it is read (`Template.style`), so Meridian, the scaffold
+  never edited (CLAUDE.md §3a), takes a colour like the rest, and no prompt changes.
+- **Two looks needed a value apart for their accents.** Ledger drew its name, headings and rules in the same
+  near-black as its words, so they are now pure black: on paper the same black. Foundry's rule under the name took
+  its words' colour and now takes its bands' slate. `test_a_colour_takes_every_accent_of_a_look_and_nothing_else`
+  holds all 14 looks to it: each accent in its stylesheet, none its words' colour, none left once a colour is
+  picked, the words unchanged and what an ATS needs still last.
+- Tests: the picker's API (one colour kept for both kinds, every picture in it, none back to each look's own, a
+  colour that does not exist refused), the next CV and letter made in the colour picked (`test_document_builds`),
+  and My documents in the browser (a tap draws both pictures in it, and it stays after a refresh).
+- Gates: ruff clean; contract regenerated (`/templates/colour`, `colour`/`colours` on the shelf); site built;
+  test_templates (every look's PDF read again by pypdf and pdfminer), test_document_builds,
+  test_columns_have_producers, test_openapi_contract, test_admin, test_cv_template, test_docgen 279 passed, none
+  skipped; the looks' browser test passed.
+
 ## 2026-11-17, after the alerts — The landing page's alerts tile says what an alert follows, and its picture is headed as a real one is
 
 The owner, once the named alerts were in: "If we can add to alerts something specific on the landing page of what we
