@@ -722,20 +722,8 @@
         "type": "object"
       },
       "AtsMeasured": {
-        "description": "How many CVs passed every ATS check in our own tests, with what was tested and when: said on the\nlanding page with all of it (owner, 2026-11-12: sourced figures only; 2026-11-15: on the site if above\n95.3%).",
+        "description": "How many CVs passed every ATS check in our own tests: said on the landing page as a share alone (owner,\n2026-11-15: on the site if above 95.3%; 2026-11-17: \"99% passed all ATS checks.\", what was tested and\nwhen taken off the page, so they are said here and not served).",
         "properties": {
-          "checks": {
-            "title": "Checks",
-            "type": "integer"
-          },
-          "looks": {
-            "title": "Looks",
-            "type": "integer"
-          },
-          "month": {
-            "title": "Month",
-            "type": "string"
-          },
           "of": {
             "title": "Of",
             "type": "integer"
@@ -752,9 +740,6 @@
         "required": [
           "passed",
           "of",
-          "checks",
-          "looks",
-          "month",
           "prompt"
         ],
         "title": "AtsMeasured",

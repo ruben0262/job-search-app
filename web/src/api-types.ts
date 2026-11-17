@@ -2180,17 +2180,11 @@ export interface components {
         };
         /**
          * AtsMeasured
-         * @description How many CVs passed every ATS check in our own tests, with what was tested and when: said on the
-         *     landing page with all of it (owner, 2026-11-12: sourced figures only; 2026-11-15: on the site if above
-         *     95.3%).
+         * @description How many CVs passed every ATS check in our own tests: said on the landing page as a share alone (owner,
+         *     2026-11-15: on the site if above 95.3%; 2026-11-17: "99% passed all ATS checks.", what was tested and
+         *     when taken off the page, so they are said here and not served).
          */
         AtsMeasured: {
-            /** Checks */
-            checks: number;
-            /** Looks */
-            looks: number;
-            /** Month */
-            month: string;
             /** Of */
             of: number;
             /** Passed */

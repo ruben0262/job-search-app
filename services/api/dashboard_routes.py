@@ -246,25 +246,21 @@ def save_job_filters(filters: JobFilters, db: Database = Depends(get_db),
 
 
 class AtsMeasured(BaseModel):
-    """How many CVs passed every ATS check in our own tests, with what was tested and when: said on the
-    landing page with all of it (owner, 2026-11-12: sourced figures only; 2026-11-15: on the site if above
-    95.3%)."""
+    """How many CVs passed every ATS check in our own tests: said on the landing page as a share alone (owner,
+    2026-11-15: on the site if above 95.3%; 2026-11-17: "99% passed all ATS checks.", what was tested and
+    when taken off the page, so they are said here and not served)."""
     passed: int
     of: int
-    checks: int
-    looks: int
-    month: str
     # The version of `write_cv.md` that wrote the CVs measured (`libs.prompts.version`).
     prompt: str
 
 
 # Measured 2026-11-16 (CHANGELOG): 36 CVs, nine made-up people and two postings each, 18 written by Claude
-# Haiku 5.5 and 18 by GPT, each drawn in all eight looks and read back by two PDF readers, against the eight
-# checks in `scripts/cvlab/run.py::ats_checks`. **A figure about one wording**: `stats` serves it only while
-# that wording is the live one, so a changed prompt takes it off the page until it is measured again and
+# Haiku 5.5 and 18 by GPT, each drawn in all eight looks (288) and read back by two PDF readers, against the
+# eight checks in `scripts/cvlab/run.py::ats_checks`. **A figure about one wording**: `stats` serves it only
+# while that wording is the live one, so a changed prompt takes it off the page until it is measured again and
 # this line is rewritten (`tests/test_dashboard.py` holds the two together).
-ATS_MEASURED = AtsMeasured(passed=285, of=288, checks=8, looks=8, month="November 2026",
-                           prompt="6fcbbabfca70")
+ATS_MEASURED = AtsMeasured(passed=285, of=288, prompt="6fcbbabfca70")
 
 
 class Reach(BaseModel):

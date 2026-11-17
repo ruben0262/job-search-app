@@ -25,7 +25,7 @@
   }
 }
 
-/* Clip, not hide: the halo is wider than a phone, and `hidden` would stop the cards sticking. */
+/* Clip, not hide: the halo is wider than a phone, and `hidden` would make the page a scroll box of its own. */
 .landing main,
 .lp-foot {
   position: relative;
@@ -449,24 +449,31 @@
   justify-items: center;
 }
 
+/* The promise (owner, 2026-11-17), "Get seen first.": one line where it fits, else broken before "first.",
+   never inside "Get seen", which is sized to fit the narrowest phone. Its purple glows in the dark, as the halo
+   does. */
 .landing .hero-title {
   margin: 0;
-  font: 600 clamp(3.2rem, min(17vw, 15svh), 8.5rem)/0.92 var(--font-display);
+  font: 600 clamp(2.6rem, min(15vw, 13svh), 7.5rem)/0.92 var(--font-display);
   letter-spacing: -0.06em;
 }
 
+.landing .hero-line {
+  white-space: nowrap;
+}
+
+.landing .hero-title .glow {
+  text-shadow: 0 0 40px rgba(var(--accent-rgb), 0.55);
+}
+
+[data-theme="light"] .landing .hero-title .glow {
+  text-shadow: none;
+}
+
 .landing .hero-tag {
-  margin-top: 12px;
+  margin-top: 14px;
   font: 500 clamp(1.25rem, min(5.6vw, 5.2svh), 2.2rem)/1.15 var(--font-display);
   letter-spacing: -0.035em;
-}
-
-.landing .hero-tag .glow {
-  text-shadow: 0 0 30px rgba(var(--accent-rgb), 0.6);
-}
-
-[data-theme="light"] .landing .hero-tag .glow {
-  text-shadow: none;
 }
 
 .landing .hero-sub {
@@ -500,6 +507,22 @@
   .landing .hero-ctas .btn {
     flex: 1 1 100%;
   }
+}
+
+/* What starting costs, under the button that starts (owner, 2026-11-17): nothing, and no card, on the Free
+   plan. Said small, as small print is, and never above the button. */
+.landing .lp-note,
+.landing .cta .lp-note {
+  position: relative;
+  max-width: none;
+  margin-top: 14px;
+  color: var(--dim);
+  font: 500 14px/1.4 var(--font-body);
+  letter-spacing: 0;
+}
+
+.landing .cta .lp-note {
+  margin-top: -8px;
 }
 
 /* What the platform reads, counted by the server (`/stats`). */
@@ -586,7 +609,7 @@
   }
 }
 
-/* Glass tiles, their edge lit where the pointer is: Get started's two. */
+/* Glass tiles, their edge lit where the pointer is: How it works' four and Get started's two. */
 .landing .tile {
   position: relative;
   overflow: hidden;
@@ -635,106 +658,6 @@
 .landing .tile p {
   color: var(--muted);
   font-size: 15.5px;
-}
-
-.landing div.match {
-  width: 100%;
-  padding: 16px;
-  border: 1px solid var(--glass-line);
-  border-radius: 18px;
-  background: rgba(var(--bg-rgb), 0.5);
-}
-
-.landing div.match b {
-  display: block;
-  font: 600 17px var(--font-display);
-  letter-spacing: -0.02em;
-}
-
-/* A highlighter wiping across the words that matched, and back. */
-.landing div.match mark {
-  padding: 0 2px;
-  border-radius: 4px;
-  background: linear-gradient(rgba(var(--accent-rgb), 0.45), rgba(var(--accent-rgb), 0.45)) left / 100% 100% no-repeat;
-  color: inherit;
-  animation: lp-mark 4s var(--out) infinite;
-}
-
-@keyframes lp-mark {
-  0%,
-  15% {
-    background-size: 0 100%;
-  }
-  35%,
-  85% {
-    background-size: 100% 100%;
-  }
-  100% {
-    background-size: 0 100%;
-  }
-}
-
-.landing div.match small {
-  display: block;
-  margin-top: 8px;
-  color: var(--dim);
-  font-size: 13px;
-}
-
-.landing .one-tap {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.landing .one-tap .ring {
-  width: 54px;
-  height: 54px;
-  transform: rotate(-90deg);
-}
-
-.landing .one-tap circle {
-  fill: none;
-  stroke-width: 4;
-}
-
-.landing .one-tap .track {
-  stroke: var(--faint);
-}
-
-.landing .one-tap .fill {
-  stroke: var(--accent);
-  stroke-linecap: round;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 0;
-  animation: lp-fill 4s var(--out) infinite;
-}
-
-@keyframes lp-fill {
-  0%,
-  10% {
-    stroke-dashoffset: 1;
-  }
-  60%,
-  90% {
-    stroke-dashoffset: 0;
-  }
-  100% {
-    stroke-dashoffset: 1;
-  }
-}
-
-.landing .one-tap span {
-  display: inline-flex;
-  align-items: center;
-  height: 44px;
-  padding: 0 18px;
-  border-radius: 14px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 14.5px;
-  font-weight: 600;
-  box-shadow: 0 10px 24px -10px rgba(var(--accent-rgb), 0.9);
 }
 
 /* What it is, drawn (`Flow`): the job sites, what is left out, and your list, jobs travelling between them.
@@ -1013,353 +936,85 @@
   }
 }
 
-/* How it works: what a person gets, a card a step, stacking as you scroll. Where a card sticks is read
-   back by `Landing.tsx`, so it is said here only. */
-.landing .stack {
+/* How it works: what it does for them, a tile each (owner, 2026-11-17), side by side so the page reads at a
+   fast scroll, where it was a screen a card: the part of the app it is about, moving, in a frame; a big
+   title; a few lines. Two to a row from a tablet's width and three on a laptop, each as tall as the ones
+   beside it. */
+.landing .perks {
   display: grid;
-  gap: 22px;
+  gap: 16px;
 }
 
-.landing .stack-card {
-  position: sticky;
-  top: calc(84px + var(--i) * 12px);
-  display: grid;
-  gap: 18px;
-  padding: 22px;
-  border: 1px solid var(--glass-line);
-  border-radius: 28px;
-  background: rgb(var(--bg-rgb));
-  box-shadow: 0 -20px 50px -30px rgba(0, 0, 0, 0.7);
-  transform-origin: 50% 0;
-  will-change: transform;
+@media (min-width: 760px) {
+  .landing .perks {
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
 }
 
-[data-theme="light"] .landing .stack-card {
-  background: #fff;
-  box-shadow: 0 -12px 40px -24px rgba(15, 16, 19, 0.3);
+@media (min-width: 1120px) {
+  .landing .perks {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
-/* The shade a card goes into as the next covers it: an element of its own, so dimming it touches one
-   element and not the card (`Landing.tsx`). */
-.landing .stack-shade {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  border-radius: inherit;
-  background: rgb(var(--bg-rgb));
-  opacity: 0;
-  pointer-events: none;
+.landing .perk {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: clamp(18px, 3vw, 28px);
 }
 
-.landing .stack-art {
+/* Every picture in a frame of one size, so the four titles start on one line across a row. */
+.landing .perk-art {
   display: grid;
   place-items: center;
-  min-height: 200px;
-  padding: 22px;
+  height: clamp(168px, 20vw, 210px);
+  margin-bottom: 10px;
+  padding: 12px;
   border: 1px solid var(--glass-line);
-  border-radius: 22px;
-  background: var(--tile);
+  border-radius: 20px;
+  background: rgba(var(--bg-rgb), 0.5);
+  overflow: hidden;
 }
 
-/* The step's number, the first thing an eye finds on the card. */
-.landing .stack-num {
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font: 600 24px/1 var(--font-display);
-  box-shadow: 0 10px 26px -10px rgba(var(--accent-rgb), 0.9);
-}
-
-.landing .stack-card h3 {
-  margin: 18px 0 10px;
-  font: 600 clamp(1.8rem, 7vw, 2.8rem)/1.04 var(--font-display);
+.landing .perk h3 {
+  margin: 0;
+  font: 600 clamp(1.6rem, 6.4vw, 2.2rem)/1.06 var(--font-display);
   letter-spacing: -0.04em;
 }
 
-.landing .stack-card p {
-  max-width: 40ch;
-  color: var(--muted);
-  font-size: clamp(17px, 2.2vw, 19px);
-  line-height: 1.5;
+/* Three to a row, a third narrower than two: the titles a size down, so each is two lines and a row's tiles
+   end together. */
+@media (min-width: 1120px) {
+  .landing .perk h3 {
+    font-size: clamp(1.6rem, 2.4vw, 1.85rem);
+  }
 }
 
-.landing .stack-card p strong {
+.landing .perk p {
+  max-width: 44ch;
+  font-size: clamp(16px, 2vw, 17.5px);
+  line-height: 1.55;
+}
+
+.landing .perk p strong {
   color: var(--ink);
   font-weight: 600;
 }
 
-@media (max-height: 620px) {
-  .landing .stack-card {
-    position: relative;
-    top: auto;
-  }
+/* A figure behind a tile's promise, on a line of its own under it. */
+.landing .perk .proof {
+  display: block;
+  margin-top: 10px;
 }
 
-@media (min-width: 900px) {
-  .landing .stack-card {
-    grid-template-columns: 1.2fr 0.8fr;
-    align-items: center;
-    gap: 40px;
-    min-height: 360px;
-    padding: 44px;
-  }
-
-  .landing .stack-art {
-    order: 2;
-    min-height: 260px;
-  }
+/* What the CVs rest on that is theirs to bring, their own AI account: said under the tiles, and quietly. */
+.landing .perks + .lp-note {
+  margin-top: 22px;
+  text-align: center;
 }
 
-/* The steps' pictures: the part of the app each step is about, moving. */
-.landing .cv-art,
-.landing .match-art,
-.landing .tap-art,
-.landing .apply-art {
-  display: grid;
-  gap: 12px;
-  width: 100%;
-  max-width: 340px;
-}
-
-.landing .cv-file,
-.landing .apply-on {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  justify-self: start;
-  height: 46px;
-  padding: 0 18px;
-  border: 1px solid var(--glass-line);
-  border-radius: 14px;
-  background: rgba(var(--bg-rgb), 0.6);
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.landing .cv-file svg,
-.landing .apply-on svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: var(--accent-text);
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.landing .cv-said {
-  color: var(--dim);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.landing .cv-words {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.landing .cv-words span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 999px;
-  font-size: 14.5px;
-  font-weight: 500;
-  animation: lp-pop 6s var(--out) infinite backwards;
-  animation-delay: calc(0.4s + var(--i) * 0.35s);
-}
-
-.landing .cv-words .finds {
-  background: color-mix(in srgb, var(--score) 14%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--score) 50%, transparent);
-}
-
-.landing .cv-words .finds::before {
-  content: "+";
-  color: var(--score);
-  font-weight: 600;
-}
-
-.landing .cv-words .hides {
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent);
-  text-decoration: line-through;
-  text-decoration-color: var(--danger);
-}
-
-.landing .cv-words .hides::before {
-  content: "−";
-  color: var(--danger);
-  font-weight: 600;
-}
-
-@keyframes lp-pop {
-  0% {
-    opacity: 0;
-    transform: scale(0.6);
-  }
-  8%,
-  88% {
-    opacity: 1;
-    transform: none;
-  }
-  100% {
-    opacity: 0;
-    transform: scale(0.9);
-  }
-}
-
-.landing .match-new {
-  justify-self: start;
-  padding: 7px 14px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.landing .match-art .match {
-  animation: lp-land 6s var(--out) infinite backwards;
-  animation-delay: 0.3s;
-}
-
-.landing .match-art .match + .match {
-  animation-delay: 0.8s;
-}
-
-.landing .tap-art {
-  justify-items: center;
-  gap: 18px;
-}
-
-/* The CV, written as the ring fills: paper is white in either theme, as the Jobs page's is. */
-.landing .tap-paper {
-  display: grid;
-  gap: 8px;
-  width: 100%;
-  padding: 16px 18px;
-  border-radius: 12px;
-  background: #fff;
-  color: #15161a;
-  box-shadow: 0 14px 30px -18px rgba(0, 0, 0, 0.6);
-}
-
-.landing .tap-paper b {
-  font: 600 15px var(--font-display);
-  letter-spacing: -0.02em;
-}
-
-.landing .tap-paper i {
-  height: 6px;
-  border-radius: 3px;
-  background: #d9dae0;
-  transform-origin: left;
-  animation: lp-write 4s var(--out) infinite backwards;
-}
-
-.landing .tap-paper i:nth-of-type(2) {
-  width: 82%;
-  animation-delay: 0.12s;
-}
-
-.landing .tap-paper i:nth-of-type(3) {
-  width: 92%;
-  animation-delay: 0.24s;
-}
-
-.landing .tap-paper i:nth-of-type(4) {
-  width: 64%;
-  animation-delay: 0.36s;
-}
-
-@keyframes lp-write {
-  0%,
-  45% {
-    transform: scaleX(0);
-  }
-  65%,
-  92% {
-    transform: scaleX(1);
-  }
-  100% {
-    transform: scaleX(0);
-  }
-}
-
-.landing .apply-art {
-  justify-items: center;
-  gap: 26px;
-}
-
-.landing .apply-on {
-  justify-self: center;
-  color: var(--ink);
-}
-
-/* Applied, the interview, the offer: lit one after another, on a line. */
-.landing .apply-steps {
-  position: relative;
-  display: flex;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.landing .apply-steps::before {
-  content: "";
-  position: absolute;
-  left: 16%;
-  right: 16%;
-  top: 9px;
-  height: 2px;
-  background: var(--hairline);
-}
-
-.landing .apply-steps li {
-  position: relative;
-  display: grid;
-  flex: 1;
-  justify-items: center;
-  gap: 10px;
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 500;
-}
-
-.landing .apply-steps i {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 5px rgba(var(--accent-rgb), 0.2);
-  animation: lp-reach 6s var(--out) infinite backwards;
-  animation-delay: calc(0.5s + var(--i) * 0.8s);
-}
-
-@keyframes lp-reach {
-  0% {
-    opacity: 0.25;
-    transform: scale(0.6);
-  }
-  8%,
-  88% {
-    opacity: 1;
-    transform: none;
-  }
-  100% {
-    opacity: 0.25;
-    transform: scale(0.6);
-  }
-}
 
 /* Your jobs: the app on a phone, its card working, and an alert beside it. */
 .landing .live-grid {
@@ -2117,6 +1772,54 @@
   letter-spacing: -0.035em;
 }
 
+/* A question for a person (`Ask`): the form in one tile, as wide as a question needs, its one button the
+   width of it; then, where the form was, what was received and where the reply goes. */
+.landing .ask {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: clamp(22px, 4vw, 36px);
+}
+
+.landing .ask textarea {
+  min-height: 8.5rem;
+}
+
+.landing .ask .error {
+  margin-bottom: 12px;
+}
+
+.landing .ask form .btn {
+  width: 100%;
+}
+
+.landing .ask .lp-note {
+  margin-top: 12px;
+  color: var(--dim);
+  font-size: 14px;
+  text-align: center;
+}
+
+.landing .ask-sent {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.landing .ask-sent h3 {
+  font: 600 clamp(1.6rem, 6vw, 2.2rem)/1.1 var(--font-display);
+}
+
+.landing .ask-sent .btn {
+  margin-top: 12px;
+}
+
+/* A quiet button keeps no purple glow: the app's buttons all carry one, and this is not the thing to do. */
+.landing .ask button.btn-glass,
+.landing .ask button.btn-glass:hover {
+  box-shadow: none;
+}
+
 /* ── the foot ──────────────────────────────────────────────────────────────────────────────── */
 
 .lp-foot {
@@ -2181,111 +1884,123 @@
   }
 }
 
-/* ── why it works ────────────────────────────────────────────────────────────────────────── */
+/* ── how it works' pictures ──────────────────────────────────────────────────────────────── */
 
-/* The figures, one band under the title; then be first and be seen, a stack of cards as How it works' steps
-   are (owner, 2026-11-12: read at a scroll, "short and sweet"); then three small cards. */
-.landing .edge-row {
+/* Jobs with their match scores, as the Jobs page shows them (`.tag.match`, red at 1 to green at 10), the one
+   under 7 leaving the list and coming back, as a filter set to 7 and up takes it. Still, it stands dimmed. */
+.landing .score-art {
   display: grid;
-  gap: 16px;
-  margin-top: 22px;
-}
-
-@media (min-width: 900px) {
-  .landing .edge-row {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 20px;
-  }
-}
-
-.landing .edge-mini {
-  display: grid;
-  align-content: start;
-  gap: 12px;
-}
-
-.landing .edge-mini h3 {
-  margin: 0;
-  font-size: 22px;
-}
-
-.landing .edge-mini p {
-  font-size: 16px;
-}
-
-/* A card without a number starts at its title. */
-.landing .stack-card h3:first-child {
-  margin-top: 0;
-}
-
-/* The small cards' pictures: one idea each, read at a glance. */
-.landing .mini-art {
-  display: flex;
-  flex-wrap: wrap;
-  align-content: center;
-  align-items: center;
   gap: 8px;
-  min-height: clamp(88px, 12vw, 112px);
-  margin: 0;
-  padding: 16px;
-  border: 1px solid var(--glass-line);
-  border-radius: 16px;
-  background: rgba(var(--bg-rgb), 0.5);
-  list-style: none;
+  width: 100%;
+  max-width: 340px;
 }
 
-.landing .sites-art {
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.landing .sites-count {
-  color: var(--accent-text);
-  font: 600 26px/1 var(--font-display);
-  letter-spacing: -0.03em;
-}
-
-.landing .sites-art div {
+.landing .score-row {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px 10px 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: 14px;
+  background: var(--tile);
+}
+
+.landing .score-row b {
+  overflow: hidden;
+  font: 600 15px/1.25 var(--font-display);
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.landing .score-row .tag {
+  flex: none;
+  font-style: normal;
+}
+
+/* The filters that are on, as chips over the list, in the words the Jobs page's chips use. */
+.landing .score-filters {
+  display: flex;
   gap: 6px;
 }
 
-.landing .sites-art div span,
-.landing .filter-art span {
-  padding: 6px 11px;
-  border: 1px solid var(--glass-line);
+.landing .score-filters i {
+  padding: 5px 10px;
+  border: 1px solid rgba(var(--accent-rgb), 0.55);
   border-radius: 999px;
-  background: var(--tile);
-  color: var(--muted);
-  font: 500 13px/1 var(--font-body);
+  background: rgba(var(--accent-rgb), 0.14);
+  font: 600 12px/1 var(--font-body);
+  font-style: normal;
+  white-space: nowrap;
 }
 
-.landing .filter-art .in {
-  border-color: color-mix(in srgb, var(--score) 55%, transparent);
-  background: color-mix(in srgb, var(--score) 14%, transparent);
-  color: var(--ink);
+.landing .score-row.low {
+  opacity: 0.4;
+  animation: lp-filtered 5s var(--out) infinite;
 }
 
-.landing .filter-art .out {
-  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-  color: var(--ink);
+.landing .score-row.low b {
   text-decoration: line-through;
 }
 
-/* Applied and interview reached, a line through them; the offer next, open. */
+@keyframes lp-filtered {
+  0%,
+  30% {
+    opacity: 1;
+    translate: 0 0;
+  }
+  45%,
+  80% {
+    opacity: 0.15;
+    translate: 16px 0;
+  }
+  95%,
+  100% {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+/* An application on its track, as Applied draws it: the job on a card, then each step lit in turn, a line
+   between them, and round again. Still, applied and the interview stand lit and the offer is next. */
 .landing .track-art {
-  justify-content: space-between;
-  flex-wrap: nowrap;
-  padding-inline: 18px;
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  max-width: 340px;
+  padding: 14px 14px 16px;
+  border: 1px solid var(--glass-line);
+  border-radius: 14px;
+  background: var(--tile);
+}
+
+.landing .track-art b {
+  overflow: hidden;
+  font: 600 15px/1.25 var(--font-display);
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.landing .track-art small {
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.landing .track-art ol {
+  display: flex;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
 .landing .track-art li {
   position: relative;
   display: grid;
   justify-items: center;
-  gap: 8px;
+  gap: 10px;
   flex: 1;
   color: var(--muted);
   font: 500 13px/1 var(--font-body);
@@ -2293,11 +2008,13 @@
 
 .landing .track-art li::before {
   content: "";
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border: 2px solid rgba(var(--accent-rgb), 0.7);
   border-radius: 50%;
   background: var(--bg);
+  animation: lp-step 5.4s var(--out) infinite backwards;
+  animation-delay: calc(0.3s + var(--i) * 0.9s);
 }
 
 .landing .track-art li.done {
@@ -2313,9 +2030,9 @@
 .landing .track-art li + li::after {
   content: "";
   position: absolute;
-  top: 9px;
-  right: calc(50% + 14px);
-  width: calc(100% - 28px);
+  top: 10px;
+  right: calc(50% + 15px);
+  width: calc(100% - 30px);
   height: 2px;
   background: rgba(var(--accent-rgb), 0.35);
 }
@@ -2324,82 +2041,36 @@
   background: var(--accent);
 }
 
-/* The figures: each number big, what it counts in a line, and where it comes from, small and linked. A list
-   down a phone, the numbers in a column the eye runs down; a row across a laptop, a rule between each. */
-.landing .figures {
-  display: grid;
-  gap: 18px;
-  max-width: 560px;
-  margin: -8px auto 56px;
-}
-
-.landing .figures > div {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: 14px;
-  align-items: baseline;
-}
-
-.landing .figures dt {
-  color: var(--accent-text);
-  font: 600 clamp(36px, 4.4vw, 52px)/1 var(--font-display);
-  letter-spacing: -0.04em;
-  white-space: nowrap;
-}
-
-@media (min-width: 900px) {
-  .landing .figures {
-    grid-auto-columns: 1fr;
-    grid-auto-flow: column;
-    gap: 0;
-    max-width: none;
-    margin-bottom: 72px;
+@keyframes lp-step {
+  0%,
+  6% {
+    border-color: rgba(var(--accent-rgb), 0.7);
+    background: var(--bg);
+    box-shadow: none;
   }
-
-  .landing .figures > div {
-    grid-template-columns: none;
-    align-content: start;
-    gap: 12px;
-    padding: 2px 22px;
-    border-left: 1px solid var(--glass-line);
+  14%,
+  82% {
+    border-color: var(--accent);
+    background: var(--accent);
+    box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.22);
   }
-
-  .landing .figures > div:first-child {
-    padding-left: 0;
-    border-left: 0;
+  92%,
+  100% {
+    border-color: rgba(var(--accent-rgb), 0.7);
+    background: var(--bg);
+    box-shadow: none;
   }
-}
-
-.landing .figures dd {
-  margin: 0;
-  color: var(--ink);
-  font-size: 15px;
-  line-height: 1.45;
-}
-
-.landing .figures a {
-  display: block;
-  margin-top: 3px;
-  color: var(--dim);
-  font-size: 12.5px;
-  text-decoration: underline;
-  text-decoration-color: var(--faint);
-  text-underline-offset: 2px;
-}
-
-.landing .figures a:hover {
-  color: var(--muted);
 }
 
 /* A job's first month, as applications a week: the first week twice each later one, you at its start. The
-   bars grow as the picture is reached; still, they stand at their height. Both pictures fill their card's
-   box, which is their frame. */
+   bars grow as the picture is reached; still, they stand at their height. Both pictures fill their tile's
+   frame. */
 .landing .week-art,
 .landing .ats-art {
   position: relative;
   width: 100%;
   max-width: 380px;
-  height: 200px;
+  height: 100%;
 }
 
 .landing .week-art {
@@ -2498,7 +2169,8 @@
   opacity: 0;
 }
 
-.landing .ats-badge {
+.landing .ats-badge,
+.landing .bookmark-kept {
   position: absolute;
   right: 12%;
   bottom: 14px;
@@ -2521,6 +2193,209 @@
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* A job alert on a phone's lock screen: the time over it, and the ones before it a stack under it. It drops
+   in, rests and goes, and comes again; still, it rests where it lands. */
+.landing .alert-art {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 340px;
+}
+
+.landing .alert-clock {
+  font: 600 42px/1 var(--font-display);
+  letter-spacing: -0.04em;
+}
+
+.landing .alert-note {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 18px;
+  background: var(--bg-raised);
+  box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.6);
+  animation: lp-alert-drop 6s var(--out) 0.4s infinite backwards;
+}
+
+/* The earlier ones, under it: below its edge, never over it. */
+.landing .alert-note::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 14px;
+  right: 14px;
+  height: 7px;
+  border: 1px solid var(--glass-line);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: var(--bg-raised);
+  opacity: 0.7;
+}
+
+.landing .alert-note i {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.landing .alert-note .mark {
+  width: 20px;
+  height: 20px;
+}
+
+.landing .alert-note > span {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.landing .alert-note small {
+  display: flex;
+  justify-content: space-between;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.landing .alert-note em {
+  font-style: normal;
+}
+
+.landing .alert-note b {
+  overflow: hidden;
+  font: 600 15px/1.3 var(--font-display);
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes lp-alert-drop {
+  0% {
+    opacity: 0;
+    translate: 0 -26px;
+    scale: 0.96;
+  }
+  10%,
+  86% {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* A job kept for later: a card from the Jobs page, its bookmark filling as it is tapped and where it went
+   said under it, round again. Still, it stands kept. */
+.landing .bookmark-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-width: 340px;
+  height: 100%;
+}
+
+.landing .bookmark-card {
+  position: relative;
+  display: grid;
+  gap: 3px;
+  width: min(250px, 86%);
+  margin-bottom: 22px;
+  padding: 14px 46px 16px 16px;
+  border: 1px solid var(--glass-line);
+  border-radius: 16px;
+  background: var(--tile);
+}
+
+.landing .bookmark-card b {
+  font: 600 16px/1.25 var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.landing .bookmark-card small {
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.landing .bookmark-card i {
+  height: 7px;
+  margin-top: 8px;
+  border-radius: 4px;
+  background: rgba(var(--ink-rgb), 0.1);
+}
+
+.landing .bookmark-card i + i {
+  width: 70%;
+  margin-top: 2px;
+}
+
+.landing .bookmark-card svg {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  fill: var(--accent);
+  stroke: var(--accent);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  animation: lp-kept 5s var(--out) infinite;
+}
+
+.landing .bookmark-kept {
+  bottom: 12px;
+  animation: lp-kept-said 5s var(--out) infinite;
+}
+
+@keyframes lp-kept {
+  0%,
+  22% {
+    fill: transparent;
+    stroke: var(--muted);
+  }
+  30% {
+    scale: 1.3;
+  }
+  38%,
+  90% {
+    fill: var(--accent);
+    stroke: var(--accent);
+    scale: 1;
+  }
+  100% {
+    fill: transparent;
+    stroke: var(--muted);
+  }
+}
+
+@keyframes lp-kept-said {
+  0%,
+  32% {
+    opacity: 0;
+    translate: 0 8px;
+  }
+  42%,
+  88% {
+    opacity: 1;
+    translate: 0 0;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 /* A phrase a title keeps whole (`#price`): the line breaks between phrases, never inside one. */
@@ -2917,10 +2792,3 @@
   text-align: center;
 }
 
-/* Where a figure of our own comes from, under it: small, and there. */
-.landing .sourced {
-  display: block;
-  margin-top: 6px;
-  color: var(--dim);
-  font-size: 13px;
-}

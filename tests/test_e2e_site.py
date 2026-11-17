@@ -198,8 +198,9 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         site, capsys):
     """The landing page's numbers are the server's (`/stats`): typed into it, they said 25 sources long
     after that was true. A big one is said as the round number it is at least, so it reads at a glance
-    and stays true (owner, 2026-11-07). The selling points come second, each figure behind them linked to
-    its source (owner, 2026-11-12). Sign in and sign up follow the address, going back included. And
+    and stays true (owner, 2026-11-07). The promise is the biggest words on the page, and How it works says
+    what the app does for them rather than how they sign up; the five market figures are gone (owner,
+    2026-11-17). Sign in and sign up follow the address, going back included. And
     on a phone each tab is a word, with no picture (owner, 2026-11-12; a picture over the word from
     2026-11-07), each opening its page. Its card says where people apply: on the job's own site, never here
     (owner, 2026-11-06)."""
@@ -220,6 +221,11 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         reach = page.locator(".reach div")
         expect(reach).to_have_text([f"{len(HARVEST_SOURCES)}Job sources", "40+Company career pages",
                                     "72,000+New jobs this week", "24/7Rapid checks"])
+        # The promise first, in the biggest words, then what it is; and the main button says what starting
+        # costs (owner, 2026-11-17).
+        expect(page.locator("h1")).to_have_text("Get seen first.")
+        expect(page.locator(".hero")).to_contain_text("The job search that runs itself.")
+        expect(page.locator(".hero")).to_contain_text("Free plan. No card needed.")
         # Its examples are work anyone does: every one was a software job until 2026-11-14 (owner).
         software = re.compile("python|backend|engineer|kubernetes", re.I)
         expect(page.locator("main")).not_to_contain_text(software)
@@ -229,29 +235,29 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         # The sections at the foot of a phone: a picture over each one's word (owner, 2026-11-07).
         expect(page.locator(".dock a").filter(has=page.locator(".short"))).to_have_text(
-            ["What", "Why", "How", "See", "Price", "Start"], use_inner_text=True)
+            ["What", "How", "See", "Price", "Start"], use_inner_text=True)
         # Each section says what it is in a big title of its own, where a small label stood (owner,
-        # 2026-11-07).
-        # What it is comes first, since a visitor needs that before why it works (owner, 2026-11-16).
+        # 2026-11-07). What it is, then how it works for them: what it does, not the sign-up (owner,
+        # 2026-11-17).
         expect(page.locator("main section h2")).to_have_text([
-            "Every job site. One list for you.", "Be first. Be seen.", "From sign\u2011up to applied.",
-            "See it working.", "Skip the grind. Beat the crowd. Join now.", "Start in a few minutes."])
+            "Every job site. One list for you.", "You apply. We do the rest.", "See it working.",
+            "Search smarter. Beat the crowd. Join now.", "Start in a few minutes.",
+            "Got a question? Ask us."])
+        expect(page.locator("#how h3")).to_have_text([
+            "New jobs in minutes, not days", "Instant alerts on your phone", "A match score on every job",
+            "Save jobs for later", "A CV made for each job, in seconds", "Every application tracked"])
         # The offer is said on the cards, not again under the title (owner, 2026-11-16: "only keep them inside
         # the offers"): the title stands alone.
-        expect(page.locator("#price .head")).to_have_text("Skip the grind. Beat the crowd. Join now.")
-        # Our own figure, with what was tested and when, beside the other reasons it works.
-        expect(page.locator("#edge")).to_contain_text("99% passed all 8 ATS checks.")
-        expect(page.locator("#edge .sourced")).to_have_text(
-            "288 CVs in 8 looks, our own tests, November 2026")
+        expect(page.locator("#price .head")).to_have_text("Search smarter. Beat the crowd. Join now.")
+        # Our own figure on the CV it is about, alone (owner, 2026-11-17 night), and whose AI writes it.
+        expect(page.locator("#how")).to_contain_text("99% passed all ATS checks.")
+        expect(page.locator("#how")).not_to_contain_text("our own tests")
+        expect(page.locator("#how")).to_contain_text(
+            "CVs and cover letters are written with your own ChatGPT, Claude or Gemini account.")
         # A review nobody wrote never reaches a visitor: the section waits for the first real one
         # (`web/src/landing/reviews.ts`).
         expect(page.locator("[data-sample]")).to_have_count(0)
         expect(page.locator(".reviews")).to_have_count(0)
-        # Each figure behind a selling point says where it comes from, and links there (owner, 2026-11-12).
-        figures = page.locator("#edge .figures > div")
-        expect(figures).to_have_count(5)
-        for figure in figures.all():
-            expect(figure.locator("a")).to_have_attribute("href", re.compile(r"^https://"))
 
         page.goto(f"{base}/#/signin")
         expect(page.get_by_role("heading", name="Sign in")).to_be_visible()
@@ -269,6 +275,34 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         expect(page.get_by_role("heading", name="The jobs you want", level=1)).to_be_visible()
         expect(page.get_by_role("link", name="Search", exact=True)).to_have_attribute("aria-current", "page")
         browser.close()
+
+
+def test_a_visitor_asks_a_person_a_question_from_the_foot_of_the_landing_page(site, capsys):
+    """Signed out, a question goes where the Help sheet's form sends one: kept, and in the support inbox with
+    the address to reply to (owner, 2026-11-17 night: "to the same place where we have inside the app"). The
+    way there is the footer's last link, where the owner's own site was linked."""
+    from libs.db import database
+
+    base, email, _ = site
+    asker = email.replace("jordan.", "sam.")
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        page.goto(f"{base}/#/")
+        expect(page.locator(".foot-row a")).to_have_text(["Sign in", "Privacy", "Contact"])
+        page.locator(".foot-row").get_by_role("link", name="Contact").click()
+        ask = page.locator("#ask")
+        expect(ask.get_by_role("heading", name="Got a question? Ask us.")).to_be_in_viewport()
+        send = ask.get_by_role("button", name="Send my question")
+        expect(send).to_be_disabled()
+        ask.get_by_label("Your email").fill(asker)
+        ask.get_by_label("Your question").fill("Do I need a paid AI account to make a CV?")
+        send.click()
+        expect(ask).to_contain_text("Message received")
+        expect(ask).to_contain_text(f"We'll reply to {asker}.")
+        browser.close()
+    assert "Do I need a paid AI account" in capsys.readouterr().out, "the support inbox has it"
+    assert database()["contact_messages"].find_one({"email": asker})["user_id"] is None
 
 
 def test_the_phone_goes_through_the_site_by_itself_until_a_visitor_touches_it(site):

@@ -1,8 +1,10 @@
-/** The landing page, for anybody signed out: what Mahoraga gives them, in four sections, under the wheel. It
- * lies flat in its halo as the page opens and turns to face you as you scroll (owner, 2026-11-06: concept C,
- * in one purple). Written for somebody scrolling past rather than reading (owner, 2026-11-07): each section
- * a big title saying what it is, keywords first, and a picture of it moving. The motion is CSS; this file
- * says where the page is and what it has counted. */
+/** The landing page, for anybody signed out: the promise first, then what Mahoraga is, how it works for
+ * them, the app itself, the plans, the start, and last a question for a person, under the wheel. It lies
+ * flat in its halo as the page opens and turns to face you as you scroll (owner, 2026-11-06: concept C, in
+ * one purple). Written for somebody scrolling past rather than reading (owner, 2026-11-07): each section a
+ * big title saying what it is, keywords first, and a picture of it moving. Who it speaks to and why each
+ * line says what it says: `docs/saas/MESSAGING.md` (owner, 2026-11-17). The motion is CSS; this file says
+ * where the page is and what it has counted. */
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
 import { api, type Schema } from "../api";
@@ -10,7 +12,7 @@ import { money } from "../membership";
 import { PICTURES } from "../pages/JobsPage";
 import { PLACES } from "../places";
 import { ThemeToggle } from "../theme";
-import { Explain } from "../ui";
+import { Error, Explain, Field, useAction } from "../ui";
 import { Mark, Wheel } from "../wheel";
 import { Alerts, Phone } from "./Demo";
 import { Reviews } from "./Reviews";
@@ -26,70 +28,50 @@ const clamp = (value: number) => Math.min(1, Math.max(0, value));
 const after = (seconds: number) => ({ "--d": `${seconds}s` }) as CSSProperties;
 
 /** The sections in page order, and each one's picture in the dock: on a phone the dock is pictures alone
- * (owner, 2026-11-06), so each is the thing its section is about. What it is comes first, since a visitor
- * needs that before why it works (owner, 2026-11-16). */
+ * (owner, 2026-11-06), so each is the thing its section is about. "Why it works" is gone (owner, 2026-11-17):
+ * its promise leads the hero, and what it did for people is How it works. */
 const SECTIONS: [id: string, name: string, short: string, icon: ReactNode][] = [
   ["top", "Mahoraga", "Top", null],
   ["what", "What it is", "What", <path key="i" d="M12 3.5a8.5 8.5 0 110 17 8.5 8.5 0 010-17zM12 11v5.3M12 7.9h.01" />],
-  ["edge", "Why it works", "Why", <path key="i" d="M13.2 2.8L5.5 13.4h5.6l-1.3 7.8 7.7-10.6h-5.6z" />],
   ["how", "How it works", "How", <path key="i" d="M6 20.2a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4zM18 8.2a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4zM8.2 18h7.3a3 3 0 000-6h-7a3 3 0 010-6h7.3" />],
   ["live", "See it working", "See", PLACES.find(([key]) => key === "jobs")?.[2]],
   ["price", "Pricing", "Price", <path key="i" d="M3.8 12.7V4.9c0-.6.5-1.1 1.1-1.1h7.8l7.6 7.6c.4.4.4 1.1 0 1.5l-7.8 7.8c-.4.4-1.1.4-1.5 0zM8.4 8.4h.01" />],
   ["start", "Get started", "Start", <path key="i" d="M12 3c2.8 1.9 4.2 5 4.2 8.8L14.6 15H9.4l-1.6-3.2C7.8 8 9.2 4.9 12 3zM12 7.6a1.6 1.6 0 110 3.2 1.6 1.6 0 010-3.2zM7.8 11.8l-2.3 2.4v3.3l3.9-2.5M16.2 11.8l2.3 2.4v3.3l-3.9-2.5M10.5 17.6c.3 1.4.8 2.4 1.5 3.1.7-.7 1.2-1.7 1.5-3.1" />],
 ];
 
-/** What a person gets, in the order they get it after signing up, `often` being how often new jobs are
- * looked for ("every 15 minutes"). How the server does it is not theirs to read (owner, 2026-11-07). */
-const steps = (often: string): [string, ReactNode, ReactNode][] => [
-  ["Upload your CV", <>We read it and suggest the words to search with. You check them, pick your countries,
-    and that is it: <strong>a few minutes, once.</strong></>, <CvArt />],
-  ["Get every job that fits", <>New ones {often}, in one list, the best matches first. Each says why it is
-    there. <strong>On your phone too,</strong> on a paid plan.</>, <MatchArt />],
-  ["Make your CV in one tap", <>A CV and a cover letter <strong>made for that job,</strong> from your own CV. Ready
-    in seconds, as a member. Nothing made up.</>, <TapArt />],
-  ["Apply, and keep track", <>Apply on the job's own site, <strong>in minutes, not hours.</strong> Then follow each
-    one: the interview, the offer, the job.</>, <ApplyArt />],
-];
-
-/** Be first and be seen: what Mahoraga does about the figures above them, a card each, stacking as How it works'
- * steps do, so a reader scrolling past still reads both (owner, 2026-11-12: "short and sweet"). */
-const edges = (often: string, ats: Reach["ats"] | undefined): [string, ReactNode, ReactNode][] => [
-  // A free account sees each job a week after it is found (`libs.membership.PLANS`): the first days are a paid
-  // plan's, and the page says so rather than promise them to everybody.
-  ["New jobs in minutes, not days", <>Every job site read {often}. On a paid plan, <strong>apply in a job's first
-    days,</strong> when hiring starts.</>, <WeekArt />],
-  // The figure is our own tests', served with what was tested and when, and only for the CV wording it was
-  // measured on (`/stats`): without it the page claims no rate.
-  ["A CV made for each job, in seconds", ats ? <>From your own CV, with a cover letter, in one tap.{" "}
-    <strong>{passRate(ats)}% passed all {ats.checks} ATS checks.</strong>{" "}
-    <small className="sourced">{ats.of} CVs in {ats.looks} looks, our own tests, {ats.month}</small></>
-    : <>From your own CV, with a cover letter, in one tap. <strong>Made to pass ATS checks,</strong> each one
-      checked before you get it.</>, <AtsArt />],
+/** How it works, as what it does for them rather than how they sign up (owner, 2026-11-17: "the benefits of
+ * how the app works"; that night, "mention saving time"): a tile each, in the order a job goes through
+ * them, found, alerted, scored, kept, written for and followed. `often` is how often every site is read
+ * ("every 15 minutes"), the server's. Each says which plan gives it, since a free account sees a job a week
+ * after it is found and makes no CVs (`libs.membership.PLANS`): the page promises nobody what their plan does
+ * not keep. Bookmarks and Applied are every plan's, and say so: what the Free plan already gives. */
+const perks = (often: string, ats: Reach["ats"] | undefined): [string, ReactNode, ReactNode][] => [
+  ["New jobs in minutes, not days", <>Every job site read {often}. As a member, you see each new job right away
+    and apply before the crowd.</>, <WeekArt />],
+  // "Lands in your list", not "is posted": an alert goes out within a minute of a job joining a list
+  // (`services/notifier` sweeps every 60 s), and a Starter's list waits three days for it
+  // (`starter_delay_hours`).
+  ["Instant alerts on your phone", <>No more refreshing job sites. On a paid plan, you get a ping the moment a job
+    you want lands in your list, by Telegram or in your browser.</>, <AlertArt />],
+  ["A match score on every job", <>On a paid plan, every job is scored out of 10 for how well it fits you. Filter
+    by score, country, remote or job site, in one tap.</>, <ScoreArt />],
+  ["Save jobs for later", <>Not ready yet? Tap the bookmark and the job waits for you, every detail kept, until
+    you apply or it closes. On every plan, Free too.</>, <BookmarkArt />],
+  // The figure is our own tests', and only for the CV wording it was measured on (`/stats`): without it the
+  // page claims no rate. Said alone (owner, 2026-11-17 night: no count of checks, nothing on where it is
+  // from), on a line of its own so an eye running down the tile lands on it.
+  ["A CV made for each job, in seconds", <>One tap, as a member: a CV and a cover letter for that job, from your
+    own CV. Nothing made up, nothing to rewrite.{" "}<span className="proof">{ats
+      ? <strong>{passRate(ats)}% passed all ATS checks.</strong>
+      : <><strong>Made to pass ATS checks,</strong> each one checked before you get it.</>}</span></>, <AtsArt />],
+  ["Every application tracked", <>Applied, interview, offer, the job: one tap each. No more Excel or Google
+    Sheets to keep up. On every plan, Free too.</>, <TrackArt />],
 ];
 
 /** "99": the share of CVs that passed every check, never rounded up to all of them. */
 function passRate(ats: NonNullable<Reach["ats"]>): number {
   return ats.passed === ats.of ? 100 : Math.min(99, Math.round((100 * ats.passed) / ats.of));
 }
-
-/** A figure behind the selling points, with where it comes from: each read at its source on 2026-11-12, and
- * each said with its own scope. Claims that could not be traced to a source were left out ("4x within 10
- * minutes", "8x in 4 days"). In the order the section's words go: more people apply (in the market the page's
- * readers are in, Europe's, the UK's above all), hiring starts in the first week, and most applications are
- * never answered. */
-type Figure = [figure: string, what: string, source: string, link: string];
-const LINKEDIN = "https://news.linkedin.com/2026/LinkedIn-Research-Talent-2026";
-const ASHBY = "https://ashbyhq.com/blog/recruiting/operationalizing-2023-application-per-job-report";
-const FORTUNE = "https://fortune.com/2025/02/02/linkedin-indeed-greenhouse-job-seekers-likely-response-interviews/";
-const ISE = "https://ise.org.uk/knowledge/insights/410/record_graduate_job_applications";
-const FIGURES: Figure[] = [
-  ["140", "applications for each UK graduate job, a record", "Institute of Student Employers, 2024", ISE],
-  ["65%", "of people say finding a job has got harder", "LinkedIn survey, 13 countries incl. UK, DE, FR, Nov 2025",
-   LINKEDIN],
-  ["~60%", "of hirers find someone to interview in a job's first week", "LinkedIn, Jan 2026 (Hiring Pro users)", LINKEDIN],
-  ["~2×", "the applications in a job's first week as in each week after", "Ashby, 13M applications", ASHBY],
-  ["14M+", "applications went unanswered in one quarter of 2024", "Greenhouse, in Fortune, Feb 2025", FORTUNE],
-];
 
 /** "£0", in the membership's currency, written the reader's way. */
 function nothing(currency: string): string {
@@ -136,29 +118,15 @@ export function Landing() {
   }, []);
 
   // What moves with the scroll and the pointer: the bar frosts, the halo rises to face you and leans to
-  // the pointer, the dock follows the section you are in, and a card in a stack (Why it works, How it works)
-  // shrinks into the shade as the next one covers it. Written straight onto the few elements that move, never
-  // as a variable on the page: one there restyled every element under it on every frame (54 ms a frame on a
-  // laptop, 2026-11-06).
+  // the pointer, and the dock follows the section you are in. Written straight onto the few elements that
+  // move, never as a variable on the page: one there restyled every element under it on every frame (54 ms a
+  // frame on a laptop, 2026-11-06). Nothing sticks as you scroll any more: How it works' cards used to stack
+  // one over the next, a screen each, and a page read at a fast scroll lays them side by side (owner,
+  // 2026-11-17).
   useEffect(() => {
     const page = root.current!;
     const halo = page.querySelector<HTMLElement>(".halo-tilt")!;
-    // Each stack's cards, their shades, and where the CSS sticks each card: read once a size rather than every
-    // frame. None on a short screen, where a card would be taller than the screen and the CSS lets them scroll.
-    const stacks = [...page.querySelectorAll<HTMLElement>(".stack")].map((stack) => {
-      const cards = [...stack.querySelectorAll<HTMLElement>(".stack-card")];
-      return { stack, cards, shades: cards.map((card) => card.querySelector<HTMLElement>(".stack-shade")!),
-               stuck: [] as number[] };
-    });
     const motion = !still();
-    const measure = () => stacks.forEach((each) => {
-      const sticky = getComputedStyle(each.cards[0]!).position === "sticky";
-      each.stuck = sticky ? each.cards.map((card) => parseFloat(getComputedStyle(card).top)) : [];
-      if (!sticky) each.cards.forEach((card, i) => {
-        card.style.transform = "";
-        each.shades[i]!.style.opacity = "";
-      });
-    });
 
     // The halo glides to where the scroll and the pointer put it: a wheel moves the page a hundred pixels
     // at a time, and the halo eases the distance rather than jumping it, at the same pace at any refresh rate.
@@ -198,20 +166,6 @@ export function Landing() {
         goal.tilt = 70 - 58 * eased;
         goal.grow = 1 + 0.18 * eased;
         aim();
-        for (const { stack, cards, shades, stuck } of stacks) {
-          const box = stack.getBoundingClientRect();
-          if (!stuck.length || box.bottom <= 0 || box.top >= innerHeight) continue;
-          const tops = cards.map((card) => card.getBoundingClientRect().top);
-          cards.forEach((card, i) => {
-            // How far each later card has slid over this one.
-            let covered = 0;
-            for (let j = i + 1; j < cards.length; j++) {
-              covered += clamp(1 - (tops[j]! - stuck[j]!) / (card.offsetHeight || 1));
-            }
-            card.style.transform = covered ? `scale(${1 - covered * 0.045})` : "";
-            shades[i]!.style.opacity = covered ? String(Math.min(0.55, covered * 0.25)) : "";
-          });
-        }
       }
       let here = 0;
       SECTIONS.forEach(([id], i) => {
@@ -225,10 +179,6 @@ export function Landing() {
       queued = true;
       requestAnimationFrame(draw);
     };
-    const resize = () => {
-      measure();
-      queue();
-    };
     // The pointer leans the halo, and lights the edge of the tile it is over.
     const lean = (event: PointerEvent) => {
       goal.turn = (event.clientX / innerWidth - 0.5) * 16;
@@ -239,14 +189,13 @@ export function Landing() {
       lit.style.setProperty("--mx", `${event.clientX - box.left}px`);
       lit.style.setProperty("--my", `${event.clientY - box.top}px`);
     };
-    measure();
     addEventListener("scroll", queue, { passive: true });
-    addEventListener("resize", resize);
+    addEventListener("resize", queue);
     if (motion && pointer()) addEventListener("pointermove", lean);
     queue();
     return () => {
       removeEventListener("scroll", queue);
-      removeEventListener("resize", resize);
+      removeEventListener("resize", queue);
       removeEventListener("pointermove", lean);
       cancelAnimationFrame(gliding);
     };
@@ -285,22 +234,37 @@ export function Landing() {
             </div>
           </div>
           <div className="hero-copy">
-            <h1 className="hero-title"><Words>Mahoraga</Words></h1>
+            {/* The promise, in the biggest words on the page (owner, 2026-11-17): a visitor gives the top of it
+                three seconds, and the name tells them nothing yet; it is in the bar. One line of three words
+                (that night: "way too long ... powerful, punchy, one liner"): the owner's "be first" and "be
+                seen" in one, being seen what this audience is missing and first how they get it. A phone breaks
+                it before "first.", never inside "Get seen". */}
+            <h1 className="hero-title">
+              <span className="hero-line"><Words>Get seen</Words></span>{" "}
+              <span className="hero-line glow"><Words from={2}>first.</Words></span>
+            </h1>
             <p className="hero-tag" style={{ "--base": "0.3s" } as CSSProperties}>
-              <Words>The job search that</Words> <span className="glow"><Words from={4}>runs itself.</Words></span>
+              <Words>The job search that runs itself.</Words>
             </p>
-            {/* What people want from it, said first (owner, 2026-11-17: "a simple, high quality, fast app"), and
-                each shown by what follows: one list, one tap, a CV made for the job. */}
+            {/* Why being first and seen matters, in the owner's words (2026-11-12), the figures behind them taken
+                off the page (owner, 2026-11-17) and kept here. More people apply: a record 140 applications for
+                each UK graduate job (Institute of Student Employers, 2024,
+                https://ise.org.uk/knowledge/insights/410/record_graduate_job_applications). Hiring starts in the
+                first week: ~60% of hirers find someone to interview in it (LinkedIn, Jan 2026, Hiring Pro users,
+                https://news.linkedin.com/2026/LinkedIn-Research-Talent-2026), and a job draws ~2x the
+                applications in it as in each week after (Ashby, 13M applications,
+                https://ashbyhq.com/blog/recruiting/operationalizing-2023-application-per-job-report). */}
             <p className="hero-sub" data-reveal style={after(0.6)}>
-              <strong>Simple, fast, and made for each job.</strong> Every job that fits you, from LinkedIn, job
-              boards and company career pages, in one list. A CV for each in one tap. You apply on the job's own
-              site, in minutes.
+              More people apply for every job, and hiring starts in its first week. Mahoraga gets you
+              there <strong>early,</strong> with <strong>a CV made for the job.</strong>
             </p>
+            {/* One button to start and one to see how (owner, 2026-10-28: one main button a screen); signing in
+                is the bar's. Under them, what starting costs: nothing, and no card, on the Free plan. */}
             <div className="hero-ctas" data-reveal style={after(0.7)}>
               <a className="btn btn-primary" href="#/signup">Start free <Arrow /></a>
-              <a className="btn btn-glass" href="#/signin">Sign in</a>
               <a className="btn btn-glass" href="#how" onClick={jump("how")}>How it works</a>
             </div>
+            <p className="lp-note" data-reveal style={after(0.75)}>Free plan. No card needed.</p>
           </div>
           {reach ? (
             <dl className="reach">
@@ -326,43 +290,27 @@ export function Landing() {
           <Flow often={often} />
         </section>
 
-        {/* Why it gets people interviews (owner, 2026-11-12): there first, with a CV made for the job. */}
-        <section id="edge" className="section">
-          <div className="head center" data-reveal>
-            <h2>Be first. <span className="glow">Be seen.</span></h2>
-            <p className="lp-lede">
-              More people apply for every job, and hiring starts in its first week. Mahoraga gets you there
-              <strong> early,</strong> with <strong>a CV made for the job.</strong>
-            </p>
-          </div>
-          <Figures of={FIGURES} />
-          <Stack cards={edges(often, reach?.ats)} />
-          {/* The rest of what it does for them, a picture each, so the point lands without reading. */}
-          <div className="edge-row">
-            <article className="tile edge-mini" data-reveal data-spot>
-              <SitesArt boards={reach?.company_boards ?? 0} />
-              <h3>Straight from company sites</h3>
-              <p>Not only job boards: jobs from companies' own career pages.</p>
-            </article>
-            <article className="tile edge-mini" data-reveal data-spot style={after(0.06)}>
-              <FilterArt />
-              <h3>Filters that do the reading</h3>
-              <p>Your words find jobs, red words hide them. Never the same job twice.</p>
-            </article>
-            <article className="tile edge-mini" data-reveal data-spot style={after(0.12)}>
-              <TrackArt />
-              <h3>Every application tracked</h3>
-              <p>Applied, interview, offer: one tap each. No spreadsheet.</p>
-            </article>
-          </div>
-        </section>
-
+        {/* What it does for them, not how they sign up (owner, 2026-11-17): the pains named once, in the line
+            under the title, and a tile answering each, laid side by side to be read at a fast scroll. */}
         <section id="how" className="section">
           <div className="head center" data-reveal>
-            <h2>From sign‑up <span className="glow">to applied.</span></h2>
-            <p className="lp-lede">What you get, in the order you get it.</p>
+            {/* A phrase is never broken: the title breaks between them, wherever the width puts it. */}
+            <h2><span className="keep">You apply.</span> <span className="glow keep">We do the rest.</span></h2>
+            <p className="lp-lede">Hours of searching, rewriting and tracking, done for you.</p>
           </div>
-          <Stack cards={steps(often)} numbered />
+          <div className="perks">
+            {perks(often, reach?.ats).map(([name, text, art], i) => (
+              <article key={name} className="tile perk" data-reveal data-spot style={after((i % 2) * 0.08)}>
+                <div className="perk-art" aria-hidden="true">{art}</div>
+                <h3>{name}</h3>
+                <p>{text}</p>
+              </article>
+            ))}
+          </div>
+          {/* Whose AI writes them, since they bring their own (owner, 2026-11-17 night: "worth mentioning it for
+              sure"): under the tiles, below the CV's on a laptop, rather than in its tile, which it made the
+              tallest of its row and left the two beside it with empty feet. */}
+          <p className="lp-note">CVs and cover letters are written with your own ChatGPT, Claude or Gemini account.</p>
         </section>
 
         <section id="live" className="section">
@@ -387,15 +335,16 @@ export function Landing() {
 
         {/* Free, a week behind; Starter, sooner and alerted; or a member, first and seen (owner, 2026-11-12 and
             2026-11-16). Every word on the cards is set in Admin; which card ticks what is the server's. The title
-            is what the plans buy, out of the slog of applying and ahead of everybody else applying, then the
-            call to join (owner, 2026-11-17: "relates to the tedious process ... and compete with a larger pool",
-            "CTA for them to join us"). The saving, the price kept for life and the free days are said on the
-            cards themselves, once (owner, 2026-11-16: "only keep them inside the offers"). */}
+            is what the plans buy, a better search than everybody else's, then the call to join (owner,
+            2026-11-17: "compete with a larger pool", "CTA for them to join us"; that night, "the grind remains
+            but we beat the way most people are searching for jobs", so it no longer says the grind is
+            skipped). The saving, the price kept for life and the free days are said on the cards themselves,
+            once (owner, 2026-11-16: "only keep them inside the offers"). */}
         <section id="price" className="section">
           <div className="head center" data-reveal>
             {/* A phrase is never broken: the title breaks between them, wherever the width puts it. */}
             <h2>
-              <span className="keep">Skip the grind.</span> <span className="keep">Beat the crowd.</span>{" "}
+              <span className="keep">Search smarter.</span> <span className="keep">Beat the crowd.</span>{" "}
               <span className="glow keep">Join now.</span>
             </h2>
           </div>
@@ -421,14 +370,22 @@ export function Landing() {
               </article>
             ))}
           </div>
+          {/* What it asks of them, nothing to learn or install, and where it goes with them (owner, 2026-11-17
+              night: the old line "doesn't quite make sense"; "easy to use without any tutorials", "open it on
+              your laptop, or phone wherever you are"). */}
           <div className="cta" data-reveal>
             <Wheel ticks={0} />
-            <p>Your first jobs are there the moment you finish.</p>
+            <p>No complex setup, nothing to install. Your jobs on your phone or laptop, wherever you are.</p>
             <a className="btn btn-primary btn-lg" href="#/signup">Start free <Arrow /></a>
+            <p className="lp-note">Free plan. No card needed.</p>
           </div>
         </section>
+
+        <Ask />
       </main>
 
+      {/* The owner's own site is no longer linked (owner, 2026-11-17: their name off the site and the
+          project); the way to a person is. */}
       <footer className="lp-foot">
         <div className="foot-halo" aria-hidden="true"><div><Wheel /></div></div>
         <p className="foot-name" aria-hidden="true">Mahoraga</p>
@@ -436,7 +393,7 @@ export function Landing() {
           <span>The job search that runs itself</span>
           <a href="#/signin">Sign in</a>
           <a href="#/privacy">Privacy</a>
-          <a href="https://rubenlekli.com" target="_blank" rel="noreferrer">rubenlekli.com</a>
+          <a href="#ask" onClick={jump("ask")}>Contact</a>
         </div>
       </footer>
     </div>
@@ -613,43 +570,8 @@ function PriceCard({ card, said, href, preview, onChoose, busy, lit = false, bad
   );
 }
 
-/** The figures behind the claims, each with its source, linked: one band, the numbers big enough to read at a
- * scroll. */
-function Figures({ of }: { of: Figure[] }) {
-  return (
-    <dl className="figures" data-reveal>
-      {of.map(([figure, what, source, link]) => (
-        <div key={what}>
-          <dt>{figure}</dt>
-          <dd>{what}<a href={link} target="_blank" rel="noreferrer">{source}</a></dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-/** Cards that stick as the page scrolls, each sliding over the one before (`Landing`'s scroll effect shades
- * it): a title, a line and a picture each, and the step's number where they are steps. */
-function Stack({ cards, numbered = false }: { cards: [string, ReactNode, ReactNode][]; numbered?: boolean }) {
-  return (
-    <div className="stack">
-      {cards.map(([name, text, art], i) => (
-        <article key={name} className="stack-card" style={{ "--i": i } as CSSProperties}>
-          <div className="stack-shade" aria-hidden="true" />
-          <div>
-            {numbered ? <span className="stack-num" aria-hidden="true">{i + 1}</span> : null}
-            <h3>{name}</h3>
-            <p>{text}</p>
-          </div>
-          <div className="stack-art" aria-hidden="true">{art}</div>
-        </article>
-      ))}
-    </div>
-  );
-}
-
 /** Applications a week over a job's first month, as Ashby counted them (the first week about twice each later
- * one), and you on its first day. Its bars grow once it is reached. */
+ * one; the source is beside the hero's words), and you on its first day. Its bars grow once it is reached. */
 function WeekArt() {
   return (
     <div className="week-art" data-reveal>
@@ -661,37 +583,66 @@ function WeekArt() {
   );
 }
 
-/** The hiring systems whose career pages it reads directly, Europe's among them, and how many companies' pages
- * (`/stats`, never typed here; left out while it counts none). */
-function SitesArt({ boards }: { boards: number }) {
+/** A match score on each job, out of 10, in the colour the Jobs page gives it (`.tag.match`, red at 1 to green
+ * at 10), under the filters that are on, as the chips under its search say them: two that fit, and one under
+ * the 7s and up asked for, leaving the list as the filter takes it. */
+function ScoreArt() {
   return (
-    <div className="mini-art sites-art" aria-hidden="true">
-      {boards ? <span className="sites-count"><AtLeast n={boards} /> career pages</span> : null}
-      <div>
-        {["Personio", "Recruitee", "Greenhouse", "Workable", "Lever", "SmartRecruiters"].map((name, i) => (
-          <span key={name} style={{ "--i": i } as CSSProperties}>{name}</span>
-        ))}
-      </div>
+    <div className="score-art">
+      <span className="score-filters"><i>Match 7+</i><i>United Kingdom</i></span>
+      {([["Team Leader", 9], ["Supervisor", 8], ["Night Picker", 5]] as const).map(([title, fit]) => (
+        <span key={title} className={fit < 7 ? "score-row low" : "score-row"}>
+          <b>{title}</b><i className="tag match" style={{ "--fit": fit } as CSSProperties}>{fit}/10</i>
+        </span>
+      ))}
     </div>
   );
 }
 
-/** What the filters do: green words in, red words out, the places, the way of working and the languages. */
-function FilterArt() {
-  return (
-    <div className="mini-art filter-art" aria-hidden="true">
-      <span className="in">nurse</span><span className="in">care</span><span className="out">night</span>
-      <span>Germany</span><span>Remote</span><span>English</span>
-    </div>
-  );
-}
-
-/** An application followed: applied and interview reached, the offer next. */
+/** An application followed, as Applied draws it: the job, then applied, the interview and the offer on its
+ * track, each lit in turn and round again. Still, the first two stand lit. */
 function TrackArt() {
   return (
-    <ol className="mini-art track-art" aria-hidden="true">
-      {["Applied", "Interview", "Offer"].map((step, i) => <li key={step} className={i < 2 ? "done" : ""}>{step}</li>)}
-    </ol>
+    <div className="track-art">
+      <b>Warehouse Team Leader</b>
+      <small>Acme Logistics</small>
+      <ol>
+        {["Applied", "Interview", "Offer"].map((step, i) => (
+          <li key={step} className={i < 2 ? "done" : undefined} style={{ "--i": i } as CSSProperties}>{step}</li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/** A job arriving on a phone's lock screen, as a browser alert says it (`services/notifier/card.py`: the title,
+ * then the company and the place), over the ones before it. It drops in, rests and comes again; still, it
+ * rests. */
+function AlertArt() {
+  return (
+    <div className="alert-art">
+      <span className="alert-clock">9:41</span>
+      <span className="alert-note">
+        <i><Mark /></i>
+        <span><small>Mahoraga<em>now</em></small><b>Warehouse Team Leader</b><small>Acme Logistics · Leeds</small></span>
+      </span>
+    </div>
+  );
+}
+
+/** A job kept for later, as the Jobs page's card keeps it: the bookmark in its corner filling as it is
+ * tapped, and where it went. Still, it stands kept. */
+function BookmarkArt() {
+  return (
+    <div className="bookmark-art">
+      <span className="bookmark-card">
+        <b>Care Assistant</b>
+        <small>Sunrise Care · Bristol</small>
+        <i /><i />
+        {PICTURES.bookmark}
+      </span>
+      <span className="bookmark-kept">Kept in Bookmarks</span>
+    </div>
   );
 }
 
@@ -708,6 +659,58 @@ function AtsArt() {
       </div>
       <span className="ats-badge"><svg viewBox="0 0 20 20"><path d="M5.5 10.4l3 3 6-6.4" /></svg>Passes ATS checks</span>
     </div>
+  );
+}
+
+/** A question before signing up, into the inbox the Help sheet's form writes to (`help.tsx`, `/contact`): a
+ * person reads it and replies to the address given (owner, 2026-11-17 night: "the same place where we have
+ * inside the app, so users can freely ask any questions they like"). Two fields and one button, and the
+ * receipt where the form was. */
+function Ask() {
+  const [email, setEmail] = useState("");
+  const [question, setQuestion] = useState("");
+  const [sent, setSent] = useState<Schema<"ContactReceipt"> | null>(null);
+  const send = useAction(async () => {
+    setSent(await api.post<Schema<"ContactReceipt">>("/contact", { email: email.trim(), message: question.trim() }));
+    setEmail("");
+    setQuestion("");
+  });
+  const ready = email.includes("@") && question.trim().length >= 10;
+  return (
+    <section id="ask" className="section">
+      <div className="head center" data-reveal>
+        <h2>Got a question? <span className="glow">Ask us.</span></h2>
+        <p className="lp-lede">A person reads every message and replies by email.</p>
+      </div>
+      <div className="tile ask" data-reveal data-spot>
+        {sent ? (
+          <div className="ask-sent" role="status">
+            <h3>Message received</h3>
+            <p>We'll reply to {sent.email}.</p>
+            <p>Your reference <code>{sent.reference}</code></p>
+            <button type="button" className="btn btn-glass" onClick={() => setSent(null)}>Ask something else</button>
+          </div>
+        ) : (
+          <form onSubmit={(event) => {
+            event.preventDefault();
+            if (ready) void send.run();
+          }}>
+            <Field label="Your email">
+              <input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+            </Field>
+            <Field label="Your question">
+              <textarea rows={5} maxLength={4000} value={question}
+                        onChange={(event) => setQuestion(event.target.value)} />
+            </Field>
+            <Error>{send.error}</Error>
+            <button type="submit" className="btn btn-primary" disabled={!ready || send.busy}>
+              {send.busy ? "Sending…" : "Send my question"}
+            </button>
+            <p className="lp-note">We use your email only to reply.</p>
+          </form>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -800,64 +803,6 @@ function Flow({ often }: { often: string }) {
 /** Between two parts of the picture: jobs travelling on to the next. */
 function FlowOn() {
   return <div className="flow-on" aria-hidden="true"><i /><i /><i /></div>;
-}
-
-/** Step 1: their CV, and the words read from it, green to find jobs with and red to hide them. */
-function CvArt() {
-  return (
-    <div className="cv-art">
-      <span className="cv-file">
-        <svg viewBox="0 0 24 24"><path d="M7 3.5h6.5L18 8v12.5H7zM13.5 3.5V8H18M9.8 12.5h5M9.8 16h5" /></svg>
-        my-cv.pdf
-      </span>
-      <span className="cv-said">We suggest</span>
-      <div className="cv-words">
-        {[["team leader", "finds"], ["warehouse", "finds"], ["unpaid", "hides"], ["commission only", "hides"]].map(
-          ([word, kind], i) => <span key={word} className={kind} style={{ "--i": i } as CSSProperties}>{word}</span>)}
-      </div>
-    </div>
-  );
-}
-
-/** Step 2: new jobs arriving, the words that found each marked. */
-function MatchArt() {
-  return (
-    <div className="match-art">
-      <span className="match-new">3 new jobs</span>
-      <div className="match"><b>Warehouse <mark>Team Leader</mark></b><small>Acme · Berlin · Your words: team leader</small></div>
-      <div className="match"><b><mark>Warehouse</mark> Supervisor</b><small>Contoso · Kiel · Your words: warehouse</small></div>
-    </div>
-  );
-}
-
-/** Step 3: one tap, and the CV written. */
-function TapArt() {
-  return (
-    <div className="tap-art">
-      <div className="one-tap">
-        <svg className="ring" viewBox="0 0 40 40">
-          <circle className="track" cx="20" cy="20" r="17" />
-          <circle className="fill" cx="20" cy="20" r="17" pathLength={1} />
-        </svg>
-        <span>Make my CV</span>
-      </div>
-      <div className="tap-paper"><b>Jordan Ellery</b><i /><i /><i /><i /></div>
-    </div>
-  );
-}
-
-/** Step 4: out to the job's own site, and the application followed to the offer. */
-function ApplyArt() {
-  return (
-    <div className="apply-art">
-      <span className="apply-on">Apply on LinkedIn{PICTURES.apply}</span>
-      <ol className="apply-steps">
-        {["Applied", "Interview", "Offer"].map((step, i) => (
-          <li key={step} style={{ "--i": i } as CSSProperties}><i />{step}</li>
-        ))}
-      </ol>
-    </div>
-  );
 }
 
 function Arrow() {
