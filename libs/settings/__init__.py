@@ -295,12 +295,19 @@ DEFAULT_STARTER_DELAY_HOURS = 72
 # `left_out`, `also`) and its line under the name (`tagline`) are not read. `highlight` is the band under a
 # paid plan's price, read at a glance while scrolling: the price kept for as long as they stay (owner,
 # 2026-11-16: "lifetime").
+# `crossed`: what a card crosses out, up to four of what its plan lacks, said by each area's first line
+# (owner, 2026-11-17: "adding like 3-4 negatives to each offer except member ... make them powerful and the
+# most important"). `bonus`: what a card gives apart, marked as a bonus (owner, 2026-11-17: "the ATS check as
+# a bonus to the members plan"). Both name areas (`libs.membership.AREAS`); which a plan has is the plans', so
+# neither can cross out what a plan gives or give what it lacks (`services.api.pricing_routes.PricingCards`).
 DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
     "free": {
         "name": "Free",
         "highlight": "",
         "button": "Start free",
         "note": "No card needed. Upgrade when you like.",
+        "crossed": ["early_jobs", "alerts", "match_scores", "cvs"],
+        "bonus": [],
     },
     "starter": {
         "name": "Starter",
@@ -309,6 +316,8 @@ DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
         "button": "Start with Starter",
         # No free days on Starter (owner, 2026-11-17): billed from its first day.
         "note": "Card needed. Cancel any time.",
+        "crossed": ["early_jobs", "cvs", "covers", "add_job"],
+        "bonus": [],
     },
     "member": {
         "name": "Member",
@@ -316,6 +325,8 @@ DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
         "button": "Start your free trial",
         # One line on the card (owner, 2026-11-16).
         "note": "Card needed. Free to cancel in the trial.",
+        "crossed": [],
+        "bonus": ["ats_checks"],
     },
 }
 
@@ -331,7 +342,8 @@ DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
 # - `everyone`: what every account has, a line each (owner, 2026-11-17: "reduce some negative parts of the
 #   free plan and instead, add more positives"); Free's own lines, and "Everything in Free plan" after it.
 # - `areas`: what each paid area gives (`libs.membership.AREAS`), a line or more each, ticked on the plans
-#   that have it. A card crosses out only what the plan after it adds, by each area's first line.
+#   that have it; a card crosses out its choice of them (`pricing_cards[...].crossed`) by each one's first
+#   line.
 # Each line fits on one line of a card from a 320px phone up (owner, 2026-11-16).
 DEFAULT_PRICING_LINES: dict[str, object] = {
     "wait": {"text": "See new jobs after {wait}",
@@ -361,10 +373,8 @@ DEFAULT_PRICING_LINES: dict[str, object] = {
     "areas": {
         "alerts": [
             {"text": "Job alerts sent to you",
-             "more": "Each new job on your list sent to Telegram or your browser as it arrives, so you don't "
-                     "have to keep checking."},
-            {"text": "A daily email of new jobs",
-             "more": "Every morning, the new jobs on your list in one email."}],
+             "more": "Each new job on your list sent to Telegram, your browser or your inbox, so you don't "
+                     "have to keep checking."}],
         "match_scores": [
             {"text": "Match score on every job",
              "more": "Each job is scored out of 10 for how well it fits your CV, cover letter and About "

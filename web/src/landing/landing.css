@@ -1524,130 +1524,6 @@
   flex-basis: 100%;
 }
 
-/* What each part of the phone is for (`Phone`, owner 2026-11-17): pointed at, a ring round the part and a line
-   from it to a note beside the phone; tapped, or with no room beside it, the note under the phone. */
-.landing .phone {
-  position: relative;
-}
-
-.landing .phone-focus {
-  position: absolute;
-  z-index: 5;
-  border: 2px solid var(--accent);
-  border-radius: 12px;
-  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.22), 0 0 28px rgba(var(--accent-rgb), 0.55);
-  pointer-events: none;
-  transition: top 0.25s var(--out), left 0.25s var(--out), width 0.25s var(--out), height 0.25s var(--out);
-}
-
-.landing .phone-pointer {
-  display: none;
-}
-
-.landing .phone-callout {
-  display: block;
-  margin-top: 14px;
-  padding: 14px 16px;
-  border: 1px solid rgba(var(--accent-rgb), 0.45);
-  border-radius: 16px;
-  background: var(--bg-raised);
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1.5;
-  text-align: left;
-  animation: lp-callout 0.3s var(--out) both;
-}
-
-.landing .phone-callout strong {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--ink);
-  font-weight: 650;
-}
-
-.landing .phone-hint {
-  display: block;
-  margin-top: 14px;
-  color: var(--dim);
-  font-size: 14px;
-  text-align: center;
-}
-
-.landing .phone-callout ~ .phone-hint {
-  display: none;
-}
-
-@media (hover: hover) {
-  .landing .phone-hint .by-touch {
-    display: none;
-  }
-}
-
-@media (hover: none) {
-  .landing .phone-hint .by-pointer {
-    display: none;
-  }
-}
-
-/* Beside the phone where there is room for it: the note out to its right, over the column beside, and a line
-   from the part to it. */
-@media (min-width: 1024px) {
-  .landing .phone-pointer {
-    display: block;
-    position: absolute;
-    z-index: 6;
-    top: var(--y);
-    left: var(--x);
-    width: calc(100% + 32px - var(--x));
-    height: 2px;
-    margin-top: -1px;
-    background: var(--accent);
-    transform-origin: left;
-    pointer-events: none;
-    animation: lp-pointer 0.3s var(--out) both;
-  }
-
-  .landing .phone-pointer::before {
-    content: "";
-    position: absolute;
-    top: -3px;
-    left: -4px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--accent);
-  }
-
-  .landing .phone-callout {
-    position: absolute;
-    z-index: 6;
-    top: var(--y);
-    left: calc(100% + 32px);
-    width: 290px;
-    margin: 0;
-    transform: translateY(-50%);
-    box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(var(--accent-rgb), 0.08);
-    pointer-events: none;
-  }
-
-  .landing .phone-callout ~ .phone-hint {
-    display: block;
-  }
-}
-
-@keyframes lp-callout {
-  from {
-    opacity: 0;
-    translate: -8px 0;
-  }
-}
-
-@keyframes lp-pointer {
-  from {
-    transform: scaleX(0);
-  }
-}
-
 /* A page of the phone coming in as its tab is tapped (`Phone`). */
 .landing .phone-page {
   animation: lp-phone-page 0.45s var(--out) both;
@@ -2961,6 +2837,55 @@
 
 .landing .price-list li.out path {
   stroke: var(--dim);
+}
+
+/* A bonus (owner, 2026-11-17: the ATS check, "lets show that properly on the offer"): apart from what the plan
+   gives, in a box of its own under it, with a tag saying so. */
+.landing .price-list li.bonus {
+  grid-template-areas: "tag tag" "tick text";
+  row-gap: 10px;
+  /* Out into the card's own margin by its padding and border, so its words have the room every other line
+     has, and stay on one line where those do. */
+  margin: 6px -12px 0;
+  padding: 12px 11px 13px;
+  border: 1px dashed rgba(var(--accent-rgb), 0.65);
+  border-radius: 16px;
+  background: rgba(var(--accent-rgb), 0.1);
+  font-weight: 600;
+}
+
+.landing .price-list li.bonus > svg {
+  grid-area: tick;
+}
+
+.landing .price-list li.bonus > span:last-child {
+  grid-area: text;
+}
+
+.landing .price-list .bonus-tag {
+  grid-area: tag;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px 5px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: 700 12.5px/1 var(--font-body);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.landing .price-list .bonus-tag svg {
+  width: 15px;
+  height: 15px;
+}
+
+.landing .price-list .bonus-tag path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
 }
 
 .landing .unseen {

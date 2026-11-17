@@ -14,6 +14,61 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17, night — Free and Starter cross out four each, picked in Admin; the ATS check a bonus on the membership; the phone's notes gone, its tour bookmarks and marks a job applied
+
+The owner: "lets add some crossed out parts into the free part because we have more crosses now in the starter than
+the free, it looks weird. then lets remove this from starter benefits 'A daily email of new jobs'. I think adding like
+3-4 negatives to each offer except member makes it look good ... make them powerful and the most important ... lets add
+the ATS check as a bonus to the members plan for now, and lets show that properly on the offer as well"; "please
+remove the hover stuff from the see it working mobile phone its way too buggy, its fine the way it is now, instead we
+could add more animations to it, if needed so users understand the app more."
+
+- **What a card crosses out is the operator's pick, in Admin** (`pricing_cards.<plan>.crossed`; under "Crossed out on
+  this card", a switch for each thing its plan lacks, four at most). Free crosses out "See new jobs right away", "Job
+  alerts sent to you", "Match score on every job", "A CV made for each job"; Starter "See new jobs right away", "A CV
+  made for each job", "A cover letter for each job", "Add jobs from any site"; the membership nothing. Each is said by
+  its area's first line, in the order the cards always use. The server refuses (422) a card that crosses out
+  something its plan has, more than four things, an unknown area or one area twice (`PricingCards._true_to_the_plans`).
+  The plans (`libs.membership.PLANS`) still decide what is true; the operator decides only which of it to say. This
+  replaces the evening's rule (cross out what the next plan adds), which put five crosses on Starter and two on Free.
+- **A bonus** (`pricing_cards.<plan>.bonus`, at most two, under "Given as a bonus on this card"). The membership gives
+  the ATS check as one. It is shown after what the card ticks, in a dashed box with a "Bonus" tag and a gift, and is
+  not ticked a second time above it. Only an area the plan has can be a bonus, and never the wait. The Upgrade page
+  counts it among what a plan adds.
+- **Starter's alerts are one line again**: "Job alerts sent to you". Its question mark now names Telegram, the browser
+  or the inbox, and "A daily email of new jobs" is gone. The local copy's saved alerts lines were the old defaults word
+  for word, so they were saved again through Admin.
+- **"Move up to Member"** (the Upgrade page a Starter account sees) listed Starter's crossed-out lines as what the
+  membership adds. Now that the crosses are picked, that list would name only four of the five. The page now works
+  out what the membership gives that Starter does not (`beyondStarter`), the bonus included.
+- **The phone's notes are gone**: the ring round a part, the line out to a note beside the phone, the note under it
+  on a tap, and the pause while the pointer was over the phone. Removed with them: the `EXPLAIN` table, 20
+  `data-explain` attributes, the pointer gating and 124 lines of CSS. The phone works as it did before the notes.
+- **The tour shows more of the site**: once the CV is made it bookmarks the job, then marks it as applied ("Moved to
+  Applied: Warehouse Team Leader"). On Applied that same job then hears back and moves to Interview; then My search,
+  then a new round. Before each tap the phone scrolls its own page to what it taps, never the visitor's page.
+- The bonus box reaches into the card's margin by its own padding, so its words get the same width as every other
+  line. Every line fits on one line at 14 widths from 320 to 1920 px (measured; the bonus line has 48 px to spare at
+  320).
+
+Tests: `test_pricing.py`: the defaults' crosses and bonus on each card, with Starter on offer or not; an admin's picked
+crosses and bonus, said in order; seven refused cards (five crossed out, crossing out what the plan has, the membership
+crossing out anything, an unknown area, one area twice, a bonus the plan lacks, the wait as a bonus). The relationship
+test now holds each card to at most four crosses, all of them things its plan lacks and picked for it, with the bonus
+counted as ticked. The members' chat is crossed out only where a card picks it, and only while it has a link.
+`test_free_and_starter_cross_out_a_few_telling_things_and_the_membership_none_and_gives_a_bonus` replaces the
+evening's next-plan test. `test_e2e_site.py`: the crosses and the bonus box on the landing and plan pages; Admin's
+switches (Free at four, so a fifth stays disabled until one is turned off) and a visitor seeing the pick; the Upgrade
+page's 8 and 4, and Starter's way up listing the five things the membership adds; the tour's bookmark, "Moved to
+Applied" and the visitor's page not scrolled. The one-line check now measures each line's words and question mark, so
+a bonus's tag row is allowed.
+
+**Gates**: lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db --prune` clean on a scratch database
+(dropped after); the contract current (regenerating it changes nothing); the site built. Pytest on four workers:
+1,644 passed, 7 skipped (the usual seven: five for Stripe's sandbox without keys, one for the Postgres copy, one for
+the reference instance), in 4 min 53 s. The run includes the landing page rewritten by another session the same
+night, in the same tree.
+
 ## 2026-11-17, evening — Free says what it gives, a thing a line, and crosses out only what Starter adds; the membership crosses out nothing
 
 The owner: "Since we are here to deliver values lets reduce some negative parts of the free plan and instead, add more

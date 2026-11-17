@@ -18,10 +18,13 @@ from libs.membership import AREAS, PLANS
 pytest.importorskip("fastapi")
 
 ADMIN = "operator@example.com"
-CARD = {"name": "Mahoraga Plus", "highlight": "Yours for life", "button": "Try it free",
-        "note": "Cancel any time."}
-FREE = {**CARD, "name": "Free", "highlight": "", "button": "Start free"}
-CARDS = {"free": FREE, "starter": {**CARD, "name": "First steps"}, "member": CARD}
+DEFAULTS = settings.DEFAULT_PRICING_CARDS
+# A card's own words, the operator's; what each crosses out and gives as a bonus stays its default card's.
+WORDED = {"name": "Mahoraga Plus", "highlight": "Yours for life", "button": "Try it free",
+          "note": "Cancel any time."}
+CARD = {**DEFAULTS["member"], **WORDED}
+FREE = {**DEFAULTS["free"], **WORDED, "name": "Free", "highlight": "", "button": "Start free"}
+CARDS = {"free": FREE, "starter": {**DEFAULTS["starter"], **WORDED, "name": "First steps"}, "member": CARD}
 
 
 LINES = settings.DEFAULT_PRICING_LINES
@@ -36,8 +39,9 @@ def said(area: str) -> list[dict]:
 
 EVERY = LINES["everyone"]
 MOMENT = LINES["now"]
-# A CV, a cover letter, and the ATS check every one of them gets: a line each (owner, 2026-11-16).
-DOCUMENTS = [*said("cvs"), *said("covers"), *said("ats_checks")]
+# A CV and a cover letter, a line each (owner, 2026-11-16). The ATS check every one of them gets is the
+# membership's bonus, said apart (owner, 2026-11-17).
+DOCUMENTS = [*said("cvs"), *said("covers")]
 
 
 def first(area: str) -> dict:
@@ -100,8 +104,9 @@ def test_each_card_says_how_soon_its_plan_sees_a_job_and_what_it_gives_and_lacks
     """Owner, 2026-11-16: Free each job once it is 7 days old, Starter 3 days or older with alerts and match
     scores, Member the moment it is found with everything; each paid card first saying it has everything in
     the card before it, then what it adds, ticked, a few words a line with a question mark that says more.
-    Each crosses out only what the plan after it adds, by each area's first line (owner, 2026-11-17: "reduce
-    some negative parts"). Starter has no price here, so Member's card follows Free's, and is Free's next."""
+    Free and Starter each cross out four of the most telling things their plan lacks, by each area's first
+    line, the membership nothing, and gives the ATS check apart, as a bonus (owner, 2026-11-17: "3-4
+    negatives to each offer except member"). Starter has no price here, so Member's card follows Free's."""
     http, *_ = api
 
     lines = http.get("/pricing").json()["lines"]
@@ -110,18 +115,17 @@ def test_each_card_says_how_soon_its_plan_sees_a_job_and_what_it_gives_and_lacks
         "everything_in": None, "everything": None,
         "gives": [{"text": "See new jobs after 7 days",
                    "more": "A new job joins your list 7 days after we find it."}, *EVERY],
-        "lacks": [MOMENT, first("alerts"), first("match_scores"), first("cvs"), first("covers"),
-                  first("ats_checks"), first("add_job")]}
+        "bonus": [], "lacks": [MOMENT, first("alerts"), first("match_scores"), first("cvs")]}
     assert lines["starter"] == {
         "everything_in": "free", "everything": everything_in("Free"),
         "gives": [{"text": "See new jobs after 3 days",
                    "more": "A new job joins your list 3 days after we find it."},
                   *said("alerts"), *said("match_scores")],
-        "lacks": [MOMENT, first("cvs"), first("covers"), first("ats_checks"), first("add_job")]}
+        "bonus": [], "lacks": [MOMENT, first("cvs"), first("covers"), first("add_job")]}
     assert lines["member"] == {
         "everything_in": "free", "everything": everything_in("Free"),
         "gives": [MOMENT, *said("alerts"), *said("match_scores"), *DOCUMENTS, *said("add_job")],
-        "lacks": []}
+        "bonus": said("ats_checks"), "lacks": []}
 
 
 def test_once_starter_is_sold_member_has_everything_in_it_and_says_only_what_it_adds(api, monkeypatch):
@@ -139,16 +143,17 @@ def test_once_starter_is_sold_member_has_everything_in_it_and_says_only_what_it_
 
     assert (lines["starter"]["everything_in"], lines["member"]["everything_in"]) == ("free", "starter")
     assert lines["member"]["gives"] == [MOMENT, *DOCUMENTS, *said("add_job")]
+    assert lines["member"]["bonus"] == said("ats_checks")
     assert lines["member"]["everything"] == everything_in("Starter")
 
 
-def test_free_gives_its_own_and_crosses_out_only_what_starter_adds_and_the_membership_crosses_nothing(
+def test_free_and_starter_cross_out_a_few_telling_things_and_the_membership_none_and_gives_a_bonus(
         api, monkeypatch):
-    """Owner, 2026-11-17: "reduce some negative parts of the free plan and instead, add more positives ...
-    expand the save, filter and track jobs to 3 different points"; "the starter should be a step up and the
-    member should be everything". With Starter on offer: Free ticks what every account has, a thing a line,
-    and crosses out only what Starter adds; Starter begins with everything in Free and adds; the membership
-    begins with everything in Starter, adds, and crosses out nothing."""
+    """Owner, 2026-11-17: Free ticks what every account has, a thing a line ("add more positives ... expand
+    the save, filter and track jobs to 3 different points"); then "adding like 3-4 negatives to each offer
+    except member ... make them powerful and the most important", so Free no longer crosses out fewer than
+    Starter; Starter's alerts are one line, "A daily email of new jobs" gone; and "the ATS check as a bonus
+    to the members plan ... show that properly on the offer", said apart from what it ticks."""
     from services.api import billing_routes
     from services.api.billing_routes import Plan
 
@@ -163,11 +168,14 @@ def test_free_gives_its_own_and_crosses_out_only_what_starter_adds_and_the_membe
     assert [line["text"] for line in free["gives"]] == [
         "See new jobs after 7 days", "Every job site in one list", "Jobs from company sites",
         "Never the same job twice", "Filter jobs your way", "Save jobs for later", "Track every application"]
-    assert free["lacks"] == [first("alerts"), first("match_scores")]
+    assert free["lacks"] == [MOMENT, first("alerts"), first("match_scores"), first("cvs")]
     assert starter["everything"] == everything_in("Free")
-    assert starter["gives"][1:] == [*said("alerts"), *said("match_scores")], "every line of what it adds"
-    assert starter["lacks"] == [MOMENT, first("cvs"), first("covers"), first("ats_checks"), first("add_job")]
+    assert texts(starter["gives"][1:]) == ["Job alerts sent to you", "Match score on every job",
+                                           "Filter by match score"], "every line of what it adds"
+    assert starter["lacks"] == [MOMENT, first("cvs"), first("covers"), first("add_job")]
     assert member["everything"] == everything_in("Starter") and member["lacks"] == []
+    assert member["bonus"] == said("ats_checks")
+    assert not any(line in member["gives"] for line in said("ats_checks")), "the bonus said once, apart"
 
 
 def test_how_soon_each_card_says_follows_the_waits_set_in_admin(api):
@@ -194,22 +202,25 @@ def test_how_soon_each_card_says_follows_the_waits_set_in_admin(api):
 
 def test_the_member_card_promises_the_members_chat_only_while_it_has_a_link(api):
     """Owner, 2026-11-16: direct access to the people who build the site is a member's, and never promised
-    while there is nothing to open."""
+    while there is nothing to open, nor crossed out, even on a card that picks it to cross out."""
     http, db, *_ = api
     [chat] = said("team_access")
+    crossed = ["early_jobs", "cvs", "covers", "team_access"]
+    settings.put(db, "pricing_cards", {"starter": {**DEFAULTS["starter"], "crossed": crossed}})
     said_now = http.get("/pricing").json()["lines"].values()
     assert not any(chat in lines["gives"] + lines["lacks"] for lines in said_now)
 
     settings.put(db, "members_channel_url", "https://chat.example.com/mahoraga-members")
     lines = http.get("/pricing").json()["lines"]
     assert chat in lines["member"]["gives"]
-    assert chat in lines["starter"]["lacks"] and chat in lines["free"]["lacks"]
+    assert chat in lines["starter"]["lacks"] and chat not in lines["free"]["lacks"], "where a card picks it"
 
 
 def ticked(lines: dict, plan: str) -> list[dict]:
-    """Everything a card ticks, counting "Everything in" the card before it as that card's ticks."""
+    """Everything a card ticks, its bonus too, counting "Everything in" the card before it as that card's
+    ticks."""
     before = lines[plan]["everything_in"]
-    return [*(ticked(lines, before) if before else []), *lines[plan]["gives"]]
+    return [*(ticked(lines, before) if before else []), *lines[plan]["gives"], *lines[plan]["bonus"]]
 
 
 @pytest.mark.parametrize("sold", [False, True])
@@ -217,10 +228,10 @@ def ticked(lines: dict, plan: str) -> list[dict]:
 @pytest.mark.parametrize("waits", [(168, 72), (120, 0), (0, 0)])
 def test_what_each_card_promises_is_what_an_account_on_that_plan_gets(api, monkeypatch, channel, waits, sold):
     """The cards and the site ask the same plans: an account on each plan has every area its card ticks,
-    "Everything in" included, and every line of each, and none its card crosses out; its card crosses out
-    what the plan after it adds, and nothing else; and it sees new jobs at once exactly when its card says
-    so. A card that promised an area its plan does not give, left out one it does, or crossed out one it
-    has, fails here."""
+    "Everything in" and the bonus included, and every line of each, and none its card crosses out; its card
+    crosses out at most four things its plan lacks, the ones picked for it, and nothing else; and it sees new
+    jobs at once exactly when its card says so. A card that promised an area its plan does not give, left
+    out one it does, or crossed out one it has, fails here."""
     from libs.membership import delay_hours, has
     from services.api import billing_routes
     from services.api.billing_routes import Plan
@@ -232,26 +243,25 @@ def test_what_each_card_promises_is_what_an_account_on_that_plan_gets(api, monke
     settings.put(db, "members_channel_url", channel)
     settings.put(db, "free_delay_hours", waits[0])
     settings.put(db, "starter_delay_hours", waits[1])
-    lines = http.get("/pricing").json()["lines"]
+    body = http.get("/pricing").json()
+    lines = body["lines"]
 
-    after = {"free": "starter" if sold else "member", "starter": "member", "member": None}
-    accounts = {plan: on(db, plan) for plan in ("free", "starter", "member")}
-    for plan, account in accounts.items():
-        gives, lacks, up = ticked(lines, plan), lines[plan]["lacks"], after[plan]
+    for plan in ("free", "starter", "member"):
+        account, picked = on(db, plan), body["cards"][plan]["crossed"]
+        gives, lacks = ticked(lines, plan), lines[plan]["lacks"]
+        assert len(lacks) <= 4, f"{plan}: three or four crossed out, never more (owner, 2026-11-17)"
         for area in AREAS:
             if area == "early_jobs":
                 at_once = delay_hours(db, account) == 0
                 assert (MOMENT in gives) == at_once, plan
-                assert (MOMENT in lacks) == (not at_once and up is not None
-                                             and delay_hours(db, accounts[up]) == 0), plan
+                assert (MOMENT in lacks) == (not at_once and area in picked), plan
                 continue
             held = has(db, account.id, area)
             shown = area != "team_access" or bool(channel)
             for words in said(area):
                 assert (words in gives) == (held and shown), (plan, area)
                 assert not (held and words in lacks), (plan, area, "crossed out what it has")
-            next_adds = up is not None and shown and not held and has(db, accounts[up].id, area)
-            assert (first(area) in lacks) == next_adds, (plan, area)
+            assert (first(area) in lacks) == (shown and not held and area in picked), (plan, area)
         assert all(line in gives for line in EVERY), f"every account has these, {plan} too"
 
 
@@ -362,6 +372,45 @@ def test_cards_saved_before_the_plans_were_fixed_keep_their_own_words_and_lose_t
     assert cards["starter"] == defaults["starter"]
 
 
+def test_an_admin_picks_what_each_card_crosses_out_and_gives_as_a_bonus(api):
+    """Owner, 2026-11-17: "3-4 negatives to each offer except member ... make them powerful and the most
+    important", and a bonus "people tend to react to them great". Which they are is the operator's, in
+    Admin; each is said by its area's own lines, in the order the cards always say them."""
+    http, _, operator, _, sign_in = api
+    sign_in(http, operator)
+    picked = {**CARDS, "free": {**FREE, "crossed": ["covers", "alerts", "add_job"]},
+              "member": {**CARD, "bonus": ["add_job", "ats_checks"]}}
+
+    assert http.put("/admin/pricing", json={"cards": picked, "lines": LINES}).status_code == 200
+    http.cookies.clear()
+    lines = http.get("/pricing").json()["lines"]
+
+    assert lines["free"]["lacks"] == [first("alerts"), first("covers"), first("add_job")]
+    assert lines["member"]["bonus"] == [*said("ats_checks"), *said("add_job")]
+    assert lines["member"]["gives"][-len(DOCUMENTS):] == DOCUMENTS, "a bonus is not ticked again"
+
+
+@pytest.mark.parametrize(("plan", "change"), [
+    ("free", {"crossed": ["early_jobs", "alerts", "match_scores", "cvs", "covers"]}),
+    ("starter", {"crossed": ["early_jobs", "alerts"]}),
+    ("member", {"crossed": ["cvs"]}),
+    ("free", {"crossed": ["free_lunch"]}),
+    ("free", {"crossed": ["cvs", "cvs"]}),
+    ("starter", {"bonus": ["cvs"]}),
+    ("member", {"bonus": ["early_jobs"]}),
+])
+def test_a_card_that_would_say_what_its_plan_does_not_keep_is_refused_and_nothing_saved(api, plan, change):
+    """At most four crossed out, each a thing its plan lacks, once; a bonus only what its plan has, and never
+    the wait, which every card says by itself: or a card would cross out what an account on it has, or give
+    what it does not get."""
+    http, db, operator, _, sign_in = api
+    sign_in(http, operator)
+
+    unfit = {**CARDS, plan: {**CARDS[plan], **change}}
+    assert http.put("/admin/pricing", json={**WORDS, "cards": unfit}).status_code == 422
+    assert settings.get(db, "pricing_cards") == DEFAULTS
+
+
 def test_an_admin_words_the_lines_and_each_card_ticks_or_crosses_them_by_its_plan(api):
     """Owner, 2026-11-17: every line on the cards is in Admin, "so its not hardcoded". The words are the
     operator's; which card ticks a line and which crosses it out stays with the plans, so a line about alerts
@@ -460,4 +509,4 @@ def test_saved_lines_that_no_longer_read_are_the_defaults_and_the_log_says_so(ap
 
     older = {**LINES, "areas": {key: value for key, value in LINES["areas"].items() if key != "ats_checks"}}
     settings.put(db, "pricing_lines", older)
-    assert all(line in http.get("/pricing").json()["lines"]["member"]["gives"] for line in said("ats_checks"))
+    assert http.get("/pricing").json()["lines"]["member"]["bonus"] == said("ats_checks")

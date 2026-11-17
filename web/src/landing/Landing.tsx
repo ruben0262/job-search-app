@@ -589,6 +589,15 @@ function PriceCard({ card, said, href, preview, onChoose, busy, lit = false, bad
             <span><span className="line">{line.text}</span><Explain text={line.more} /></span>
           </li>
         ))}
+        {/* A bonus (owner, 2026-11-17: "people tend to react to them great"): given apart, in a box of its own,
+            marked so at a glance, after what the plan gives. */}
+        {(said.bonus ?? []).map((line, i) => (
+          <li key={`bonus${i}`} className="bonus">
+            <span className="bonus-tag"><Gift />Bonus</span>
+            {TICK}
+            <span><span className="line">{line.text}</span><Explain text={line.more} /></span>
+          </li>
+        ))}
         {said.lacks.map((line, i) => (
           <li key={`out${i}`} className="out">
             <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" /><path d="M7 7l6 6M13 7l-6 6" /></svg>

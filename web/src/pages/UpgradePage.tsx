@@ -60,10 +60,18 @@ function useSwitching(count: number): ["free" | "member", (side: "free" | "membe
 type Line = Pricing["lines"]["free"]["gives"][number];
 type Paid = "starter" | "member";
 
-/** What a paid plan gives beyond Free: its own lines, after those of the plan before it. */
+/** What a paid plan gives beyond Free: its own lines and its bonus, after those of the plan before it. */
 function beyondFree(lines: Pricing["lines"], plan: Paid): Line[] {
   const said = lines[plan];
-  return said.everything_in === "starter" ? [...beyondFree(lines, "starter"), ...said.gives] : said.gives;
+  const own = [...said.gives, ...(said.bonus ?? [])];
+  return said.everything_in === "starter" ? [...beyondFree(lines, "starter"), ...own] : own;
+}
+
+/** What the membership gives that Starter does not: never Starter's crossed-out lines, which are a few picked
+ * in Admin (owner, 2026-11-17: "3-4 negatives"), not all it adds. */
+function beyondStarter(lines: Pricing["lines"]): Line[] {
+  const had = new Set(beyondFree(lines, "starter").map((line) => line.text));
+  return beyondFree(lines, "member").filter((line) => !had.has(line.text));
 }
 
 /** Back to the page they came from, or to their jobs when this page was opened on its own. */
@@ -114,8 +122,7 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
             <div className="upgrade-done">
               <h1>Move up to Member</h1>
               <p className="lede">You're on Starter. Change your plan at Stripe, and all of this opens at once.</p>
-              {/* What Starter's card crosses out: what Member adds to it. */}
-              {pricing.data ? <Adds lines={pricing.data.lines.starter.lacks} on="member" /> : null}
+              {pricing.data ? <Adds lines={beyondStarter(pricing.data.lines)} on="member" /> : null}
               <Error>{portal.error}</Error>
               <button type="button" className="main" disabled={portal.busy} onClick={() => void portal.run()}>
                 {portal.busy ? "Opening Stripe…" : "Change my plan"}

@@ -93,6 +93,13 @@ export function AdminPricing() {
   const longest = Object.values(waits).sort((a, b) => b.length - a.length)[0] ?? "7 days";
   const waiting = Object.entries(waits).map(([plan, wait]) => `${wait} on ${PLAN_NAMES[plan] ?? plan}`).join(", ");
   const names = (plans: string[]) => plans.map((plan) => PLAN_NAMES[plan] ?? plan).join(" and ");
+  // What this card's plan lacks and has, each named by its first line: for what it crosses out and its bonus.
+  const named = (area: string): [string, string] => [area, lines.areas[area]?.[0]?.text ?? area];
+  const lacking = [...(kind in waits ? [["early_jobs", lines.now.text] as [string, string]] : []),
+                   ...Object.entries(tickedOn).filter(([, plans]) => !plans.includes(kind)).map(([area]) => named(area))];
+  const having = Object.entries(tickedOn).filter(([, plans]) => plans.includes(kind)).map(([area]) => named(area));
+  const flip = (list: string[], area: string) => (list.includes(area) ? list.filter((each) => each !== area)
+    : [...list, area]);
 
   return (
     <div className="card pricing-admin">
@@ -132,6 +139,41 @@ export function AdminPricing() {
             <span className="label">Small print under the button</span>
             <textarea value={card.note} maxLength={280} rows={3} onChange={(event) => edit({ note: event.target.value })} />
           </label>
+
+          {lacking.length ? (
+            <fieldset className="line-group">
+              <legend>Crossed out on this card</legend>
+              <p className="hint">
+                Three or four of the most telling things {PLAN_NAMES[kind]} does not give, at most four.
+              </p>
+              {lacking.map(([area, label]) => {
+                const on = card.crossed?.includes(area) ?? false;
+                return (
+                  <label key={area} className="pick">
+                    <input type="checkbox" role="switch" checked={on} disabled={!on && (card.crossed?.length ?? 0) >= 4}
+                           onChange={() => edit({ crossed: flip(card.crossed ?? [], area) })} />
+                    <span>{label}</span>
+                  </label>
+                );
+              })}
+            </fieldset>
+          ) : null}
+          {having.length ? (
+            <fieldset className="line-group">
+              <legend>Given as a bonus on this card</legend>
+              <p className="hint">Shown apart at the end of what it gives, marked Bonus. At most two.</p>
+              {having.map(([area, label]) => {
+                const on = card.bonus?.includes(area) ?? false;
+                return (
+                  <label key={area} className="pick">
+                    <input type="checkbox" role="switch" checked={on} disabled={!on && (card.bonus?.length ?? 0) >= 2}
+                           onChange={() => edit({ bonus: flip(card.bonus ?? [], area) })} />
+                    <span>{label}</span>
+                  </label>
+                );
+              })}
+            </fieldset>
+          ) : null}
 
           <h3>The lines on the cards</h3>
           <LineGroup title="How soon a new job shows: a plan that waits" max={1} lines={[lines.wait]} wait={longest}

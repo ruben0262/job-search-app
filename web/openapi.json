@@ -3176,6 +3176,14 @@
       "PlanLines": {
         "description": "What a card says of its plan: the operator's lines, ticked and crossed out by the plans\n(`lines_of`).",
         "properties": {
+          "bonus": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Line"
+            },
+            "title": "Bonus",
+            "type": "array"
+          },
           "everything": {
             "anyOf": [
               {
@@ -3297,11 +3305,29 @@
       "PricingCard": {
         "description": "One card's own words, each with room for what the card has room for.",
         "properties": {
+          "bonus": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2,
+            "title": "Bonus",
+            "type": "array"
+          },
           "button": {
             "maxLength": 40,
             "minLength": 1,
             "title": "Button",
             "type": "string"
+          },
+          "crossed": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Crossed",
+            "type": "array"
           },
           "highlight": {
             "default": "",

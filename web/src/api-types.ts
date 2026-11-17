@@ -3050,6 +3050,11 @@ export interface components {
          *     (`lines_of`).
          */
         PlanLines: {
+            /**
+             * Bonus
+             * @default []
+             */
+            bonus: components["schemas"]["Line"][];
             everything?: components["schemas"]["Line"] | null;
             /** Everything In */
             everything_in?: ("free" | "starter") | null;
@@ -3082,8 +3087,18 @@ export interface components {
          * @description One card's own words, each with room for what the card has room for.
          */
         PricingCard: {
+            /**
+             * Bonus
+             * @default []
+             */
+            bonus: string[];
             /** Button */
             button: string;
+            /**
+             * Crossed
+             * @default []
+             */
+            crossed: string[];
             /**
              * Highlight
              * @default

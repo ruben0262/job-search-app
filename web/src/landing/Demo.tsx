@@ -106,7 +106,7 @@ export function Demo({ auto = 0 }: { auto?: number }) {
   }
 
   const slot = (kind: Kind) => made.has(kind) && making !== kind ? (
-    <span className="make" data-explain={kind}>
+    <span className="make">
       {/* Theirs to download once they have an account. */}
       <a className={kind === "cover" ? "button secondary" : "button"} href="#/signup">
         {MORE_PICTURES.download}Download {NAME[kind]}
@@ -116,7 +116,7 @@ export function Demo({ auto = 0 }: { auto?: number }) {
       </button>
     </span>
   ) : (
-    <span className="make" data-explain={kind}>
+    <span className="make">
       <button type="button" disabled={making !== null} onClick={() => make(kind)}
               className={[making === kind && "making", kind === "cover" && "secondary"].filter(Boolean).join(" ")}>
         {making === kind ? `Making your ${NAME[kind]}…` : `Make my ${NAME[kind]}`}
@@ -128,26 +128,26 @@ export function Demo({ auto = 0 }: { auto?: number }) {
     <article className={["job-card demo-card", made.has("cv") && "made-cv", made.has("cover") && "made-cover"]
       .filter(Boolean).join(" ")}>
       <button type="button" className={saved ? "bookmark on" : "bookmark"} aria-pressed={saved}
-              aria-label={saved ? "Remove bookmark" : "Bookmark this job"} data-explain="bookmark"
+              aria-label={saved ? "Remove bookmark" : "Bookmark this job"}
               onClick={() => setSaved(!saved)}>
         {PICTURES.bookmark}
       </button>
       <h3>{TITLE}</h3>
-      <p className="job-meta" data-explain="where">
+      <p className="job-meta">
         <strong className="company">Acme Logistics</strong>
         <span className="country">Germany</span>
         Berlin · Posted 2 hours ago
       </p>
       <p className="job-tags">
-        <span className="tag match" style={{ "--fit": 9 } as CSSProperties} data-explain="match">Match 9/10</span>
-        <span className="tag new" data-explain="new">New</span>
-        <span className="tag" data-explain="pay">€38–44k a year</span>
+        <span className="tag match" style={{ "--fit": 9 } as CSSProperties}>Match 9/10</span>
+        <span className="tag new">New</span>
+        <span className="tag">€38–44k a year</span>
       </p>
-      <p className="summary" data-explain="summary">
+      <p className="summary">
         Lead a shift of 12 at our Berlin depot: picking, loading and every lorry out on time. Forklift
         licence needed.
       </p>
-      <p className="why" data-explain="words">
+      <p className="why">
         Your words: <span className="word green">warehouse</span> <span className="word green">team leader</span>
       </p>
       <div className="job-docs">
@@ -157,13 +157,13 @@ export function Demo({ auto = 0 }: { auto?: number }) {
       {shown ? <Paper lines={LINES[shown]} written={written} /> : null}
       <div className="job-bar">
         {/* A made-up job has nowhere to open, so it says where a real one does. */}
-        <button type="button" className="bar-action apply" data-explain="apply" onClick={() => setTold(true)}>
+        <button type="button" className="bar-action apply" onClick={() => setTold(true)}>
           Apply on LinkedIn{PICTURES.apply}
         </button>
-        <button type="button" className="bar-action" data-explain="applied" onClick={() => setMark("applied")}>
+        <button type="button" className="bar-action" onClick={() => setMark("applied")}>
           {PICTURES.applied}Mark as applied
         </button>
-        <button type="button" className="bar-action skip" data-explain="skip" onClick={() => setAsking(true)}>
+        <button type="button" className="bar-action skip" onClick={() => setAsking(true)}>
           {PICTURES.skip}Skip
         </button>
       </div>
@@ -214,43 +214,6 @@ function Paper({ lines, written }: { lines: Line[]; written: number }) {
 
 type Screen = "jobs" | "applied" | "words";
 
-/** What each part of the phone is for, said beside it when it is pointed at, or under it when it is tapped
- * (owner, 2026-11-17: "picks apart the things the user hovers ... what that section actually does in a short
- * description"). True of the app itself, in the words it uses. */
-const EXPLAIN: Record<string, [title: string, text: string]> = {
-  tabs: ["Your jobs, Bookmarks, Add a job",
-         "Your list, the jobs you saved for later, and any job you found elsewhere, added by its link."],
-  count: ["Your list", "Every job from every site we read that has your words, in one list."],
-  finder: ["Search and filters",
-           "Search your list, pick how far back to look, and open every other filter from one button."],
-  bookmark: ["Bookmark", "Save a job for later. It waits for you under Bookmarks."],
-  where: ["Who, where, when", "The company, the place, and how long ago the job was posted."],
-  match: ["Match score", "How well the job fits your CV, out of 10. Show only the 7s and up, in one tap."],
-  new: ["New", "Found since you last looked."],
-  pay: ["Pay", "What the job pays, when it says."],
-  summary: ["The job", "The start of the job's own text. Tap it to read all of it."],
-  words: ["Your words", "The words from your search that this job has: why it is on your list."],
-  cv: ["Make my CV",
-       "One tap writes a CV for this job with your own AI account, then checks it the way an ATS reads it."],
-  cover: ["Make my cover letter", "A cover letter for this job in one tap, checked the same way."],
-  apply: ["Apply on the job's site",
-          "Opens the job where it was posted. You apply there, with the CV you made here."],
-  applied: ["Mark as applied", "Moves the job to Applied, where you follow it all the way to the offer."],
-  skip: ["Skip", "Not for you? It leaves your list for good, once you say so."],
-  track: ["Where it stands", "Every application on one track: applied, interview, offer, the job."],
-  ask: ["Heard back?", "One tap moves it on, and Undo puts it back."],
-  open: ["Open the job", "Back to the job's own page, whenever you need it."],
-  green: ["Green words", "Words that find jobs for you."],
-  red: ["Red words", "Words that hide jobs you don't want: agencies, night shifts."],
-  places: ["Countries", "Where you want to work."],
-  ways: ["Ways of working", "On-site, hybrid or remote."],
-  bar: ["The whole app", "Jobs, Applied, your search, your documents and your settings: five tabs."],
-};
-
-/** A part of the phone pointed at or tapped: what it is, and its box on the phone, inside what the screen
- * shows. */
-type Part = { key: string; top: number; left: number; width: number; height: number };
-
 /** Wait `ms`, unless the tour is stopped: then never, and whatever waits is let go with it. */
 function pause(ms: number, timers: number[]): Promise<void> {
   return new Promise((done) => {
@@ -259,13 +222,12 @@ function pause(ms: number, timers: number[]): Promise<void> {
 }
 
 /** The app on a phone, as it draws itself: its bar, a page, and the tab bar. While it is on the screen it goes
- * through the site by itself (owner, 2026-11-12): it makes a CV on the Jobs page, then shows Applied, answers
- * its question, and My search, a touch where each tap lands, and round again. Pointed at, it waits, and the part
- * under the pointer is ringed and said beside the phone (owner, 2026-11-17); tapped, the part is said under it.
- * The first touch of the visitor's own ends the tour, and the phone is theirs: the card works, the questions
- * answer and the tabs change the page. Still for reduced motion. */
+ * through the site by itself (owner, 2026-11-12), as somebody uses it: it makes a CV for a job, bookmarks it,
+ * marks it applied, then on Applied hears back and the job moves along its track, then shows My search, a touch
+ * where each tap lands, and round again (owner, 2026-11-17: "more animations to it ... so users understand the
+ * app more"). The first touch of the visitor's own ends the tour, and the phone is theirs: the card works, the
+ * questions answer and the tabs change the page. Still for reduced motion. */
 export function Phone() {
-  const figure = useRef<HTMLElement>(null);
   const screen = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState<Screen>("jobs");
@@ -274,60 +236,38 @@ export function Phone() {
   const [auto, setAuto] = useState(0);
   const [touch, setTouch] = useState<{ x: number; y: number; n: number } | null>(null);
   const [touring, setTouring] = useState(() => !still());
-  const [part, setPart] = useState<Part | null>(null);
-  const pointed = useRef<HTMLElement | null>(null);
-  // The part under the pointer or the finger, kept until another: a move over the same part changes nothing.
-  const point = (target: EventTarget | null) => {
-    const found = target instanceof Element ? target.closest<HTMLElement>("[data-explain]") : null;
-    if (found === pointed.current) return;
-    pointed.current = found;
-    measure(found);
-  };
-  // Where the part is now: again as the phone's page scrolls under the pointer, so the ring stays on it.
-  const measure = (found: HTMLElement | null) => {
-    const outer = figure.current?.getBoundingClientRect();
-    const shows = body.current?.getBoundingClientRect();
-    if (!found?.dataset.explain || !outer || !shows) {
-      setPart(null);
-      return;
-    }
-    const box = found.getBoundingClientRect();
-    // Ringed where the screen shows it: a part half scrolled away is ringed as far as it is seen.
-    const top = Math.max(box.top, found.closest(".phone-tabs") ? box.top : shows.top);
-    const bottom = Math.min(box.bottom, found.closest(".phone-tabs") ? box.bottom : shows.bottom);
-    setPart({ key: found.dataset.explain, top: top - outer.top, left: box.left - outer.left, width: box.width,
-              height: Math.max(0, bottom - top) });
-  };
-  const forget = () => {
-    pointed.current = null;
-    setPart(null);
-  };
-
   useEffect(() => {
     const phone = screen.current;
     if (!touring || !phone) return;
     const timers: number[] = [];
     let stopped = false;
     let visible = false;
-    // Pointed at: the tour waits, so the part being read stays where it is (owner, 2026-11-17).
-    let pointedAt = false;
     let wake: (() => void) | null = null;
-    const free = () => visible && !pointedAt;
     const seen = new IntersectionObserver(([entry]) => {
       visible = Boolean(entry?.isIntersecting);
-      if (free()) wake?.();
+      if (visible) wake?.();
     }, { threshold: 0.5 });
     seen.observe(phone);
-    // Each step waits until the phone is in sight and nobody is pointing at it: nothing moves where nobody is
-    // looking, or under somebody reading.
-    const ready = () => (free() ? Promise.resolve() : new Promise<void>((done) => {
+    // Each step waits until the phone is in sight: nothing moves where nobody is looking.
+    const ready = () => (visible ? Promise.resolve() : new Promise<void>((done) => {
       wake = done;
     }));
-    // A touch where the tap lands, and, for a button the tour presses, the press.
+    // A touch where the tap lands, the phone's page first brought round to it if it is out of sight (the page
+    // alone, never the window), and, for a button the tour presses, the press.
     const tap = async (selector: string, press = false) => {
       await ready();
       const target = phone.querySelector<HTMLElement>(selector);
       if (stopped || !target) return;
+      const page = body.current;
+      if (page) {
+        const shows = page.getBoundingClientRect();
+        const box = target.getBoundingClientRect();
+        if (box.top < shows.top + 40 || box.bottom > shows.bottom - 110) {
+          page.scrollTo({ top: page.scrollTop + box.top - shows.top - 140, behavior: still() ? "auto" : "smooth" });
+          await pause(450, timers);
+        }
+      }
+      if (stopped) return;
       const outer = phone.getBoundingClientRect();
       const box = target.getBoundingClientRect();
       setTouch((last) => ({ x: box.left - outer.left + box.width / 2, y: box.top - outer.top + box.height / 2,
@@ -350,6 +290,12 @@ export function Phone() {
         const paper = phone.querySelector<HTMLElement>(".paper");
         if (paper && body.current) body.current.scrollTo({ top: paper.offsetTop - 120, behavior: "smooth" });
         await pause(2800, timers);
+        // Kept for later, then applied to on its own site and marked so: the card says it moved to Applied.
+        await tap(".demo-card .bookmark", true);
+        await pause(900, timers);
+        await tap(".demo-card .job-bar .bar-action:not(.apply):not(.skip)", true);
+        await pause(1600, timers);
+        if (stopped) return;
         for (const to of ["applied", "words", "jobs"] as const) {
           await tap(`.phone-tabs [data-tab="${to}"]`);
           if (stopped) return;
@@ -372,35 +318,19 @@ export function Phone() {
       setTouring(false);
       setTouch(null);
     };
-    const enter = (event: PointerEvent) => {
-      if (event.pointerType === "mouse") pointedAt = true;
-    };
-    const leave = () => {
-      pointedAt = false;
-      if (free()) wake?.();
-    };
     phone.addEventListener("pointerdown", quit);
     phone.addEventListener("focusin", quit);
-    phone.addEventListener("pointerenter", enter);
-    phone.addEventListener("pointerleave", leave);
     return () => {
       stopped = true;
       timers.forEach(clearTimeout);
       seen.disconnect();
       phone.removeEventListener("pointerdown", quit);
       phone.removeEventListener("focusin", quit);
-      phone.removeEventListener("pointerenter", enter);
-      phone.removeEventListener("pointerleave", leave);
     };
   }, [touring]);
 
-  const said = part ? EXPLAIN[part.key] : undefined;
   return (
-    <figure ref={figure} className="phone" data-reveal aria-label="The Jobs page, on a phone"
-            onPointerMove={(event) => {
-              if (event.pointerType === "mouse") point(event.target);
-            }}
-            onPointerLeave={forget} onClick={(event) => point(event.target)}>
+    <figure className="phone" data-reveal aria-label="The Jobs page, on a phone">
       <div className="phone-screen" ref={screen}>
         <div className="phone-bar" aria-hidden="true">
           <span className="brand"><Mark />Mahoraga</span>
@@ -409,17 +339,17 @@ export function Phone() {
             <i><svg viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 1112 0v5l1.5 2h-15zM10 20.5h4" /></svg></i>
           </span>
         </div>
-        <div className="phone-body" ref={body} onScroll={() => measure(pointed.current)}>
+        <div className="phone-body" ref={body}>
           <div key={page} className="phone-page">
             {page === "applied" ? <AppliedScreen /> : page === "words" ? <WordsScreen /> : (
               <>
-                <div className="tabs" aria-hidden="true" data-explain="tabs">
+                <div className="tabs" aria-hidden="true">
                   <span className="tab on">Your jobs</span><span className="tab">Bookmarks</span>
                   <span className="tab">Add a job</span>
                 </div>
-                <p className="phone-title" data-explain="count">12 jobs match your words</p>
+                <p className="phone-title">12 jobs match your words</p>
                 {/* The Jobs page's search, how far back and its filters, as the app draws them on a phone. */}
-                <div className="finder" aria-hidden="true" data-explain="finder">
+                <div className="finder" aria-hidden="true">
                   <input type="search" placeholder="Search your jobs" readOnly tabIndex={-1} />
                   <select tabIndex={-1} defaultValue="24"><option value="24">Last 24 hours</option></select>
                   <button type="button" className="secondary finder-open" tabIndex={-1}>
@@ -432,7 +362,7 @@ export function Phone() {
           </div>
         </div>
         {/* The app's tab bar: the tour taps it, and so can a visitor, for the three pages the phone has. */}
-        <div className="phone-tabs" aria-hidden="true" data-explain="bar">
+        <div className="phone-tabs" aria-hidden="true">
           {PLACES.filter(([key]) => key !== "admin").map(([key, , , short]) => (
             <span key={key} data-tab={key} className={key === page ? "on" : undefined}
                   onClick={key === "jobs" || key === "applied" || key === "words" ? () => setPage(key) : undefined}>
@@ -442,22 +372,6 @@ export function Phone() {
         </div>
         {touch ? <span key={touch.n} className="phone-touch" style={{ left: touch.x, top: touch.y }} /> : null}
       </div>
-      {part && said ? (
-        <>
-          <span className="phone-focus" aria-hidden="true"
-                style={{ top: part.top, left: part.left, width: part.width, height: part.height }} />
-          <span className="phone-pointer" aria-hidden="true"
-                style={{ "--x": `${part.left + part.width}px`, "--y": `${part.top + part.height / 2}px` } as CSSProperties} />
-          <span key={part.key} className="phone-callout" role="status"
-                style={{ "--y": `${part.top + part.height / 2}px` } as CSSProperties}>
-            <strong>{said[0]}</strong>{said[1]}
-          </span>
-        </>
-      ) : null}
-      <figcaption className="phone-hint">
-        <span className="by-pointer">Point at any part of the phone to see what it does.</span>
-        <span className="by-touch">Tap any part of the phone to see what it does.</span>
-      </figcaption>
     </figure>
   );
 }
@@ -505,7 +419,7 @@ function Application({ title, company, from }: { title: string; company: string;
       <h3>{title}</h3>
       <p className="job-meta"><strong className="company">{company}</strong>Applied this week</p>
       <div className={ended ? "progress ended" : "progress"}>
-        <ol data-explain="track" style={{ "--done": reached / (STEPS.length - 1) } as CSSProperties}>
+        <ol style={{ "--done": reached / (STEPS.length - 1) } as CSSProperties}>
           {STEPS.map(([key, label], index) => (
             <li key={key} className={index <= reached ? "done" : undefined}>
               <span className="dot">
@@ -515,7 +429,7 @@ function Application({ title, company, from }: { title: string; company: string;
             </li>
           ))}
         </ol>
-        <div className="progress-next" data-explain="ask">
+        <div className="progress-next">
           {ended ? <p className="progress-note no">Not this time. On to the next one.</p>
             : stage === "hired" ? <p className="progress-note yes">You got the job. Congratulations!</p>
               : next ? (
@@ -533,7 +447,7 @@ function Application({ title, company, from }: { title: string; company: string;
         </div>
       </div>
       <div className="job-bar">
-        <span className="bar-action apply" data-explain="open">Open the job{PICTURES.apply}</span>
+        <span className="bar-action apply">Open the job{PICTURES.apply}</span>
       </div>
     </article>
   );
@@ -551,7 +465,7 @@ function WordsScreen() {
     <>
       <p className="phone-title">The jobs you want</p>
       {rows.map(([key, label, tone, words]) => (
-        <div key={key} className="phone-words" data-explain={key}>
+        <div key={key} className="phone-words">
           <p className="small muted">{label}</p>
           <p>{words.map((word) => <span key={word} className={`word ${tone}`}>{word}</span>)}</p>
         </div>
