@@ -410,6 +410,29 @@ def test_a_keeping_that_fails_leaves_nothing_that_stops_the_next(site, monkeypat
 
 
 @needs_db
+def test_a_job_shows_the_same_score_under_bookmarks_and_add_a_job_as_on_jobs(site):
+    """Owner, 2026-11-16: the Bookmarks and Add a job tabs show "the same job postings" as Jobs, its match
+    score included, worked out the same way; and with no plan for it, none there either."""
+    from libs.db import now
+    from libs.db.models import User
+    from libs.db.models.tenant import record_state
+
+    http, db, user, jobs = site
+    _cv(db, user, BACKEND_CV)
+    shown = _shown(http)
+    assert all(1 <= score <= 10 for score in shown.values()), shown
+    for job_id in jobs.values():
+        assert http.put(f"/jobs/{job_id}/bookmarked").status_code == 200
+        record_state(db, user.id, job_id, added_at=now())  # what bringing it in by its link leaves
+    for tab in ("/jobs/bookmarked", "/jobs/added"):
+        assert {job["id"]: job["fit"] for job in http.get(tab).json()} == shown, tab
+
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"subscription_status": None}})
+    for tab in ("/jobs/bookmarked", "/jobs/added"):
+        assert {job["fit"] for job in http.get(tab).json()} == {None}, f"a free account has none on {tab}"
+
+
+@needs_db
 def test_starter_has_match_scores_too(site):
     from datetime import timedelta
 

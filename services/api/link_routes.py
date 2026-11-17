@@ -24,11 +24,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from pymongo.database import Database
 
+from libs import fit
 from libs.corpus.postings import PAGE_HEADERS, job_link, linkedin_id, read_link
 from libs.corpus.repository import LINK, MAX_DESCRIPTION, MIN_DESCRIPTION, TYPED, CorpusRepository
 from libs.corpus.words import terms_of
-from libs.db import now
-from libs.db.models import CorpusJob, UserJobState
+from libs.db import get, now
+from libs.db.models import CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
 from libs.matching import Match, green_words
@@ -265,16 +266,26 @@ def _jobs(db: Database, user_id: _uuid.UUID, ids: list[int], *, open_only: bool 
           why: bool = False) -> list[FeedJob]:
     """Cards for these jobs, in this order, with the documents made for each. `why` says which of the
     person's words each has, as its card on the Jobs page does and by the same rule (`words.terms_of`): a
-    bookmarked job is shown as it was there. A job brought by its link is listed for that, not its words."""
+    bookmarked job is shown as it was there. A job brought by its link is listed for that, not its words.
+    Each is scored as a card on the Jobs page is (`libs.fit.scored`), for a plan with match scores, so a job
+    shows one number wherever it is listed (owner, 2026-11-16: "the same job postings")."""
     mine = green_words(TenantRepository(db).get_config(user_id)) if why else []
     where: dict[str, Any] = {"_id": {"$in": ids}, **({"closed_at": None} if open_only else {})}
-    jobs = {row["_id"]: CorpusJob.from_doc(row) for row in db[CorpusJob.COLLECTION].find(where)}
+    user = get(db, User, user_id) if has(db, user_id, "match_scores") else None
+    made = fit.profile(db, user) if user is not None else None
+    rows = (db[CorpusJob.COLLECTION].find(where) if made is None
+            else db[CorpusJob.COLLECTION].aggregate([{"$match": where}, *fit.scored(made)]))
+    jobs, scores = {}, {}
+    for row in rows:
+        scores[row["_id"]] = row.pop("fit_score", None)
+        jobs[row["_id"]] = CorpusJob.from_doc(row)
     documents, kept = for_jobs(db, user_id, list(jobs)), bookmarked(db, user_id, list(jobs))
     cards = []
     for job_id in ids:
         if job := jobs.get(job_id):
-            has = terms_of(job.title, job.description, mine)
-            match = Match(job=job, words=tuple(has["terms"]), in_title=tuple(has["title_terms"]))
+            found = terms_of(job.title, job.description, mine)
+            match = Match(job=job, words=tuple(found["terms"]), in_title=tuple(found["title_terms"]),
+                          fit=scores.get(job_id))
             cards.append(feed_row(match, job.description, documents.get(job_id, []),
                                   bookmarked=job_id in kept))
     return cards
