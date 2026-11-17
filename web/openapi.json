@@ -3115,7 +3115,7 @@
         "type": "object"
       },
       "Plan": {
-        "description": "A plan to pay for: its price as Stripe has it, and the free trial a new member gets.",
+        "description": "A plan to pay for: its price as Stripe has it, and the free days a new subscription to it starts with\n(none for Starter).",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -3176,6 +3176,16 @@
       "PlanLines": {
         "description": "What a card says of its plan: the operator's lines, ticked and crossed out by the plans\n(`lines_of`).",
         "properties": {
+          "everything": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Line"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "everything_in": {
             "anyOf": [
               {
@@ -3404,6 +3414,9 @@
             "title": "Everyone",
             "type": "array"
           },
+          "everything": {
+            "$ref": "#/components/schemas/Line"
+          },
           "now": {
             "$ref": "#/components/schemas/Line"
           },
@@ -3414,6 +3427,7 @@
         "required": [
           "wait",
           "now",
+          "everything",
           "everyone",
           "areas"
         ],
@@ -7140,7 +7154,7 @@
     },
     "/billing/checkout": {
       "post": {
-        "description": "Open the payment form for a plan: a new subscription, with the free trial if they never had one.\nOpening it ends any form opened before, so two tabs cannot become two memberships.",
+        "description": "Open the payment form for a plan: a new subscription, with its free trial if it has one (the membership\ndoes, Starter does not) and they never had a subscription.\nOpening it ends any form opened before, so two tabs cannot become two memberships.",
         "operationId": "checkout_billing_checkout_post",
         "parameters": [
           {

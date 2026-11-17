@@ -38,8 +38,9 @@ export function PlanPage({ onChanged }: { onChanged: () => Promise<void> | void 
     await onChanged();
     window.location.hash = "/";
   };
-  const days = pricing.data?.trial_days ?? 0;
   const plan = (form === "starter" ? pricing.data?.starter : pricing.data?.plan) ?? null;
+  // The plan's own free days: the membership's, and none on Starter (owner, 2026-11-17).
+  const days = plan?.trial_days ?? 0;
 
   return (
     <>
@@ -60,7 +61,7 @@ export function PlanPage({ onChanged }: { onChanged: () => Promise<void> | void 
           {plan ? <p className="plan-price">{price(plan)}{days ? <span>, after {days} days free</span> : null}</p> : null}
           <p className="lede">
             {days ? "Stripe keeps your card, and nothing is taken until the free days end."
-              : "Paid securely through Stripe."}
+              : "Paid securely through Stripe. Cancel any time."}
           </p>
           {key ? <StripeCheckout publishableKey={key} plan={form} onPaid={() => void paid()} />
             : membership.data ? <p className="error">Payments aren't set up yet. Pick Free for now.</p> : null}

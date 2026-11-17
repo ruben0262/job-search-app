@@ -274,7 +274,8 @@ DEFAULT_DOCUMENT_KEEP_HOURS = 1
 DEFAULT_SUPPORT_CHAT_ENABLED = 1
 
 # How many days free a membership starts with (owner, 2026-11-11: "a 7 day free trial"), for somebody who
-# never had one; 0 is none. The price is Stripe's, picked with `STRIPE_PRICE_ID` (`billing_routes`).
+# never had a subscription; 0 is none. The membership's alone: Starter has no trial (owner, 2026-11-17;
+# `libs.membership.TRIALS`). The price is Stripe's, picked with `STRIPE_PRICE_ID` (`billing_routes`).
 DEFAULT_TRIAL_DAYS = 7
 
 # How long after it is found a job reaches a free account's list, in hours (owner, 2026-11-12: "only jobs
@@ -306,7 +307,8 @@ DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
         # The price a plan is joined at is kept for as long as it runs (owner, 2026-11-16: "lifetime").
         "highlight": "Price locked for life",
         "button": "Start with Starter",
-        "note": "Card needed. Free to cancel in the trial.",
+        # No free days on Starter (owner, 2026-11-17): billed from its first day.
+        "note": "Card needed. Cancel any time.",
     },
     "member": {
         "name": "Member",
@@ -324,6 +326,8 @@ DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
 # (`services.api.pricing_routes.lines_of`).
 # - `wait` and `now`: how soon a plan sees a new job, for a plan that waits and one that does not. `{wait}` is
 #   filled in with each plan's own wait, set above, so the words never hold a number of their own.
+# - `everything`: a paid card's first line, all of the card before it (owner, 2026-11-17: "everything in free
+#   plan"); `{plan}` is that card's name.
 # - `everyone`: what every account has; Free's own lines, and "Everything in Free" on the cards after it.
 # - `areas`: what each paid area gives (`libs.membership.AREAS`), a line or more each, ticked on the plans
 #   that have it and crossed out on the rest. Starter shows more than Free (owner, 2026-11-17: "we should
@@ -335,6 +339,8 @@ DEFAULT_PRICING_LINES: dict[str, object] = {
     "now": {"text": "See new jobs right away",
             "more": "A new job joins your list as soon as we have found and read it, so you can apply among "
                     "the first."},
+    "everything": {"text": "Everything in {plan} plan",
+                   "more": "Every line ticked on the {plan} plan is in this plan too."},
     "everyone": [
         {"text": "Every job site in one list",
          "more": "Jobs from every job site we read, matched to the words you search for, in one list."},

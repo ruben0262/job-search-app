@@ -935,7 +935,8 @@ export interface paths {
         put?: never;
         /**
          * Checkout
-         * @description Open the payment form for a plan: a new subscription, with the free trial if they never had one.
+         * @description Open the payment form for a plan: a new subscription, with its free trial if it has one (the membership
+         *     does, Starter does not) and they never had a subscription.
          *     Opening it ends any form opened before, so two tabs cannot become two memberships.
          */
         post: operations["checkout_billing_checkout_post"];
@@ -3012,7 +3013,8 @@ export interface components {
         };
         /**
          * Plan
-         * @description A plan to pay for: its price as Stripe has it, and the free trial a new member gets.
+         * @description A plan to pay for: its price as Stripe has it, and the free days a new subscription to it starts with
+         *     (none for Starter).
          */
         Plan: {
             /** Amount */
@@ -3048,6 +3050,7 @@ export interface components {
          *     (`lines_of`).
          */
         PlanLines: {
+            everything?: components["schemas"]["Line"] | null;
             /** Everything In */
             everything_in?: ("free" | "starter") | null;
             /** Gives */
@@ -3126,6 +3129,7 @@ export interface components {
             };
             /** Everyone */
             everyone: components["schemas"]["Line"][];
+            everything: components["schemas"]["Line"];
             now: components["schemas"]["Line"];
             wait: components["schemas"]["Line"];
         };

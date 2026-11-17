@@ -388,7 +388,7 @@ def test_the_landing_page_offers_free_and_member_and_an_admin_words_both(site, c
         expect(crossed.locator(".unseen")).to_have_text(["Not included:"] * (1 + len(paid)))
         expect(cards.last.locator(".price-badge")).to_have_text("7 days free")
         expect(cards.last.locator(".price-list li .line")).to_have_text(
-            ["Everything in Free", lines["now"]["text"], *paid])
+            ["Everything in Free plan", lines["now"]["text"], *paid])
         _says_more(cards.last.locator(".price-list li").nth(2), lines["areas"]["alerts"][0]["more"])
         # Pointed at on a laptop, a part of the phone is said beside it.
         page.locator(".phone .make button").first.hover()
@@ -1365,10 +1365,12 @@ def test_a_free_account_buys_starter_or_member_from_the_upgrade_page(site, capsy
     beside the membership, each with its price and what it adds to Free. Stripe is not set up here, so its
     prices are added to what the server answers."""
     base, email, _ = site
-    starter = {"amount": 299, "currency": "gbp", "interval": "month", "interval_count": 1, "trial_days": 7}
+    # As the server says them: the membership with its 7 free days, Starter with none (owner, 2026-11-17).
+    starter = {"amount": 299, "currency": "gbp", "interval": "month", "interval_count": 1, "trial_days": 0}
 
     def priced(route):
-        route.fulfill(json={**route.fetch().json(), "plan": {**starter, "amount": 499}, "starter": starter})
+        route.fulfill(json={**route.fetch().json(), "plan": {**starter, "amount": 499, "trial_days": 7},
+                            "starter": starter})
 
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
@@ -1381,12 +1383,13 @@ def test_a_free_account_buys_starter_or_member_from_the_upgrade_page(site, capsy
         plans = page.get_by_role("group", name="Plan")
         expect(plans.get_by_role("button")).to_have_text(["Starter", "Member"])
         expect(page.get_by_role("heading", name="Become a member")).to_be_visible()
-        expect(page.locator(".plan-price")).to_contain_text("£4.99")
+        expect(page.locator(".plan-price")).to_have_text("£4.99 a month, after 7 days free")
         expect(page.locator(".adds li")).to_have_count(8)
 
         plans.get_by_role("button", name="Starter").click()
         expect(page.get_by_role("heading", name="Start with Starter")).to_be_visible()
-        expect(page.locator(".plan-price")).to_contain_text("£2.99")
+        expect(page.locator(".plan-price")).to_have_text("£2.99 a month")
+        expect(page.get_by_text("Paid securely through Stripe. Cancel any time.")).to_be_visible()
         expect(page.locator(".adds li")).to_have_count(4)
         expect(page.locator(".adds li").first).to_contain_text("See new jobs after 3 days")
         browser.close()
@@ -1799,14 +1802,16 @@ def test_the_plan_is_picked_after_the_email_link_on_the_landing_pages_cards(site
     landing page's two cards, and nothing past them by the address alone. The landing page's Member card
     opens that page on Stripe's checkout, its price large over it, which says plainly here, where Stripe has
     no keys, that payments aren't set up; the way back is to the cards, not past them."""
+    from libs.membership import trial_days
     from services.api import billing_routes
 
     base, email, _ = site
     # Both paid plans have a price at Stripe: 4.99 and 2.99, shown as reduced from the operator's 29.99 and
-    # 18.99 with the saving worked out (owner, 2026-11-16).
+    # 18.99 with the saving worked out (owner, 2026-11-16); each with its own free days, by the site's rule:
+    # the membership's, and none on Starter (owner, 2026-11-17).
     monkeypatch.setattr(billing_routes, "plan", lambda db, which="member": billing_routes.Plan(
         amount={"member": 499, "starter": 299}[which], currency="gbp", interval="month", interval_count=1,
-        trial_days=7))
+        trial_days=trial_days(db, which)))
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
@@ -1818,16 +1823,11 @@ def test_the_plan_is_picked_after_the_email_link_on_the_landing_pages_cards(site
         expect(page.get_by_role("heading", name="Choose your plan")).to_be_visible()
         cards = page.locator(".price-card")
         expect(cards.locator(".price-name")).to_have_text(["Free", "Starter", "Member"])
-        expect(cards.last).to_contain_text("£4.99")
-        expect(cards.last.locator(".price-badge")).to_have_text("7 days free")
-        expect(cards.last.locator(".price-was s")).to_have_text("£29.99")
-        expect(cards.last.locator(".price-was em")).to_have_text("83% off")
-        expect(cards.nth(1).locator(".price-amount")).to_contain_text("£2.99")
-        expect(cards.nth(1).locator(".price-was")).to_have_text("Was £18.9984% off")
+        _priced(cards)
         # Each paid card begins with everything in the card before it, then how soon its plan sees a job, read
         # across; Starter crosses out what Member adds.
         expect(cards.locator(".price-list li:first-child .line")).to_have_text(
-            ["See new jobs after 7 days", "Everything in Free", "Everything in Starter"])
+            ["See new jobs after 7 days", "Everything in Free plan", "Everything in Starter plan"])
         expect(cards.locator(".price-list li:nth-child(2) .line")).to_have_text([
             "Every job site in one list", "See new jobs after 3 days", "See new jobs right away"])
         expect(cards.nth(1).locator(".price-list li.out")).to_have_count(5)
@@ -1845,6 +1845,7 @@ def test_the_plan_is_picked_after_the_email_link_on_the_landing_pages_cards(site
         assert abs(tops[0] - tops[2]) < 40, f"three to a row: {tops}"
         _one_line_each(page)
         page.set_viewport_size({"width": 390, "height": 844})
+        _starter_without_a_trial(page, cards)
         page.goto(f"{base}/#/settings")
         expect(page.get_by_role("heading", name="Choose your plan")).to_be_visible()
         _pick_free(page)
@@ -1863,6 +1864,31 @@ def test_the_plan_is_picked_after_the_email_link_on_the_landing_pages_cards(site
         page.get_by_role("button", name="← Back to the plans").click()
         _pick_free(page)
         browser.close()
+
+
+def _priced(cards) -> None:
+    """Each paid card's price as Stripe has it, crossed out from the operator's figure with the saving worked
+    out, and the membership's free days on a tab at its top."""
+    expect(cards.last).to_contain_text("£4.99")
+    expect(cards.last.locator(".price-badge")).to_have_text("7 days free")
+    expect(cards.last.locator(".price-was s")).to_have_text("£29.99")
+    expect(cards.last.locator(".price-was em")).to_have_text("83% off")
+    expect(cards.nth(1).locator(".price-amount")).to_contain_text("£2.99")
+    expect(cards.nth(1).locator(".price-was")).to_have_text("Was £18.9984% off")
+
+
+def _starter_without_a_trial(page, cards) -> None:
+    """A free trial on the membership alone: Starter is billed from its first day (owner, 2026-11-17), so
+    its card says no free days, and neither does its own payment page."""
+    expect(cards.last.locator(".price-after")).to_have_text("after your 7-day free trial")
+    expect(cards.nth(1).locator(".price-after")).to_have_count(0)
+    expect(cards.nth(1).locator(".price-badge")).to_have_count(0)
+    expect(cards.nth(1).locator(".price-note")).to_have_text("Card needed. Cancel any time.")
+    cards.nth(1).get_by_role("button", name="Start with Starter").click()
+    expect(page.get_by_role("heading", name="Start with Starter")).to_be_visible()
+    expect(page.locator(".plan-price")).to_have_text("£2.99 a month")
+    expect(page.get_by_text("Paid securely through Stripe. Cancel any time.")).to_be_visible()
+    page.get_by_role("button", name="← Back to the plans").click()
 
 
 def test_sign_up_confirm_sign_in_and_reset_the_password_each_step_at_once(site, capsys):

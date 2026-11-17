@@ -40,6 +40,12 @@ MOMENT = LINES["now"]
 DOCUMENTS = [*said("cvs"), *said("covers"), *said("ats_checks")]
 
 
+def everything_in(plan: str) -> dict:
+    """A paid card's first line, all of the card before it, by that card's name (owner, 2026-11-17)."""
+    return {"text": f"Everything in {plan} plan",
+            "more": f"Every line ticked on the {plan} plan is in this plan too."}
+
+
 def texts(lines: list[dict]) -> list[str]:
     return [line["text"] for line in lines]
 
@@ -95,18 +101,18 @@ def test_each_card_says_how_soon_its_plan_sees_a_job_and_what_it_gives_and_lacks
     lines = http.get("/pricing").json()["lines"]
 
     assert lines["free"] == {
-        "everything_in": None,
+        "everything_in": None, "everything": None,
         "gives": [{"text": "See new jobs after 7 days",
                    "more": "A new job joins your list 7 days after we find it."}, *EVERY],
         "lacks": [MOMENT, *said("alerts"), *said("match_scores"), *DOCUMENTS, *said("add_job")]}
     assert lines["starter"] == {
-        "everything_in": "free",
+        "everything_in": "free", "everything": everything_in("Free"),
         "gives": [{"text": "See new jobs after 3 days",
                    "more": "A new job joins your list 3 days after we find it."},
                   *said("alerts"), *said("match_scores")],
         "lacks": [MOMENT, *DOCUMENTS, *said("add_job")]}
     assert lines["member"] == {
-        "everything_in": "free",
+        "everything_in": "free", "everything": everything_in("Free"),
         "gives": [MOMENT, *said("alerts"), *said("match_scores"), *DOCUMENTS, *said("add_job")],
         "lacks": []}
     # Owner, 2026-11-17: "we should offer more in the starter than the free". Each paid card ticks more than
@@ -131,6 +137,7 @@ def test_once_starter_is_sold_member_has_everything_in_it_and_says_only_what_it_
 
     assert (lines["starter"]["everything_in"], lines["member"]["everything_in"]) == ("free", "starter")
     assert lines["member"]["gives"] == [MOMENT, *DOCUMENTS, *said("add_job")]
+    assert lines["member"]["everything"] == everything_in("Starter")
     assert len(lines["starter"]["gives"]) < len(lines["member"]["gives"]), "Member ticks the most"
 
 
@@ -340,6 +347,21 @@ def test_an_admin_words_the_lines_and_each_card_ticks_or_crosses_them_by_its_pla
     assert http.get("/admin/pricing").json()["lines"] == wording, "Admin shows what is saved"
 
 
+def test_a_paid_cards_first_line_names_the_plan_before_it_by_its_cards_name(api):
+    """Owner, 2026-11-17: "make sure ... its says 'plan' after 'everything in free' and 'everything in
+    starter' so its perfectly clear". The plan is named as its card is: a card renamed in Admin is the next
+    card's first line too."""
+    http, _, operator, _, sign_in = api
+    sign_in(http, operator)
+    renamed = {**CARDS, "free": {**FREE, "name": "Basic"}}
+
+    assert http.put("/admin/pricing", json={"cards": renamed, "lines": LINES}).status_code == 200
+
+    lines = http.get("/pricing").json()["lines"]
+    assert lines["starter"]["everything"] == everything_in("Basic")
+    assert lines["free"]["everything"] is None, "nothing before the first card"
+
+
 def test_admin_shows_every_word_filled_in_and_where_each_area_is_ticked(api):
     """Nothing to type in from scratch (owner, 2026-11-17: "i dont have to type it in"): before anything is
     saved, the editor has every card's words and every line, and says which plans tick each area and what
@@ -360,6 +382,7 @@ def test_admin_shows_every_word_filled_in_and_where_each_area_is_ticked(api):
     {"wait": {"text": "See new jobs a week later", "more": "A week after we find it."}},
     {"everyone": []},
     {"now": {"text": "", "more": "Soon."}},
+    {"everything": {"text": "Everything below", "more": "All of it."}},
     {"areas": {**LINES["areas"], "alerts": []}},
     {"areas": {key: value for key, value in LINES["areas"].items() if key != "add_job"}},
     {"areas": {**LINES["areas"], "free_lunch": [{"text": "Lunch", "more": "Every day."}]}},

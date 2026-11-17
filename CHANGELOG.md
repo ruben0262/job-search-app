@@ -14,6 +14,35 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17, later — "Everything in Free plan"; no free trial on Starter; each plan's free days tested where they are said
+
+The owner: "make sure in the offers its says 'plan' after 'everything in free' and 'everything in starter' so its
+perfectly clear"; "make sure that we do not offer a 7 day free trial on the starter plan"; "make sure that we have tests
+for all the plans and for it all to work".
+
+- **A paid card's first line is one of the operator's lines** (`pricing_lines.everything`, "Everything in {plan}
+  plan", with a question mark: "Every line ticked on the {plan} plan is in this plan too."), `{plan}` filled by the
+  server with the name of the card before it, so a card renamed in Admin is named on the next one too. A line without
+  `{plan}` is refused. The page drew "Everything in <name>" itself before; it shows the server's line now.
+- **A trial per plan** (`libs.membership.TRIALS`, as `WAITS` is): the membership's free days are `trial_days`, as Admin
+  sets them; Starter has none and is billed from its first day. One rule read everywhere a trial is: the payment form
+  (`billing_routes.trial_for(db, user, which)`: no `trial_period_days` for Starter), each plan's price
+  (`Plan.trial_days`: 0 for Starter), the landing page's and the plan page's cards (Starter's "after your 7-day free
+  trial" is gone, and no free-days tab), Starter's payment page and the Upgrade page ("£2.99 a month", "Paid securely
+  through Stripe. Cancel any time."). Starter's small print: "Card needed. Cancel any time." (was "Free to cancel in
+  the trial"). Admin's trial setting says it is the membership's.
+- **The local copy's pricing was saved again through Admin's own save**: the first line, and Starter's small print
+  (only because it was the old default word for word). **On the server, if the cards were saved in Admin, Starter's
+  small print still says "Free to cancel in the trial" until it is changed there.**
+
+Tests: `test_billing.py` `test_only_the_membership_starts_with_free_days_as_many_as_admin_sets` (14 days set: the
+membership's form, price, account and landing page say 14, Starter's 0 and its form none), and Starter's form in the
+plan test has no trial; `test_pricing.py` each card's first line, Starter's and Member's by the card before, a renamed
+card named on the next, and a first line without `{plan}` refused; `test_e2e_site.py` the plan page (Starter: no
+trial line, no tab, its small print, its own payment page at "£2.99 a month"; Member: "after your 7-day free trial"),
+the Upgrade page (Member "after 7 days free", Starter none). Against the code before, 6 of these failed. Each plan's
+access, page by page and route by route, was already `test_each_plan_gives_what_it_includes_and_refuses_the_rest`.
+
 ## 2026-11-17 — The match score, version 3: a pharmacist's registration apart from a technician's, and the credentials the third held-out set found missing
 
 The owner: "lets do the missing credential checks please see the effect".

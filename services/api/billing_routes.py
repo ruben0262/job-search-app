@@ -29,10 +29,9 @@ from pydantic import BaseModel
 from pymongo.database import Database
 from starlette.concurrency import run_in_threadpool
 
-from libs import settings
 from libs.db import find, find_one, get, now
 from libs.db.models import User
-from libs.membership import ONGOING, PAID, STARTER, is_member, tier
+from libs.membership import MEMBER, ONGOING, PAID, STARTER, is_member, tier, trial_days
 from libs.notify import site_url
 from libs.obs import audit
 from services.api.deps import current_user, get_db, rate_limit
@@ -251,13 +250,15 @@ def _customer(db: Database, user: User) -> User:
     return get(db, User, user.id)
 
 
-def trial_for(db: Database, user: User) -> int:
-    """The free days their payment form starts with: the trial, if they never had a membership."""
-    return int(settings.get(db, "trial_days")) if user.subscription_id is None else 0
+def trial_for(db: Database, user: User, which: str = MEMBER) -> int:
+    """The free days their payment form for this plan starts with: the plan's own (`libs.membership.TRIALS`,
+    none for Starter), if they never had a subscription."""
+    return trial_days(db, which) if user.subscription_id is None else 0
 
 
 class Plan(BaseModel):
-    """A plan to pay for: its price as Stripe has it, and the free trial a new member gets."""
+    """A plan to pay for: its price as Stripe has it, and the free days a new subscription to it starts with
+    (none for Starter)."""
     # In the smallest unit of `currency`: cents.
     amount: int
     currency: str
@@ -287,7 +288,7 @@ def plan(db: Database, which: str = "member") -> Plan | None:
                        exc_info=True)
         return None
     return Plan(amount=price.unit_amount, currency=price.currency, interval=price.recurring.interval,
-                interval_count=price.recurring.interval_count, trial_days=int(settings.get(db, "trial_days")))
+                interval_count=price.recurring.interval_count, trial_days=trial_days(db, which))
 
 
 class Membership(BaseModel):
@@ -303,7 +304,8 @@ class Membership(BaseModel):
     status: str | None
     # No subscription is running, so the payment form starts one. False: Stripe's portal, to pay what is owed.
     can_start: bool
-    # The free days the form starts with (`trial_for`): 0 for somebody who had a membership before.
+    # The free days the membership's form starts with (`trial_for`): 0 for somebody who had a subscription
+    # before. Starter's has none.
     trial_days: int
     trial_ends_at: datetime | None
     period_ends_at: datetime | None
@@ -351,7 +353,8 @@ class Checkout(BaseModel):
 @router.post("/checkout")
 def checkout(request: Request, which: Literal["member", "starter"] = Query("member", alias="plan"),
              db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> Checkout:
-    """Open the payment form for a plan: a new subscription, with the free trial if they never had one.
+    """Open the payment form for a plan: a new subscription, with its free trial if it has one (the membership
+    does, Starter does not) and they never had a subscription.
     Opening it ends any form opened before, so two tabs cannot become two memberships."""
     rate_limit(request, f"checkout:{user_id}", limit=30, per_seconds=3600)
     if which == STARTER and not price_id(STARTER):
@@ -366,7 +369,7 @@ def checkout(request: Request, which: Literal["member", "starter"] = Query("memb
         for older in client.v1.checkout.sessions.list(params={
                 "customer": user.stripe_customer_id, "status": "open", "limit": 10}).data:
             client.v1.checkout.sessions.expire(older.id)
-        days = trial_for(db, user)
+        days = trial_for(db, user, which)
         session = client.v1.checkout.sessions.create(params={
             # Stripe's own checkout, inside the site's page: official, its price large, its look Stripe's
             # (Dashboard → Settings → Branding), and it never leaves the site (owner, 2026-11-12, after the

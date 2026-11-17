@@ -492,8 +492,8 @@ export function saving(amount: number, was: number | undefined): number | null {
  * buttons go nowhere) and the plan page offers them (`onChoose`: their buttons pick). What each says of its plan
  * is the server's (`lines`), worked out from the plans fixed in code and how long each waits for a job; the
  * rest of the words are the operator's (`pricing_cards`); a price is Stripe's, the price it is reduced from
- * `price_was` and the free days `trial_days`, all filled in here, so no wording can promise what the site does
- * not keep. Starter is shown once it has a price at Stripe (and always in Admin's preview, to be worded before
+ * `price_was` and the free days each plan's own (the membership's `trial_days`; Starter has none, owner
+ * 2026-11-17), all filled in here, so no wording can promise what the site does not keep. Starter is shown once it has a price at Stripe (and always in Admin's preview, to be worded before
  * it has one). */
 export function PriceCards({ pricing, preview = false, onChoose, busy = false }: {
   pricing: Pricing;
@@ -521,43 +521,39 @@ export function PriceCards({ pricing, preview = false, onChoose, busy = false }:
       </>
     );
   };
-  // "Everything in Free": the card before it, by the name its card shows.
-  const below = (said: Pricing["lines"]["free"]) => (said.everything_in ? cards[said.everything_in].name : null);
-  const trial = (of: Pricing["plan"]) =>
-    (days ? (of ? `after your ${days}-day free trial` : `The first ${days} days free`) : null);
+  // A plan's own free days, under its price: Stripe's plan says them once it has a price; before, the
+  // membership's setting says the membership's, and Starter has none.
+  const trial = (of: Pricing["plan"], free: number) =>
+    (free ? (of ? `after your ${free}-day free trial` : `The first ${free} days free`) : null);
   return (
     <div className="price-room">
       <div className={three ? "price-cards three" : "price-cards"}>
-        <PriceCard card={cards.free} said={lines.free} everything={null} href="#/signup" preview={preview} busy={busy}
+        <PriceCard card={cards.free} said={lines.free} href="#/signup" preview={preview} busy={busy}
                    onChoose={onChoose && (() => onChoose("free"))}
                    amount={plan ? <><strong>{nothing(plan.currency)}</strong><span>for good</span></> : null}
                    under={null} />
         {three ? (
-          <PriceCard card={cards.starter} said={lines.starter} everything={below(lines.starter)}
-                     href="#/signup?plan=starter" preview={preview}
+          <PriceCard card={cards.starter} said={lines.starter} href="#/signup?plan=starter" preview={preview}
                      busy={busy} onChoose={onChoose && (() => onChoose("starter"))}
-                     amount={cost("starter", starter)} under={trial(starter)} />
+                     amount={cost("starter", starter)} under={trial(starter, starter?.trial_days ?? 0)} />
         ) : null}
-        <PriceCard card={cards.member} said={lines.member} everything={below(lines.member)}
-                   href="#/signup?plan=member" preview={preview} lit
+        <PriceCard card={cards.member} said={lines.member} href="#/signup?plan=member" preview={preview} lit
                    busy={busy} onChoose={onChoose && (() => onChoose("member"))}
-                   badge={days ? `${days} days free` : null}
-                   amount={cost("member", plan)} under={trial(plan)} />
+                   badge={(plan?.trial_days ?? days) ? `${plan?.trial_days ?? days} days free` : null}
+                   amount={cost("member", plan)} under={trial(plan, plan?.trial_days ?? days)} />
       </div>
     </div>
   );
 }
 
 /** One card: its name, what it costs, what it gives and leaves out, and its button at the foot. A paid card
- * begins with everything in the card before it (owner, 2026-11-16: "so people know what we are referring to"),
- * then how soon it sees a job, so the three read across at a glance, then what it adds; then what its plan
- * lacks, crossed out. Each line is a few words, with a question mark that says more. */
-function PriceCard({ card, said, everything, href, preview, onChoose, busy, lit = false, badge = null, amount,
-  under }: {
+ * begins with everything in the card before it (owner, 2026-11-16: "so people know what we are referring to";
+ * 2026-11-17: "Everything in Free plan", the server's line in the operator's words), then how soon it sees a
+ * job, so the three read across at a glance, then what it adds; then what its plan lacks, crossed out. Each
+ * line is a few words, with a question mark that says more. */
+function PriceCard({ card, said, href, preview, onChoose, busy, lit = false, badge = null, amount, under }: {
   card: Card;
   said: Pricing["lines"]["free"];
-  /** The name of the card before it, all of which this plan has; null on the first. */
-  everything: string | null;
   href: string;
   preview: boolean;
   onChoose?: () => void;
@@ -581,7 +577,12 @@ function PriceCard({ card, said, everything, href, preview, onChoose, busy, lit 
         </div>
       ) : null}
       <ul className="price-list">
-        {everything ? <li className="everything">{TICK}<span className="line">Everything in {everything}</span></li> : null}
+        {said.everything ? (
+          <li className="everything">
+            {TICK}
+            <span><span className="line">{said.everything.text}</span><Explain text={said.everything.more} /></span>
+          </li>
+        ) : null}
         {said.gives.map((line, i) => (
           <li key={`in${i}`}>
             {TICK}

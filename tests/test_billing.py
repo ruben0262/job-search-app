@@ -418,7 +418,7 @@ def test_the_form_is_for_the_plan_asked_and_stripes_price_says_which_plan(db, ht
     form = fake.calls("POST", "/v1/checkout/sessions")[-1]
     assert form["line_items[0][price]"] == STARTER_PRICE
     assert form["subscription_data[metadata][plan]"] == "starter"
-    assert form["subscription_data[trial_period_days]"] == "7"
+    assert "subscription_data[trial_period_days]" not in form, "Starter has no free trial"
     assert http.post("/billing/checkout").status_code == 200
     assert fake.calls("POST", "/v1/checkout/sessions")[-1]["line_items[0][price]"] == "price_test"
 
@@ -581,6 +581,25 @@ def test_only_a_new_account_is_asked_for_its_plan(db, http):
 
     assert asked == {"new": True, "member": False, "lapsed": False, "free access": False, "admin": False,
                      "set up": False, "picked free": False}
+
+
+def test_only_the_membership_starts_with_free_days_as_many_as_admin_sets(db, http, fake, monkeypatch):
+    """Owner, 2026-11-17: "we do not offer a 7 day free trial on the starter plan". The membership's
+    payment form starts with its free days, as many as Admin sets; Starter's never does, however many that
+    is; and each place that names a plan's free days says the plan's own: its price, the account's page and
+    the landing page's."""
+    monkeypatch.setenv("STRIPE_STARTER_PRICE_ID", STARTER_PRICE)
+    settings.put(db, "trial_days", 14)
+    sign_in(http, person(db))
+
+    for page in ("/billing", "/pricing"):
+        body = http.get(page).json()
+        free_days = (body["trial_days"], body["plan"]["trial_days"], body["starter"]["trial_days"])
+        assert free_days == (14, 14, 0), page
+    assert http.post("/billing/checkout?plan=starter").status_code == 200
+    assert "subscription_data[trial_period_days]" not in fake.calls("POST", "/v1/checkout/sessions")[-1]
+    assert http.post("/billing/checkout").status_code == 200
+    assert fake.calls("POST", "/v1/checkout/sessions")[-1]["subscription_data[trial_period_days]"] == "14"
 
 
 def test_the_form_starts_the_trial_with_a_card_and_only_for_somebody_who_never_had_one(db, http, fake):

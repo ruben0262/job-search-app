@@ -89,6 +89,9 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
   const [chosen, choose] = useState<Paid>("member");
   const buying: Paid = m?.starter ? chosen : "member";
   const cost = buying === "starter" ? m?.starter : m?.plan;
+  // Free days on the plan being bought, for somebody who never had a subscription: the membership's, none on
+  // Starter (owner, 2026-11-17).
+  const days = cost && m?.trial_days ? cost.trial_days : 0;
   const adds = pricing.data ? beyondFree(pricing.data.lines, buying) : [];
   const [on, show] = useSwitching(adds.length);
 
@@ -150,11 +153,11 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
               </div>
               {cost ? (
                 <p className="plan-price">
-                  {price(cost)}{m.trial_days ? <span>, after {m.trial_days} days free</span> : null}
+                  {price(cost)}{days ? <span>, after {days} days free</span> : null}
                 </p>
               ) : null}
               <p className="lede">
-                {m.trial_days ? "Stripe keeps your card, and nothing is taken until the free days end."
+                {days ? "Stripe keeps your card, and nothing is taken until the free days end."
                   : "Paid securely through Stripe. Cancel any time."}
               </p>
               {pricing.data ? <Adds lines={adds} on={on} /> : null}

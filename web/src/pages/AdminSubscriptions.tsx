@@ -202,8 +202,8 @@ function ThePlan({ subscriptions }: { subscriptions: Subscriptions }) {
                 {[0, 3, 7, 14, 30].map((n) => <option key={n} value={n}>{n ? `${n} days` : "None"}</option>)}
               </select>
               <span className="hint">
-                {saved === "trial_days" ? "Saved. " : ""}Free days before Stripe takes the first payment, for somebody
-                who never had a membership.
+                {saved === "trial_days" ? "Saved. " : ""}Free days before Stripe takes the first payment, on a
+                membership, for somebody who never had one. Starter has no trial: it is billed from the first day.
               </span>
             </label>
             {(["free", "starter"] as const).map((plan) => {

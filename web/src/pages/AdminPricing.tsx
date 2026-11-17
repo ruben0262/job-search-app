@@ -139,6 +139,11 @@ export function AdminPricing() {
                      onChange={([wait]) => setLines({ wait: wait! })} />
           <LineGroup title="How soon a new job shows: a plan that doesn't wait" max={1} lines={[lines.now]}
                      onChange={([now]) => setLines({ now: now! })} />
+          <LineGroup title="A paid card's first line" max={1} lines={[lines.everything]}
+                     wait={[words.cards.free.name, words.cards.starter.name].sort((a, b) => b.length - a.length)[0]}
+                     placeholder="{plan}"
+                     hint="{plan} becomes the card before it: Free on Starter's card, Starter on Member's."
+                     onChange={([everything]) => setLines({ everything: everything! })} />
           <LineGroup title="What every account has" max={8} lines={lines.everyone}
                      hint="Ticked on Free. The cards after it say “Everything in Free” instead."
                      onChange={(everyone) => setLines({ everyone })} />
@@ -167,12 +172,14 @@ export function AdminPricing() {
 }
 
 /** The lines of one kind, each its words and what its question mark says, with a line added or taken away. */
-function LineGroup({ title, hint, lines, wait, max, onChange }: {
+function LineGroup({ title, hint, lines, wait, placeholder = "{wait}", max, onChange }: {
   title: string;
   hint?: string;
   lines: Line[];
-  /** What {wait} becomes at the longest, to measure the line by. */
+  /** What the placeholder becomes at the longest, to measure the line by. */
   wait?: string;
+  /** The word in the line that the cards fill in: {wait}, or {plan}. */
+  placeholder?: string;
   max: number;
   onChange: (lines: Line[]) => void;
 }) {
@@ -182,7 +189,7 @@ function LineGroup({ title, hint, lines, wait, max, onChange }: {
       <legend>{title}</legend>
       {hint ? <p className="hint">{hint}</p> : null}
       {lines.map((line, at) => {
-        const long = tooLong(wait ? line.text.replaceAll("{wait}", wait) : line.text);
+        const long = tooLong(wait ? line.text.replaceAll(placeholder, wait) : line.text);
         return (
           <div key={at} className="line-edit">
             <label className="field">

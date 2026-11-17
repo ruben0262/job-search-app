@@ -9,13 +9,13 @@ never by plan, so a page asks "does this account have alerts", not "which plan i
 takes to reach the list of a plan that waits for it is the operator's (`WAITS`).
 
 The site is everybody's (owner, 2026-11-12): a free account signs up, sets up its search and uses every page.
-A paid plan is a Stripe subscription, seven days free and then billed automatically, managed at Stripe; which
-plan it is for is its price there, copied onto the account (`subscription_plan`). Stripe is the record of it;
-an account holds Stripe's answer as last read (`services.api.billing_routes.sync`). Stripe moves a
-subscription between its states itself — trialing to active when the first payment goes through, past_due
-when one fails, canceled when a cancelled period runs out — so nothing here compares one of its dates with
-this server's clock. Stripe's test clocks run ahead of it, and leadops' rule that did kept a cancelled account
-open.
+A paid plan is a Stripe subscription, billed automatically and managed at Stripe: the membership's after its
+free days, Starter's from its first day (`TRIALS`). Which plan it is for is its price there, copied onto the
+account (`subscription_plan`). Stripe is the record of it; an account holds Stripe's answer as last read
+(`services.api.billing_routes.sync`). Stripe moves a subscription between its states itself — trialing to
+active when the first payment goes through, past_due when one fails, canceled when a cancelled period runs
+out — so nothing here compares one of its dates with this server's clock. Stripe's test clocks run ahead of
+it, and leadops' rule that did kept a cancelled account open.
 """
 from __future__ import annotations
 
@@ -70,6 +70,11 @@ PLANS: dict[str, tuple[str, ...]] = {
     STARTER: ("alerts", "match_scores"),
     MEMBER: tuple(AREAS),
 }
+
+# The setting that says how many free days a new subscription to each plan starts with, the operator's in
+# Admin: the membership's (owner, 2026-11-11: "a 7 day free trial"). Starter has none (owner, 2026-11-17: "we
+# do not offer a 7 day free trial on the starter plan"), so it is billed from its first day.
+TRIALS = {MEMBER: "trial_days"}
 
 # The setting that says how long after it is found a job reaches the list of each plan without `early_jobs`:
 # a week for Free (owner, 2026-11-12), three days for Starter (2026-11-16), each the operator's in Admin.
@@ -147,6 +152,12 @@ def wait_hours(db: Database | settings.Snapshot, plan: str) -> int:
     """How long after it is found a job reaches the list of an account on this plan, in hours: none with
     `early_jobs`, else the plan's own setting (`WAITS`)."""
     return 0 if "early_jobs" in PLANS[plan] else int(settings.get(db, WAITS[plan]))
+
+
+def trial_days(db: Database | settings.Snapshot, plan: str) -> int:
+    """How many free days a new subscription to this plan starts with (`TRIALS`): none for a plan without a
+    trial."""
+    return int(settings.get(db, TRIALS[plan])) if plan in TRIALS else 0
 
 
 def delay_hours(db: Database, user: User) -> int:

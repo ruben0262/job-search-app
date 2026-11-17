@@ -21,7 +21,7 @@ from pymongo.database import Database
 
 from libs import settings
 from libs.db.models import User
-from libs.membership import AREAS, FREE, MEMBER, PLANS, STARTER, wait_hours
+from libs.membership import AREAS, FREE, MEMBER, PLANS, STARTER, trial_days, wait_hours
 from libs.obs import audit
 from services.api import billing_routes
 from services.api.admin_routes import require_admin
@@ -64,6 +64,9 @@ class PricingLines(BaseModel):
     wait: Line
     # How soon a plan that does not wait sees one.
     now: Line
+    # A paid card's first line, all of the card before it (owner, 2026-11-17: "everything in free plan"):
+    # "{plan}" is that card's name.
+    everything: Line
     # What every account has: Free's own lines, and "Everything in Free" on the cards after it.
     everyone: Annotated[list[Line], Field(min_length=1, max_length=8)]
     # What each paid area gives, a line or more each.
@@ -74,6 +77,13 @@ class PricingLines(BaseModel):
     def _says_the_wait(cls, line: Line) -> Line:
         if "{wait}" not in line.text:
             raise ValueError("the line for a plan that waits must say {wait}, where its wait goes")
+        return line
+
+    @field_validator("everything")
+    @classmethod
+    def _says_the_plan(cls, line: Line) -> Line:
+        if "{plan}" not in line.text:
+            raise ValueError("the first line of a paid card must say {plan}, where the plan before it goes")
         return line
 
     @field_validator("areas")
@@ -101,9 +111,10 @@ class PricingEditor(PricingWords):
 class PlanLines(BaseModel):
     """What a card says of its plan: the operator's lines, ticked and crossed out by the plans
     (`lines_of`)."""
-    # The plan whose card is before this one, all of which this one has: "Everything in Free", first on the
-    # card. None on Free's.
+    # The plan whose card is before this one, all of which this one has. None on Free's.
     everything_in: Literal["free", "starter"] | None = None
+    # That said, first on the card: "Everything in Free plan", in the operator's words with that card's name.
+    everything: Line | None = None
     # Ticked: how soon it sees a new job where that is sooner than the plan before it, then what it adds.
     gives: list[Line]
     # Crossed out: what a plan after it gives and it does not.
@@ -119,7 +130,8 @@ class PlansLines(BaseModel):
 class Pricing(BaseModel):
     cards: PricingCards
     lines: PlansLines
-    # A new subscription's free days; 0 is none.
+    # The membership's free days for a new subscription (`libs.membership.TRIALS`); 0 is none. Starter has
+    # none: its own are its `Plan.trial_days`.
     trial_days: int
     # Stripe's price, or None while Stripe is not set up or cannot be read: the card then names no price.
     plan: Plan | None
@@ -158,12 +170,14 @@ def words_of(db: Database | settings.Snapshot) -> PricingLines:
         return PricingLines.model_validate(default)
 
 
-def lines_of(db: Database | settings.Snapshot, *, starter_sold: bool, words: PricingLines) -> PlansLines:
-    """What each card says of its plan, in the operator's words (`words`). A paid card begins "Everything in"
-    the card before it, Starter's once it is sold (`starter_sold`), then ticks how soon it sees a new job
-    (`libs.membership.wait_hours`) where that is sooner, and the lines of what it adds; Free's ticks how soon,
-    and what every account has. Each crosses out the lines of what a plan after it gives. The members' chat is
-    said only while it has a link (`members_channel_url`): what the site cannot give yet, no card promises."""
+def lines_of(db: Database | settings.Snapshot, *, starter_sold: bool, words: PricingLines,
+             cards: PricingCards) -> PlansLines:
+    """What each card says of its plan, in the operator's words (`words`). A paid card begins with everything
+    in the card before it, by that card's name (`cards`), Starter's once it is sold (`starter_sold`), then
+    ticks how soon it sees a new job (`libs.membership.wait_hours`) where that is sooner, and the lines of
+    what it adds; Free's ticks how soon, and what every account has. Each crosses out the lines of what a plan
+    after it gives. The members' chat is said only while it has a link (`members_channel_url`): what the site
+    cannot give yet, no card promises."""
     waits = {plan: wait_hours(db, plan) for plan in PLANS}
     said = [area for area in LINED_AREAS if area != "team_access" or settings.get(db, "members_channel_url")]
     before = {FREE: None, STARTER: FREE, MEMBER: STARTER if starter_sold else FREE}
@@ -179,8 +193,11 @@ def lines_of(db: Database | settings.Snapshot, *, starter_sold: bool, words: Pri
         under = before[plan]
         has = [area for area in said if area in PLANS[plan] and (under is None or area not in PLANS[under])]
         sooner = under is None or waits[plan] < waits[under]
+        everything = None if under is None else Line(
+            text=words.everything.text.replace("{plan}", getattr(cards, under).name),
+            more=words.everything.more.replace("{plan}", getattr(cards, under).name))
         return PlanLines(
-            everything_in=under,
+            everything_in=under, everything=everything,
             gives=[*([soon(waits[plan])] if sooner else []), *(words.everyone if under is None else []),
                    *(line for area in has for line in words.areas[area])],
             lacks=[*([words.now] if waits[plan] else []),
@@ -195,9 +212,11 @@ def _pricing(db: Database, cards: PricingCards | None = None, words: PricingLine
     stored = settings.snapshot(db)
     was = settings.get(stored, "price_was")
     starter = billing_routes.plan(db, STARTER)
-    return Pricing(cards=cards or cards_of(stored),
-                   lines=lines_of(stored, starter_sold=starter is not None, words=words or words_of(stored)),
-                   trial_days=int(settings.get(stored, "trial_days")),
+    cards = cards or cards_of(stored)
+    return Pricing(cards=cards,
+                   lines=lines_of(stored, starter_sold=starter is not None, words=words or words_of(stored),
+                                  cards=cards),
+                   trial_days=trial_days(stored, MEMBER),
                    plan=billing_routes.plan(db), starter=starter,
                    # A figure only: anything else saved there shows no reduced-from price, not an error.
                    was={name: amount for name, amount in (was if isinstance(was, dict) else {}).items()
