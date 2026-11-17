@@ -121,7 +121,7 @@ def test_the_same_content_in_two_formats_hashes_the_same():
 
 def test_a_legacy_encoding_is_read_rather_than_rejected():
     """A CV exported from an old word processor is often cp1252."""
-    assert "Andr" in extract_text("cv.txt", "András Lekli".encode("latin-1")).text
+    assert "Andr" in extract_text("cv.txt", "András Kovács".encode("latin-1")).text
 
 
 # ── the routes ────────────────────────────────────────────────────────────────────────────────

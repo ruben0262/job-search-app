@@ -88,7 +88,7 @@ refresh token as theft and kills the whole session family. `src/api.ts` shares o
 - **React + TypeScript** (decided 2026-07-26). The backend stays Python — the CPU-bound part is
   already offloaded to the Rust TEI embedder, so the "switch languages for speed" argument does
   not apply (`SAAS_PLATFORM_PLAN.md` §3).
-- **Cloudflare Pages, on a subdomain of `rubenlekli.com`** (decision D7). The API is reached
+- **Cloudflare Pages, on a subdomain of the owner's domain** (decision D7). The API is reached
   through a Cloudflare Tunnel, so the VPS needs **no open inbound ports**. Free tier covers this
   scale and it reuses existing Cloudflare experience.
 - **The API client is generated from the OpenAPI spec FastAPI already produces — never

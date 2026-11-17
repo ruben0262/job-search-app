@@ -1,7 +1,7 @@
 # Auth & security — what to reuse from FlowSolutions
 
 **Status:** review, 2026-07-26. Source: `d:\Projects\filip_project\flowsolutions-ai` (Go/Fiber,
-MongoDB) — Ruben's own production codebase. Reviewed for what can be lifted into the job-search
+MongoDB) — the owner's own production codebase. Reviewed for what can be lifted into the job-search
 platform.
 
 ---
@@ -87,7 +87,7 @@ strip the FlowSolutions coupling, keep Mongo for auth only, ship it as its own c
 Python `api` trusts via JWT.
 
 - *For:* battle-tested code including MFA and session management; container topology already supports
-  it; Ruben wrote it and knows it.
+  it; the owner wrote it and knows it.
 - *Against:* second language and second datastore, contradicting D1; ~3,900 LOC to decouple and then
   maintain; the coupling is deep enough that "extract" is closer to "rewrite with a reference".
 

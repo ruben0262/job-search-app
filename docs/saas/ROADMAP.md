@@ -22,9 +22,9 @@ is built before the thing it depends on.
 - **D9 Generated documents stay ephemeral** (G8 closed): built, delivered, discarded.
 - **D5 Invite-only at launch.** Legal review becomes a milestone, not a blocker, and the near-zero
   abuse surface is what makes the v1 quota design sufficient.
-- **D6 Parallel copies, decommission only when proven.** Single-tenant stacks keep running; Ruben and
+- **D6 Parallel copies, decommission only when proven.** Single-tenant stacks keep running; the owner and
   Andras *also* get platform accounts, so the two can be compared on the same person.
-- **D7 Cloudflare Pages + subdomain of `rubenlekli.com`**, API via a Cloudflare Tunnel so the VPS
+- **D7 Cloudflare Pages + a subdomain of the owner's domain**, API via a Cloudflare Tunnel so the VPS
   needs no open inbound ports.
 
 One follow-up, not blocking Phase 1: verify Anthropic's terms on subscription credentials in a hosted
@@ -121,13 +121,13 @@ embeddings on a 15-minute systemd timer, and both migrated accounts run on it. F
 duplicates, 0 new); the corpus now stands at **3,896 rows, 3,892 embedded** after the reference
 instances' labelled history was imported alongside live harvesting. T1 and T2 green.
 
-Every exit condition is met: the schedule is installed and firing, and Ruben's account runs on
+Every exit condition is met: the schedule is installed and firing, and the owner's account runs on
 the platform **alongside** his single-tenant stack rather than replacing it (D6) — with Andras's
 beside it, which the criteria did not ask for and which is what made the fairness split
 observable.
 
 **Exit criteria:** the shared harvester fills a Postgres corpus with embeddings, on a schedule, with
-T1 + T2 green, and Ruben's account runs on it **alongside** his single-tenant stack (decision D6 —
+T1 + T2 green, and the owner's account runs on it **alongside** their single-tenant stack (decision D6 —
 parallel, not cutover). Compare the two feeds on the same person; decommission nothing yet. **Do not
 onboard anyone else until this is true** — being your own first user is the cheapest bug-finding
 available.
@@ -180,7 +180,7 @@ LinkedIn loop already needs and currently has nowhere real to live.
    retried, daily cap defers rather than drops.
 
 **Exit status — complete 2026-07-27.** Every component is built, tested, and wired to a worker,
-and **two real accounts run side by side on one stack**: Ruben's and Andras's, migrated verbatim
+and **two real accounts run side by side on one stack**: the owner's and Andras's, migrated verbatim
 from their single-tenant instances and folded into one shared harvest with the fan-out budget
 split 30/30 by round-robin — fairness working in production, where FIFO would have given the
 first account all 60 queries.
@@ -192,7 +192,7 @@ old hardcoded token lists. Those artifacts could not have been imported: their w
 attached to a different token list, which is exactly the mismatch the scorer refuses.
 
 ```
-                    Ruben              Andras
+                    Owner              Andras
 labels @ gen 1      2,529              945
 model               v1, servable       v1, servable
 scored              3,892              3,892
@@ -213,7 +213,7 @@ on earth.
 **Phase 2 is complete.** What remains for these two accounts is credentials — a login password and a
 Telegram bot token each — which only their owners can supply. Everything those gate is built.
 
-**Exit criteria:** two accounts (Ruben + Andras) run side by side on one stack, each with their own
+**Exit criteria:** two accounts (the owner + Andras) run side by side on one stack, each with their own
 model, feed, and schedule. This is the real proof, and it replaces the two separate deployments that
 prompted this whole design.
 
@@ -367,7 +367,7 @@ alerts (`libs/ops`), a read-only admin view, and nightly backups whose **restore
 twice** — the second time including that the artifact files behind the model rows actually resolve,
 a check added because the first version would have blessed a restore that could not score.
 
-Every service is containerised and the API is **live at `mahoraga-app.rubenlekli.com`** through the
+Every service is containerised and the API is **live at `mahoraga-app.…`** through the
 tunnel, with port 22 the only thing listening publicly on the box. The `score` lane closed a gap
 that had frozen both feeds silently.
 
@@ -402,7 +402,7 @@ nothing writes it.
 - **Debounced retrain**, per `SCHEDULER_PLAN.md` §5: a burst of twenty taps is one retrain, ten
   minutes after the last.
 
-**Live.** Both accounts' bots are registered against `mahoraga-app.rubenlekli.com`, Telegram reports
+**Live.** Both accounts' bots are registered against `mahoraga-app.…`, Telegram reports
 no pending updates and no delivery error, and a request to the endpoint with a wrong secret gets a
 404 from the public internet. The digest changed shape to carry the buttons — see the changelog for
 why that reversed an earlier decision.
@@ -1446,7 +1446,7 @@ concrete achievement in the third. That is the change asked for; the judge score
 1. **The decomposition** — `d-person` and `d-fallback` as separate arms, to tell whether the
    third-person half is neutral-good while the fallback half is the drag. Andras reached 32 of 36
    cells and **none of them were judged**: every verdict call was rate limited, so there is no
-   quality data. Ruben's arm never started. Mechanically, from what did land: `d-person` removes
+   quality data. The owner's arm never started. Mechanically, from what did land: `d-person` removes
    2.67 first-person references and cuts 13 profile words; `d-fallback` adds bullets (+0.42) and
    pages (+0.15), which is the opposite of the earlier worry that it was shortening CVs.
    Two paired postings is not a result — it needs re-running.
@@ -1463,7 +1463,7 @@ concrete achievement in the third. That is the change asked for; the judge score
 **To resume**, with a clear rate limit and a credential at `certificates/anthropic.key`:
 
 ```
-python scripts/cvlab/run.py --candidates andras,ruben   --variants d-person,d-fallback --samples 3 --judge --concurrency 2   --only <the same 6 slugs per candidate as the d-both grid>   --key-file certificates/anthropic.key --out scripts/cvlab/out/split
+python scripts/cvlab/run.py --candidates andras,owner   --variants d-person,d-fallback --samples 3 --judge --concurrency 2   --only <the same 6 slugs per candidate as the d-both grid>   --key-file certificates/anthropic.key --out scripts/cvlab/out/split
 ```
 
 Concurrency 2, not 6: six tripped the account's rate limit twice and the backoff then ate whole
@@ -2181,8 +2181,8 @@ Measured with the shipped library over 23,621 scored rows per account:
 
 | account | positives | threshold | pool cut | matches lost |
 |---|---|---|---|---|
-| andraslekli | 67 | 0.689 | **72%** (16,950 rows) | **0 of 280** |
-| lekliruben | 878 | 0.586 | 4% (890 rows) | **0 of 3,574** |
+| second account | 67 | 0.689 | **72%** (16,950 rows) | **0 of 280** |
+| owner | 878 | 0.586 | 4% (890 rows) | **0 of 3,574** |
 
 The asymmetry is the design working. An account whose accepted jobs span a wide space legitimately
 cannot be filtered much, and it is not filtered much — the filter never buys its saving with a job

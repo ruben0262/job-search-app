@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Whether the address every email and alert links to reaches this site, from the internet.
 #
-#     deploy/reach.sh https://mahoraga.rubenlekli.com
+#     deploy/reach.sh https://mahoraga.example.com
 #
 # `PUBLIC_URL` builds the sign-up, password-reset and alert links, and nothing else ever opens it, so a
 # wrong one fails only in a stranger's inbox. Twice on the new server (2026-11-03): first the tunnel's

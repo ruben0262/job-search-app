@@ -1,4 +1,4 @@
-"""Salary extraction from posting text + Ruben's suggested-ask bands (feed card 💰/🎯 lines)."""
+"""Salary extraction from posting text, and the suggested-ask bands (feed card 💰/🎯 lines)."""
 from __future__ import annotations
 
 import re

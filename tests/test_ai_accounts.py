@@ -21,7 +21,7 @@ CLAUDE_LOGIN = json.dumps({
     ".credentials.json": json.dumps({"claudeAiOauth": {
         "accessToken": "sk-ant-oat01-" + "a" * 40, "refreshToken": "sk-ant-ort01-" + "r" * 40,
         "subscriptionType": "max"}}),
-    ".claude.json": json.dumps({"oauthAccount": {"emailAddress": "ruben@example.com"}})})
+    ".claude.json": json.dumps({"oauthAccount": {"emailAddress": "sam@example.com"}})})
 
 
 @pytest.fixture()
@@ -170,7 +170,7 @@ def test_a_sign_in_is_sealed_named_by_its_account_and_put_in_use_and_its_login_n
         asked.append((path, payload))
         if path == "/start":
             return {"session_id": "s" * 16, "url": "https://claude.ai/oauth/authorize?x=1", "code": None}
-        return {"status": "done", "secret": CLAUDE_LOGIN, "label": "Claude Max · ruben@example.com"}
+        return {"status": "done", "secret": CLAUDE_LOGIN, "label": "Claude Max · sam@example.com"}
 
     monkeypatch.setattr("services.api.ai_account_routes._broker", broker)
     started = http.post("/ai-accounts/signin/claude_login").json()
@@ -180,7 +180,7 @@ def test_a_sign_in_is_sealed_named_by_its_account_and_put_in_use_and_its_login_n
                      json={"session_id": started["session_id"], "code": "abcd1234#efgh"})
 
     (account,) = done.json()["accounts"]["accounts"]
-    assert (account["label"], account["in_use"]) == ("Claude Max · ruben@example.com", True)
+    assert (account["label"], account["in_use"]) == ("Claude Max · sam@example.com", True)
     assert "sk-ant-oat01" not in done.text and "refreshToken" not in http.get("/ai-accounts").text
     assert store.reveal_account(user.id, ObjectId(account["id"])).reveal() == CLAUDE_LOGIN
 
@@ -189,7 +189,7 @@ def test_a_sign_in_is_sealed_named_by_its_account_and_put_in_use_and_its_login_n
 def test_a_chatgpt_sign_in_waits_until_openais_page_has_the_code(api, monkeypatch):
     http, _, _, _ = api
     answers = iter([{"status": "waiting"}, {"status": "done", "secret": json.dumps({"auth.json": "{}"}),
-                                           "label": "ChatGPT Plus · ruben@example.com"}])
+                                           "label": "ChatGPT Plus · sam@example.com"}])
     monkeypatch.setattr("services.api.ai_account_routes._broker",
                         lambda path, payload: {"session_id": "s" * 16, "url": "https://auth.openai.com/codex/device",
                                                "code": "8CXI-BU5CD"} if path == "/start" else next(answers))
@@ -200,7 +200,7 @@ def test_a_chatgpt_sign_in_waits_until_openais_page_has_the_code(api, monkeypatc
     second = http.post("/ai-accounts/signin/codex_login/finish", json={"session_id": started["session_id"]})
 
     assert first.json() == {"status": "waiting", "accounts": None}
-    assert second.json()["accounts"]["accounts"][0]["label"] == "ChatGPT Plus · ruben@example.com"
+    assert second.json()["accounts"]["accounts"][0]["label"] == "ChatGPT Plus · sam@example.com"
 
 
 @needs_db
@@ -335,7 +335,7 @@ def test_settings_asks_for_an_accounts_limits_and_only_its_owner_may(api, monkey
 
     monkeypatch.setattr(limits, "read", lambda kind, blob, **kw: [
         limits.Window("five_hour", "5-hour limit", 37.0, None)] if kind == "claude_login" else [])
-    account = store.add(user.id, "claude_login", CLAUDE_LOGIN, label="Claude Max · ruben@example.com")
+    account = store.add(user.id, "claude_login", CLAUDE_LOGIN, label="Claude Max · sam@example.com")
     key = _key(http).json()["accounts"][0]["id"]
 
     assert http.get(f"/ai-accounts/{account}/limits").json() == {"windows": [

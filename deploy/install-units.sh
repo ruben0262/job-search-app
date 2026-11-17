@@ -56,7 +56,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # The units name the checkout, its owner and the owner's home as @REPO@, @USER@ and @HOME@, filled in
-# here: they were `/home/ruben/...`, which is one box's layout, and a new server is another.
+# here: they were one person's `/home/...`, which is one box's layout, and a new server is another.
 OWNER="$(stat -c %U "$REPO")"
 OWNER_HOME="$(getent passwd "$OWNER" | cut -d: -f6)"
 for need in "$REPO/certificates/server.env" "$REPO/.venv/bin/python"; do

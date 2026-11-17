@@ -4714,8 +4714,8 @@ Gates: lint-imports 2 kept; ruff clean; schema ok; contract current; build ✓; 
 ## 2026-11-03 — The sign-up link reached nothing; every deploy now opens it
 
 **Nobody could verify a sign-up** (owner): the emailed link said "This site can't be reached". It is
-built from `PUBLIC_URL`, and `deploy/SERVER.md` said to set it to `https://mahoraga-app.rubenlekli.com`.
-That was the old VPS's name, and it no longer resolves. The site is `https://mahoraga.rubenlekli.com`.
+built from `PUBLIC_URL`, and `deploy/SERVER.md` said to set it to `https://mahoraga-app.…`.
+That was the old VPS's name, and it no longer resolves. The site is `https://mahoraga.…`.
 The guide is corrected; the server's value is changed by hand (no code reads a fixed address).
 
 It is the second wrong `PUBLIC_URL` on this server in a day (the first was the tunnel's internal
@@ -4872,7 +4872,7 @@ installing and the timers need root. `deploy.sh` and `compose.sh` need the `dock
 - Values with `&`, `$` or spaces go in single quotes, which compose, systemd and bash all take
   literally. Checked with `docker compose config`: an Atlas address keeps its `&`, and a password's
   `$` stays a `$`.
-- The units named `/home/ruben/...` and `User=ruben`, one box's layout. They carry `@REPO@`,
+- The units named one person's `/home/...` and `User=`, one box's layout. They carry `@REPO@`,
   `@USER@` and `@HOME@` now, which `install-units.sh` fills from the checkout and its owner. It
   refuses to install without `certificates/server.env` and `.venv`.
 
@@ -6041,7 +6041,7 @@ Found by the mutation test above: switching the remote-only check off changed no
 something else was already dropping the on-site job. `UserFilters` read `onsite_locations` from a
 config that has no such field, so it always fell back to the environment and then to
 `"hungary,budapest"` — the reference instance owner's own setting, whose module docstring still
-read "Ruben wants FULLY REMOTE work … unless the job is in Hungary". An explicit on-site job in
+read "[The owner] wants FULLY REMOTE work … unless the job is in Hungary". An explicit on-site job in
 Dublin, Paris or Berlin was dropped for every account; one in Szeged was kept.
 
 Replaced by the question onboarding actually asks — remote only, remote or hybrid, anything — applied
@@ -7286,7 +7286,7 @@ Three families, each of which is a lesson rather than a bug:
 ### Every account created on the platform was permanently silent (`libs/queue/queue.py`)
 
 Found by the alert, which is the first time one of these has been caught by the platform rather than
-by a person noticing. `andraslekli@gmail.com`: **73 matching jobs waiting, last delivery never.**
+by a person noticing. The second account: **73 matching jobs waiting, last delivery never.**
 
 Not the notifier and not Telegram. The bot was `connected`, the model trained, and all 15,094
 postings scored. **No `notify` job had ever been enqueued for that account, and none ever would
@@ -8109,7 +8109,7 @@ mail production ever sent pointed the recipient at their own machine. Set on the
 `compose.yml` as `:?`-required — a silently wrong link is worse than a container that will not
 start — and asserted in `tests/test_mail_config.py`, beside the sender-selection test written
 after the same shape of outage. Verified live: the API now builds
-`https://mahoraga-app.rubenlekli.com/#/verify?token=…` and resolves `SmtpSender`, not the console.
+`https://mahoraga-app.…/#/verify?token=…` and resolves `SmtpSender`, not the console.
 
 **The notifier crash-looped on `ModuleNotFoundError: pydantic`.** The v1-config fix imported
 `libs.contracts.config` into a service that never declared it — the indirect-dependency gap the
@@ -8701,9 +8701,9 @@ characters.
 
 `import_documents.py` — everything the upload form does, for a folder: same extractor, same content
 hash, same replace-on-re-upload, and the file itself never stored. Andras's five (a master CV plus
-four long-form context files, 158,975 characters) and Ruben's four candidate-profile files (28,949).
+four long-form context files, 158,975 characters) and the owner's four candidate-profile files (28,949).
 
-**What was deliberately left out, and why.** Ruben's `documents/` folder is empty — his profile
+**What was deliberately left out, and why.** The owner's `documents/` folder is empty — their profile
 content lives in the assistant's skill files — so the import took the four that describe *him* and
 skipped `04-job-evaluation.md` (that is the rubric, already migrated as `rubric_md`), the CV and
 cover-letter templates (templates, not documents about a person), and the `.html` base CVs. Feeding
@@ -9010,7 +9010,7 @@ feed a day later with no explanation.
 
 New columns `users.full_name`, `users.links`, `users.onboarding_completed_at` (`c1a6be40d3f2`). The
 name is not derived from the email: it is what appears at the top of a generated CV, and
-`r.lekli@…` is not a name.
+`j.smith@…` is not a name.
 
 ### The facts block, and a daily cap on outbound mail
 
@@ -9094,7 +9094,7 @@ now in the shared corpus, and both accounts have their own confirmed profile, ru
 feed.
 
 ```
-lekliruben@gmail.com          andraslekli@gmail.com
+the owner's account           the second account
   23 hard gates                 15 hard gates
   2,529 labels @ gen 1          945 labels @ gen 1
   model v1, servable            model v1, servable
@@ -9118,8 +9118,8 @@ fail-closed check refuses. Same labels, same embedder, same feature definitions 
 time. Comparing the platform against the old instances is now an outcome comparison, which is what
 D6 wanted.
 
-**Only labels at each reference's newest rubric were imported** — 3,310 of Ruben's 4,283, 947 of
-947 for Andras. The rest were written under older rubrics and answer a different question. Ruben's
+**Only labels at each reference's newest rubric were imported** — 3,310 of the owner's 4,283, 947 of
+947 for Andras. The rest were written under older rubrics and answer a different question. The owner's
 3,310 then collapsed to 2,529 distinct corpus rows: 781 labelled URLs deduplicated onto postings
 already present, which is the four-layer dedup doing exactly what the shared corpus exists for.
 
@@ -9182,7 +9182,7 @@ Migration `e5f1c0a7b284` adds `user_sessions` and `auth_tokens`. 451 tests.
 
 ### Two accounts on one stack — the D6 comparison is live
 
-`andraslekli@gmail.com` migrated from `andras-job-search` the same way the first account was: config
+The second account migrated from `andras-job-search` the same way the first account was: config
 copied verbatim, nothing in the reference touched. 15 search terms, 5 locations.
 
 Both accounts now drive one shared harvest:

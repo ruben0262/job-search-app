@@ -69,7 +69,7 @@ deploy/compose.sh stop notifier                        # pause alerts; `up -d no
 deploy/compose.sh run --rm --no-deps harvester         # one harvest now
 deploy/compose.sh run --rm seed-ats --dry-run          # what the company seed would store
 deploy/compose.sh run --rm seed-ats --ats workable     # one ATS again, e.g. after it refused a burst
-deploy/reach.sh https://mahoraga.rubenlekli.com      # do the emails' links reach this site?
+deploy/reach.sh https://mahoraga.example.com         # do the emails' links reach this site?
 ```
 
 The scripts in `scripts/` run on the VM itself, from `.venv`, with the settings loaded:
@@ -82,7 +82,7 @@ set -a && . certificates/server.env && set +a
 
 ## Moving the accounts off the old VPS (once)
 
-The old VPS (`ruben@169.56.16.241`, unverified) still runs the pre-MongoDB stack, with the accounts
+The old VPS (`169.56.16.241`, unverified) still runs the pre-MongoDB stack, with the accounts
 in Postgres. This copies the **accounts only** into Atlas (owner, 2026-10-30): people, logins,
 settings, words, documents, profile files, credentials, browsers, and the operator's settings,
 keywords and company boards. Postings are collected again within hours; applied and hidden marks, and

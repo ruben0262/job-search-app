@@ -12,7 +12,7 @@ behaviour becomes multi-tenant. Nothing here is green-field.
 version, and it lives here because the separate handover document was deleted on 2026-07-31 rather
 than kept in sync with the changelog.
 
-**Live:** `https://mahoraga-app.rubenlekli.com` on `169.58.16.241`, ten containers plus the
+**Live:** `https://mahoraga-app.…` on `169.58.16.241`, ten containers plus the
 embedder stack, six systemd timers, 1,014 tests green. Two accounts. The whole web layer, auth,
 onboarding, the setup chat, the jobs table and Telegram delivery are built and verified in a
 browser.
@@ -86,7 +86,7 @@ operating point.
 - **D4 (revised) Everything on the existing $20 Contabo VPS, self-managed Postgres** — so backups,
   PITR, and restore drills stay yours; needs the capacity check in `PLATFORM_ARCHITECTURE.md` §11.
 - **D5 Invite-only at launch** · **D6 Parallel copies, decommission only when proven** ·
-  **D7 Cloudflare Pages + `rubenlekli.com` subdomain, API via Tunnel** (no open inbound ports).
+  **D7 Cloudflare Pages + a subdomain of the owner's domain, API via Tunnel** (no open inbound ports).
 - **D8 EU data residency**, Postgres and backups both · **D9 Generated documents stay ephemeral**.
 
 ## Known risks carried knowingly

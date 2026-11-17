@@ -423,11 +423,11 @@ def test_the_sign_up_link_is_on_the_address_the_site_says_it_is_at(client, monke
     import re
 
     http, _db, mailer = client
-    monkeypatch.setenv("PUBLIC_URL", "https://mahoraga.rubenlekli.com/")
+    monkeypatch.setenv("PUBLIC_URL", "https://jobs.example.com/")
     _signup(http, email := _email())
 
     site = http.get("/health").json()["public_url"]
-    assert site == "https://mahoraga.rubenlekli.com"
+    assert site == "https://jobs.example.com"
     link = re.search(r"https://\S+", mailer.sent[-1][2]).group(0)
     assert link.startswith(f"{site}/#/verify?token=")
     assert http.post("/auth/verify", json={"token": link.split("token=")[1]}).status_code == 200

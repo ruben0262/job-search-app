@@ -52,7 +52,7 @@ if args[:2] == ["auth", "login"]:  # Claude Code
     write(folder + "/.credentials.json", {"claudeAiOauth": {
         "accessToken": "sk-ant-oat01-" + "a" * 40, "refreshToken": "sk-ant-ort01-" + "r" * 40,
         "subscriptionType": "max"}})
-    write(folder + "/.claude.json", {"oauthAccount": {"emailAddress": "ruben@example.com"},
+    write(folder + "/.claude.json", {"oauthAccount": {"emailAddress": "sam@example.com"},
                                      "inherited": os.environ.get("ANTHROPIC_API_KEY")})
     print("Login successful.", flush=True)
 elif args[:1] == ["login"]:  # Codex
@@ -63,7 +63,7 @@ elif args[:1] == ["login"]:  # Codex
     print("   \\x1b[94mABCD-EF12\\x1b[0m", flush=True)
     while not os.path.exists(folder + "/entered"):  # the test says when it was entered on OpenAI's page
         time.sleep(0.1)
-    claims = {"email": "ruben@example.com", "https://api.openai.com/auth": {"chatgpt_plan_type": "plus"}}
+    claims = {"email": "sam@example.com", "https://api.openai.com/auth": {"chatgpt_plan_type": "plus"}}
     token = "x." + base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=") + ".y"
     write(folder + "/auth.json", {"tokens": {"id_token": token, "access_token": "at", "refresh_token": "rt"}})
 else:  # Gemini CLI
@@ -76,7 +76,7 @@ else:  # Gemini CLI
     code = line()
     if code == "4/good-code":  # a plain line: the brackets of a paste would be part of it
         write(home + "/.gemini/oauth_creds.json", {"access_token": "ya29.x", "refresh_token": "1//r"})
-        write(home + "/.gemini/google_accounts.json", {"active": "ruben@gmail.com"})
+        write(home + "/.gemini/google_accounts.json", {"active": "sam@gmail.com"})
     else:
         print("Failed to authenticate with authorization code.", flush=True)
     time.sleep(60)  # the interactive screen it goes on to, once signed in
@@ -112,7 +112,7 @@ def test_claudes_link_is_taken_whole_and_a_pasted_code_links_the_account(tools, 
     files = json.loads(done.secret)
     assert set(files) == {".credentials.json", ".claude.json"}
     assert json.loads(files[".claude.json"])["inherited"] is None, "an API key in the server's environment"
-    assert done.label == "Claude Max · ruben@example.com"
+    assert done.label == "Claude Max · sam@example.com"
     assert not folder.exists(), "the login files are gone from disk once handed over"
     assert started.session_id not in signin._SESSIONS
 
@@ -183,7 +183,7 @@ def test_googles_code_goes_in_as_a_plain_line_and_its_login_is_kept(tools):
 
     assert started.url.startswith("https://accounts.google.com/o/oauth2/")
     assert set(json.loads(done.secret)) == {".gemini/oauth_creds.json", ".gemini/google_accounts.json"}
-    assert done.label == "Google Gemini · ruben@gmail.com"
+    assert done.label == "Google Gemini · sam@gmail.com"
     assert not folder.exists()
 
 
@@ -197,7 +197,7 @@ def test_chatgpt_shows_its_code_here_and_is_waited_for_until_openai_has_it(tools
     (folder / "entered").touch()
     done = signin.finish(started.session_id, USER, None)
 
-    assert done is not None and done.label == "ChatGPT Plus · ruben@example.com"
+    assert done is not None and done.label == "ChatGPT Plus · sam@example.com"
     assert set(json.loads(done.secret)) == {"auth.json"}
 
 

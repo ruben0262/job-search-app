@@ -7,6 +7,7 @@ check does not know, fails nobody's build and quietly makes every document worse
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -18,8 +19,17 @@ from services.docgen import build
 
 WRITING = tuple(build.PROMPTS.values())
 
-# The reference instance's owner.
-_IDENTITY = re.compile(r"\bRuben\b|\bLekli\b", re.IGNORECASE)
+# The reference instance's owner, by each word they went by in its files: their names, their site's and their
+# accounts'. Kept as digests, so this file names them no more than the rest of the project does (owner,
+# 2026-11-17: "remove ... from the site and the project completely").
+_IDENTITY = frozenset({"b04e95d0b09d1c38", "3497ea51d03887eb", "df386986e7c1337b", "40c2ca3b21e962c7",
+                       "e909296ac38ce5c9", "7c47233d5104d91a"})
+
+
+def _identity(text: str) -> set[str]:
+    """The words in `text` that are the reference instance's owner's."""
+    return {word for word in re.findall(r"\w+", text.lower())
+            if hashlib.sha256(word.encode()).hexdigest()[:16] in _IDENTITY}
 
 # A name is the easy half.
 _REFERENCE_SPECIFICS = (
@@ -32,7 +42,7 @@ _REFERENCE_SPECIFICS = (
 def test_a_prompt_every_account_is_written_with_names_nobody(name):
     body = load(name)
 
-    assert not _IDENTITY.search(body), f"{name} names a person and is used for everyone"
+    assert not _identity(body), f"{name} names a person and is used for everyone"
     for specific in _REFERENCE_SPECIFICS:
         # Word-bounded: "sharper entries" is style advice and must not read as the Sharpe ratio.
         assert not re.search(rf"\b{re.escape(specific)}\b", body, re.IGNORECASE), (
@@ -74,8 +84,9 @@ def test_meridians_stylesheet_carries_no_identity():
     """Meridian, the look a person has until they pick one, is the old scaffold's stylesheet."""
     template = Path(SCAFFOLD_CV).read_text(encoding="utf-8")
 
-    assert not _IDENTITY.search(template)
-    for leak in ("@gmail", "+44", "rubenlekli.com", "github.com/ruben"):
+    # Their site and their GitHub account are words of `_IDENTITY`.
+    assert not _identity(template)
+    for leak in ("@gmail", "+44"):
         assert leak not in template, f"{leak} is still in the CV template"
     # A4 and the `@page` margin rule are why the PDF does not get a Chrome header drawn over it.
     assert "@page" in template

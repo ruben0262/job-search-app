@@ -313,7 +313,7 @@ Prompt & Rule Change Control): no edit without explicit approval, A/B measured, 
 it changes **every** user's `profile_version` and invalidates **every** user's labels — so template
 changes must be able to relabel in the background rather than blanking everyone's model at once.
 
-Calibration examples are the open sub-problem: the reference instance's are written against Ruben's
+Calibration examples are the open sub-problem: the reference instance's are written against the owner's
 stack ("2+ core overlaps"). Either express them relative to the profile ("a role with 2+ of *this
 user's* core overlaps → 93") or generate a small set per user at render time. Prefer the former — it
 keeps rendering deterministic. Validate on the first cohort.

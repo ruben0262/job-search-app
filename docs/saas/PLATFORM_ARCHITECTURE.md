@@ -282,13 +282,13 @@ job postings. Design this in now: it is why no user data may ever be denormalise
 | **D8** | Data residency | **EU region, explicitly.** Postgres and all backups pinned to the EU. Simplest GDPR posture for the data you control; Anthropic and Telegram remain third-country processors to disclose. Confirm where the Contabo instance actually sits, and pick an **EU** backup destination |
 | **D9** | Generated documents (G8) | **Ephemeral, as today.** Built, delivered, discarded; the applied-log is the durable record. No object storage, no retention policy, no user CVs persisting under your control — which also shrinks the GDPR surface |
 | **D5** | Launch mode | **Invite-only.** Keeps the cohort known and scraping volume attributable, and defers the legal review from a blocker to a milestone. It is also what makes the v1 quota design sufficient — near-zero abuse surface |
-| **D6** | Cutover | **Parallel copies, decommission only when proven.** The single-tenant stacks keep running; Ruben and Andras *also* get platform accounts. Compare feed quality directly on the same person before anything is switched off |
-| **D7** | Frontend | **Cloudflare Pages + subdomain of `rubenlekli.com`.** Static SPA on Pages; the API reached via a Cloudflare Tunnel so the VPS needs **no open inbound ports**. Free tier covers this scale, and it reuses existing Cloudflare experience |
+| **D6** | Cutover | **Parallel copies, decommission only when proven.** The single-tenant stacks keep running; the owner and Andras *also* get platform accounts. Compare feed quality directly on the same person before anything is switched off |
+| **D7** | Frontend | **Cloudflare Pages + a subdomain of the owner's domain.** Static SPA on Pages; the API reached via a Cloudflare Tunnel so the VPS needs **no open inbound ports**. Free tier covers this scale, and it reuses existing Cloudflare experience |
 
 ## 10. New risks surfaced by this design
 
-1. **The scoring rubric is personal and currently hardcoded.** `scorer/prompts/label.md` embeds "WHO
-   RUBEN IS", and its hash is `profile_version` — the key that scopes training data. Multi-tenant needs
+1. **The scoring rubric is personal and currently hardcoded.** `scorer/prompts/label.md` embeds who the
+   owner is, and its hash is `profile_version` — the key that scopes training data. Multi-tenant needs
    a **per-user rubric generated from their profile**, with a per-user `profile_version`. This is the
    single largest de-personalisation task in the whole project and it is currently invisible in every
    plan. See `COLD_START_PLAN.md` §3.

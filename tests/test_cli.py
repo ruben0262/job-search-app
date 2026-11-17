@@ -228,7 +228,7 @@ def test_a_signed_in_account_writes_documents_and_nothing_else(tools):
 
 def test_each_account_is_named_by_its_plan_and_address_where_the_sign_in_says_them():
     claims = base64.urlsafe_b64encode(json.dumps({
-        "email": "ruben@example.com", "https://api.openai.com/auth": {"chatgpt_plan_type": "pro"}}).encode())
+        "email": "sam@example.com", "https://api.openai.com/auth": {"chatgpt_plan_type": "pro"}}).encode())
     token = f"x.{claims.decode().rstrip('=')}.y"
     codex = json.dumps({"auth.json": json.dumps({"tokens": {"id_token": token}})})
     claude = json.dumps({".credentials.json": json.dumps({"claudeAiOauth": {"subscriptionType": "pro"}}),
@@ -236,7 +236,7 @@ def test_each_account_is_named_by_its_plan_and_address_where_the_sign_in_says_th
     gemini = json.dumps({".gemini/oauth_creds.json": "{}",
                          ".gemini/google_accounts.json": json.dumps({"active": "b@gmail.com"})})
 
-    assert cli.label("codex_login", codex) == "ChatGPT Pro · ruben@example.com"
+    assert cli.label("codex_login", codex) == "ChatGPT Pro · sam@example.com"
     assert cli.label("claude_login", claude) == "Claude Pro · a@example.com"
     assert cli.label("gemini_login", gemini) == "Google Gemini · b@gmail.com"
     assert cli.label("claude_login", json.dumps({".credentials.json": "{}"})) == "Claude", "says nothing more"

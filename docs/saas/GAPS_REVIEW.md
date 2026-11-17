@@ -43,7 +43,7 @@ CVs, and CV quality is the product.
 **Missing:** no design for monitoring. `SAAS_PLATFORM_PLAN.md` §5f flagged the operational burden;
 nothing addressed it.
 
-Once other people depend on this, "Ruben reads the logs" stops working. Needed at minimum:
+Once other people depend on this, "the owner reads the logs" stops working. Needed at minimum:
 
 - **Per-user health**: last successful harvest, last delivery, model version and age, queue position,
   quota state, proxy credential status.

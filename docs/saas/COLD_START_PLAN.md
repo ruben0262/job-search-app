@@ -60,7 +60,7 @@ generic "is this a plausible tech role" classifier.
 
 ## 3. The per-user rubric — the biggest hidden task
 
-`scorer/prompts/label.md` is self-contained by design: it embeds "WHO RUBEN IS", the hard gates, the
+`scorer/prompts/label.md` is self-contained by design: it embeds who the owner is, the hard gates, the
 decision procedure, and calibration few-shots. Its hash is `profile_version`, which scopes which
 labels a training run may use (`SCORER_PROFILE`). That design is correct and should be kept — but it
 is **single-tenant to the core.**

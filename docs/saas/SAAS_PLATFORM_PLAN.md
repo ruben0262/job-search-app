@@ -6,7 +6,7 @@ which led into the bigger idea below.
 
 **Read first:** `PRODUCTIZATION.md` (de-personalization checklist for a forkable copy) and
 `FRIENDS_ROLLOUT.md` (the current real deployment model — Option A: friend's own machine,
-Option B: multi-tenant on Ruben's VPS, one Docker Compose project per friend). This plan is the
+Option B: multi-tenant on the owner's VPS, one Docker Compose project per friend). This plan is the
 next evolution of that: instead of a friend manually running `/setup` inside Claude Code, cloning
 the repo, and hand-editing `.env`, a **web app** does the onboarding, provisioning, and ongoing
 management — while the actual job search still runs the same way underneath (Docker containers,
@@ -160,7 +160,7 @@ order).
   friends. This is a genuine risk to evaluate before any public launch, not just a technical
   constraint — get real legal advice if this moves toward being a paid public product, not
   engineering judgment alone.
-- The residential proxy model changes too: today Ruben shares his own proxy URL with 2-4 trusted
+- The residential proxy model changes too: today the owner shares their own proxy URL with 2-4 trusted
   friends and eats the (metered) bandwidth cost personally. That does not work for a public
   product — either each user brings their own proxy (friction, but no shared cost/liability), or
   the platform provisions/bills for proxy usage per user (real, scaling cost — DataImpulse-style
@@ -171,7 +171,7 @@ order).
   **$0.11-0.14** in Claude usage; each user also needs their own Claude subscription/API access,
   a VPS-equivalent allocation of compute, and (per 5a) proxy bandwidth. A SaaS product needs an
   explicit answer to: does the user bring their own Claude subscription (today's model, per
-  `FRIENDS_ROLLOUT.md` — "no cost to Ruben, in either option"), or does the platform provide
+  `FRIENDS_ROLLOUT.md` — "no cost to the owner, in either option"), or does the platform provide
   Claude access and charge for it (materially different cost/billing architecture, usage
   metering, abuse limits)?
 - Compute cost per tenant under Model 1 (§4): each additional user needs their own
@@ -182,7 +182,7 @@ order).
 ### 5c. Secrets management
 - Today: each user's Claude token, Telegram bot token, and (shared) proxy credentials live in a
   plaintext `.env` file, gitignored, on whichever machine runs Docker. That is acceptable for a
-  handful of trusted friends running their own instance (Option A) or trusting Ruben with root on
+  handful of trusted friends running their own instance (Option A) or trusting the owner with root on
   his own VPS (Option B) — it is **not** an acceptable model for a public product holding
   strangers' credentials. Needs real secrets management (encrypted at rest, scoped access, likely
   a secrets manager rather than files) before any public signup.
@@ -206,11 +206,11 @@ isolation on every single query/file access — a much higher and more failure-p
 especially early on. This alone is a strong argument for Model 1 first.
 
 ### 5f. Operational/support burden
-Running other people's infrastructure (even in separate containers) means Ruben (or whoever runs
+Running other people's infrastructure (even in separate containers) means the owner (or whoever runs
 the platform) now owns uptime, monitoring, and incident response for other people's job searches
 — a step up from "my own tool, plus I help 2-4 friends informally." Needs at least a plan for:
 monitoring per-tenant container health, alerting on failures, and a support channel for issues
-(distinct from Ruben personally reading logs, which is the current de facto model per this whole
+(distinct from the owner personally reading logs, which is the current de facto model per this whole
 conversation).
 
 ### 5g. Existing framework constraints that still apply unchanged

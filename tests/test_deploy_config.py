@@ -2,7 +2,7 @@
 names, every compose command reads the server's settings, and the timers name no one box's layout.
 
 Each of these was a defect before it was a test (2026-11-03): `TUNNEL_TOKEN` was read by compose and
-named nowhere an operator would look, and the units ran `/home/ruben/...`, which is one server's
+named nowhere an operator would look, and the units ran one person's `/home/...`, which is one server's
 layout and not the next one's."""
 from __future__ import annotations
 

@@ -21,7 +21,7 @@ Sources). Prices move monthly — re-check before committing.
 |---|---|---|
 | Output | Structured JSON (score + breakdown + short notes) | Long-form prose / HTML, voice matters |
 | Prompt | Self-contained rubric (`scorer/prompts/label.md`) | SACRED, A/B-tuned (`pipeline/prompts/tailor_*.md`) |
-| Grounding | None needed (rubric embeds "who Ruben is") | Needs `CLAUDE.md` context to avoid fabrication (2026-07-15 A/B) |
+| Grounding | None needed (rubric embeds "who the owner is") | Needs `CLAUDE.md` context to avoid fabrication (2026-07-15 A/B) |
 | Failure cost | A mis-scored job (cheap; feeds ML training data + routing) | A fabricated employer/metric on a real application (expensive, reputational) |
 | Volume | ~1300 jobs/run, bulk, offline | ~5 CVs per on-demand build, low volume |
 | Latency need | None (batchable) | Interactive-ish (user waits for a build) |

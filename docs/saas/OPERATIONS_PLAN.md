@@ -43,7 +43,7 @@ Failures that produce no signal today:
 | Harvest budget exhausted | Fewer jobs | "quiet week" |
 | Config matches ~nothing | Empty feed | "there are no jobs for me" |
 
-"Ruben reads the logs" is the current monitoring design. It does not survive five users, and it
+"The owner reads the logs" is the current monitoring design. It does not survive five users, and it
 certainly does not survive the failure modes above, none of which produce an error anyone is looking
 at.
 

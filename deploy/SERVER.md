@@ -47,13 +47,13 @@ storage:
 - **Memory:** 8192 MB, *Ballooning* off: the containers' memory limits assume the memory is there.
 - **Network:** bridge `vmbr0`, model *VirtIO*.
 
-Install Ubuntu with the OpenSSH server, and an account for yourself (the examples say `ruben`). Give
+Install Ubuntu with the OpenSSH server, and an account for yourself (the examples say `ops`). Give
 the VM a fixed address on your network (a DHCP reservation in the router is simplest).
 
 **`sudo`** is for the few things only root may do: installing packages and Docker, joining the
 `docker` group, the swap, and installing the timers. Ubuntu Server has it. Debian leaves it out when
 root is given a password at install, and Proxmox's container templates log in as root without it.
-There, once, as root: `apt install -y sudo && usermod -aG sudo ruben`, then log in again as `ruben`.
+There, once, as root: `apt install -y sudo && usermod -aG sudo ops`, then log in again as `ops`.
 `deploy.sh` and `compose.sh` never need it: they need the `docker` group, below.
 
 Then, on it:
@@ -98,12 +98,12 @@ ssh-keygen -t ed25519 -N "" -C "mahoraga-server" -f ~/.ssh/github_deploy
 cat ~/.ssh/github_deploy.pub
 ```
 
-GitHub → `ruben0262/job-search-app` → Settings → Deploy keys → *Add deploy key*: paste it, and leave
+GitHub → the `job-search-app` repository → Settings → Deploy keys → *Add deploy key*: paste it, and leave
 *Allow write access* off. Then:
 
 ```bash
 printf 'Host github.com\n  IdentityFile ~/.ssh/github_deploy\n  IdentitiesOnly yes\n' >> ~/.ssh/config
-git clone git@github.com:ruben0262/job-search-app.git ~/job-search-app
+git clone git@github.com:OWNER/job-search-app.git ~/job-search-app   # OWNER: the account that holds it
 cd ~/job-search-app
 
 # For the scripts that run on the VM itself: the health check, the backup, the account tools.
@@ -138,8 +138,8 @@ Each setting says in the file what it is and how to make it. In short:
 | `MONGODB_DB` | `mahoraga` |
 | `SECRETS_KEK` | **The old server's value**, if you are bringing its accounts (step 9): their saved keys open with it and nothing else. Otherwise a new one: `.venv/bin/python -c "from libs.secrets import generate_key; print('k0:' + generate_key())"`. Keep a copy in your password manager too |
 | `ACCESS_TOKEN_SECRET` | `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` |
-| `PUBLIC_URL` | `https://mahoraga.rubenlekli.com`, the address people open the site at: every sign-up, reset and alert link starts with it. The deploy checks it reaches this server (`deploy/reach.sh`) |
-| `ADMIN_EMAILS` | `lekliruben@gmail.com` |
+| `PUBLIC_URL` | The address people open the site at (`https://mahoraga.example.com` in these steps): every sign-up, reset and alert link starts with it. The deploy checks it reaches this server (`deploy/reach.sh`) |
+| `ADMIN_EMAILS` | Your own address, or several, comma-separated: those accounts are the site's admins |
 | `TUNNEL_TOKEN` | Step 6 |
 | `SMTP_PASSWORD` | The Zoho mailbox's password (an app password, with 2FA) |
 | `VAPID_*` | Made **once**, with the command in the file (run it with `.venv/bin/python`). A new pair stops every browser that already subscribed |
@@ -172,18 +172,18 @@ would reach the old server.
 2. Under *Install and run a connector*, choose *Docker*, and copy the long string after `--token`. Put
    it in `certificates/server.env` as `TUNNEL_TOKEN='…'`. Nothing else is needed on the VM: the
    `cloudflared` container is part of the stack.
-3. *Public Hostname* → add a **test name** first, e.g. `mahoraga-new.rubenlekli.com`: type **HTTP**,
+3. *Public Hostname* → add a **test name** first, e.g. `mahoraga-new.example.com`: type **HTTP**,
    URL **`platform-api:8000`**.
    - That address is the API's name on the containers' own network. Not `localhost`: the tunnel runs
      in a container beside the API, and the API opens no port on the VM.
    - Not `api:8000` either: `compose.yml` explains the name clash it avoids.
    `PUBLIC_URL` must be a name this tunnel serves, or the emails' links land nowhere: while you test,
    the test name; after step 4, the real one. Every deploy checks it (`deploy/reach.sh`).
-4. Once the test name works (step 7), move the real name, `mahoraga.rubenlekli.com`:
+4. Once the test name works (step 7), move the real name, `mahoraga.example.com`:
    - in the **old** tunnel's Public Hostnames, delete it;
    - in the **new** one, add it with the same `HTTP` and `platform-api:8000`. If Cloudflare says a DNS
      record already exists, delete that `CNAME` under DNS first.
-   - Set `PUBLIC_URL=https://mahoraga.rubenlekli.com`, run `deploy/deploy.sh api notifier`, then stop
+   - Set `PUBLIC_URL=https://mahoraga.example.com`, run `deploy/deploy.sh api notifier`, then stop
      the old server's stack and delete the test name.
 
 If a token ever leaks: the tunnel's page → *Refresh token*, put the new one in `server.env`, then
@@ -208,7 +208,7 @@ sudo deploy/install-units.sh     # the harvest, health and backup timers
 
 ```bash
 deploy/compose.sh ps                                     # api, docgen, notifier, oauthbroker, describer, cloudflared: running
-curl -s https://mahoraga-new.rubenlekli.com/health       # {"status":"ok"}
+curl -s https://mahoraga-new.example.com/health          # {"status":"ok"}
 systemctl list-timers harvester.timer health.timer backup.timer
 ```
 
@@ -276,7 +276,7 @@ other products; and the webhook also hears about your other customers, which the
    Customer portal, Subscriptions and **Invoices** (free access voids what is owed), and read access to
    Prices. The sandbox's restricted key ran every step of the test, voiding included. Put live keys straight into `certificates/server.env` on the server, never
    in a chat or an email.
-3. **The webhook.** Developers → Webhooks → *Add endpoint*: `https://mahoraga.rubenlekli.com/billing/webhook`,
+3. **The webhook.** Developers → Webhooks → *Add endpoint*: `https://mahoraga.example.com/billing/webhook`,
    sending `checkout.session.completed`, `customer.subscription.created`, `.updated`, `.deleted`, `.paused`,
    `.resumed`, `invoice.paid` and `invoice.payment_failed`. Its signing secret (`whsec_…`) is
    `STRIPE_WEBHOOK_SECRET`. Stripe shows each delivery and the answer: 400 is a wrong secret; 503 a moment
@@ -285,7 +285,7 @@ other products; and the webhook also hears about your other customers, which the
    portal → *Activate*, with payment methods and invoice history on, cancelling **at the end of the billing
    period**, and switching plans **between the membership's and Starter's prices only** (off, if there is no
    Starter plan, or in an account that sells other things): it is how somebody on Starter moves up to
-   Member, the site's "Change my plan" button opens it; its redirect link `https://mahoraga.rubenlekli.com`. The site opens
+   Member, the site's "Change my plan" button opens it; its redirect link the site's own address. The site opens
    this portal for each person already signed in to it (Settings → *Manage membership*, and *Pay now*); the
    login link Stripe shows on that page opens the same portal for somebody arriving from Stripe's emails,
    after a code by email, and the site does not need it.

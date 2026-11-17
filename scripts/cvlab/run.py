@@ -19,7 +19,7 @@ numbers join the comparison beside ours.
     python scripts/cvlab/run.py --dry-run --out scripts/cvlab/out/ab
 
     # the new prompt against the CV they uploaded, on the account they linked on this computer
-    python scripts/cvlab/run.py --candidates ruben=db:someone@example.com --account someone@example.com \
+    python scripts/cvlab/run.py --candidates owner=db:someone@example.com --account someone@example.com \
         --variants uploaded,live --baseline uploaded --samples 3 --judge --out scripts/cvlab/out/first
 
     # letters already written, and what the outside checker makes of them and of their own
@@ -940,7 +940,7 @@ def main() -> int:
     parser.add_argument("--variants", default="live",
                         help="comma-separated; `live` is the deployed prompt, `uploaded` their own document")
     parser.add_argument("--baseline", default="live", help="the variant every other is measured against")
-    parser.add_argument("--candidates", default="andras,ruben",
+    parser.add_argument("--candidates", default="andras,owner",
                         help="comma-separated: a folder under --candidates-dir, or NAME=db:EMAIL")
     parser.add_argument("--account", default=None,
                         help="write and judge on the AI account this person has in use in the local database")
