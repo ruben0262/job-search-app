@@ -289,9 +289,12 @@ export function Landing() {
             <p className="hero-tag" style={{ "--base": "0.3s" } as CSSProperties}>
               <Words>The job search that</Words> <span className="glow"><Words from={4}>runs itself.</Words></span>
             </p>
+            {/* What people want from it, said first (owner, 2026-11-17: "a simple, high quality, fast app"), and
+                each shown by what follows: one list, one tap, a CV made for the job. */}
             <p className="hero-sub" data-reveal style={after(0.6)}>
-              <strong>Every job that fits you</strong>, from LinkedIn, job boards and company career pages, in one
-              list. <strong>A CV for each</strong> in one tap. You apply on the job's own site, in minutes.
+              <strong>Simple, fast, and made for each job.</strong> Every job that fits you, from LinkedIn, job
+              boards and company career pages, in one list. A CV for each in one tap. You apply on the job's own
+              site, in minutes.
             </p>
             <div className="hero-ctas" data-reveal style={after(0.7)}>
               <a className="btn btn-primary" href="#/signup">Start free <Arrow /></a>

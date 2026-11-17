@@ -224,6 +224,10 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         demo = page.locator(".demo-card")
         demo.get_by_role("button", name="Apply on LinkedIn").click()
         expect(demo).to_contain_text("opens it on LinkedIn, and you apply there")
+        # Each part says what it is for, tapped on a phone: under the phone (owner, 2026-11-17).
+        page.locator(".phone .tag.match").click()
+        expect(page.locator(".phone-callout")).to_contain_text("Match score")
+        assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         # The sections at the foot of a phone: a picture over each one's word (owner, 2026-11-07).
         expect(page.locator(".dock a").filter(has=page.locator(".short"))).to_have_text(
             ["What", "Why", "How", "See", "Price", "Start"], use_inner_text=True)
@@ -281,6 +285,17 @@ def test_the_phone_goes_through_the_site_by_itself_until_a_visitor_touches_it(si
         on = page.locator(".phone-tabs .on")
         expect(page.locator(".phone .paper")).to_be_visible(timeout=8000)
         expect(on).to_have_attribute("data-tab", "applied", timeout=10000)
+        # It hears back on Applied, and the first application moves along its track (owner, 2026-11-17).
+        track = page.locator(".phone .progress ol").first
+        expect(track.locator("li.done")).to_have_text(["Applied", "Interview"], timeout=6000)
+        # Pointed at, it stands still with the part said beside it, and goes on once the pointer leaves.
+        track.hover()
+        expect(page.locator(".phone-callout")).to_contain_text("Where it stands")
+        page.wait_for_timeout(5000)
+        expect(on).to_have_attribute("data-tab", "applied")
+        page.mouse.move(5, 5)
+        expect(page.locator(".phone-callout")).to_have_count(0)
+        expect(on).to_have_attribute("data-tab", "words", timeout=8000)
         titles = page.locator(".alert-title")
         newest = titles.first.inner_text()
         expect(titles.nth(1)).to_have_text(newest, timeout=6000)
@@ -373,6 +388,11 @@ def test_the_landing_page_offers_free_and_member_and_an_admin_words_both(site, c
         expect(cards.last.locator(".price-list li .line")).to_have_text(
             ["Everything in Free", lines["now"]["text"], *paid])
         _says_more(cards.last.locator(".price-list li").nth(2), lines["areas"]["alerts"][0]["more"])
+        # Pointed at on a laptop, a part of the phone is said beside it.
+        page.locator(".phone .make button").first.hover()
+        note = page.locator(".phone-callout")
+        expect(note).to_contain_text("Make my CV")
+        assert note.bounding_box()["x"] > page.locator(".phone-screen").bounding_box()["x"] + 340, "beside it"
         expect(page.locator(".price-amount")).to_have_count(0)
         _one_line_each(page)
         expect(cards.first.get_by_role("link", name=free["button"])).to_have_attribute("href", "#/signup")

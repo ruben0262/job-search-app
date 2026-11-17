@@ -637,7 +637,7 @@
   font-size: 15.5px;
 }
 
-.landing .match {
+.landing div.match {
   width: 100%;
   padding: 16px;
   border: 1px solid var(--glass-line);
@@ -645,14 +645,14 @@
   background: rgba(var(--bg-rgb), 0.5);
 }
 
-.landing .match b {
+.landing div.match b {
   display: block;
   font: 600 17px var(--font-display);
   letter-spacing: -0.02em;
 }
 
 /* A highlighter wiping across the words that matched, and back. */
-.landing .match mark {
+.landing div.match mark {
   padding: 0 2px;
   border-radius: 4px;
   background: linear-gradient(rgba(var(--accent-rgb), 0.45), rgba(var(--accent-rgb), 0.45)) left / 100% 100% no-repeat;
@@ -674,7 +674,7 @@
   }
 }
 
-.landing .match small {
+.landing div.match small {
   display: block;
   margin-top: 8px;
   color: var(--dim);
@@ -1482,6 +1482,170 @@
 
 .landing .phone .job-card {
   margin-top: 14px;
+}
+
+/* The Jobs page's search on the phone, laid out as the app lays it out on a phone, whatever the window around it
+   is: the search a row of its own, how far back and the filters under it. Drawn, not used: a tap on it is a tap
+   on the phone. */
+.landing .phone .finder {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+
+.landing .phone .finder input {
+  grid-column: 1 / -1;
+}
+
+.landing .phone .finder :is(input, select, button) {
+  height: 40px;
+  min-height: 0;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.landing .phone .tab {
+  padding-inline: 6px;
+  font-size: 13px;
+}
+
+/* A card on the phone, as narrow as a small phone's: a little less room round its insides, so an answer and
+   "Not this time" share a row as they do in the app. */
+.landing .phone .job-card {
+  padding-inline: 16px;
+}
+
+.landing .phone .progress-next {
+  padding: 10px 11px;
+}
+
+/* A card's foot on the phone, as on a phone: the way to the job's site on a row of its own. */
+.landing .phone .job-bar:has(> :nth-child(3)) .bar-action.apply {
+  flex-basis: 100%;
+}
+
+/* What each part of the phone is for (`Phone`, owner 2026-11-17): pointed at, a ring round the part and a line
+   from it to a note beside the phone; tapped, or with no room beside it, the note under the phone. */
+.landing .phone {
+  position: relative;
+}
+
+.landing .phone-focus {
+  position: absolute;
+  z-index: 5;
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.22), 0 0 28px rgba(var(--accent-rgb), 0.55);
+  pointer-events: none;
+  transition: top 0.25s var(--out), left 0.25s var(--out), width 0.25s var(--out), height 0.25s var(--out);
+}
+
+.landing .phone-pointer {
+  display: none;
+}
+
+.landing .phone-callout {
+  display: block;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(var(--accent-rgb), 0.45);
+  border-radius: 16px;
+  background: var(--bg-raised);
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
+  text-align: left;
+  animation: lp-callout 0.3s var(--out) both;
+}
+
+.landing .phone-callout strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.landing .phone-hint {
+  display: block;
+  margin-top: 14px;
+  color: var(--dim);
+  font-size: 14px;
+  text-align: center;
+}
+
+.landing .phone-callout ~ .phone-hint {
+  display: none;
+}
+
+@media (hover: hover) {
+  .landing .phone-hint .by-touch {
+    display: none;
+  }
+}
+
+@media (hover: none) {
+  .landing .phone-hint .by-pointer {
+    display: none;
+  }
+}
+
+/* Beside the phone where there is room for it: the note out to its right, over the column beside, and a line
+   from the part to it. */
+@media (min-width: 1024px) {
+  .landing .phone-pointer {
+    display: block;
+    position: absolute;
+    z-index: 6;
+    top: var(--y);
+    left: var(--x);
+    width: calc(100% + 32px - var(--x));
+    height: 2px;
+    margin-top: -1px;
+    background: var(--accent);
+    transform-origin: left;
+    pointer-events: none;
+    animation: lp-pointer 0.3s var(--out) both;
+  }
+
+  .landing .phone-pointer::before {
+    content: "";
+    position: absolute;
+    top: -3px;
+    left: -4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .landing .phone-callout {
+    position: absolute;
+    z-index: 6;
+    top: var(--y);
+    left: calc(100% + 32px);
+    width: 290px;
+    margin: 0;
+    transform: translateY(-50%);
+    box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(var(--accent-rgb), 0.08);
+    pointer-events: none;
+  }
+
+  .landing .phone-callout ~ .phone-hint {
+    display: block;
+  }
+}
+
+@keyframes lp-callout {
+  from {
+    opacity: 0;
+    translate: -8px 0;
+  }
+}
+
+@keyframes lp-pointer {
+  from {
+    transform: scaleX(0);
+  }
 }
 
 /* A page of the phone coming in as its tab is tapped (`Phone`). */

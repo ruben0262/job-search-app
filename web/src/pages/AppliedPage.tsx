@@ -18,8 +18,8 @@ type Stage = Step["stage"];
 /** The way forward, in order; "rejected" ends it from wherever it stands. The landing page's phone draws it too. */
 export const STEPS: [Stage | "applied", string][] = [["applied", "Applied"], ["interview", "Interview"],
                                               ["offer", "Offer"], ["hired", "Got the job"]];
-/** At each stage: the question, and the answer that moves it on. */
-const NEXT: Partial<Record<Stage | "applied", [string, Stage, string]>> = {
+/** At each stage: the question, and the answer that moves it on. The landing page's phone asks them too. */
+export const NEXT: Partial<Record<Stage | "applied", [string, Stage, string]>> = {
   applied: ["Heard back?", "interview", "I got an interview"],
   interview: ["How did it go?", "offer", "I got an offer"],
   offer: ["Did it work out?", "hired", "I got the job"],
