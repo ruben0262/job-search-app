@@ -8,6 +8,11 @@
 
 import-linter>=2.0        # enforces the boundary contracts in pyproject.toml — `lint-imports`
 pytest>=8.0
+# The suite on several workers at once (`pytest tests/ -q -rs -n 4`): each worker is a process of its own, so it
+# has its own `test_<pid>` database and its own ports. 6 min 30 s to 3 min 30 s on an 8-core laptop with 14 GB
+# (2026-11-17), the same tests passing; the browser walks are most of it. **Capped**, because it decides how the
+# suite runs (CLAUDE.md §7): raise it with the whole suite run on the new version first.
+pytest-xdist>=3.8,<3.9
 ruff>=0.8
 
 # libs/db is imported by nearly every service, so its driver is needed to run the tests. Services still

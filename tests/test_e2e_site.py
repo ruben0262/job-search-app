@@ -165,8 +165,10 @@ def test_the_theme_button_is_a_circle_on_every_page_and_switches_the_theme(site,
     def check(page, where: str) -> None:
         button = page.get_by_role("button", name=re.compile(r"^Switch to (light|dark) mode$"))
         expect(button).to_be_visible()
-        box = button.bounding_box()
-        assert abs(box["width"] - box["height"]) < 1, f"{where}: {box['width']}x{box['height']}, not a circle"
+        # Read in the one call that waits for it: a page drawing its bar again (Jobs, just after setting up)
+        # left nothing for a second look to measure when four browsers shared the machine (2026-11-17).
+        width, height = button.evaluate("el => [el.offsetWidth, el.offsetHeight]")
+        assert abs(width - height) < 1, f"{where}: {width}x{height}, not a circle"
         theme = page.evaluate("document.documentElement.dataset.theme")
         button.click()
         expect(page.locator("html")).not_to_have_attribute("data-theme", theme or "")

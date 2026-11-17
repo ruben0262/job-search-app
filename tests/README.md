@@ -14,8 +14,13 @@ A standalone `mongod` is enough: nothing uses a multi-document transaction. The 
 
 ```bash
 export MONGODB_URI="mongodb://127.0.0.1:27017"
-pytest tests/ -q -rs
+pytest tests/ -q -rs -n 4
 ```
+
+`-n 4` runs it on four workers at once (`pytest-xdist`): 3 min 30 s against 6 min 30 s one at a time on an
+8-core laptop (2026-11-17). Each worker is a process of its own, so it has a `test_<pid>` database and ports of
+its own. Four, not one a core: every browser test runs a Chromium and a server, and memory runs out before the
+cores do. Leave `-n 4` off to run them one at a time, which a test that fails only in company is worth doing.
 
 `CHROME_BIN` (a Chromium binary) runs the browser tests — the PDF renderer and the end-to-end walk
 from sign-up to a downloaded CV — which also need a fresh `npm --prefix web run build`.
