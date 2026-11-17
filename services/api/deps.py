@@ -63,10 +63,15 @@ def get_mailer() -> EmailSender:
 
 
 def rate_limit(request: Request, key: str, *, limit: int, per_seconds: int) -> None:
-    """Fixed window, keyed by caller-supplied string plus peer address."""
+    """Fixed window, keyed by caller-supplied string plus the visitor's address."""
     if os.environ.get("DISABLE_RATE_LIMIT") == "1":
         return
-    peer = request.client.host if request.client else "unknown"
+    # The visitor's address as Cloudflare saw it (`CF-Connecting-IP`, set by its edge, which a visitor
+    # cannot forge through it), else the peer's. Behind the tunnel the peer is the tunnel, the same for
+    # everybody, so a limit keyed on it was one count for the whole site: five sign-ups an hour per API
+    # process, for everyone together (found 2026-11-17). Trusted because the API publishes no port of its own
+    # (`deploy/compose.yml`): only the tunnel reaches it.
+    peer = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "unknown")
     bucket = f"{key}|{peer}"
     now = time.monotonic()
 

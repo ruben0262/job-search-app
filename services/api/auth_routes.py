@@ -89,7 +89,10 @@ def signup(body: SignupRequest, request: Request, background: BackgroundTasks,
            db: Database = Depends(get_db),
            mailer: EmailSender = Depends(get_mailer)) -> dict:
     """Create an unverified account and email a link, once the answer has gone."""
-    rate_limit(request, "signup", limit=5, per_seconds=3600)
+    # Per address, and an address is often shared: a campus, an office, a phone network. Twenty an hour lets a
+    # class sign up together and still stops one machine making accounts by the hundred (2026-11-17; it was
+    # five, which behind the tunnel was five for the whole site).
+    rate_limit(request, "signup", limit=20, per_seconds=3600)
 
     if not body.consent_version:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
