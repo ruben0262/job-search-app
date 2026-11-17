@@ -63,8 +63,9 @@ logger = logging.getLogger(__name__)
 
 # What a job's features and a person's profile are made by: a change to how either is read moves it, and every
 # posting is read again (`catch_up`) and every profile on its next use (`profile`). 2: roles read from role
-# phrases, and what a posting requires (2026-11-16, night).
-VERSION = 2
+# phrases, and what a posting requires (2026-11-16, night). 3: a pharmacist's registration apart from a
+# technician's, and the credentials the third held-out set found missing (2026-11-17).
+VERSION = 3
 # Postings written per round trip by `catch_up`.
 _BATCH = 500
 # The positions a word can take in the arrays a request sends: 8,192 measured the same as exact words (0.673

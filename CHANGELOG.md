@@ -14,6 +14,53 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17 — The match score, version 3: a pharmacist's registration apart from a technician's, and the credentials the third held-out set found missing
+
+The owner: "lets do the missing credential checks please see the effect".
+
+### What changed (`libs.fit.requirements`)
+
+- **A pharmacist is not a pharmacy technician.** The GPhC registers both, and one entry read a registered technician
+  as holding what an "Advanced Pharmacist" post asked. Now each has its own registration: a line says which, or
+  else the job's title (a posting naming the register alone) or the person's own roles (a CV naming it with a
+  number). Italy's Albo dei Farmacisti and the abilitazione count as a pharmacist's.
+- **Two checking qualifications, not one**: the dispensary's final accuracy check (ACPT) and the pre- and in-process
+  check of aseptic and technical services. A technician with the first was read as having the second.
+- **A regulated title requires its registration wherever the posting names it**: "As a band 5 registered nurse, you
+  will ..." in a "Neonatal Staff Nurse" post, RCVS membership in a list under no heading the reader knew. Nurse
+  titles, veterinary surgeons, pharmacists.
+- **Acting as an electrical contractor's qualified supervisor** (NICEIC, NAPIT) requires it, wherever the posting
+  says so. Not the inspection and testing qualification (C&G 2391) alone: first tried, it capped a final-year
+  apprentice on "Mobile Electrical Engineer" whom readers put at 7, since his Level 3 covers inspection and testing.
+- "MRCVS" after a vet's name is the membership.
+- Not done: an Ausbildung in another trade still counts as the one asked (reading which trade a training is in, for
+  pairs that already show 2 where readers say 1.5); "responsible for own registration" names no register.
+- `VERSION = 3`: the catch-up reads every posting again once. The weights are unchanged (`model.json` refitted to
+  the same numbers): the change is only which jobs are capped.
+
+### The effect, on all 1,138 labelled pairs (`scripts/cvlab/fit/research/v3_credentials.py`)
+
+11 pairs are newly capped, all labelled 2 to 4 by the readers; none uncapped, none wrong. The technician on the two
+"Advanced Pharmacist" posts 8 to 4 (readers 3 and 3.5) and on the aseptic checker post 9 to 4 (4); a healthcare
+assistant and a dental nurse on "Neonatal Staff Nurse" 6 to 4 (3); the dental nurse on "Bank Staff Nurse/ODP" 6 to 4
+(3); the apprentice on "Principal Electrical Engineer" 5 to 4 (3).
+
+| | mean error | a 7+ that readers put at 7+ | order (rank correlation) |
+|---|---|---|---|
+| seen 27, fresh 12 | unchanged | unchanged | unchanged |
+| fresh2 12 | -0.019 | unchanged | +0.002 |
+| fresh3 12, where the misses were found (optimistic) | -0.074 | +8.1 points | +0.006 |
+
+Every held-out set has now been read, and fresh3 found these misses: a fourth held-out set would read version 3
+fairly (about 1.7M agent tokens); not built.
+
+### Tests
+
+`tests/test_fit.py`, six, each failing on version 2: a technician's registration is not a pharmacist's and a
+pharmacist's GPhC number is; the aseptic in-process check is not the ACPT; a "Neonatal Staff Nurse" requires the
+registration named in its description; MRCVS is the membership; acting as qualified supervisor needs it; Italy's
+pharmacists' register is required where asked.
+
 ## 2026-11-17 — Every word of the pricing in Admin; Starter shown worth more than Free; "Skip the grind. Beat the crowd. Join now."; the phone says what each part does
 
 The owner: "make sure the bullet points and the benefits as well as the crossed out sections appear in admin all the

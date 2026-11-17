@@ -24,6 +24,7 @@ import re
 from collections.abc import Mapping, Sequence
 
 from libs.documents.read import fold
+from libs.fit.roles import role_phrases
 
 # ── credentials ───────────────────────────────────────────────────────────────────────────────────
 
@@ -57,8 +58,21 @@ CREDENTIALS: dict[str, str] = {
     "hcpc": r"\bhcpc\b|health and care professions council",
     "gmc": r"\bgmc\b|general medical council",
     "gdc": r"\bgdc\b|general dental council",
+    # A pharmacist and a pharmacy technician are both on the GPhC's register: a line says which, or else the
+    # job's title or the person's own roles do (`posting`, `person`); "gphc" is the register named alone. As
+    # one, a technician read as holding what an "Advanced Pharmacist" post asked (2026-11-17).
+    "pharmacist registration": r"(?:\bgphc\b|general pharmaceutical council)[^\n]{0,80}\bpharmacist|"
+    r"\bpharmacist\b[^\n]{0,80}(?:\bgphc\b|general pharmaceutical council)|registered pharmacist|"
+    r"albo (?:professionale )?dei farmacisti|abilitazione (?:alla professione )?(?:di )?farmacista",
+    "pharmacy technician registration": r"(?:\bgphc\b|general pharmaceutical council)[^\n]{0,80}technician|"
+    r"\btechnician\b[^\n]{0,80}(?:\bgphc\b|general pharmaceutical council)|registered pharmacy technician",
     "gphc": r"\bgphc\b|general pharmaceutical council",
-    "rcvs": r"\brcvs\b|royal college of veterinary",
+    # Checking a pharmacy's work before it leaves, two qualifications: the dispensary's final accuracy check
+    # (an ACPT), and the pre- and in-process check of aseptic and technical services, which the first is not.
+    "accredited checking technician": r"(?:accredited|accuracy) checking (?:pharmacy )?technician|\bacpt\b",
+    "in-process checker": r"in-?process (?:accuracy )?checker|pre[- ]and in-?process check",
+    # "MRCVS" after a vet's name is the membership itself.
+    "rcvs": r"\bm?rcvs\b|royal college of veterinary",
     "social work registration": r"social work england|registered social worker|\bcoru\b|\bsssc\b|\bniscc\b|"
     r"social care wales",
     "care qualification": r"(?:level|nvq|qcf|rqf) ?[2-5] (?:diploma |certificate )?in (?:adult )?health and "
@@ -88,6 +102,12 @@ CREDENTIALS: dict[str, str] = {
     "smsts/sssts": r"\bsmsts\b|\bsssts\b",
     "gas safe": r"gas safe|\bacs\b|\bccn1\b|\bcodnco1\b|\bcocn1\b",
     "electrical 18th edition": r"18th edition|bs ?7671|17th edition|\bam2\b|approved electrician|\bjib\b",
+    # The one who signs off an electrical contractor's work for NICEIC or NAPIT. Not the inspection and
+    # testing qualification (C&G 2391) alone: readers did not hold it against a final-year apprentice whose
+    # Level 3 covers inspection and testing (2026-11-17).
+    "electrical qualified supervisor": r"(?:act|acting|serve|work) as (?:the |our |a )?(?:nominated )?"
+    r"qualified supervisor|qualified supervisor[^\n]{0,40}(?:niceic|napit|electrical)|"
+    r"(?:niceic|napit)[^\n]{0,40}qualified supervisor",
     "electrical qualification (de/pl/hu)": r"elektrofachkraft|uprawnienia (?:sep|elektr)|\bsep [ed]\b|"
     r"villanyszerelo (?:vegzettseg|bizonyitvany|szakkepesites)|erosaram",
     "f-gas": r"f-?gas|kaltemittel|\bktm\b",
@@ -128,7 +148,26 @@ IMPLIES = {
     "aca/icaew": {"accountancy qualification"},
     "acca": {"accountancy qualification"},
     "cima": {"accountancy qualification"},
+    "pharmacist registration": {"gphc"},
+    "pharmacy technician registration": {"gphc"},
 }
+# A register named with which of its trades: that trade's, not the whole register's.
+_NARROWER = {"gphc": ("pharmacist registration", "pharmacy technician registration")}
+# A job whose title is a regulated one requires its registration wherever the posting names it, not only
+# under "Requirements": "As a band 5 registered nurse, you will ..." in a "Neonatal Staff Nurse" post,
+# "Membership of the Royal College of Veterinary Surgeons" in a list under no heading the reader knows
+# (2026-11-17).
+_TITLED = {
+    "nursing registration": re.compile(
+        r"\b(?:staff|registered|charge|community|district|theatre|ward|neonatal|paediatric|pediatric|"
+        r"mental health|practice|school|scrub|recovery|specialist|clinical) nurse\b|\bnurse (?:practitioner|"
+        r"specialist|consultant)|\bward sister\b|\bmidwi"),
+    "rcvs": re.compile(r"veterinary surgeon|\bvet surgeon|veterinarian"),
+    "pharmacist registration": re.compile(r"\bpharmacist|\bfarmacist"),
+}
+# What doing the work needs, required wherever the posting names it: acting as an electrical contractor's
+# qualified supervisor.
+_DUTIES = frozenset({"electrical qualified supervisor"})
 
 
 def implied(names: set[str]) -> set[str]:
@@ -147,7 +186,8 @@ _DRIVING_JOB = re.compile(
 
 
 def credentials_in(folded: str) -> set[str]:
-    return {name for name, pattern in _CREDENTIALS.items() if pattern.search(folded)}
+    found = {name for name, pattern in _CREDENTIALS.items() if pattern.search(folded)}
+    return {name for name in found if not any(narrower in found for narrower in _NARROWER.get(name, ()))}
 
 
 # ── who may apply ─────────────────────────────────────────────────────────────────────────────────
@@ -253,10 +293,25 @@ def posting(title: str, text: str | None) -> dict:
         found = found - OBTAINABLE
         return found if driving else found - {"driving licence"}
 
-    groups: list[set[str]] = [{name} for name in kept(credentials_in(folded_title))]
+    titled = {name for name, pattern in _TITLED.items() if pattern.search(folded_title)}
+    # The GPhC named alone, in a pharmacy job: the register of the trade the title names.
+    trade = ("pharmacy technician registration" if "technician" in folded_title
+             else "pharmacist registration" if "pharmacist registration" in titled else None)
+
+    def asked(found: set[str]) -> set[str]:
+        return (found - {"gphc"}) | {trade} if trade and "gphc" in found else found
+
+    groups: list[set[str]] = [{name} for name in asked(kept(credentials_in(folded_title)))]
     for line, kind in lines_by_kind(text):
-        if kind == "required" and kept(credentials_in(line)):
-            groups.append(kept(credentials_in(line)))
+        found = kept(credentials_in(line))
+        if kind == "other":
+            # Where the posting says what the work is: only its title's own registration, or what doing the
+            # work needs.
+            found = {name for name in found if name in titled or name in _DUTIES}
+        elif kind != "required":
+            continue
+        if found:
+            groups.append(asked(found))
     # A group within another is the same requirement asked twice.
     unique = [group for group in groups if not any(other < group for other in groups)]
     whole = fold(text or "")
@@ -280,6 +335,16 @@ _PARTIAL = re.compile(
 _SENTENCE_OR_LINE = re.compile(r"(?<=[.!?;])\s+|\n")
 
 
+def _pharmacy_trade(documents: Mapping[str, Sequence[str]]) -> str | None:
+    """Which of the GPhC's trades their CVs name as a role of theirs: a technician's first, since a pharmacist
+    seldom writes "technician" in a role line and a technician often works beside a pharmacist."""
+    phrases = [fold(phrase) for kind in ("cv", "linkedin") for text in documents.get(kind) or ()
+               for phrase in role_phrases(text)]
+    if any("technician" in phrase and "pharmac" in phrase for phrase in phrases):
+        return "pharmacy technician registration"
+    return "pharmacist registration" if any("pharmacist" in phrase for phrase in phrases) else None
+
+
 def person(documents: Mapping[str, Sequence[str]]) -> dict:
     """What a person holds, from every document they gave: `has`, the credentials held whole or half (what
     holding one means holding too included), and `student`, whether they say they are one."""
@@ -296,6 +361,10 @@ def person(documents: Mapping[str, Sequence[str]]) -> dict:
                 if re.search(r"\b(?:current(?:ly)? (?:a )?student|i am (?:a )?student|studentka|student\w* "
                              r"(?:at|of|der|na)|hallgato)\b", sentence):
                     student = True
+    # The GPhC named alone ("GPhC 2087654"): the register of the trade their own roles are.
+    for named in (held, half):
+        if "gphc" in named and not named & set(_NARROWER["gphc"]) and (trade := _pharmacy_trade(documents)):
+            named.add(trade)
     # Named once as in progress, it is in progress, whatever else is said of it.
     half_ = implied(half)
     held_ = implied(held - half) - half_

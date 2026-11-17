@@ -158,6 +158,114 @@ Berufserfahrung
     assert not roles & set(words("Anschrift Persönliche Daten Stadtwerke München Hauptstraße")), roles
 
 
+# ── the credentials the third held-out set found missing (VERSION 3, owner 2026-11-17) ────────────────────
+
+def _barred_and_held(db, title: str, text: str, *, without: str, held: str, name: str) -> tuple[int, int]:
+    """The score one CV shows on a posting, without the line naming a credential and with it."""
+    lacking = _scores(db, fit.person({"cv": [without]}, name), {"job": (title, text)})["job"]
+    db.fit_scratch.drop()
+    having = _scores(db, fit.person({"cv": [without + "\n" + held]}, name), {"job": (title, text)})["job"]
+    return fit.shown(lacking), fit.shown(having)
+
+
+PHARMACY_POST = """We are looking for an experienced pharmacist to join our renal pharmacy team.
+Requirements:
+• Registered with the General Pharmaceutical Council
+• Clinical pharmacy experience on hospital wards, medicines reconciliation and discharge"""
+
+
+@needs_db
+def test_a_pharmacy_technician_is_not_registered_as_a_pharmacist(db):
+    """The GPhC registers both trades. A technician's registration is not what an "Advanced Pharmacist" post
+    asks when it names the register alone; a pharmacist's is, even written as the register and a number."""
+    pharmacist = """Hannah Cole
+Clinical Pharmacist    2019 - present
+Itchen Valley Hospitals
+- Medicines reconciliation, discharge prescriptions and ward rounds on renal and medical wards"""
+    technician = pharmacist.replace("Clinical Pharmacist", "Senior Pharmacy Technician")
+    scores = {}
+    for who, cv in (("pharmacist", pharmacist + "\nGPhC 2087654"),
+                    ("technician", technician + "\nGPhC registered pharmacy technician, 2018")):
+        scores[who] = fit.shown(_scores(db, fit.person({"cv": [cv]}, "Hannah Cole"),
+                                        {"job": ("Advanced Pharmacist - Renal", PHARMACY_POST)})["job"])
+        db.fit_scratch.drop()
+    assert scores["technician"] <= 4 < scores["pharmacist"], scores
+
+
+@needs_db
+def test_the_aseptic_in_process_check_is_not_the_dispensary_one(db):
+    text = """Requirements:
+• Registered pharmacy technician with GPhC
+• Qualified as a pre and in-process checker in technical services
+• Aseptic manufacturing experience"""
+    cv = """Amira Patel
+Senior Pharmacy Technician    2018 - present
+- Aseptic unit: preparing and checking chemotherapy and parenteral nutrition, cleanroom monitoring
+GPhC registered pharmacy technician; accredited checking technician (ACPT)"""
+    lacking, having = _barred_and_held(db, "Senior Pharmacy Technician - Aseptic Services", text, without=cv,
+                                       held="Qualified pre and in-process checker, technical services, 2022",
+                                       name="Amira Patel")
+    assert lacking <= 4 < having, (lacking, having)
+
+
+@needs_db
+def test_a_regulated_title_requires_its_registration_wherever_the_posting_names_it(db):
+    """"As a band 5 registered nurse, you will ..." says what a "Neonatal Staff Nurse" is, under no heading
+    that says it is required."""
+    text = """About the role
+As a band 5 registered nurse, you will carry out evidence-based nursing assessment and care planning for
+babies on our neonatal unit, working with families and the wider team."""
+    cv = """Grace Mensah
+Neonatal Healthcare Assistant    2021 - present
+- Feeding, observations and family support on a neonatal unit, working with the nursing team"""
+    lacking, having = _barred_and_held(db, "Neonatal Staff Nurse", text, without=cv,
+                                       held="Registered nurse (NMC), 2024", name="Grace Mensah")
+    assert lacking <= 4 < having, (lacking, having)
+
+
+@needs_db
+def test_mrcvs_after_a_vets_name_is_the_membership(db):
+    text = """Requirements:
+• Membership of the Royal College of Veterinary Surgeons
+• Small animal consulting and routine surgery"""
+    cv = """Tom Reid
+Veterinary Surgeon    2020 - present
+Riverside Vets
+- Small animal consulting, routine surgery, out-of-hours rota"""
+    lacking, having = _barred_and_held(db, "Veterinary Surgeon", text, without=cv, held="Tom Reid BVSc MRCVS",
+                                       name="Tom Reid")
+    assert lacking <= 4 < having, (lacking, having)
+
+
+@needs_db
+def test_acting_as_an_electrical_qualified_supervisor_needs_the_qualification(db):
+    text = """The role
+• Design, install and commission electrical systems for commercial customers
+• Act as qualified supervisor (QS) for our electrical accreditations, including NICEIC"""
+    cv = """Sam Hughes
+Senior Electrical Engineer    2016 - present
+- Design, install and commission electrical systems for commercial customers
+- Electrical accreditations, testing, inspection and compliance
+18th Edition, AM2"""
+    lacking, having = _barred_and_held(db, "Principal Electrical Engineer", text, without=cv,
+                                       held="NICEIC Qualified Supervisor since 2021", name="Sam Hughes")
+    assert lacking <= 4 < having, (lacking, having)
+
+
+@needs_db
+def test_italys_pharmacists_register_is_required_where_it_is_asked(db):
+    text = """Requisiti:
+Laurea in farmacia e abilitazione alla professione di farmacista
+Iscrizione all'Albo dei Farmacisti"""
+    cv = """Giulia Rossi
+Farmacista    2019 - oggi
+Farmacia Centrale, Milano
+- Dispensazione, consulenza ai pazienti, preparazioni galeniche"""
+    lacking, having = _barred_and_held(db, "Farmacista", text, without=cv,
+                                       held="Iscritta all'Albo dei Farmacisti di Milano", name="Giulia Rossi")
+    assert lacking <= 4 < having, (lacking, having)
+
+
 @needs_db
 def test_the_filter_and_the_number_on_a_card_agree_at_every_score(db):
     """A job is in "Match N+" exactly when its card shows N or more: just under a half, at it and just over,
