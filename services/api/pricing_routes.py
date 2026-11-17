@@ -174,13 +174,16 @@ def lines_of(db: Database | settings.Snapshot, *, starter_sold: bool, words: Pri
              cards: PricingCards) -> PlansLines:
     """What each card says of its plan, in the operator's words (`words`). A paid card begins with everything
     in the card before it, by that card's name (`cards`), Starter's once it is sold (`starter_sold`), then
-    ticks how soon it sees a new job (`libs.membership.wait_hours`) where that is sooner, and the lines of
-    what it adds; Free's ticks how soon, and what every account has. Each crosses out the lines of what a plan
-    after it gives. The members' chat is said only while it has a link (`members_channel_url`): what the site
-    cannot give yet, no card promises."""
+    ticks how soon it sees a new job (`libs.membership.wait_hours`) where that is sooner, and every line of
+    what it adds; Free's ticks how soon, and what every account has. Each crosses out only what the plan after
+    it adds, by each area's first line, so a card says more of what it gives than of what it lacks (owner,
+    2026-11-17: "reduce some negative parts of the free plan"): Free what Starter adds, Starter what the
+    membership adds, the membership nothing. The members' chat is said only while it has a link
+    (`members_channel_url`): what the site cannot give yet, no card promises."""
     waits = {plan: wait_hours(db, plan) for plan in PLANS}
     said = [area for area in LINED_AREAS if area != "team_access" or settings.get(db, "members_channel_url")]
     before = {FREE: None, STARTER: FREE, MEMBER: STARTER if starter_sold else FREE}
+    after = {FREE: STARTER if starter_sold else MEMBER, STARTER: MEMBER, MEMBER: None}
 
     def soon(hours: int) -> Line:
         """How soon, with this plan's wait where the words say {wait}: "See new jobs after 7 days"."""
@@ -200,8 +203,9 @@ def lines_of(db: Database | settings.Snapshot, *, starter_sold: bool, words: Pri
             everything_in=under, everything=everything,
             gives=[*([soon(waits[plan])] if sooner else []), *(words.everyone if under is None else []),
                    *(line for area in has for line in words.areas[area])],
-            lacks=[*([words.now] if waits[plan] else []),
-                   *(line for area in said if area not in PLANS[plan] for line in words.areas[area])])
+            lacks=[] if (up := after[plan]) is None else [
+                *([words.now] if waits[plan] and not waits[up] else []),
+                *(words.areas[area][0] for area in said if area in PLANS[up] and area not in PLANS[plan])])
 
     return PlansLines(**{plan: card(plan) for plan in PLANS})
 

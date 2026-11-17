@@ -328,10 +328,10 @@ DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
 #   filled in with each plan's own wait, set above, so the words never hold a number of their own.
 # - `everything`: a paid card's first line, all of the card before it (owner, 2026-11-17: "everything in free
 #   plan"); `{plan}` is that card's name.
-# - `everyone`: what every account has; Free's own lines, and "Everything in Free" on the cards after it.
+# - `everyone`: what every account has, a line each (owner, 2026-11-17: "reduce some negative parts of the
+#   free plan and instead, add more positives"); Free's own lines, and "Everything in Free plan" after it.
 # - `areas`: what each paid area gives (`libs.membership.AREAS`), a line or more each, ticked on the plans
-#   that have it and crossed out on the rest. Starter shows more than Free (owner, 2026-11-17: "we should
-#   offer more in the starter than the free"), so Free's are two and the match score is two.
+#   that have it. A card crosses out only what the plan after it adds, by each area's first line.
 # Each line fits on one line of a card from a 320px phone up (owner, 2026-11-16).
 DEFAULT_PRICING_LINES: dict[str, object] = {
     "wait": {"text": "See new jobs after {wait}",
@@ -344,15 +344,27 @@ DEFAULT_PRICING_LINES: dict[str, object] = {
     "everyone": [
         {"text": "Every job site in one list",
          "more": "Jobs from every job site we read, matched to the words you search for, in one list."},
-        {"text": "Save, filter and track jobs",
-         "more": "Filter by when a job was posted, its site and its place; hide jobs with words you choose; "
-                 "bookmark jobs for later; and track every application, from applied to offer."},
+        {"text": "Jobs from company sites",
+         "more": "Straight from companies' own career pages, as well as the job boards."},
+        {"text": "Never the same job twice",
+         "more": "A job posted on several sites is shown once, and one you skip or apply to leaves your "
+                 "list."},
+        {"text": "Filter jobs your way",
+         "more": "Filter by when a job was posted, its site, country and city, and whether it is remote; "
+                 "and add words that hide any job that has them."},
+        {"text": "Save jobs for later",
+         "more": "Bookmark a job, and it waits for you under Bookmarks until you apply or take it off."},
+        {"text": "Track every application",
+         "more": "Keep each job you applied to in one place, and mark how far it got: interview, offer, "
+                 "the job."},
     ],
     "areas": {
         "alerts": [
             {"text": "Job alerts sent to you",
-             "more": "Each new job on your list sent to Telegram, your browser or your inbox, so you don't "
-                     "have to keep checking."}],
+             "more": "Each new job on your list sent to Telegram or your browser as it arrives, so you don't "
+                     "have to keep checking."},
+            {"text": "A daily email of new jobs",
+             "more": "Every morning, the new jobs on your list in one email."}],
         "match_scores": [
             {"text": "Match score on every job",
              "more": "Each job is scored out of 10 for how well it fits your CV, cover letter and About "

@@ -350,9 +350,10 @@ def _an_admin_words_the_cards(page, lines: dict) -> None:
     editor.get_by_label("Name", exact=True).fill("Mahoraga Plus")
     editor.get_by_label("Small print under the button").fill("Help from a person, any time.")
     expect(editor.locator(".price-name").last).to_have_text("Mahoraga Plus")
-    alerts = editor.get_by_role("group", name="Alerts")
-    expect(alerts.get_by_label("Line")).to_have_value(lines["areas"]["alerts"][0]["text"])
-    alerts.get_by_label("Line").fill("Alerts on your phone")
+    alerts = editor.get_by_role("group", name="Alerts").get_by_label("Line")
+    expect(alerts).to_have_count(len(lines["areas"]["alerts"]))
+    expect(alerts.first).to_have_value(lines["areas"]["alerts"][0]["text"])
+    alerts.first.fill("Alerts on your phone")
     # Crossed out on Free, whose plan has no alerts, as the server works it out.
     expect(editor.locator(".price-card").first.locator(".price-list li.out .line").nth(1)).to_have_text(
         "Alerts on your phone")
@@ -373,8 +374,11 @@ def test_the_landing_page_offers_free_and_member_and_an_admin_words_both(site, c
     base, email, _ = site
     free, member = DEFAULT_PRICING_CARDS["free"], DEFAULT_PRICING_CARDS["member"]
     lines = DEFAULT_PRICING_LINES
-    paid = [line["text"] for area in ("alerts", "match_scores", "cvs", "covers", "ats_checks", "add_job")
-            for line in lines["areas"][area]]
+    areas = ("alerts", "match_scores", "cvs", "covers", "ats_checks", "add_job")
+    # Ticked, every line of what a plan gives; crossed out, each thing once, by its first line (owner,
+    # 2026-11-17: "reduce some negative parts of the free plan").
+    paid = [line["text"] for area in areas for line in lines["areas"][area]]
+    lacked = [lines["areas"][area][0]["text"] for area in areas]
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
@@ -384,8 +388,8 @@ def test_the_landing_page_offers_free_and_member_and_an_admin_words_both(site, c
         expect(cards.first.locator(".price-list li:not(.out) .line")).to_have_text(
             ["See new jobs after 7 days", *(line["text"] for line in lines["everyone"])])
         crossed = cards.first.locator(".price-list li.out")
-        expect(crossed.locator(".line")).to_have_text([lines["now"]["text"], *paid])
-        expect(crossed.locator(".unseen")).to_have_text(["Not included:"] * (1 + len(paid)))
+        expect(crossed.locator(".line")).to_have_text([lines["now"]["text"], *lacked])
+        expect(crossed.locator(".unseen")).to_have_text(["Not included:"] * (1 + len(lacked)))
         expect(cards.last.locator(".price-badge")).to_have_text("7 days free")
         expect(cards.last.locator(".price-list li .line")).to_have_text(
             ["Everything in Free plan", lines["now"]["text"], *paid])
@@ -1384,13 +1388,13 @@ def test_a_free_account_buys_starter_or_member_from_the_upgrade_page(site, capsy
         expect(plans.get_by_role("button")).to_have_text(["Starter", "Member"])
         expect(page.get_by_role("heading", name="Become a member")).to_be_visible()
         expect(page.locator(".plan-price")).to_have_text("£4.99 a month, after 7 days free")
-        expect(page.locator(".adds li")).to_have_count(8)
+        expect(page.locator(".adds li")).to_have_count(9)
 
         plans.get_by_role("button", name="Starter").click()
         expect(page.get_by_role("heading", name="Start with Starter")).to_be_visible()
         expect(page.locator(".plan-price")).to_have_text("£2.99 a month")
         expect(page.get_by_text("Paid securely through Stripe. Cancel any time.")).to_be_visible()
-        expect(page.locator(".adds li")).to_have_count(4)
+        expect(page.locator(".adds li")).to_have_count(5)
         expect(page.locator(".adds li").first).to_contain_text("See new jobs after 3 days")
         browser.close()
 
@@ -1831,6 +1835,10 @@ def test_the_plan_is_picked_after_the_email_link_on_the_landing_pages_cards(site
         expect(cards.locator(".price-list li:nth-child(2) .line")).to_have_text([
             "Every job site in one list", "See new jobs after 3 days", "See new jobs right away"])
         expect(cards.nth(1).locator(".price-list li.out")).to_have_count(5)
+        # Free gives a line for each thing every account has, and crosses out only the two Starter adds.
+        expect(cards.first.locator(".price-list li:not(.out)")).to_have_count(7)
+        expect(cards.first.locator(".price-list li.out .line")).to_have_text(
+            ["Job alerts sent to you", "Match score on every job"])
         _one_line_each(page)
         expect(cards.last.locator(".price-note")).to_have_text("Card needed. Free to cancel in the trial.")
         # The price kept for life, in a band on each paid card that is read without reading.

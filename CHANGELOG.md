@@ -14,6 +14,38 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-17, evening — Free says what it gives, a thing a line, and crosses out only what Starter adds; the membership crosses out nothing
+
+The owner: "Since we are here to deliver values lets reduce some negative parts of the free plan and instead, add more
+positives please, for example expand the save, filter and track jobs to 3 different points, because they are all
+benefits and whatever you can find, because we should deliver values in the free plan and the starter should be a step
+up and the member should be everything."
+
+- **Free ticks seven**: how soon (after 7 days), "Every job site in one list", and five more for every account:
+  "Jobs from company sites" (companies' own career pages, as the harvest reads them), "Never the same job twice" (a
+  posting on several sites is one job, `CorpusRepository.find_duplicate`; a skip or an application takes it off),
+  and "Save, filter and track jobs" as three: "Filter jobs your way", "Save jobs for later", "Track every
+  application". Each is true of a free account today; each fits one line from 320 px up (measured).
+- **Each card crosses out only what the plan after it adds, once, by that area's first line** (`lines_of`): Free
+  crosses out two (alerts, match score; it crossed out eight), Starter the membership's five, the membership nothing.
+  Every line of what a plan has is still ticked; nothing a plan has is ever crossed out. With no Starter on offer,
+  Free's next plan is the membership and it crosses out what that adds.
+- **Starter's alerts are two lines**: "Job alerts sent to you" (Telegram or the browser, as a job arrives) and "A
+  daily email of new jobs" (every morning), both its own (`with_alerts`, `having("alerts")`). So Starter begins with
+  everything in Free and ticks six of its own; the membership begins with everything in Starter and ticks five.
+- Removed: the test that Free ticked fewer lines than Starter and the membership more than Starter (this morning's):
+  "a step up" is now "Everything in" the plan before and what the plan adds, and the membership crossing out nothing.
+  Today's own words put more on Free.
+- The local copy's saved lines were moved to the new ones through Admin's own save, only the two kinds that were
+  still the old defaults word for word (what every account has, and alerts).
+
+Tests: `test_pricing.py` Free's seven and its two crossed out, Starter's and the membership's, each by its plan
+(`test_free_gives_its_own_and_crosses_out_only_what_starter_adds_and_the_membership_crosses_nothing`); the relationship
+test now holds every card to never cross out what its plan has, to tick every line of what it has, and to cross out
+exactly what the plan after it adds, over 12 combinations of waits, the chat link and Starter on offer or not;
+`test_e2e_site.py` the landing page's and the plan page's cards, the editor's two alerts lines, the Upgrade page's
+9 and 5.
+
 ## 2026-11-17, later — "Everything in Free plan"; no free trial on Starter; each plan's free days tested where they are said
 
 The owner: "make sure in the offers its says 'plan' after 'everything in free' and 'everything in starter' so its
