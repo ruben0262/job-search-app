@@ -8,8 +8,8 @@ import { api, type Schema } from "../api";
 import { JobView } from "../jobview";
 import { useKept } from "../kept";
 import { ago, useNow } from "../time";
-import { Error, useAction } from "../ui";
-import { latest } from "./JobsPage";
+import { Error, Prompt, useAction } from "../ui";
+import { MORE_PICTURES, PICTURES, latest } from "./JobsPage";
 
 type Applied = Schema<"AppliedJob">;
 type Step = Schema<"Step">;
@@ -78,6 +78,9 @@ export function AppliedPage() {
   );
 }
 
+/** One application, as a job card is drawn on Jobs (owner, 2026-11-16: "lots of buttons shoved together"): who
+ * and where, how far it got, the one question that moves it on, the documents made for it, and along its foot
+ * the way back to the job's own site and, set apart, the way to take it off. */
 function AppliedCard({ job, busy, onUndo, onProgress }: {
   job: Applied;
   busy: boolean;
@@ -85,6 +88,8 @@ function AppliedCard({ job, busy, onUndo, onProgress }: {
   onProgress: (progress: Step[]) => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Taken off Applied only once they say so: what they said about it so far waits for it to come back.
+  const [asking, setAsking] = useState(false);
   const now = useNow();
   const meta = (
     <p className="job-meta">
@@ -92,23 +97,30 @@ function AppliedCard({ job, busy, onUndo, onProgress }: {
       {[job.location, `Applied ${ago(job.applied_at, now)}`].filter(Boolean).join(" · ")}
     </p>
   );
-  const actions = (
-    <div className="job-actions">
-      {(["cv", "cover"] as const).map((kind) => {
-        const made = latest(job.documents)[kind];
-        return made ? (
-          <a key={kind} className="button small" href={made.download_url} download>
-            Download your {kind === "cv" ? "CV" : "cover letter"}
-          </a>
-        ) : null;
-      })}
-      <a className="button secondary small" href={job.url} target="_blank" rel="noreferrer">Open job</a>
-      <button type="button" className="secondary small" disabled={busy} onClick={onUndo}>I did not apply</button>
+  const made = latest(job.documents);
+  const documents = made.cv || made.cover ? (
+    <div className="job-docs">
+      {(["cv", "cover"] as const).map((kind) => made[kind] ? (
+        <a key={kind} className={kind === "cv" ? "button" : "button secondary"} href={made[kind].download_url} download>
+          {MORE_PICTURES.download}Download {kind === "cv" ? "CV" : "cover letter"}
+        </a>
+      ) : null)}
+    </div>
+  ) : null;
+  const marks = (
+    <div className="job-bar">
+      <a className="bar-action apply" href={job.url} target="_blank" rel="noreferrer">
+        Open the job{PICTURES.apply}
+      </a>
+      <button type="button" className="bar-action skip" disabled={busy} onClick={() => setAsking(true)}>
+        {CROSS}I did not apply
+      </button>
     </div>
   );
-  // Anywhere on the card but its buttons and links opens the whole job, as on Jobs.
+  // Anywhere on the card but its buttons and links opens the whole job, as on Jobs; a click in a box it opened
+  // is that box's own.
   const opener = (event: MouseEvent) => {
-    if (!(event.target as HTMLElement).closest("a, button")) setOpen(true);
+    if (!(event.target as HTMLElement).closest("a, button, dialog")) setOpen(true);
   };
   return (
     <article className="job-card" onClick={opener}>
@@ -117,19 +129,41 @@ function AppliedCard({ job, busy, onUndo, onProgress }: {
       </h3>
       {meta}
       <Progress job={job} onChange={onProgress} />
-      {actions}
+      {documents}
+      {marks}
       {open ? (
         <JobView id={job.id} title={job.title} onClose={() => setOpen(false)}>
           {meta}
-          {actions}
+          {documents}
+          {marks}
         </JobView>
+      ) : null}
+      {asking ? (
+        <Prompt title="Take this off Applied?" onClose={() => setAsking(false)}>
+          <p className="small muted">
+            <strong>{job.title}</strong> leaves Applied, and can show in your jobs again.
+          </p>
+          <div className="row">
+            <button type="button" autoFocus onClick={() => {
+              setAsking(false);
+              onUndo();
+            }}>
+              Take it off
+            </button>
+            <button type="button" className="secondary" onClick={() => setAsking(false)}>Keep it</button>
+          </div>
+        </Prompt>
       ) : null}
     </article>
   );
 }
 
-/** Where the application stands, as a row of steps on one track filled as far as it got, and the one
- * question that moves it on: two answers, the good one first, and Undo for a tap made by mistake. */
+/** A cross: "I did not apply". */
+const CROSS = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>;
+
+/** Where the application stands, as a row of steps on one track filled as far as it got, and under it the one
+ * question that moves it on: two answers, the good one first, and an Undo for a tap made by mistake, a button
+ * like the answers, never a link (owner, 2026-11-16). */
 function Progress({ job, onChange }: { job: Applied; onChange: (progress: Step[]) => void }) {
   const stage = job.progress.at(-1)?.stage ?? "applied";
   const reached = furthest(job.progress);
@@ -151,23 +185,27 @@ function Progress({ job, onChange }: { job: Applied; onChange: (progress: Step[]
           </li>
         ))}
       </ol>
-      <div className="progress-actions">
-        {stage === "rejected" ? <span className="progress-note no">Not this time. On to the next one.</span>
-          : stage === "hired" ? <span className="progress-note yes">You got the job. Congratulations!</span>
+      <div className="progress-next">
+        {stage === "rejected" ? <p className="progress-note no">Not this time. On to the next one.</p>
+          : stage === "hired" ? <p className="progress-note yes">You got the job. Congratulations!</p>
             : next ? (
               <>
-                <span className="small muted">{next[0]}</span>
-                <button type="button" className="small" disabled={busy} onClick={() => void answer.run(next[1])}>
-                  {next[2]}
-                </button>
-                <button type="button" className="secondary small" disabled={busy}
-                        onClick={() => void answer.run("rejected")}>
-                  Not this time
-                </button>
+                <p className="progress-ask">{next[0]}</p>
+                <div className="progress-answers">
+                  <button type="button" className="small" disabled={busy} onClick={() => void answer.run(next[1])}>
+                    {next[2]}
+                  </button>
+                  <button type="button" className="secondary small" disabled={busy}
+                          onClick={() => void answer.run("rejected")}>
+                    Not this time
+                  </button>
+                </div>
               </>
             ) : null}
         {job.progress.length ? (
-          <button type="button" className="linklike small" disabled={busy} onClick={() => void back.run()}>Undo</button>
+          <button type="button" className="secondary small undo" disabled={busy} onClick={() => void back.run()}>
+            {MORE_PICTURES.undo}Undo
+          </button>
         ) : null}
       </div>
       <Error>{answer.error ?? back.error}</Error>

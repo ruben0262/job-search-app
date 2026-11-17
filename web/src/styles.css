@@ -1727,14 +1727,6 @@ button.main {
   font-size: 0.875rem;
 }
 
-.job-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 0.5rem;
-  margin-top: 0.6rem;
-}
-
 /* What is worth a glance, each in a tag of its own under where the job is: how well it fits, whether it is
    new, the pay. */
 .job-tags {
@@ -5102,15 +5094,38 @@ button.toggle[aria-pressed="true"]::before {
   opacity: 0.45;
 }
 
-.progress-actions {
+/* The one question that moves it on, in a panel of its own under the track: the question, its two answers,
+   and Undo at the far end, a button like them. */
+.progress-next {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.6rem;
-  margin-bottom: 0.9rem;
+  gap: 0.6rem 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: rgba(var(--ink-rgb), 0.035);
+}
+
+.progress-ask {
+  flex-basis: 100%;
+  margin: 0;
+  font-weight: 600;
+}
+
+.progress-answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.progress-next .undo {
+  margin-left: auto;
 }
 
 .progress-note {
+  flex: 1;
+  margin: 0;
   font-size: 0.9rem;
   font-weight: 550;
 }

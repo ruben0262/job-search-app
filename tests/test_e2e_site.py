@@ -990,7 +990,7 @@ def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents
         card().get_by_role("button", name="Mark as applied").click()
         expect(page.get_by_text(f"Applied: {TITLES[0]}")).to_be_visible()
         page.goto(f"{base}/#/applied")
-        expect(page.get_by_role("link", name="Download your CV")).to_be_visible()
+        expect(page.get_by_role("link", name="Download CV")).to_be_visible()
 
         page.goto(f"{base}/#/documents")
         expect(page.get_by_text(re.compile(r"MB of 5\.0 MB used"))).to_be_visible()
@@ -1555,6 +1555,19 @@ def _how_far_it_got(page) -> None:
     expect(card.get_by_role("button", name="I got an offer")).to_be_visible()
     page.reload()  # and it is kept on the server
     expect(steps.locator("li.done")).to_have_text(["Applied", "Interview"])
+
+    # Taken off Applied only once they say so (owner, 2026-11-16), and then back among their jobs.
+    asked = page.get_by_role("dialog", name="Take this off Applied?")
+    card.get_by_role("button", name="I did not apply").click()
+    asked.get_by_role("button", name="Keep it").click()
+    expect(asked).to_have_count(0)
+    expect(steps.locator("li.done")).to_have_text(["Applied", "Interview"])
+    title = card.locator("h3").inner_text()
+    card.get_by_role("button", name="I did not apply").click()
+    asked.get_by_role("button", name="Take it off").click()
+    expect(page.get_by_role("heading", name="You applied to 0 jobs")).to_be_visible()
+    page.locator("nav .places a").filter(has_text="Jobs").click()
+    expect(page.get_by_role("button", name=title, exact=True)).to_be_visible()
 
 
 def _made_documents(page, user_id, job_id: int) -> None:
