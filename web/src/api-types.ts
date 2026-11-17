@@ -309,13 +309,38 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Pricing Words
+         * @description Every word on the cards as it stands, saved or the defaults, for Admin to show and change: nothing
+         *     there is ever blank to be typed in.
+         */
+        get: operations["pricing_words_admin_pricing_get"];
         /**
          * Set Pricing
-         * @description Every card's words, saved together, as the landing page will show them.
+         * @description Every word on the cards, saved together, as the landing page will show them.
          */
         put: operations["set_pricing_admin_pricing_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/pricing/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Pricing
+         * @description The cards as these words would make them, worked out as the landing page's are, and nothing saved.
+         */
+        post: operations["preview_pricing_admin_pricing_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3019,7 +3044,8 @@ export interface components {
         };
         /**
          * PlanLines
-         * @description What a card says of its plan, never typed (`lines_of`).
+         * @description What a card says of its plan: the operator's lines, ticked and crossed out by the plans
+         *     (`lines_of`).
          */
         PlanLines: {
             /** Everything In */
@@ -3070,6 +3096,46 @@ export interface components {
             free: components["schemas"]["PricingCard"];
             member: components["schemas"]["PricingCard"];
             starter: components["schemas"]["PricingCard"];
+        };
+        /**
+         * PricingEditor
+         * @description The words, and what Admin says beside them so it never guesses at the plans: which plans tick each
+         *     area's lines (`libs.membership.PLANS`; the rest cross them out), and each waiting plan's wait as {wait}
+         *     reads on its card ("7 days").
+         */
+        PricingEditor: {
+            cards: components["schemas"]["PricingCards"];
+            lines: components["schemas"]["PricingLines"];
+            /** Ticked On */
+            ticked_on: {
+                [key: string]: ("free" | "starter" | "member")[];
+            };
+            /** Waits */
+            waits: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * PricingLines
+         * @description The words of every line the cards can show (`pricing_lines`), whichever card ticks or crosses it.
+         */
+        PricingLines: {
+            /** Areas */
+            areas: {
+                [key: string]: components["schemas"]["Line"][];
+            };
+            /** Everyone */
+            everyone: components["schemas"]["Line"][];
+            now: components["schemas"]["Line"];
+            wait: components["schemas"]["Line"];
+        };
+        /**
+         * PricingWords
+         * @description Everything an operator words, saved together from Admin.
+         */
+        PricingWords: {
+            cards: components["schemas"]["PricingCards"];
+            lines: components["schemas"]["PricingLines"];
         };
         /** ProfileLink */
         ProfileLink: {
@@ -4158,6 +4224,26 @@ export interface operations {
             };
         };
     };
+    pricing_words_admin_pricing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingEditor"];
+                };
+            };
+        };
+    };
     set_pricing_admin_pricing_put: {
         parameters: {
             query?: never;
@@ -4167,7 +4253,40 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PricingCards"];
+                "application/json": components["schemas"]["PricingWords"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pricing"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_pricing_admin_pricing_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PricingWords"];
             };
         };
         responses: {

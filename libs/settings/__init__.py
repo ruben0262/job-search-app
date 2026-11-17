@@ -286,20 +286,20 @@ DEFAULT_FREE_DELAY_HOURS = 168
 DEFAULT_STARTER_DELAY_HOURS = 72
 
 # What the landing page's three pricing cards say of their own, Free, Starter and Member (owner, 2026-11-12
-# and 2026-11-16), the operator's to change in Admin (`services.api.pricing_routes`). What each plan gives and
-# lacks is not here: every card says that by itself, from the plans fixed in code (`libs.membership.PLANS`)
-# and the settings they wait by, so no card can promise what its plan does not give. Neither is a price
-# (Stripe's), the price it is shown as reduced from (`price_was`) or the free days (`trial_days`), each filled
-# in where the cards are drawn. A card's lists saved before 2026-11-16's plans (`benefits`, `left_out`,
-# `also`) and its line under the name (`tagline`) are no longer read: what every plan has is fixed in code
-# too (`libs.membership.EVERYONE`). `highlight` is the band under a paid plan's price, read at a glance
-# while scrolling: the price kept for as long as they stay (owner, 2026-11-16: "lifetime").
+# and 2026-11-16), the operator's to change in Admin (`services.api.pricing_routes`). The lines of what each
+# plan gives and lacks are `pricing_lines`, below; which card ticks which follows the plans fixed in code
+# (`libs.membership.PLANS`) and the waits, so no card can promise what its plan does not give. Neither is a
+# price (Stripe's), the price it is shown as reduced from (`price_was`) or the free days (`trial_days`), each
+# filled in where the cards are drawn. A card's lists saved before 2026-11-16's plans (`benefits`,
+# `left_out`, `also`) and its line under the name (`tagline`) are not read. `highlight` is the band under a
+# paid plan's price, read at a glance while scrolling: the price kept for as long as they stay (owner,
+# 2026-11-16: "lifetime").
 DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
     "free": {
         "name": "Free",
         "highlight": "",
         "button": "Start free",
-        "note": "No card needed. Upgrade whenever you like.",
+        "note": "No card needed. Upgrade when you like.",
     },
     "starter": {
         "name": "Starter",
@@ -314,6 +314,63 @@ DEFAULT_PRICING_CARDS: dict[str, dict[str, object]] = {
         "button": "Start your free trial",
         # One line on the card (owner, 2026-11-16).
         "note": "Card needed. Free to cancel in the trial.",
+    },
+}
+
+# What the pricing cards' lines say, the operator's in Admin (owner, 2026-11-17: "make sure the bullet points
+# and the benefits as well as the crossed out sections appear in admin all the time"), as the words and the
+# question mark's words of each. Which card ticks a line and which crosses it out is not here: that is the
+# plans, fixed in code (`libs.membership.PLANS`), so no wording can promise what a plan does not give
+# (`services.api.pricing_routes.lines_of`).
+# - `wait` and `now`: how soon a plan sees a new job, for a plan that waits and one that does not. `{wait}` is
+#   filled in with each plan's own wait, set above, so the words never hold a number of their own.
+# - `everyone`: what every account has; Free's own lines, and "Everything in Free" on the cards after it.
+# - `areas`: what each paid area gives (`libs.membership.AREAS`), a line or more each, ticked on the plans
+#   that have it and crossed out on the rest. Starter shows more than Free (owner, 2026-11-17: "we should
+#   offer more in the starter than the free"), so Free's are two and the match score is two.
+# Each line fits on one line of a card from a 320px phone up (owner, 2026-11-16).
+DEFAULT_PRICING_LINES: dict[str, object] = {
+    "wait": {"text": "See new jobs after {wait}",
+             "more": "A new job joins your list {wait} after we find it."},
+    "now": {"text": "See new jobs right away",
+            "more": "A new job joins your list as soon as we have found and read it, so you can apply among "
+                    "the first."},
+    "everyone": [
+        {"text": "Every job site in one list",
+         "more": "Jobs from every job site we read, matched to the words you search for, in one list."},
+        {"text": "Save, filter and track jobs",
+         "more": "Filter by when a job was posted, its site and its place; hide jobs with words you choose; "
+                 "bookmark jobs for later; and track every application, from applied to offer."},
+    ],
+    "areas": {
+        "alerts": [
+            {"text": "Job alerts sent to you",
+             "more": "Each new job on your list sent to Telegram, your browser or your inbox, so you don't "
+                     "have to keep checking."}],
+        "match_scores": [
+            {"text": "Match score on every job",
+             "more": "Each job is scored out of 10 for how well it fits your CV, cover letter and About "
+                     "you."},
+            {"text": "Filter by match score",
+             "more": "Show only the jobs that fit you best: 7 out of 10 or more, say."}],
+        "cvs": [
+            {"text": "A CV made for each job",
+             "more": "One tap writes a CV for that job with your own AI account."}],
+        "covers": [
+            {"text": "A cover letter for each job",
+             "more": "One tap writes a cover letter for that job with your own AI account."}],
+        "ats_checks": [
+            {"text": "ATS check, every time",
+             "more": "Before you get it, every CV and cover letter is read back the way an applicant "
+                     "tracking system (ATS) reads it: the software companies sort applications with."}],
+        "add_job": [
+            {"text": "Add jobs from any site",
+             "more": "Paste the link of a job you found anywhere else: it joins your list, with a CV and "
+                     "cover letter for it like any other."}],
+        "team_access": [
+            {"text": "A chat with the team",
+             "more": "A members' chat with the people who build Mahoraga: get help, and tell us what to "
+                     "build next."}],
     },
 }
 
@@ -352,6 +409,7 @@ DEFAULTS: dict[str, object] = {
     "free_delay_hours": DEFAULT_FREE_DELAY_HOURS,
     "starter_delay_hours": DEFAULT_STARTER_DELAY_HOURS,
     "pricing_cards": DEFAULT_PRICING_CARDS,
+    "pricing_lines": DEFAULT_PRICING_LINES,
     "price_was": DEFAULT_PRICE_WAS,
     "members_channel_url": DEFAULT_MEMBERS_CHANNEL_URL,
 }

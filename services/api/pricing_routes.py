@@ -2,12 +2,13 @@
 week after it is found; Starter, the jobs sooner, alerts and match scores; and Member, everything, with its
 free trial.
 
-What each card says of what its plan gives and lacks is worked out here, from the plans fixed in code
-(`libs.membership.PLANS`, said in `AREAS`' and `EVERYONE`'s words) and the settings the site itself reads (how
-long each plan waits for a job, the members' chat), so no card can promise what the site does not keep. A
-card's name, band, button and small print are the operator's, set in Admin (`pricing_cards`). What a plan
-costs is Stripe's, what it is shown as reduced from is `price_was` and how many days are free is `trial_days`,
-each read where the site itself reads them (`billing_routes.plan`).
+Every word on the cards is the operator's, set in Admin: a card's name, band, button and small print
+(`pricing_cards`), and the lines of what the plans give and lack (`pricing_lines`, owner 2026-11-17:
+"appear in admin all the time"). Which card ticks a line and which crosses it out is worked out here, from
+the plans fixed in code (`libs.membership.PLANS`) and the settings the site itself reads (how long each plan
+waits for a job, the members' chat), so no wording can promise what the site does not keep. What a plan costs
+is Stripe's, what it is shown as reduced from is `price_was` and how many days are free is `trial_days`, each
+read where the site itself reads them (`billing_routes.plan`).
 """
 from __future__ import annotations
 
@@ -15,12 +16,12 @@ import logging
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, StringConstraints, ValidationError
+from pydantic import BaseModel, Field, StringConstraints, ValidationError, field_validator
 from pymongo.database import Database
 
 from libs import settings
 from libs.db.models import User
-from libs.membership import AREAS, EVERYONE, FREE, MEMBER, PLANS, STARTER, Said, wait_hours
+from libs.membership import AREAS, FREE, MEMBER, PLANS, STARTER, wait_hours
 from libs.obs import audit
 from services.api import billing_routes
 from services.api.admin_routes import require_admin
@@ -49,12 +50,57 @@ class PricingCards(BaseModel):
 
 class Line(BaseModel):
     """One line of a card: a few words, and what its question mark says when it is pointed at or tapped."""
-    text: str
-    more: str
+    text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    more: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=280)]
+
+
+# The paid areas a card says in lines of their own; how soon a plan sees a job is `wait` and `now`.
+LINED_AREAS = tuple(area for area in AREAS if area != "early_jobs")
+
+
+class PricingLines(BaseModel):
+    """The words of every line the cards can show (`pricing_lines`), whichever card ticks or crosses it."""
+    # How soon a plan that waits sees a new job: "{wait}" is that plan's wait, so no number is typed.
+    wait: Line
+    # How soon a plan that does not wait sees one.
+    now: Line
+    # What every account has: Free's own lines, and "Everything in Free" on the cards after it.
+    everyone: Annotated[list[Line], Field(min_length=1, max_length=8)]
+    # What each paid area gives, a line or more each.
+    areas: dict[str, Annotated[list[Line], Field(min_length=1, max_length=4)]]
+
+    @field_validator("wait")
+    @classmethod
+    def _says_the_wait(cls, line: Line) -> Line:
+        if "{wait}" not in line.text:
+            raise ValueError("the line for a plan that waits must say {wait}, where its wait goes")
+        return line
+
+    @field_validator("areas")
+    @classmethod
+    def _every_area(cls, areas: dict[str, list[Line]]) -> dict[str, list[Line]]:
+        if set(areas) != set(LINED_AREAS):
+            raise ValueError(f"the lines must name each of {list(LINED_AREAS)}, and nothing else")
+        return areas
+
+
+class PricingWords(BaseModel):
+    """Everything an operator words, saved together from Admin."""
+    cards: PricingCards
+    lines: PricingLines
+
+
+class PricingEditor(PricingWords):
+    """The words, and what Admin says beside them so it never guesses at the plans: which plans tick each
+    area's lines (`libs.membership.PLANS`; the rest cross them out), and each waiting plan's wait as {wait}
+    reads on its card ("7 days")."""
+    ticked_on: dict[str, list[Literal["free", "starter", "member"]]]
+    waits: dict[str, str]
 
 
 class PlanLines(BaseModel):
-    """What a card says of its plan, never typed (`lines_of`)."""
+    """What a card says of its plan: the operator's lines, ticked and crossed out by the plans
+    (`lines_of`)."""
     # The plan whose card is before this one, all of which this one has: "Everything in Free", first on the
     # card. None on Free's.
     everything_in: Literal["free", "starter"] | None = None
@@ -97,30 +143,37 @@ def cards_of(db: Database | settings.Snapshot) -> PricingCards:
         return PricingCards.model_validate(settings.DEFAULT_PRICING_CARDS)
 
 
-def _line(said: Said) -> Line:
-    return Line(text=said.short, more=said.more)
+def words_of(db: Database | settings.Snapshot) -> PricingLines:
+    """The lines as saved, or the defaults where nothing is saved. An area there were no lines for when they
+    were saved has its default ones, so the words saved keep and an area that came since shows; saved words
+    that no longer read are the defaults, said in the log."""
+    default = settings.DEFAULT_PRICING_LINES
+    saved = settings.get(db, "pricing_lines")
+    try:
+        areas = {**default["areas"], **{area: lines for area, lines in (saved.get("areas") or {}).items()
+                                         if area in LINED_AREAS}}
+        return PricingLines.model_validate({**default, **saved, "areas": areas})
+    except (ValidationError, TypeError, AttributeError) as exc:
+        logger.warning("pricing: the saved lines do not read (%s); the cards show the defaults", exc)
+        return PricingLines.model_validate(default)
 
 
-def _soon(hours: int, free: int) -> Line:
-    """How soon a plan sees a new job, as its card says it (owner, 2026-11-16: "jobs that are 7 days or older
-    appear to users on the free plan, and 3 days or older on the starter plan")."""
-    if not hours:
-        return _line(AREAS["early_jobs"])
-    sooner = f", {_span(free - hours)} before Free accounts see it" if free > hours else ""
-    return Line(text=f"Jobs that are {_span(hours)} or older",
-                more=f"A new job joins your list {_span(hours)} after we find it{sooner}.")
-
-
-def lines_of(db: Database | settings.Snapshot, *, starter_sold: bool) -> PlansLines:
-    """What each card says of its plan. A paid card begins "Everything in" the card before it, Starter's once
-    it is sold (`starter_sold`), then ticks how soon it sees a new job (`libs.membership.wait_hours`) where
-    that is sooner, and what it adds; Free's ticks how soon, and what every account has (`EVERYONE`). Each
-    crosses out what a plan after it gives. The members' chat is said only while it has a link
-    (`members_channel_url`): what the site cannot give yet, no card promises."""
+def lines_of(db: Database | settings.Snapshot, *, starter_sold: bool, words: PricingLines) -> PlansLines:
+    """What each card says of its plan, in the operator's words (`words`). A paid card begins "Everything in"
+    the card before it, Starter's once it is sold (`starter_sold`), then ticks how soon it sees a new job
+    (`libs.membership.wait_hours`) where that is sooner, and the lines of what it adds; Free's ticks how soon,
+    and what every account has. Each crosses out the lines of what a plan after it gives. The members' chat is
+    said only while it has a link (`members_channel_url`): what the site cannot give yet, no card promises."""
     waits = {plan: wait_hours(db, plan) for plan in PLANS}
-    said = [area for area in AREAS if area != "early_jobs"
-            and (area != "team_access" or settings.get(db, "members_channel_url"))]
+    said = [area for area in LINED_AREAS if area != "team_access" or settings.get(db, "members_channel_url")]
     before = {FREE: None, STARTER: FREE, MEMBER: STARTER if starter_sold else FREE}
+
+    def soon(hours: int) -> Line:
+        """How soon, with this plan's wait where the words say {wait}: "See new jobs after 7 days"."""
+        if not hours:
+            return words.now
+        return Line(text=words.wait.text.replace("{wait}", _span(hours)),
+                    more=words.wait.more.replace("{wait}", _span(hours)))
 
     def card(plan: str) -> PlanLines:
         under = before[plan]
@@ -128,21 +181,22 @@ def lines_of(db: Database | settings.Snapshot, *, starter_sold: bool) -> PlansLi
         sooner = under is None or waits[plan] < waits[under]
         return PlanLines(
             everything_in=under,
-            gives=[*([_soon(waits[plan], waits[FREE])] if sooner else []),
-                   *(map(_line, EVERYONE) if under is None else []), *(_line(AREAS[area]) for area in has)],
-            lacks=[*([_line(AREAS["early_jobs"])] if waits[plan] else []),
-                   *(_line(AREAS[area]) for area in said if area not in PLANS[plan])])
+            gives=[*([soon(waits[plan])] if sooner else []), *(words.everyone if under is None else []),
+                   *(line for area in has for line in words.areas[area])],
+            lacks=[*([words.now] if waits[plan] else []),
+                   *(line for area in said if area not in PLANS[plan] for line in words.areas[area])])
 
     return PlansLines(**{plan: card(plan) for plan in PLANS})
 
 
-@router.get("/pricing")
-def pricing(db: Database = Depends(get_db)) -> Pricing:
-    """Public: what the landing page's pricing says, before anybody has an account."""
+def _pricing(db: Database, cards: PricingCards | None = None, words: PricingLines | None = None) -> Pricing:
+    """The pricing as a visitor sees it: in the words saved, or in these (Admin's preview, and what it
+    saves)."""
     stored = settings.snapshot(db)
     was = settings.get(stored, "price_was")
     starter = billing_routes.plan(db, STARTER)
-    return Pricing(cards=cards_of(stored), lines=lines_of(stored, starter_sold=starter is not None),
+    return Pricing(cards=cards or cards_of(stored),
+                   lines=lines_of(stored, starter_sold=starter is not None, words=words or words_of(stored)),
                    trial_days=int(settings.get(stored, "trial_days")),
                    plan=billing_routes.plan(db), starter=starter,
                    # A figure only: anything else saved there shows no reduced-from price, not an error.
@@ -150,10 +204,34 @@ def pricing(db: Database = Depends(get_db)) -> Pricing:
                         if isinstance(amount, int) and amount > 0})
 
 
+@router.get("/pricing")
+def pricing(db: Database = Depends(get_db)) -> Pricing:
+    """Public: what the landing page's pricing says, before anybody has an account."""
+    return _pricing(db)
+
+
+@router.get("/admin/pricing")
+def pricing_words(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> PricingEditor:
+    """Every word on the cards as it stands, saved or the defaults, for Admin to show and change: nothing
+    there is ever blank to be typed in."""
+    stored = settings.snapshot(db)
+    ticked_on = {area: [plan for plan in PLANS if area in PLANS[plan]] for area in LINED_AREAS}
+    return PricingEditor(cards=cards_of(stored), lines=words_of(stored), ticked_on=ticked_on,
+                         waits={plan: _span(hours) for plan in PLANS if (hours := wait_hours(stored, plan))})
+
+
+@router.post("/admin/pricing/preview")
+def preview_pricing(body: PricingWords, db: Database = Depends(get_db),
+                    admin: User = Depends(require_admin)) -> Pricing:
+    """The cards as these words would make them, worked out as the landing page's are, and nothing saved."""
+    return _pricing(db, body.cards, body.lines)
+
+
 @router.put("/admin/pricing")
-def set_pricing(body: PricingCards, db: Database = Depends(get_db),
+def set_pricing(body: PricingWords, db: Database = Depends(get_db),
                 admin: User = Depends(require_admin)) -> Pricing:
-    """Every card's words, saved together, as the landing page will show them."""
-    settings.put(db, "pricing_cards", body.model_dump(), by=admin.email)
+    """Every word on the cards, saved together, as the landing page will show them."""
+    settings.put(db, "pricing_cards", body.cards.model_dump(), by=admin.email)
+    settings.put(db, "pricing_lines", body.lines.model_dump(), by=admin.email)
     audit(logger, "admin.pricing", user=admin.id)
-    return pricing(db)
+    return _pricing(db)

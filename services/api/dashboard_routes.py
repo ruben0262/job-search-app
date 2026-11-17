@@ -307,11 +307,10 @@ def _banners(db: Database, user: User, member: bool) -> list[DashboardBanner]:
     none is a quiet offer rather than a warning — and a Telegram that stopped is a button to press. A free
     account is told first what it is looking at, and what a membership adds: alerts are paid plans' too."""
     if not member:
-        delay = delay_hours(db, user)
+        # How long they wait is said under the page's title, beside how long a job stays (`JobsPage`).
         text = "Alerts, match scores, CVs and cover letters come with a membership."
-        if delay:
-            text = (f"You see jobs that are {_span(delay)} or older. Members see each one the moment we find "
-                    "it, and apply among the first.")
+        if delay_hours(db, user):
+            text = "Members see new jobs right away, and can apply among the first."
         return [DashboardBanner(level="info", key="free", text=text)]
     if user.telegram_status == "broken":
         return [DashboardBanner(level="warning", key="telegram_broken",

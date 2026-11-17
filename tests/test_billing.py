@@ -304,7 +304,7 @@ def on_starter(db, **fields) -> User:
 
 
 CHAT = "https://chat.example.com/mahoraga-members"
-EVERYTHING = ["early_jobs", "alerts", "match_scores", "cvs", "covers", "add_job", "team_access"]
+EVERYTHING = ["early_jobs", "alerts", "match_scores", "cvs", "covers", "ats_checks", "add_job", "team_access"]
 
 
 def test_each_plan_gives_what_it_includes_and_refuses_the_rest(db, http, monkeypatch):
@@ -475,7 +475,7 @@ def test_a_free_account_sees_each_job_a_week_late_until_it_leaves_everybodys_lis
     assert http.put(f"/jobs/{week_old}/applied").status_code == 200
     [banner] = http.get("/dashboard").json()["banners"]
     assert banner["key"] == "free"
-    assert banner["text"].startswith("You see jobs that are 7 days or older.")
+    assert banner["text"] == "Members see new jobs right away, and can apply among the first."
 
 
 def test_starter_sees_each_job_three_days_late_and_the_operator_sets_how_late(db, http):

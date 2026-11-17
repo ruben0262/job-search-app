@@ -3123,6 +3123,52 @@ button.ai-provider {
   min-width: 0;
 }
 
+/* Beside a long form, the cards stay in view while its lines are worded. */
+@media (min-width: 72rem) {
+  .pricing-preview {
+    position: sticky;
+    top: 5.5rem;
+  }
+}
+
+.pricing-admin form h3 {
+  margin: 1.5rem 0 0.75rem;
+}
+
+/* The lines of one kind (`AdminPricing`): each line, and what its question mark says, under its kind. */
+.line-group {
+  margin: 0 0 1rem;
+  padding: 0.8rem 1rem 0.9rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+
+.line-group legend {
+  padding: 0 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.line-edit + .line-edit {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--hairline);
+}
+
+.line-edit .field {
+  margin-bottom: 0.6rem;
+}
+
+.line-edit textarea {
+  min-height: 0;
+}
+
+/* Too wide for one line of a card on a phone: said in amber, as advice, not an error. */
+.line-long {
+  margin: 0.3rem 0 0;
+  color: #d08a34;
+}
+
 /* The admin's page for one account (`AdminUserPage.tsx`): who, where it stands, then a card a question. */
 .account .card h2 {
   margin: 0 0 1rem;

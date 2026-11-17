@@ -2481,10 +2481,14 @@
         "description": "One line of a card: a few words, and what its question mark says when it is pointed at or tapped.",
         "properties": {
           "more": {
+            "maxLength": 280,
+            "minLength": 1,
             "title": "More",
             "type": "string"
           },
           "text": {
+            "maxLength": 40,
+            "minLength": 1,
             "title": "Text",
             "type": "string"
           }
@@ -3170,7 +3174,7 @@
         "type": "object"
       },
       "PlanLines": {
-        "description": "What a card says of its plan, never typed (`lines_of`).",
+        "description": "What a card says of its plan: the operator's lines, ticked and crossed out by the plans\n(`lines_of`).",
         "properties": {
           "everything_in": {
             "anyOf": [
@@ -3333,6 +3337,104 @@
           "member"
         ],
         "title": "PricingCards",
+        "type": "object"
+      },
+      "PricingEditor": {
+        "description": "The words, and what Admin says beside them so it never guesses at the plans: which plans tick each\narea's lines (`libs.membership.PLANS`; the rest cross them out), and each waiting plan's wait as {wait}\nreads on its card (\"7 days\").",
+        "properties": {
+          "cards": {
+            "$ref": "#/components/schemas/PricingCards"
+          },
+          "lines": {
+            "$ref": "#/components/schemas/PricingLines"
+          },
+          "ticked_on": {
+            "additionalProperties": {
+              "items": {
+                "enum": [
+                  "free",
+                  "starter",
+                  "member"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Ticked On",
+            "type": "object"
+          },
+          "waits": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Waits",
+            "type": "object"
+          }
+        },
+        "required": [
+          "cards",
+          "lines",
+          "ticked_on",
+          "waits"
+        ],
+        "title": "PricingEditor",
+        "type": "object"
+      },
+      "PricingLines": {
+        "description": "The words of every line the cards can show (`pricing_lines`), whichever card ticks or crosses it.",
+        "properties": {
+          "areas": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/Line"
+              },
+              "maxItems": 4,
+              "minItems": 1,
+              "type": "array"
+            },
+            "title": "Areas",
+            "type": "object"
+          },
+          "everyone": {
+            "items": {
+              "$ref": "#/components/schemas/Line"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Everyone",
+            "type": "array"
+          },
+          "now": {
+            "$ref": "#/components/schemas/Line"
+          },
+          "wait": {
+            "$ref": "#/components/schemas/Line"
+          }
+        },
+        "required": [
+          "wait",
+          "now",
+          "everyone",
+          "areas"
+        ],
+        "title": "PricingLines",
+        "type": "object"
+      },
+      "PricingWords": {
+        "description": "Everything an operator words, saved together from Admin.",
+        "properties": {
+          "cards": {
+            "$ref": "#/components/schemas/PricingCards"
+          },
+          "lines": {
+            "$ref": "#/components/schemas/PricingLines"
+          }
+        },
+        "required": [
+          "cards",
+          "lines"
+        ],
+        "title": "PricingWords",
         "type": "object"
       },
       "ProfileLink": {
@@ -5730,14 +5832,34 @@
       }
     },
     "/admin/pricing": {
+      "get": {
+        "description": "Every word on the cards as it stands, saved or the defaults, for Admin to show and change: nothing\nthere is ever blank to be typed in.",
+        "operationId": "pricing_words_admin_pricing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingEditor"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Pricing Words",
+        "tags": [
+          "pricing"
+        ]
+      },
       "put": {
-        "description": "Every card's words, saved together, as the landing page will show them.",
+        "description": "Every word on the cards, saved together, as the landing page will show them.",
         "operationId": "set_pricing_admin_pricing_put",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PricingCards"
+                "$ref": "#/components/schemas/PricingWords"
               }
             }
           },
@@ -5766,6 +5888,48 @@
           }
         },
         "summary": "Set Pricing",
+        "tags": [
+          "pricing"
+        ]
+      }
+    },
+    "/admin/pricing/preview": {
+      "post": {
+        "description": "The cards as these words would make them, worked out as the landing page's are, and nothing saved.",
+        "operationId": "preview_pricing_admin_pricing_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PricingWords"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pricing"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Pricing",
         "tags": [
           "pricing"
         ]

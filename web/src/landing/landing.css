@@ -2483,6 +2483,11 @@
   stroke-linejoin: round;
 }
 
+/* A phrase a title keeps whole (`#price`): the line breaks between phrases, never inside one. */
+.landing .keep {
+  white-space: nowrap;
+}
+
 /* ── pricing ───────────────────────────────────────────────────────────────────────────────── */
 
 /* Two cards, Free and Member, side by side where there is room; the member's raised in the purple's light, its
@@ -2668,8 +2673,7 @@
   box-shadow: 0 12px 30px -14px rgba(var(--accent-rgb), 0.95);
 }
 
-.landing .price-band svg,
-.landing .price-offer svg {
+.landing .price-band svg {
   flex: none;
   width: 21px;
   height: 21px;
@@ -2678,42 +2682,6 @@
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-/* The offer under the pricing's title: three marks, big enough to read at a scroll. */
-.landing .price-offer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px 12px;
-  margin: 26px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.landing .price-offer li {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 11px 18px;
-  border: 1px solid var(--glass-line);
-  border-radius: 999px;
-  background: var(--tile);
-  color: var(--ink);
-  font: 700 17px/1 var(--font-body);
-  white-space: nowrap;
-}
-
-.landing .price-offer li.hot {
-  border-color: transparent;
-  background: #1f9d63;
-  color: #fff;
-}
-
-.landing .price-offer li.lock {
-  border-color: transparent;
-  background: var(--accent);
-  color: var(--accent-ink);
 }
 
 .landing .price-amount strong {
@@ -2748,6 +2716,9 @@
   list-style: none;
 }
 
+/* Each line one line, on a card from a 360px phone up (owner, 2026-11-16: "so it doesn't bump on the lines"):
+   the lines are a few words (`libs.membership.AREAS`), and where three cards share a small laptop, or one card
+   a 320px phone, the words step down a pixel rather than break. */
 .landing .price-list li {
   position: relative;
   display: grid;
@@ -2757,6 +2728,38 @@
   font-size: 16px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+@container (min-width: 900px) and (max-width: 1150px) {
+  .landing .price-cards.three .price-card {
+    padding-inline: 22px;
+  }
+
+  .landing .price-cards.three .price-list li {
+    gap: 10px;
+  }
+}
+
+@container (min-width: 900px) and (max-width: 1000px) {
+  .landing .price-cards.three .price-list li {
+    font-size: 15px;
+  }
+}
+
+@container (max-width: 340px) {
+  .landing .price-card {
+    padding-inline: 18px;
+  }
+
+  .landing .price-list li {
+    gap: 10px;
+  }
+}
+
+@container (max-width: 300px) {
+  .landing .price-list li {
+    font-size: 15px;
+  }
 }
 
 /* "Everything in Free": what the card before it gives, first and in bold, so what follows reads as added. */

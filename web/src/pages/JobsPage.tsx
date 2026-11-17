@@ -323,7 +323,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       {/* How long a job stays here, as Admin sets it: a job leaving is then no surprise (owner, 2026-11-06). */}
       {feed ? (
         <p className="small muted">
-          {delay ? `You see jobs that are ${span(delay)} or older. ` : ""}Jobs stay here for {span(feed.shelf_hours)}
+          {delay ? `You see new jobs after ${span(delay)}. ` : ""}Jobs stay here for {span(feed.shelf_hours)}
           {feed.shelf_longest_hours > feed.shelf_hours
             ? `, or ${span(feed.shelf_longest_hours)} from slower boards` : ""}.
           {feed.cut ? " More match your words than the page reads at once, so these are the newest." : ""}

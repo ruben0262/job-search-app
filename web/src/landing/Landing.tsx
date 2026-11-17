@@ -383,13 +383,18 @@ export function Landing() {
         </section>
 
         {/* Free, a week behind; Starter, sooner and alerted; or a member, first and seen (owner, 2026-11-12 and
-            2026-11-16). What each card says of its plan is the server's; the rest is set in Admin. The offer is
-            said three ways for somebody scrolling past, who reads no line: the title, a row of three marks under
-            it, and a band on each paid card. */}
+            2026-11-16). Every word on the cards is set in Admin; which card ticks what is the server's. The title
+            is what the plans buy, out of the slog of applying and ahead of everybody else applying, then the
+            call to join (owner, 2026-11-17: "relates to the tedious process ... and compete with a larger pool",
+            "CTA for them to join us"). The saving, the price kept for life and the free days are said on the
+            cards themselves, once (owner, 2026-11-16: "only keep them inside the offers"). */}
         <section id="price" className="section">
           <div className="head center" data-reveal>
-            <h2>Start free. <span className="glow">Lock in your price for life.</span></h2>
-            {pricing ? <Offer pricing={pricing} /> : null}
+            {/* A phrase is never broken: the title breaks between them, wherever the width puts it. */}
+            <h2>
+              <span className="keep">Skip the grind.</span> <span className="keep">Beat the crowd.</span>{" "}
+              <span className="glow keep">Join now.</span>
+            </h2>
           </div>
           {pricing ? <PriceCards pricing={pricing} /> : null}
         </section>
@@ -472,31 +477,6 @@ type Card = Pricing["cards"]["free"];
 const LOCK = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10.5V8a5 5 0 0110 0v2.5M5.5 10.5h13v10h-13z" /></svg>;
 /** A card's tick. */
 const TICK = <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" /><path d="M6 10.4l2.6 2.6 5.6-5.6" /></svg>;
-
-/** The offer at a glance, under the pricing's title: the most a plan is reduced by, the band the membership's
- * card carries ("Price locked for life") and the free days, each worked out from what the cards themselves
- * say, so the row cannot promise what they do not. */
-function Offer({ pricing }: { pricing: Pricing }) {
-  const { plan, starter, was, cards, trial_days: days } = pricing;
-  const offs = [saving(plan?.amount ?? 0, plan ? was.member : undefined),
-                saving(starter?.amount ?? 0, starter ? was.starter : undefined)].filter((off) => off !== null);
-  const most = offs.length ? Math.max(...offs) : null;
-  const marks: [string, ReactNode, string][] = [
-    ...(most ? [["hot", <Percent key="i" />, `${offs.length > 1 ? "Up to " : ""}${most}% off`] as [string, ReactNode, string]] : []),
-    ...(cards.member.highlight ? [["lock", LOCK, cards.member.highlight] as [string, ReactNode, string]] : []),
-    ...(days ? [["gift", <Gift key="i" />, `${days} days free`] as [string, ReactNode, string]] : []),
-  ];
-  return marks.length ? (
-    <ul className="price-offer">
-      {marks.map(([kind, icon, words]) => <li key={kind} className={kind}>{icon}{words}</li>)}
-    </ul>
-  ) : null;
-}
-
-/** A per cent sign, for the saving. */
-function Percent() {
-  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5L5 19M7.5 9.5a2 2 0 100-4 2 2 0 000 4zM16.5 18.5a2 2 0 100-4 2 2 0 000 4z" /></svg>;
-}
 
 /** How much less a plan costs than the price it is shown as reduced from, in whole per cent; null with no
  * such price, or one that is not higher. Worked out here from the two prices, so the card cannot say a saving
