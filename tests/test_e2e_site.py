@@ -1236,9 +1236,12 @@ def _what_is_missing(page, card) -> None:
     expect(toasts).to_have_count(0, timeout=TOAST_MS + 3000)
 
 def test_the_jobs_filters_narrow_the_list_stay_as_they_were_left_and_clear_back(site, capsys):
-    """The page opens on "Last 24 hours", and the filters stay as they were left, a reload or another
-    device later (owner, 2026-11-07): reloaded the moment the last one changed, before its save would
-    otherwise go. Clearing them keeps the time chosen."""
+    """The page opens on "Last 24 hours" beside the search, and every other filter is behind one button, each
+    under a heading that says what it is (owner, 2026-11-16: "simplify it"): the list follows each one as it
+    is set, the way back to it says how many jobs it holds, and each one that is on is a chip under the search
+    that takes it off. They stay as they were left, a reload or another device later (owner, 2026-11-07):
+    reloaded the moment the last one changed, before its save would otherwise go. Clearing them keeps the time
+    chosen."""
     base, email, _ = site
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
@@ -1248,21 +1251,37 @@ def test_the_jobs_filters_narrow_the_list_stay_as_they_were_left_and_clear_back(
         expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
         posted = page.get_by_label("Posted")
         expect(posted).to_have_value("24")
+        assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
 
-        page.get_by_label("Job board").select_option(label="Test (2)")
+        filters = page.get_by_role("dialog", name="Filters")
+        page.get_by_role("button", name="Filters").click()
+        filters.get_by_label("Job site").select_option(label="Test (2)")
         expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
+        filters.get_by_role("switch", name="Remote jobs only").check()
+        filters.get_by_role("button", name="Show 2 jobs").click()
+        expect(filters).to_have_count(0)
+        on = page.get_by_role("group", name="Filters on")
+        chips = on.get_by_role("button", name=re.compile("^Take off: "))
+        expect(chips).to_have_count(2)
+        expect(on.get_by_role("button", name="Take off: Remote only")).to_be_visible()
+        expect(on.get_by_role("button", name="Take off: Test")).to_be_visible()
+        expect(page.get_by_role("button", name="Filters, 2 on")).to_be_visible()
+
         posted.select_option(label="Last 3 days")
         expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
-        page.get_by_role("button", name="Remote only").click()
         page.reload()
         expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
         expect(posted).to_have_value("72")
-        expect(page.get_by_label("Job board")).to_have_value("test")
-        expect(page.get_by_role("button", name="Remote only")).to_have_attribute("aria-pressed", "true")
+        page.get_by_role("button", name="Filters").click()
+        expect(filters.get_by_label("Job site")).to_have_value("test")
+        expect(filters.get_by_role("switch", name="Remote jobs only")).to_be_checked()
+        filters.get_by_role("button", name="Close").click()
 
-        page.get_by_role("button", name="Clear filters").click()
+        on.get_by_role("button", name="Take off: Remote only").click()
+        expect(chips).to_have_count(1)
+        on.get_by_role("button", name="Clear all").click()
         expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
-        expect(page.get_by_role("button", name="Clear filters")).to_have_count(0)
+        expect(on).to_have_count(0)
         expect(posted).to_have_value("72")
         browser.close()
 
@@ -1294,7 +1313,9 @@ def test_the_match_score_filter_is_a_row_of_numbers_that_keeps_the_jobs_scored_t
         badges = page.locator("article.job-card .made-badge.match")
         expect(badges).to_have_count(3)
         shown = [int(text.split()[1].split("/")[0]) for text in badges.all_inner_texts()]
-        steps = page.get_by_role("group", name="Match score")
+        page.get_by_role("button", name="Filters").click()
+        filters = page.get_by_role("dialog", name="Filters")
+        steps = filters.get_by_role("group", name="Match score")
         expect(steps.get_by_role("button")).to_have_text(["Any", "5+", "6+", "7+", "8+", "9+"])
 
         at = max(5, min(9, max(shown)))
@@ -1306,6 +1327,13 @@ def test_the_match_score_filter_is_a_row_of_numbers_that_keeps_the_jobs_scored_t
         expect(steps.get_by_role("button", name=f"Match score {at} or more")).to_have_attribute(
             "aria-pressed", "true")
         steps.get_by_role("button", name="Any match score").click()
+        expect(badges).to_have_count(3)
+        # Picked and the filters closed, it is a chip under the search, which takes it off again.
+        steps.get_by_role("button", name=f"Match score {at} or more").click()
+        filters.get_by_role("button", name="Close").click()
+        expect(badges).to_have_count(len(kept))
+        on = page.get_by_role("group", name="Filters on")
+        on.get_by_role("button", name=f"Take off: Match {at}+").click()
         expect(badges).to_have_count(3)
         browser.close()
 

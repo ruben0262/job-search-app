@@ -4478,44 +4478,185 @@ input[type="checkbox"]:disabled {
 
 /* ── the jobs page's filters ────────────────────────────────────────────────────────────────── */
 
-.filters {
-  display: flex;
-  flex-wrap: wrap;
+/* The search, how far back, and the button to every other filter (owner, 2026-11-16: "simplify it"): one row
+   on a laptop; on a phone the search a row of its own, and the other two side by side under it. */
+.finder {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 0.5rem;
-  margin: -0.25rem 0 1.25rem;
+  gap: 0.6rem;
+  margin: 1.25rem 0 0.75rem;
 }
 
-.filters select {
-  width: auto;
-  min-width: 0;
-  padding: 0.4rem 2.4rem 0.4rem 0.95rem;
-  background-position: right 0.95rem center;
+/* "Posted" said inside the control, before the time picked: what the time is for is read, not guessed. */
+.finder-posted {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.finder-posted span {
+  position: absolute;
+  left: 1rem;
+  color: var(--dim);
   font-size: 0.875rem;
-  border-radius: 999px;
+  pointer-events: none;
 }
 
-/* On a phone, one row that swipes rather than four that push the first job off the screen; its far
-   end fades, so the row says there is more. Padded at the end, so the last one can be swiped clear of
-   the fade. */
+.finder-posted select {
+  padding-left: 4.35rem;
+  font-weight: 500;
+}
+
+.finder-open svg {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+/* How many filters are on, on the button that holds them. */
+.finder-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
 @media (max-width: 720px) {
-  .filters {
-    flex-wrap: nowrap;
-    margin-inline: -1rem;
-    padding: 0 3rem 0.25rem 1rem;
-    overflow-x: auto;
-    scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
-    mask-image: linear-gradient(90deg, #000 85%, transparent);
+  .finder {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .filters::-webkit-scrollbar {
+  .finder input[type="search"] {
+    grid-column: 1 / -1;
+  }
+
+  .finder-open {
+    gap: 0.45rem;
+    padding-inline: 0.9rem;
+  }
+}
+
+/* On a small phone the time picked says what it is by itself ("Last 24 hours"), and "Posted" would cut it
+   short: the word stays for a screen reader, which reads the control's own label. */
+@media (max-width: 400px) {
+  .finder-posted span {
     display: none;
   }
 
-  .filters > * {
-    flex: none;
+  .finder-posted select {
+    padding-left: 0.95rem;
   }
+}
+
+/* Each filter that is on, under the search: a chip that takes it off, and "Clear all" after them. */
+.filters-on {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 1rem;
+}
+
+.chip-x {
+  font-size: 1.05rem;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.chip.clear {
+  border-color: transparent;
+  background: none;
+}
+
+.chip.clear:hover {
+  border-color: var(--faint);
+}
+
+/* The filters over the page: each kind under its heading, a line between them, and the way back to the list
+   at the foot, in reach however far down it is scrolled. */
+.filter-group {
+  padding: 1.1rem 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.filter-group:first-child {
+  padding-top: 0.6rem;
+  border-top: 0;
+}
+
+.filter-group h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+}
+
+.filter-hint {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.filter-group .field {
+  margin-bottom: 0.4rem;
+}
+
+.filter-group .label {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.filter-group .chips {
+  margin-bottom: 0.9rem;
+}
+
+.filter-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+  gap: 0 0.75rem;
+}
+
+/* Any and 5+ to 9+, six to a row on the smallest phone. */
+.score-steps {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 3.6rem));
+  gap: 0.4rem;
+}
+
+.score-steps .chip {
+  min-width: 0;
+  padding-inline: 0.2rem;
+}
+
+.filter-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin: 0.25rem -1.5rem -1.75rem;
+  padding: 0.9rem 1.5rem 1.1rem;
+  border-top: 1px solid var(--hairline);
+  background: var(--bg-raised);
+}
+
+.filter-foot button {
+  white-space: nowrap;
+}
+
+.filter-foot button:last-child {
+  flex: 0 1 15rem;
 }
 
 /* ── Telegram, step by step ─────────────────────────────────────────────────────────────────── */
@@ -4682,7 +4823,8 @@ input[type="checkbox"]:disabled {
   animation: page-in 0.5s var(--out) both;
 }
 
-.words-filter .count {
+/* How many jobs have the word, on a word's chip among the filters. */
+.chip .count {
   opacity: 0.6;
 }
 
@@ -5036,9 +5178,8 @@ button.toggle[aria-pressed="true"]::before {
   margin: 0 auto 1.1rem;
 }
 
-/* The match score filter (`JobsPage`): numbers in a row of their own, not words, laid out and swiped on a phone
-   as the other rows of filters are (`.filters`), each in its score's colour on the cards' line from red to
-   green (`.made-badge.match`), the one picked filled with it. */
+/* The match score filter (`JobsPage`, among the filters): numbers in a row of their own, not words, each in its
+   score's colour on the cards' line from red to green (`.tag.match`), the one picked filled with it. */
 .chip.score-step {
   --fit-hue: calc(25 + (var(--fit) - 1) * 13.3);
   --fit-ink: oklch(0.8 0.13 var(--fit-hue));
