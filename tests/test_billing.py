@@ -504,7 +504,8 @@ def test_starter_sees_each_job_three_days_late_and_the_operator_sets_how_late(db
     assert (http.get(f"/jobs/{yesterday}/description").status_code,
             http.put(f"/jobs/{yesterday}/bookmarked").status_code) == (404, 404)
     assert http.get(f"/jobs/{three_days}/description").status_code == 200
-    assert http.get("/dashboard").json()["banners"][0]["key"] != "free", "a paying account is not called free"
+    assert "free" not in [banner["key"] for banner in http.get("/dashboard").json()["banners"]], \
+        "a paying account is not called free"
 
     settings.put(db, "starter_delay_hours", 12)
     assert listed(http) & {yesterday, three_days} == {yesterday, three_days}
