@@ -165,7 +165,7 @@ def ensure_schema(db: Database | None = None, *, prune: bool = False) -> None:
             _create(db, model.COLLECTION, rules)
         db.command("collMod", model.COLLECTION, validator=rules, validationLevel="strict")
         collection = db[model.COLLECTION]
-        declared = set(collection.create_indexes(list(model.INDEXES))) if model.INDEXES else set()
+        declared = {_ensure_index(collection, index, prune=prune) for index in model.INDEXES}
         for index in collection.list_indexes():
             if index["name"] in declared | {"_id_"}:
                 continue
@@ -185,6 +185,56 @@ def ensure_schema(db: Database | None = None, *, prune: bool = False) -> None:
         if name in existing:
             db.drop_collection(name)
             logger.info("schema: dropped the %s collection, which nothing reads any more", name)
+
+
+def _ensure_index(collection: Any, index: IndexModel, *, prune: bool) -> str:
+    """One declared index, made, and the name it is held under. The database refuses an index by a name, or
+    on keys, it already holds with other options, and that refusal stopped every service at its start: a
+    database whose `contact_messages.expires` an earlier draft had made at 5 years, when the code said 3
+    (`scripts/dev.sh`, 2026-11-18). So a service leaves such an index and says so, as it leaves one nobody
+    declares; the deploy's prune makes it what the code says, an age in place and anything else built
+    again."""
+    wanted = index.document
+    try:
+        collection.create_indexes([index])
+        return wanted["name"]
+    except OperationFailure as exc:
+        if exc.code not in INDEX_CONFLICTS:
+            raise
+        refused = exc
+    held = list(collection.list_indexes())
+    found = next((spec for spec in held if spec["name"] == wanted["name"]), None) or next(
+        (spec for spec in held if _shape(spec)["key"] == _shape(wanted)["key"]), None)
+    if found is None:
+        raise refused
+    have, want = _shape(found), _shape(wanted)
+    if not prune:
+        logger.warning("schema: %s.%s is %s where this code declares %s; left for the deploy's prune",
+                       collection.name, found["name"], have, want)
+        return found["name"]
+    age = "expireAfterSeconds"
+    if found["name"] == want["name"] and age in have and age in want and (
+            {key: value for key, value in have.items() if key != age}
+            == {key: value for key, value in want.items() if key != age}):
+        collection.database.command("collMod", collection.name, index={"name": found["name"], age: want[age]})
+        logger.info("schema: %s.%s now expires after %d s, was %d s", collection.name, found["name"],
+                    want[age], have[age])
+    else:
+        collection.drop_index(found["name"])
+        collection.create_indexes([index])
+        logger.info("schema: built %s.%s again as %s, was %s", collection.name, want["name"], want, have)
+    return want["name"]
+
+
+def _shape(spec: dict) -> dict:
+    """An index as the database tells two apart: its keys in order, its name and its options."""
+    return {key: list(value.items()) if key == "key" else value for key, value in spec.items()
+            if key not in ("v", "ns", "background")}
+
+
+# What the database answers when an index by that name, or on those keys, is held with other options
+# (IndexOptionsConflict, IndexKeySpecsConflict).
+INDEX_CONFLICTS = {85, 86}
 
 
 def _create(db: Database, name: str, rules: dict) -> None:

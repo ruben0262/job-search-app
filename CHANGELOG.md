@@ -14,6 +14,25 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-18 — A changed index no longer stops every service at its start
+
+The owner, running `scripts/dev.sh` after the legal pages: the API and docgen died at start with `IndexOptionsConflict`.
+The dev database held `contact_messages.expires` at 5 years (158,112,000 s), left by an earlier draft of the legal
+pages, and the code now declares 3 (`CONTACT_KEEP_YEARS`, 94,867,200 s). The database refuses an index by a name it
+holds with other options, and `ensure_schema`, which every service runs at its start, did not catch that.
+
+- **Why it mattered beyond a laptop:** `CONTACT_KEEP_YEARS`, or any other age or option on an index, changed later
+  would have stopped the API, docgen, the notifier and the harvester on the server at their next start. Production
+  never had the 5-year index, so this deploy alone would not have.
+- **Now a service starting leaves such an index and says so at WARNING**, as it already did an index nobody
+  declares, so an older and a newer version cannot undo each other. **The deploy's prune makes it what the code
+  says** (`python -m libs.db --prune`): a new age in place (`collMod`), and any other change by dropping the index
+  and building it again (`libs.db._ensure_index`).
+- Test: `test_an_index_whose_options_changed_is_left_by_a_service_and_changed_by_the_deploy` sets up a 5-year
+  `expires` and a non-unique `email_unique`. On the last commit it fails with the crash. Now a service leaves both
+  with a warning each, and the prune makes them 3 years and unique.
+- Checked on the owner's dev database: the schema step finishes, with the warning.
+
 ## 2026-11-18, night — Terms of Service, and the Privacy, Cookie and Data Use policies, each a page of its own
 
 The owner: "create for me a fully legal privacy policy, cookies, data act/usage and terms of service, so we do

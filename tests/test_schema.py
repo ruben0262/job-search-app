@@ -87,6 +87,39 @@ def test_an_index_nobody_declares_is_left_by_a_service_and_dropped_by_the_deploy
 
 
 @needs_db
+def test_an_index_whose_options_changed_is_left_by_a_service_and_changed_by_the_deploy(db, caplog):
+    """Contact messages began to expire after 3 years (2026-11-18). A database whose `expires` index an
+    earlier draft had made at 5 years crashed every service at its start, since the database refuses an index
+    by a name it holds with other options (`scripts/dev.sh`, 2026-11-18). Any changed age or option would do
+    the same. A service starting leaves it and says so, as it leaves an index nobody declares; the deploy's
+    prune makes it what the code declares: an age in place, anything else by building it again."""
+    from libs.db import ensure_schema
+    from libs.db.models import ContactMessage, User
+    from libs.db.models.contact import CONTACT_KEEP_YEARS
+
+    ensure_schema(db)
+    messages, users = db[ContactMessage.COLLECTION], db[User.COLLECTION]
+    messages.drop_index("expires")
+    messages.create_index("created_at", name="expires", expireAfterSeconds=5 * 366 * 86400)
+    users.drop_index("email_unique")
+    users.create_index("email", name="email_unique")
+
+    def index(collection, name: str) -> dict:
+        return next(found for found in collection.list_indexes() if found["name"] == name)
+
+    ensure_schema(db)
+    assert index(messages, "expires")["expireAfterSeconds"] == 5 * 366 * 86400
+    assert not index(users, "email_unique").get("unique")
+    said = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
+    assert any("contact_messages.expires" in line for line in said), said
+    assert any("users.email_unique" in line for line in said), said
+
+    ensure_schema(db, prune=True)
+    assert index(messages, "expires")["expireAfterSeconds"] == CONTACT_KEEP_YEARS * 366 * 86400
+    assert index(users, "email_unique")["unique"] is True
+
+
+@needs_db
 def test_a_collection_nothing_reads_any_more_is_left_by_a_service_and_dropped_by_the_deploy(db):
     """The operator's search terms fed a query set that was removed on 2026-11-06. A service starting leaves
     them, as it leaves an index; the deploy's prune drops them, and nothing else."""
