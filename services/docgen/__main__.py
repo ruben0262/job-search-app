@@ -15,7 +15,6 @@ from libs.db.models import QueueJob
 from libs.db.models.tenant import record_state
 from libs.documents import needs
 from libs.documents.saved import keep, purge_unsaved
-from libs.legal import has_consented
 from libs.llm import LlmError, paying_client
 from libs.obs import configure
 from libs.proxy import site_proxy
@@ -63,10 +62,7 @@ def handle(db, job: QueueJob) -> None:
 
 
 def _with_ai(db, job: QueueJob, *, job_id: int, kind: str, payer: str | None):
-    """The model's version, and only from somebody who agreed to the terms as they read now: this is where
-    their text leaves the server."""
-    if not has_consented(db, job.user_id):
-        raise NotBuildable("Our terms changed. Reload the page to read and agree to them.")
+    """The model's version: this is where their text leaves the server."""
     # Their CV, or cover letter, removed or switched off since they asked.
     lacking = needs.missing(db, job.user_id, kind, account=True)
     if lacking is not None:

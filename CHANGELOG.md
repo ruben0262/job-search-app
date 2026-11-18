@@ -14,6 +14,33 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-18, late night — The terms are agreed to at sign-up, and nowhere else; the legal pages are plain text
+
+The owner, on the "Our terms" screen after signing in: "there shouldnt be any of those, that's something users
+accept on sign up and that's it."
+
+- **Removed:** the screen (`AgreePage`, `/dashboard` stage "agree"), `POST /account/consent`, and every check that
+  compared an account's agreement with the current `LEGAL_VERSION`. Those checks ran before an AI document (in
+  the API and the docgen worker) and before the help chat's tools that read a person's documents
+  (`Tool.documents`, `SupportPage.consent`). Without the screen nobody could meet them: every account made before
+  today agreed to an older version, and would never have made a CV again.
+- **The sign-up box is the agreement.** It records the version and the moment (`processing_consent_*`) as
+  evidence, and nothing reads them to stop anybody. Changed terms reach existing accounts by email, 30 days
+  ahead, and apply to whoever carries on (Terms 19, reworded); Terms 2.1 no longer names a screen.
+  `libs/legal/consent.py` is gone, and `LEGAL_VERSION` lives in `libs/legal/__init__.py`.
+- Accounts that signed up before today agreed to the privacy policy and cookies, not to these Terms. The
+  Terms reach them only through that email (Ptk. 6:78 wants a term agreed to before it binds).
+- **The four pages are plain documents** (owner: "take away any frontend designs from there its just a legal
+  document ... we should not link the other legal pages to it, no contents part on the side, nor a print or
+  download pdf either"). Removed: the row of the four pages, the contents column, the print button, the boxes,
+  the site's header and backdrop, and the links between the documents; they still name each other in words.
+  Left: the text, plain tables, and a "Back" link, since the installed app has no back button of its own. The
+  styles went from 198 lines to 20.
+- **Tests:** an account that agreed to older terms, or has none on record, goes straight to its page and gets
+  its AI document; both failed on 12d11ce, which stopped them. The consent tests they replace are gone. The
+  browser walk opens each page from the landing page's foot and finds its text, no link to another legal page,
+  no button and no navigation, and nothing off a phone's screen.
+
 ## 2026-11-18, night — No "Turn on alerts" banner once alerts are on
 
 The owner, of the Jobs page's "Get alerts on your phone when a new job matches your words. [Turn on alerts]":

@@ -23,7 +23,6 @@ from libs.assistant import HISTORY, RUNNING, SUPPORT, TICK, AiStatus, ai_status,
 from libs.contracts.config import UserConfigSchema, migrate_config
 from libs.db import find, find_one, get, insert, now
 from libs.db.models import SetupConversation, SetupMessage, User
-from libs.legal import has_consented
 from libs.llm import PLATFORM, record_ai_request, resolve
 from libs.matching import green_words, norm
 from libs.obs import audit
@@ -68,8 +67,6 @@ class SupportPage(BaseModel):
     # Why a question cannot be asked now and what to do about it; None when it can.
     closed: str | None
     ai: SupportAi
-    # Whether answers may draw on what their documents say.
-    consent: bool
     messages: list[SupportMessage]
 
 
@@ -98,7 +95,7 @@ def page(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_u
     ai = ai_status(db, get(db, User, user_id))
     rows = find(db, SetupMessage, {"user_id": user_id, "agent": SUPPORT}, sort=[("_id", -1)], limit=HISTORY)
     return SupportPage(
-        closed=_closed(db, ai), consent=has_consented(db, user_id),
+        closed=_closed(db, ai),
         ai=SupportAi(payer=ai.payer, provider=ai.provider, left=ai.left, per_day=ai.per_day),
         messages=[SupportMessage(id=row.id, role=row.role, text=row.content, status=row.status,
                                  error=row.error, steps=steps_of(row), at=row.created_at)

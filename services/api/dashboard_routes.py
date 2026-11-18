@@ -22,7 +22,6 @@ from libs.db import get, now
 from libs.db.models import AtsToken, BuiltDocument, CorpusJob, CountryCount, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
-from libs.legal import agreed
 from libs.matching import Match, marks, norm, page, scan_for
 from libs.membership import areas_of, choosing, delay_hours, has, is_admin, is_member, jobs_as_of
 from libs.obs import audit
@@ -46,14 +45,6 @@ class DashboardBanner(BaseModel):
     level: Literal["error", "warning", "info"]
     key: str
     text: str
-
-
-class AgreeDashboard(BaseModel):
-    """An account made before the legal pages read as they do now (`libs.legal.LEGAL_VERSION`): asked to
-    agree, once, before anything else of the site. A new account agreed with the box at sign-up and never sees
-    it."""
-    stage: Literal["agree"]
-    is_admin: bool
 
 
 class PlanDashboard(BaseModel):
@@ -208,7 +199,7 @@ class Feed(BaseModel):
 
 @router.get("/dashboard")
 def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)
-              ) -> AgreeDashboard | PlanDashboard | OnboardingDashboard | ReadyDashboard:
+              ) -> PlanDashboard | OnboardingDashboard | ReadyDashboard:
     """Everything the front page shows, in one call. Opening the site is being online: the time is kept to
     the minute, for the admin's account page."""
     user = get(db, User, user_id)
@@ -216,9 +207,6 @@ def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curr
         {"_id": user_id, "$or": [{"last_active_at": None},
                                  {"last_active_at": {"$lt": now() - timedelta(minutes=1)}}]},
         {"$set": {"last_active_at": now()}})
-    # The Terms bind only whoever agreed to them (Hungary's Civil Code, 6:78), so nothing else until then.
-    if not agreed(user):
-        return AgreeDashboard(stage="agree", is_admin=is_admin(user))
     member = is_member(db, user_id)
     if choosing(user, member):
         return PlanDashboard(stage="plan", is_admin=is_admin(user), member=member)

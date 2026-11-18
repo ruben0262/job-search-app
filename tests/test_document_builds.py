@@ -106,11 +106,6 @@ def _status(api, build_id: int) -> dict:
     return api.http.get(f"/documents/build/{build_id}").json()
 
 
-def _consent(api):
-    version = api.http.get("/legal/terms").json()["version"]
-    assert api.http.post("/account/consent", json={"version": version}).status_code == 200
-
-
 def _platform(monkeypatch):
     monkeypatch.setenv("PLATFORM_AI_PROVIDER", "gemini")
     monkeypatch.setenv("PLATFORM_AI_KEY", PLATFORM_KEY)
@@ -151,7 +146,6 @@ def ready(api, monkeypatch):
     """An account that can have an AI document: its uploads, consent, its own Gemini key in use, and
     the providers answering with `WRITTEN`. What every request reached them with is `ready.sent`."""
     _own(api)
-    _consent(api)
     api.sent = _providers(monkeypatch)
     return api
 
@@ -453,34 +447,21 @@ def test_a_written_backup_holds_no_built_document(ready, tmp_path):
 
 # ── the AI one ────────────────────────────────────────────────────────────────────────────────
 
-def test_an_ai_document_asks_for_consent_first(api, monkeypatch):
-    """Before anything is sent; once their account and documents are there, which are asked first."""
-    _platform(monkeypatch)
-    _own(api)
-
-    refused = _ask(api, mode="ai")
-
-    assert refused.status_code == 403
-    assert "agree" in refused.json()["detail"]
-
-
-def test_terms_changed_after_queueing_stop_an_ai_document_before_any_text_leaves(api, monkeypatch):
-    """The guarantee sits where text leaves the server, whatever was decided when it was queued: terms changed
-    since leave the person's agreement behind, and nothing is sent until they agree again."""
+def test_an_account_that_agreed_to_older_terms_still_gets_its_ai_document(api, monkeypatch):
+    """The terms are agreed to once, at sign-up, and never asked for again inside the site (owner,
+    2026-11-18): an account that signed up under older ones, or before the box, is written for like any
+    other."""
     from libs.db.models import User
 
     _own(api)
-    _consent(api)
     sent = _providers(monkeypatch)
-    build_id = _ask(api, mode="ai").json()["id"]
-
-    api.db[User.COLLECTION].update_one({"_id": api.user.id},
-                                       {"$set": {"processing_consent_version": "2020-01-01"}})
-    _work(api)
-
-    status = _status(api, build_id)
-    assert status["state"] == "failed" and "agree" in status["detail"]
-    assert sent == [], "the profile was sent to a provider without consent"
+    for version in ("2020-01-01", None):
+        api.db[User.COLLECTION].update_one({"_id": api.user.id},
+                                           {"$set": {"processing_consent_version": version}})
+        build_id = _ask(api, mode="ai").json()["id"]
+        _work(api)
+        assert _status(api, build_id)["state"] == "ready", version
+    assert len(sent) >= 2
 
 
 def test_an_ai_document_on_their_own_account_writes_with_the_operators_model(api, monkeypatch):
@@ -491,7 +472,6 @@ def test_an_ai_document_on_their_own_account_writes_with_the_operators_model(api
 
     _platform(monkeypatch)
     _own(api)
-    _consent(api)
     settings.put(api.db, "document_models", {"gemini": "gemini-chosen-in-the-panel"})
     sent = _providers(monkeypatch)
 
@@ -509,7 +489,6 @@ def test_their_own_key_pays_and_is_never_counted_against_the_allowance(api, monk
     from libs.llm import ai_requests_today
 
     _platform(monkeypatch)
-    _consent(api)
     _own(api, "openai_api", OWN_KEY)
     sent = _providers(monkeypatch)
 
@@ -525,7 +504,6 @@ def test_without_an_account_of_their_own_they_are_told_so_and_nothing_is_made(ap
     """However much of the platform's allowance is left: it is the help chat's (owner, 2026-11-09). And
     no document by other means (2026-11-08). The page is told what is missing, to say where to add it."""
     _platform(monkeypatch)
-    _consent(api)
 
     refused = _ask(api, mode="ai")
 
@@ -540,7 +518,6 @@ def test_a_cv_is_made_from_their_cv_and_a_cover_letter_from_a_cover_letter_of_th
     add and where, with anything else missing, in one answer."""
     from libs.db.models import UserDocument
 
-    _consent(api)
     api.db[UserDocument.COLLECTION].delete_many({"user_id": api.user.id, "kind": "cover_letter"})
 
     both = _ask(api, kind="cover").json()["detail"]
@@ -577,7 +554,6 @@ def test_a_cv_switched_off_is_said_as_one_to_switch_on(api):
     from libs.db.models import UserDocument
 
     _own(api)
-    _consent(api)
     api.db[UserDocument.COLLECTION].update_many({"user_id": api.user.id, "kind": "cv"},
                                                 {"$set": {"in_use": False}})
 
@@ -608,7 +584,6 @@ def test_a_document_never_spends_the_help_chats_allowance(api, monkeypatch):
 
     _platform(monkeypatch)
     _own(api)
-    _consent(api)
     set_limit(api.db, api.user.id, "ai_platform_requests_per_day", 1)
     record_ai_request(api.db, api.user.id)          # what the chat does for one reply: the allowance gone
 
@@ -624,7 +599,6 @@ def test_the_daily_ceiling_counts_every_document_where_they_are_asked_for(api):
     from libs.db.models import CorpusJob
     from libs.limits import BY_KEY, set_limit
 
-    _consent(api)
     _own(api)
     set_limit(api.db, api.user.id, "cv_builds_per_day", 2)
     other = insert(api.db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
@@ -642,7 +616,6 @@ def test_an_account_with_only_its_uploads_has_its_cv_written_from_them(api, monk
     """No setup, no writing profile (owner, 2026-11-10): their CV, the posting and the prompt are the call.
     Until this day such an account was refused, and every account made on the site was one."""
     _own(api)
-    _consent(api)
     sent = _providers(monkeypatch)
 
     build_id = _ask(api).json()["id"]

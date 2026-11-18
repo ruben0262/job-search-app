@@ -15,7 +15,6 @@ from libs.auth.sessions import revoke_all
 from libs.db import delete_account as erase_account
 from libs.db import get, now
 from libs.db.models import User
-from libs.legal import LEGAL_VERSION
 from libs.legal.documents import render
 from libs.obs import audit
 from services.api.auth_routes import _clear_session_cookies
@@ -29,7 +28,7 @@ router = APIRouter(tags=["account"])
 class LegalDocument(BaseModel):
     name: str
     title: str
-    # The version agreeing to it records (`libs.legal.LEGAL_VERSION`), the same on all four.
+    # The version the sign-up box agrees to (`libs.legal.LEGAL_VERSION`), the same on all four.
     version: str
     markdown: str
 
@@ -40,27 +39,6 @@ def legal(name: Literal["terms", "privacy", "cookies", "data"],
     """One of the four legal pages, filled in (`libs.legal.documents`). Public: sign-up links them before
     anybody has an account."""
     return LegalDocument(**render(db, name))
-
-
-class ConsentBody(BaseModel):
-    # The version the screen showed, echoed back: an agreement is to what was read.
-    version: str = Field(min_length=4, max_length=16)
-
-
-@router.post("/account/consent")
-def grant_consent(body: ConsentBody, db: Database = Depends(get_db),
-                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Agree to the legal pages as they read now: what an account made before them is asked, once, before the
-    rest of the site (`dashboard_routes`, stage "agree"). Not withdrawn apart from the account: deleting it is
-    how a person stops (owner, 2026-11-18)."""
-    if body.version != LEGAL_VERSION:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail="Our terms changed since this page opened. Reload it and read them again.")
-
-    _set(db, user_id, processing_consent_at=now(), processing_consent_version=LEGAL_VERSION)
-    audit(logger, "consent.granted", user=user_id, version=LEGAL_VERSION)
-    return {"status": "granted", "version": LEGAL_VERSION}
 
 
 class PasswordChange(BaseModel):

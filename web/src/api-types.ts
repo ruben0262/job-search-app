@@ -33,28 +33,6 @@ export interface paths {
         patch: operations["patch_account_account_patch"];
         trace?: never;
     };
-    "/account/consent": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Grant Consent
-         * @description Agree to the legal pages as they read now: what an account made before them is asked, once, before the
-         *     rest of the site (`dashboard_routes`, stage "agree"). Not withdrawn apart from the account: deleting it is
-         *     how a person stops (owner, 2026-11-18).
-         */
-        post: operations["grant_consent_account_consent_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/account/password": {
         parameters: {
             query?: never;
@@ -2246,21 +2224,6 @@ export interface components {
             /** Workplaces */
             workplaces: string[];
         };
-        /**
-         * AgreeDashboard
-         * @description An account made before the legal pages read as they do now (`libs.legal.LEGAL_VERSION`): asked to
-         *     agree, once, before anything else of the site. A new account agreed with the box at sign-up and never sees
-         *     it.
-         */
-        AgreeDashboard: {
-            /** Is Admin */
-            is_admin: boolean;
-            /**
-             * Stage
-             * @constant
-             */
-            stage: "agree";
-        };
         /** AiAccount */
         AiAccount: {
             /** Id */
@@ -2545,11 +2508,6 @@ export interface components {
             min_words: number;
             /** Workplaces */
             workplaces: components["schemas"]["ConfigChoice"][];
-        };
-        /** ConsentBody */
-        ConsentBody: {
-            /** Version */
-            version: string;
         };
         /** ContactAddress */
         ContactAddress: {
@@ -3807,8 +3765,6 @@ export interface components {
             ai: components["schemas"]["SupportAi"];
             /** Closed */
             closed: string | null;
-            /** Consent */
-            consent: boolean;
             /** Messages */
             messages: components["schemas"]["SupportMessage"][];
         };
@@ -4042,41 +3998,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AccountPatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    grant_consent_account_consent_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConsentBody"];
             };
         };
         responses: {
@@ -5771,7 +5692,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgreeDashboard"] | components["schemas"]["PlanDashboard"] | components["schemas"]["OnboardingDashboard"] | components["schemas"]["ReadyDashboard"];
+                    "application/json": components["schemas"]["PlanDashboard"] | components["schemas"]["OnboardingDashboard"] | components["schemas"]["ReadyDashboard"];
                 };
             };
         };

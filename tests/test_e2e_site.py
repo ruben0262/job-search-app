@@ -444,10 +444,11 @@ def test_a_visitor_asks_a_person_a_question_from_the_foot_of_the_landing_page(si
     assert database()["contact_messages"].find_one({"email": asker})["user_id"] is None
 
 
-def test_the_legal_pages_open_from_the_foot_of_the_landing_page_and_say_who_runs_the_site(site):
-    """Terms, Privacy, Cookies and Data use, each a page of its own from the landing page's foot (owner,
-    2026-11-18), the operator's details as Admin has them, the contents beside the text on a laptop, and
-    nothing off the screen of a phone, tables included."""
+def test_the_legal_pages_are_plain_text_from_the_foot_and_say_who_runs_the_site(site):
+    """Terms, Privacy, Cookies and Data use, each a page of its own from the landing page's foot, the
+    operator's details as Admin has them. Plain documents (owner, 2026-11-18: "just really simple text on the
+    page"): no link to the other legal pages, no contents, no buttons, only the way back; and nothing off a
+    phone's screen, tables included."""
     from libs import settings
     from libs.db import database
 
@@ -457,23 +458,23 @@ def test_the_legal_pages_open_from_the_foot_of_the_landing_page_and_say_who_runs
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         for width, height in ((390, 844), (1280, 900)):
             page = browser.new_context(viewport={"width": width, "height": height}).new_page()
-            page.goto(f"{base}/#/")
-            page.locator(".foot-row").get_by_role("link", name="Terms").click()
-            doc = page.locator("article.legal-doc")
-            expect(doc.get_by_role("heading", level=1)).to_have_text("Terms of Service")
-            expect(doc).to_contain_text("Name: Example Kft.")
-            expect(doc).to_contain_text("Address: 1111 Budapest, Példa utca 1.")
-            expect(doc).to_contain_text("Registration number: [not filled in yet]")
-            page.locator(".legal-toc").get_by_role("link", name="14. Our responsibility to you").click()
-            expect(doc.get_by_role("heading", name="14. Our responsibility to you")).to_be_in_viewport()
-            assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"Terms at {width}px"
-            for tab, title, shown in (("Privacy", "Privacy Policy", "Cloudflare"),
-                                      ("Cookies", "Cookie Policy", "install-later"),
-                                      ("Data use", "Data Use Policy", "Your data is yours")):
-                page.locator(".legal-tabs").get_by_role("link", name=tab).click()
+            for link, title, shown in (("Terms", "Terms of Service", "Name: Example Kft."),
+                                       ("Privacy", "Privacy Policy", "Cloudflare"),
+                                       ("Cookies", "Cookie Policy", "install-later"),
+                                       ("Data use", "Data Use Policy", "Your data is yours")):
+                page.goto(f"{base}/#/")
+                page.locator(".foot-row").get_by_role("link", name=link).click()
+                doc = page.locator("main.legal")
                 expect(doc.get_by_role("heading", level=1)).to_have_text(title)
                 expect(doc).to_contain_text(shown)
+                expect(doc.locator('a[href^="#/"]')).to_have_text(["Back"])
+                expect(page.get_by_role("button")).to_have_count(0)
+                expect(page.locator("nav")).to_have_count(0)
                 assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"{title} at {width}px"
+            page.goto(f"{base}/#/terms")
+            expect(page.locator("main.legal")).to_contain_text("Registration number: [not filled in yet]")
+            page.locator("main.legal").get_by_role("link", name="Back").click()
+            expect(page.locator(".foot-row")).to_be_attached()
         browser.close()
 
 
@@ -1472,12 +1473,9 @@ def test_an_ai_account_linked_in_settings_is_what_the_make_buttons_were_missing(
         expect(accounts.get_by_text("Turning on…")).to_be_visible()
         expect(rows).to_have_text([re.compile("^Gemini API key.*Off"), re.compile("^Claude API key.*In use")])
 
-        # Their account is no longer what is missing. What is sent was agreed to with the box at sign-up;
-        # terms changed since ask again before anything is sent; and a cover letter still needs one of theirs,
-        # said with the one way to it.
+        # Their account is no longer what is missing, and a cover letter still needs one of theirs, said with
+        # the one way to it.
         page.goto(f"{base}/#/")
-        _new_terms(page, email)
-        expect(toasts).to_have_count(0)
         cards.first.get_by_role("button", name="Make my cover letter").click()
         expect(toasts).to_have_text([re.compile(
             "^To make your cover letter, first upload a cover letter in My documents.")])
@@ -1502,26 +1500,6 @@ def _help_with_the_members_chat(page) -> None:
     page.get_by_role("button", name="Help and contact").click()
     expect(page.get_by_role("dialog", name="Help and contact")).to_be_visible()
     expect(page.get_by_role("link", name="Open the members' chat")).to_have_attribute("href", chat)
-
-
-def _new_terms(page, email: str) -> None:
-    """Terms changed under an open page, as a new `LEGAL_VERSION` leaves everybody's agreement behind: the
-    next Make says so and sends nothing, and a reload asks once, with the Terms' short version and the four
-    pages a tap away, before anything else of the site. "I agree" goes back to the jobs."""
-    from libs.db import database
-
-    database()["users"].update_one({"email": email}, {"$set": {"processing_consent_version": "2020-01-01"}})
-    cards = page.locator("article.job-card")
-    cards.first.get_by_role("button", name="Make my CV").click()
-    changed = "Our terms changed. Reload the page to read and agree to them."
-    expect(cards.first.get_by_text(changed)).to_be_visible()
-    page.reload()
-    expect(page.get_by_role("heading", name="Our terms")).to_be_visible()
-    expect(page.get_by_text("We never sell your data and never show you adverts.")).to_be_visible()
-    expect(page.locator(".legal-links a")).to_have_text(["Terms", "Privacy", "Cookies", "Data use"])
-    expect(page.locator("nav a")).to_have_count(0)
-    page.get_by_role("button", name="I agree").click()
-    expect(cards).to_have_count(2)
 
 
 def _said_over_the_open_job(view) -> None:

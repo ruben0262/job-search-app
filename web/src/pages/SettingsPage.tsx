@@ -93,7 +93,7 @@ function Password({ onChanged }: { onChanged: () => void }) {
   );
 }
 
-export function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
+function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
   const [asking, setAsking] = useState(false);
   const [password, setPassword] = useState("");
   const remove = useAction(async () => {

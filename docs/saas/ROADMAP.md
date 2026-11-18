@@ -3822,8 +3822,8 @@ fined or procecuted", each a page of its own at the foot of the site, agreed to 
 
 **Built (2026-11-18, CHANGELOG, night):** the four pages (`libs/legal/*.md`, `#/terms` `#/privacy` `#/cookies`
 `#/data`), filled in from the code's own numbers and the operator's details in Admin; the sign-up box agreeing
-to the Terms; the one screen that asks an account made before; messages deleted after three years and
-acknowledged by email; `deploy/scripts/export_account.py` for a person's copy of their data.
+to the Terms, the one place they are agreed to (owner, 2026-11-18: no screen inside the site asks); messages
+deleted after three years and acknowledged by email; `deploy/scripts/export_account.py` for a person's copy of their data.
 
 **Before the site takes real payments — the owner's:**
 

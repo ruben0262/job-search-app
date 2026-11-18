@@ -45,4 +45,4 @@ You can see and delete cookies and site data in your browser's settings. Deletin
 
 ## 7. Changes and questions
 
-If we ever want to use a cookie that isn't strictly necessary, we'll update this policy first, and ask for your consent before setting it. Questions: [{email}](mailto:{email}). The [Privacy Policy](#/privacy) explains everything else about your data.
+If we ever want to use a cookie that isn't strictly necessary, we'll update this policy first, and ask for your consent before setting it. Questions: [{email}](mailto:{email}). The Privacy Policy explains everything else about your data.

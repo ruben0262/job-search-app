@@ -38,7 +38,6 @@ from libs.contracts.config import location_search_name, migrate_config
 from libs.db import database, get, now
 from libs.db.models import WORKPLACES, SetupMessage, User
 from libs.documents.read import LANGUAGE_NAMES
-from libs.legal import has_consented
 from libs.llm import PLATFORM, LlmError, ai_requests_today, paying_client, platform_left, resolve
 from libs.matching import green_words, matching_jobs, norm
 from libs.prompts import load
@@ -111,8 +110,6 @@ class Tool:
     # A lookup: its answer. A change: why it cannot be offered, or None to offer its button.
     run: Callable[[Database, User, dict], str | None]
     change: bool = False
-    # Reads what their documents say, so it is offered only with their processing consent.
-    documents: bool = False
 
 
 def _config(db: Database, user: User) -> dict:
@@ -212,7 +209,7 @@ TOOLS: dict[str, Tool] = {
                     lambda _args: "Checked your AI requests for today", _ai_left),
     "suggested_words": Tool("The words we suggest they add, worked out from their documents, each "
                             "with its reason.", {},
-                            lambda _args: "Looked at the words we suggest", _suggested, documents=True),
+                            lambda _args: "Looked at the words we suggest", _suggested),
     "add_word": Tool(
         "Offer a button that adds a word. green: show jobs with it. red: hide jobs with it.",
         {"word": _WORD, "kind": {"type": "string", "enum": ["green", "red"]}},
@@ -225,7 +222,7 @@ TOOLS: dict[str, Tool] = {
     "stop_suggesting": Tool("Offer a button so a word we suggest is never suggested again.",
                             {"word": _WORD},
                             lambda args: f"Stop suggesting “{norm(str(args.get('word') or ''))}”",
-                            _can_stop, change=True, documents=True),
+                            _can_stop, change=True),
 }
 
 
@@ -233,9 +230,8 @@ class Tools:
     """What the model may use in one reply, and the guard every call it makes goes through."""
 
     def __init__(self, db: Database, user: User, reply: _Reply):
-        consented = has_consented(db, user.id)
         self.db, self.user, self.reply = db, user, reply
-        self.offered = {name: tool for name, tool in TOOLS.items() if consented or not tool.documents}
+        self.offered = dict(TOOLS)
 
     def schemas(self) -> list[dict]:
         return [{"name": name, "description": tool.description,

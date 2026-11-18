@@ -46,7 +46,7 @@ This policy covers Mahoraga at {site}, the app you can install from it, and the 
 
 **Technical information.** Your IP address is used, only in our server's memory, to limit how often something can be done (such as signing up), and is not stored by us. Our server logs record what the system did, with the internal number of the account involved, and occasionally an email address when an email to it fails. *Why:* to keep Mahoraga secure and working, and to find faults. *Legal basis:* our legitimate interest in a secure, working service.
 
-**Cookies and browser storage.** See the [Cookie Policy](#/cookies).
+**Cookies and browser storage.** See the Cookie Policy.
 
 **Improving Mahoraga.** We count, across everyone, how far applications got for documents made in each layout and with each version of our instructions to the AI, to learn which work better. We look at the totals, not at any one person. *Legal basis:* our legitimate interest in making documents that work, which doesn't override your interests because only totals are used. You can object (section 10).
 
@@ -104,7 +104,7 @@ You have the right to:
 - have it **corrected** if it's wrong (Article 16);
 - have it **erased** (Article 17): delete your account in Settings, or ask us;
 - **restrict** how we use it while a question about it is settled (Article 18);
-- **take it with you** in a machine-readable format (Article 20): see the [Data Use Policy](#/data);
+- **take it with you** in a machine-readable format (Article 20): see the Data Use Policy;
 - **object** to our use of it based on legitimate interests (Article 21), and we'll stop unless we have compelling reasons that override yours;
 - **withdraw consent** at any time, where we rely on it, without affecting what was done before (Article 7(3));
 - not be subject to a decision based solely on automated processing that significantly affects you (Article 22). Mahoraga makes no such decision.
@@ -117,7 +117,7 @@ Please tell us first, so we can put it right. You also have the right to complai
 
 ## 12. Keeping your data safe
 
-All traffic to Mahoraga is encrypted (HTTPS), and our server can only be reached through Cloudflare. Passwords are stored as one-way hashes. Linked accounts and bot tokens are encrypted with a separate key for each account, which is itself encrypted with a key kept outside the database. Only the people who run Mahoraga can reach its data. The [Data Use Policy](#/data) explains more, including what we do if something goes wrong.
+All traffic to Mahoraga is encrypted (HTTPS), and our server can only be reached through Cloudflare. Passwords are stored as one-way hashes. Linked accounts and bot tokens are encrypted with a separate key for each account, which is itself encrypted with a key kept outside the database. Only the people who run Mahoraga can reach its data. The Data Use Policy explains more, including what we do if something goes wrong.
 
 ## 13. Children
 

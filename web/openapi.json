@@ -541,26 +541,6 @@
         "title": "AdminUsage",
         "type": "object"
       },
-      "AgreeDashboard": {
-        "description": "An account made before the legal pages read as they do now (`libs.legal.LEGAL_VERSION`): asked to\nagree, once, before anything else of the site. A new account agreed with the box at sign-up and never sees\nit.",
-        "properties": {
-          "is_admin": {
-            "title": "Is Admin",
-            "type": "boolean"
-          },
-          "stage": {
-            "const": "agree",
-            "title": "Stage",
-            "type": "string"
-          }
-        },
-        "required": [
-          "stage",
-          "is_admin"
-        ],
-        "title": "AgreeDashboard",
-        "type": "object"
-      },
       "AiAccount": {
         "properties": {
           "id": {
@@ -1404,21 +1384,6 @@
           "workplaces"
         ],
         "title": "ConfigChoices",
-        "type": "object"
-      },
-      "ConsentBody": {
-        "properties": {
-          "version": {
-            "maxLength": 16,
-            "minLength": 4,
-            "title": "Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "version"
-        ],
-        "title": "ConsentBody",
         "type": "object"
       },
       "ContactAddress": {
@@ -5054,10 +5019,6 @@
             ],
             "title": "Closed"
           },
-          "consent": {
-            "title": "Consent",
-            "type": "boolean"
-          },
           "messages": {
             "items": {
               "$ref": "#/components/schemas/SupportMessage"
@@ -5069,7 +5030,6 @@
         "required": [
           "closed",
           "ai",
-          "consent",
           "messages"
         ],
         "title": "SupportPage",
@@ -5635,50 +5595,6 @@
           }
         },
         "summary": "Patch Account",
-        "tags": [
-          "account"
-        ]
-      }
-    },
-    "/account/consent": {
-      "post": {
-        "description": "Agree to the legal pages as they read now: what an account made before them is asked, once, before the\nrest of the site (`dashboard_routes`, stage \"agree\"). Not withdrawn apart from the account: deleting it is\nhow a person stops (owner, 2026-11-18).",
-        "operationId": "grant_consent_account_consent_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConsentBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grant Consent Account Consent Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Grant Consent",
         "tags": [
           "account"
         ]
@@ -7949,9 +7865,6 @@
               "application/json": {
                 "schema": {
                   "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/AgreeDashboard"
-                    },
                     {
                       "$ref": "#/components/schemas/PlanDashboard"
                     },

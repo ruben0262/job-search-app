@@ -12,7 +12,7 @@ Last updated {updated} · Version {version}
 
 ## 1. What this page is for
 
-The [Privacy Policy](#/privacy) sets out your rights over your personal data and the legal basis for each use. This page explains, in practical terms, how Mahoraga uses data: the jobs it collects, the rules that match them to you, the AI that writes your documents, how you can take your data elsewhere under the EU Data Act and the GDPR, and how we keep it safe.
+The Privacy Policy sets out your rights over your personal data and the legal basis for each use. This page explains, in practical terms, how Mahoraga uses data: the jobs it collects, the rules that match them to you, the AI that writes your documents, how you can take your data elsewhere under the EU Data Act and the GDPR, and how we keep it safe.
 
 ## 2. Where the jobs come from
 
@@ -20,7 +20,7 @@ The [Privacy Policy](#/privacy) sets out your rights over your personal data and
 
 2.2 Each job shows where it came from, and its "Apply on" button takes you to that website. The ad belongs to whoever published it. We don't write or change job ads, apart from putting them in a consistent layout.
 
-2.3 We can't check every ad. An ad may be out of date, wrong, or, rarely, not genuine. See section 5.3 of the [Terms of Service](#/terms).
+2.3 We can't check every ad. An ad may be out of date, wrong, or, rarely, not genuine. See section 5.3 of the Terms of Service.
 
 2.4 Jobs stay on Mahoraga for {shelf} after we find them. After that, we keep them in an archive, so that the jobs you applied for stay in your list, and so we can see how the job market changes. If an ad names you, the Privacy Policy explains your rights (section 4 there).
 
@@ -91,4 +91,4 @@ We hand over data to an authority only when the law requires us to, and only wha
 
 ## 10. Questions
 
-Write to [{email}](mailto:{email}). The [Privacy Policy](#/privacy) sets out your rights, and the [Terms of Service](#/terms) the agreement between us.
+Write to [{email}](mailto:{email}). The Privacy Policy sets out your rights, and the Terms of Service the agreement between us.

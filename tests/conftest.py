@@ -50,8 +50,7 @@ def db(_database):
 
 
 def agreed() -> dict:
-    """What ticking sign-up's box records (`libs.legal`). An account a test makes without it is asked to agree
-    to the terms before anything else of the site (`/dashboard`'s stage "agree"), as a real one would be."""
+    """What ticking sign-up's box records (`libs.legal`): an account a test makes is one that signed up."""
     from libs.db import now
     from libs.legal import LEGAL_VERSION
     return {"processing_consent_at": now(), "processing_consent_version": LEGAL_VERSION}

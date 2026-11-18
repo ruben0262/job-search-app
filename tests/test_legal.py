@@ -36,8 +36,8 @@ def api(db, monkeypatch):
 
 
 def test_every_page_is_whole_with_nothing_left_unfilled(api):
-    """A gap left in a page is a sentence with a hole in it, said to everybody; a page without its short
-    version leaves the agree screen, which shows the Terms' own, with nothing to show."""
+    """A gap left in a page is a sentence with a hole in it, said to everybody; and each page opens with its
+    short version, for the people who read nothing else."""
     from libs.legal import LEGAL_VERSION
     from libs.legal.documents import DOCUMENTS
 

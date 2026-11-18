@@ -57,34 +57,18 @@ def test_every_legal_page_is_public(api):
     assert http.get("/legal/anything-else").status_code == 422
 
 
-# ── consent, at the moment it is owed ─────────────────────────────────────────────────────────
+# ── the agreement, given at sign-up ───────────────────────────────────────────────────────────
 
-def test_agreeing_to_a_superseded_version_is_refused(api):
-    """Terms that changed are new terms, and an old agreement is not an answer to them."""
-    http, _, _ = api
-    response = http.post("/account/consent", json={"version": "1999-01-01"})
-    assert response.status_code == 409
-    assert "changed" in response.json()["detail"]
-
-
-def test_new_terms_ask_an_account_once_before_anything_else(api):
-    """The mechanism, not the intention: the agreement is version-compared, and the site waits for it. An
-    account that agreed to an older version sees one screen and nothing else (`stage` "agree"); agreeing to
-    the version the pages show lets it through, and records when."""
-    from libs.db import get
+def test_the_terms_are_agreed_to_at_sign_up_and_never_asked_for_again_inside_the_site(api):
+    """Owner, 2026-11-18: "that's something users accept on sign up and that's it". An account that agreed to
+    older terms, or has no agreement on record, goes straight to its own page, and nothing asks again."""
     from libs.db.models import User
 
     http, db, user = api
-    assert http.get("/dashboard").json()["stage"] == "agree", "never agreed: asked first"
-
-    version = http.get("/legal/terms").json()["version"]
-    assert http.post("/account/consent", json={"version": version}).status_code == 200
-    assert http.get("/dashboard").json()["stage"] != "agree"
-    assert get(db, User, user.id).processing_consent_version == version
-
-    # What new terms leave behind for everybody who agreed to the old ones.
-    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"processing_consent_version": "2020-01-01"}})
-    assert http.get("/dashboard").json()["stage"] == "agree"
+    for version in ("2020-01-01", None):
+        db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"processing_consent_version": version}})
+        assert http.get("/dashboard").json()["stage"] in ("plan", "onboarding", "ready"), version
+    assert http.post("/account/consent", json={"version": "2026-11-18"}).status_code in (404, 405)
 
 
 # ── erasure ───────────────────────────────────────────────────────────────────────────────────

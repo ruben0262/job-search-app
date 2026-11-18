@@ -19,7 +19,7 @@ import { DOCUMENTS, DocumentsPage, HISTORY, IDENTITY, SAVED } from "./pages/Docu
 import { JobsPage } from "./pages/JobsPage";
 import { Onboarding } from "./pages/Onboarding";
 import { PlanPage } from "./pages/PlanPage";
-import { AgreePage, LEGAL_PAGES, LegalPage } from "./pages/LegalPage";
+import { LEGAL_PAGES, LegalPage } from "./pages/LegalPage";
 import { ForgotPassword, ResetPassword } from "./pages/ResetPassword";
 import { ACCOUNT, SettingsPage } from "./pages/SettingsPage";
 import { SignIn } from "./pages/SignIn";
@@ -147,8 +147,6 @@ export function App() {
   }
 
   const { dashboard } = session;
-  // An account made before the legal pages read as they do now agrees to them first, once (`LegalPage.tsx`).
-  if (dashboard.stage === "agree") return <AgreePage onDone={reload} />;
   // Free or the membership, picked first, whatever the address (owner, 2026-11-12): nothing else until then.
   if (dashboard.stage === "plan") return <PlanPage onChanged={reload} />;
   if (hash.startsWith("/upgrade")) return <UpgradePage onChanged={reload} />;

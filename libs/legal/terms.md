@@ -28,9 +28,9 @@ In these terms, "we", "us" and "our" mean the operator named above, and "you" me
 
 ## 2. These terms and how they fit together
 
-2.1 These terms are the agreement between you and us for using Mahoraga. They apply from the moment you agree to them: when you tick the box as you create your account, or when you press "I agree" on the screen that asks you.
+2.1 These terms are the agreement between you and us for using Mahoraga. They apply from the moment you agree to them, by ticking the box as you create your account.
 
-2.2 Three other pages explain how we handle information: the [Privacy Policy](#/privacy), the [Cookie Policy](#/cookies) and the [Data Use Policy](#/data). They describe what we do and what your rights are. You don't have to agree to them for them to apply to us.
+2.2 Three other pages explain how we handle information: the Privacy Policy, the Cookie Policy and the Data Use Policy. They describe what we do and what your rights are. You don't have to agree to them for them to apply to us.
 
 2.3 Most people use Mahoraga as consumers: for themselves, not for a business. Where the law gives you rights as a consumer, nothing in these terms takes them away or limits them.
 
@@ -82,7 +82,7 @@ What each plan includes is shown on the pricing page and in Settings. Free shows
 
 6.3 You are responsible for following your AI provider's terms, including any limits on how a personal sign-in may be used by other software, and for anything your provider charges you. If your provider limits, charges or closes your account, that is between you and your provider.
 
-6.4 We send your provider only what a document needs, and only when you ask for one: see the [Privacy Policy](#/privacy) and the [Data Use Policy](#/data).
+6.4 We send your provider only what a document needs, and only when you ask for one: see the Privacy Policy and the Data Use Policy.
 
 ## 7. Your content
 
@@ -174,7 +174,7 @@ Mahoraga links to job boards, company websites, your AI provider, Stripe, Telegr
 
 ## 15. Suspending or ending your account
 
-15.1 **You** can stop using Mahoraga and delete your account at any time in Settings. That deletes your data at once, as the [Privacy Policy](#/privacy) explains.
+15.1 **You** can stop using Mahoraga and delete your account at any time in Settings. That deletes your data at once, as the Privacy Policy explains.
 
 15.2 **We** may suspend or close your account if you seriously or repeatedly break these terms, use Mahoraga unlawfully or to harm others, or if the law requires it. Unless the law or the risk to others prevents it, we'll first tell you what's wrong and give you a chance to put it right. If we act, we'll tell you which part of these terms or which law it is based on, and how to challenge it. If we close a paid account because of a serious breach, we don't refund the month you're in.
 
@@ -208,9 +208,9 @@ Mahoraga links to job boards, company websites, your AI provider, Stripe, Telegr
 
 ## 19. Changes to these terms
 
-19.1 We may change these terms: to describe a change to Mahoraga, because the law changes, or to make them clearer. If a change affects you, we'll email you at least 30 days before it applies, unless the law requires it sooner. When it applies, Mahoraga asks you to agree to the new terms when you next open it.
+19.1 We may change these terms: to describe a change to Mahoraga, because the law changes, or to make them clearer. If a change affects you, we'll email you at least 30 days before it applies, unless the law requires it sooner, and say what changes.
 
-19.2 You don't have to agree. Instead, you can end the agreement at no cost (section 16), and we'll refund what you've paid for any time after the change.
+19.2 If you don't want the new terms, you can end the agreement at no cost before they apply (section 16), and we'll refund what you've paid for any time after the change. If you carry on using Mahoraga once they apply, the new terms apply to you.
 
 ## 20. The law, and the courts
 

@@ -35,7 +35,6 @@ from libs.documents import (
     needs,
     remake,
 )
-from libs.legal import has_consented
 from libs.llm import own
 from libs.membership import has
 from libs.obs import audit
@@ -330,8 +329,7 @@ def _ai_payer(db: Database, user: User, kind: str) -> str:
 
     Refused here rather than queued and refused there: the worker asks again before any text leaves
     the server, but the person should not wait for a queue to hear "no". What is missing comes back as
-    a list with its words (`libs.documents.needs`), so the page can say where each is added; asked before
-    consent, as nothing is sent until both are settled, and an AI account is the step that takes longer.
+    a list with its words (`libs.documents.needs`), so the page can say where each is added.
     """
     payer = own(db, user)
     lacking = needs.missing(db, user.id, kind, account=payer is not None)
@@ -340,10 +338,6 @@ def _ai_payer(db: Database, user: User, kind: str) -> str:
         event = notify.NEEDS_AI_ACCOUNT if payer is None else notify.NEEDS_UPLOAD
         notify.notify(db, user.id, event, lacking["message"] if lacking else "")
         raise HTTPException(status.HTTP_409_CONFLICT, detail=lacking)
-    if not has_consented(db, user.id):
-        # Only after the terms changed under an open page: the site asks before anything else (stage "agree").
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            detail="Our terms changed. Reload the page to read and agree to them.")
     return payer.kind
 
 

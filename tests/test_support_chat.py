@@ -1,8 +1,8 @@
 """The help chat: asked on the site, answered by a scripted model through the real loop, streamed
 back as Server-Sent Events, and able to change an account only through a button the person taps.
 
-The model is the one stand-in. The guard, the allowance, the consent gate, the stream and the
-restart are the code that runs in production, against a real MongoDB.
+The model is the one stand-in. The guard, the allowance, the stream and the restart are the code that
+runs in production, against a real MongoDB.
 """
 from __future__ import annotations
 
@@ -239,30 +239,6 @@ def test_the_help_chat_is_closed_until_the_operator_opens_it(api, monkeypatch):
 
     settings.put(api.db, "support_chat_enabled", 1)
     assert _ask(api)["text"] == "Hello."
-
-
-# ── consent ───────────────────────────────────────────────────────────────────────────────────
-
-def test_without_consent_what_their_documents_say_never_reaches_the_ai(api, monkeypatch):
-    from libs.db.models import User
-
-    api.db[User.COLLECTION].update_one({"_id": api.user.id}, {"$set": {"suggestions": {
-        "green": [{"term": "kotlin", "reason": "Your job title at Zanzibar Widgets"}],
-        "red": [], "dismissed": []}}})
-    model = Scripted(("", [("suggested_words", {})]), ("I cannot see those.", []),
-                     ("", [("suggested_words", {})]), ("We suggest kotlin.", []))
-    _answers(monkeypatch, model)
-
-    _ask(api, "which words do you suggest?")
-    assert {"suggested_words", "stop_suggesting"}.isdisjoint(model.seen[0]["tools"])
-    assert "Zanzibar" not in json.dumps(model.seen), "nothing their documents say reached the AI"
-    assert "my_words" in model.seen[0]["tools"], "their words and the site's help still answer"
-
-    version = api.http.get("/legal/terms").json()["version"]
-    assert api.http.post("/account/consent", json={"version": version}).status_code == 200
-    _ask(api, "and now?")
-    assert "suggested_words" in model.seen[2]["tools"]
-    assert "Zanzibar" in json.dumps(model.seen[3]["messages"]), "with consent, it may"
 
 
 # ── streamed, and restart-proof: real threads, the app's own database client ─────────────────

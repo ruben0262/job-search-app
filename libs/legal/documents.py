@@ -17,7 +17,7 @@ from libs.auth.sessions import ACCESS_TTL, REFRESH_TTL
 from libs.auth.tokens import RESET_TTL, VERIFICATION_TTL
 from libs.db import BACKUP_KEEP_DAYS
 from libs.db.models.contact import CONTACT_KEEP_YEARS
-from libs.legal.consent import LEGAL_VERSION
+from libs.legal import LEGAL_VERSION
 from libs.legal.disclosure import RECIPIENTS, STORED, span
 from libs.notify import site_url
 
