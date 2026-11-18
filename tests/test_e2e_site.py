@@ -2462,7 +2462,7 @@ def test_a_phone_is_asked_to_install_the_app_once_a_visit_until_it_is_and_told_w
     """Owner, 2026-11-17: installing the app pushed on a phone for Starter and Member, "in front of users
     until they do install it", with the benefits. On an iPhone: the sheet rises by itself once a visit, saying
     why and how (Share, Add to Home Screen); "Get the app" stays up top and first in More; a new visit asks
-    again; and once the app is opened from the home screen, no phone of theirs is asked again."""
+    again; and opened from the home screen, the app asks nothing."""
     base, email, _ = site
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
@@ -2487,7 +2487,7 @@ def test_a_phone_is_asked_to_install_the_app_once_a_visit_until_it_is_and_told_w
         again.goto(f"{base}/#/")
         expect(again.get_by_role("dialog", name="Get the Mahoraga app")).to_be_visible()
         again.close()
-        _opened_as_the_app(context, base, email)
+        _opened_as_the_app(context, base)
         browser.close()
 
 
@@ -2509,34 +2509,28 @@ def _asked_again_only_by_hand(page, sheet) -> None:
     page.keyboard.press("Escape")
 
 
-def _opened_as_the_app(context, base: str, email: str) -> None:
-    """The site opened from the home screen says so (`install.tsx`, an iPhone's `navigator.standalone`), and
-    from then on a phone's browser is not asked either: an iPhone's cannot tell by itself."""
-    from libs.db import database
-    from libs.db.models import User
-
+def _opened_as_the_app(context, base: str) -> None:
+    """Opened from the home screen (an iPhone's `navigator.standalone`), the app asks nothing. The phone's
+    browser asks on, the app opened or not: an iPhone's cannot tell whether it is still there, and one
+    installed and deleted is asked for again (owner, 2026-11-18: "it appears if the app is not on a device,
+    even after its been installed once but deleted"). It was asked never again, on any phone of theirs."""
     app = context.new_page()
     app.add_init_script("Object.defineProperty(navigator, 'standalone', {get: () => true})")
     app.goto(f"{base}/#/")
     expect(app.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+    app.wait_for_timeout(1500)
+    expect(app.get_by_role("dialog", name="Get the Mahoraga app")).to_have_count(0)
     expect(app.get_by_role("button", name="Get the app")).to_have_count(0)
-    for _ in range(50):
-        if database()[User.COLLECTION].find_one({"email": email}).get("app_opened_at"):
-            break
-        app.wait_for_timeout(100)
-    else:
-        raise AssertionError("the app, opened, did not say so")
     browser_tab = context.new_page()
     browser_tab.goto(f"{base}/#/")
     expect(browser_tab.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
-    browser_tab.wait_for_timeout(1500)
-    expect(browser_tab.get_by_role("dialog", name="Get the Mahoraga app")).to_have_count(0)
-    expect(browser_tab.get_by_role("button", name="Get the app")).to_have_count(0)
+    expect(browser_tab.get_by_role("button", name="Get the app")).to_be_visible()
 
 
 def test_the_browsers_offer_installs_the_app_and_a_laptop_or_a_free_plan_is_not_asked(site, capsys):
     """Where the browser offers to install (`beforeinstallprompt`, Chrome on Android), the sheet's own button
-    asks it, and installed, it is said and asked no more. A laptop is not asked, nor a plan without alerts."""
+    asks it, and installed, it is said and asked no more. A phone whose browser says the app is on it is not
+    asked, by the manifest naming the app; a laptop is not asked, nor a plan without alerts."""
     base, email, _ = site
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
@@ -2569,8 +2563,27 @@ def test_the_browsers_offer_installs_the_app_and_a_laptop_or_a_free_plan_is_not_
         expect(sheet).to_have_count(0)
         expect(page.get_by_text("Mahoraga is on your home screen.")).to_be_visible()
         expect(page.get_by_role("button", name="Get the app")).to_have_count(0)
+        _a_phone_with_the_app_is_not_asked(browser, phone, base)
         _a_free_phone_is_not_asked(browser, base, f"free.{email}", capsys)
         browser.close()
+
+
+def _a_phone_with_the_app_is_not_asked(browser, phone, base: str) -> None:
+    """Chrome on Android tells a page whether its own app is on the phone, if the manifest names it."""
+    import json
+
+    manifest = json.loads(phone.request.get(f"{base}/manifest.webmanifest").text())
+    assert {"platform": "webapp", "url": "/manifest.webmanifest"} in manifest.get("related_applications", [])
+    other = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+    other.add_cookies(phone.cookies())
+    other.add_init_script("navigator.getInstalledRelatedApps = async () => [{platform: 'webapp'}]")
+    page = other.new_page()
+    page.goto(f"{base}/#/")
+    expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+    page.wait_for_timeout(1500)
+    expect(page.get_by_role("dialog", name="Get the Mahoraga app")).to_have_count(0)
+    expect(page.get_by_role("button", name="Get the app")).to_have_count(0)
+    other.close()
 
 
 def _a_free_phone_is_not_asked(browser, base: str, email: str, capsys) -> None:

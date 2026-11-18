@@ -30,7 +30,9 @@ class User(Document):
     # file tiles left the site, and the admin's switch for it went on 2026-11-04. And when the account's
     # own LinkedIn search was next due: LinkedIn is read for everybody at once since 2026-11-04.
     # And the switch for the daily email, which each alert has of its own since 2026-11-17 (`Alert.channels`).
-    RETIRED = ("profile_files_visible", "linkedin_next_run_at", "email_alerts")
+    # And when the app was first opened from a home screen, which stopped every phone of theirs being asked to
+    # install it: a deleted app was never asked for again (owner, 2026-11-18). A phone tells now.
+    RETIRED = ("profile_files_visible", "linkedin_next_run_at", "email_alerts", "app_opened_at")
 
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     email: str
@@ -78,10 +80,6 @@ class User(Document):
     # The colour both are made in: an id in `libs.templates.COLOURS`, picked beside the looks (owner,
     # 2026-11-17). None until they pick one: each look's own.
     look_colour: str | None = None
-    # When the site was first opened as an app from a phone's home screen, or installed from the browser's
-    # own offer (`POST /account/app`): from then on it stops asking them to install it, on every phone (owner,
-    # 2026-11-17: "in front of users until they do install it"). An iPhone's browser cannot tell otherwise.
-    app_opened_at: datetime | None = None
     # This account's data key, wrapped by the platform key (`libs.secrets`).
     wrapped_dek: bytes | None = None
     # Their membership: a Stripe subscription, seven days free and then billed (owner, 2026-11-11). Stripe is

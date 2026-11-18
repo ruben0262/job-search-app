@@ -4078,10 +4078,6 @@
       "ReadyDashboard": {
         "description": "What every signed-in page needs before it draws. No count of matches: the jobs page is the\nfront page and counts its own list, and asking here as well was a second full match run on every\nload \u2014 /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it.",
         "properties": {
-          "app_installed": {
-            "title": "App Installed",
-            "type": "boolean"
-          },
           "applied": {
             "title": "Applied",
             "type": "integer"
@@ -4124,8 +4120,7 @@
           "areas",
           "applied",
           "banners",
-          "job_filters",
-          "app_installed"
+          "job_filters"
         ],
         "title": "ReadyDashboard",
         "type": "object"
@@ -5727,21 +5722,6 @@
           }
         },
         "summary": "Patch Account",
-        "tags": [
-          "account"
-        ]
-      }
-    },
-    "/account/app": {
-      "post": {
-        "description": "The site was opened as an app from a home screen, or installed from the browser's offer: it stops\nasking them to install it (`ReadyDashboard.app_installed`). Kept the first time, said once.",
-        "operationId": "app_opened_account_app_post",
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          }
-        },
-        "summary": "App Opened",
         "tags": [
           "account"
         ]

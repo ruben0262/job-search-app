@@ -6,18 +6,19 @@
  * Asked of a phone until it is done (owner, the same night: "we need to make sure its in front of users until
  * they do install it, perhaps when we tell them we show the benefits too"), for a plan whose alerts the app
  * carries: the sheet once a visit, saying why, and "Get the app" in the bar up top and in More whenever it is
- * wanted. Done is the app opened from a home screen, or installed from the browser's offer, on any phone
- * (`POST /account/app`): an iPhone's browser cannot tell that it is installed, and asked on. */
+ * wanted. Done is the app on this phone, never on the account: one installed and then deleted is asked for
+ * again (owner, 2026-11-18). Opened as the app, nothing is asked; in a browser, Chrome on Android says whether
+ * the app is on the phone (`related_applications` in the manifest). An iPhone's browser cannot tell, and asks. */
 import { useEffect, useSyncExternalStore } from "react";
 
-import { api, type Dashboard } from "./api";
+import type { Dashboard } from "./api";
 import { toast } from "./toast";
 import { Sheet, useAction } from "./ui";
 
 type Offer = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
 
 let offer: Offer | null = null;
-// Installed from the browser's offer since this page loaded: asked no more, before the server is read again.
+// On this phone: installed from the browser's offer since this page loaded, or so said by the browser.
 let installed = false;
 let open = false;
 const listeners = new Set<() => void>();
@@ -34,15 +35,16 @@ window.addEventListener("appinstalled", () => {
   installed = true;
   open = false;
   changed();
-  done();
   toast({ text: "Mahoraga is on your home screen. Open it from there." });
 });
-
-/** Installed or opened as the app: said to the server, which stops asking on every phone. Told again the next
- * time the app opens, should this one be lost on the way. */
-function done(): void {
-  void api.post("/account/app").catch(() => undefined);
-}
+// Where it can tell (Chrome on Android). Where it cannot, or refuses, the app is taken to be missing: asked.
+void (navigator as Navigator & { getInstalledRelatedApps?: () => Promise<unknown[]> })
+  .getInstalledRelatedApps?.()
+  .then((apps) => {
+    installed ||= apps.length > 0;
+    changed();
+  })
+  .catch(() => undefined);
 
 /** An iPhone or iPad, where a site reaches the home screen only through Share. An iPad says it is a Mac. */
 export function onApple(): boolean {
@@ -69,16 +71,11 @@ export function useInstallable(): boolean {
   return useKeptHere(() => offer !== null);
 }
 
-/** Whether to ask this person, here: on a touch screen, not opened as the app, with alerts in their plan, and
- * not yet opened as the app on any phone. Opened as it, that is said, once. */
+/** Whether to ask this person, here: on a touch screen, with alerts in their plan, in a browser on a phone the
+ * app is not known to be on. */
 export function useAsked(dashboard: Extract<Dashboard, { stage: "ready" }> | null): boolean {
-  const app = standalone();
-  const known = dashboard?.app_installed ?? true;
-  useEffect(() => {
-    if (app && !known) done();
-  }, [app, known]);
-  const here = !useKeptHere(() => installed);
-  return here && !app && !known && Boolean(dashboard?.areas.includes("alerts"))
+  const missing = !useKeptHere(() => installed);
+  return missing && !standalone() && Boolean(dashboard?.areas.includes("alerts"))
     && matchMedia("(pointer: coarse)").matches;
 }
 

@@ -3797,7 +3797,9 @@ there. Built:
 - An "Install the app" button on the Alerts page, from the browser's own offer (`web/src/install.tsx`), and Share →
   Add to Home Screen said in words on an iPhone or iPad. ✅ 2026-11-17, last of all: asked of a phone for Starter
   and Member until the app is opened from a home screen (`POST /account/app`): a sheet once a visit with why and
-  how, and "Get the app" up top and in More (owner: "in front of users until they do install it").
+  how, and "Get the app" up top and in More (owner: "in front of users until they do install it"). ✅ 2026-11-18:
+  asked until the app is on *that* phone, not once on any: a deleted app is asked for again. The account's flag
+  and `POST /account/app` are gone; Chrome on Android tells (`related_applications`), an iPhone's browser asks.
 - The notification's icon and its status-bar badge, and a tap that takes the open tab, or the installed app, to the
   job (the worker takes charge of the tab at once).
 

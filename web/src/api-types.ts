@@ -33,27 +33,6 @@ export interface paths {
         patch: operations["patch_account_account_patch"];
         trace?: never;
     };
-    "/account/app": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * App Opened
-         * @description The site was opened as an app from a home screen, or installed from the browser's offer: it stops
-         *     asking them to install it (`ReadyDashboard.app_installed`). Kept the first time, said once.
-         */
-        post: operations["app_opened_account_app_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/account/consent": {
         parameters: {
             query?: never;
@@ -3460,8 +3439,6 @@ export interface components {
          *     load — /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it.
          */
         ReadyDashboard: {
-            /** App Installed */
-            app_installed: boolean;
             /** Applied */
             applied: number;
             /** Areas */
@@ -4064,24 +4041,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
-            };
-        };
-    };
-    app_opened_account_app_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };

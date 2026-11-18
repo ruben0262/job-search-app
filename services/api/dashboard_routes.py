@@ -103,9 +103,6 @@ class ReadyDashboard(BaseModel):
     banners: list[DashboardBanner]
     # What the Jobs page opens with: theirs as they left it, or the defaults.
     job_filters: JobFilters
-    # Opened as an app from a home screen on any phone, or installed from the browser's offer (`POST
-    # /account/app`): the site stops asking them to install it.
-    app_installed: bool
 
 
 class FeedSalary(BaseModel):
@@ -226,7 +223,7 @@ def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curr
     _, applied = marks(db, user_id)
     return ReadyDashboard(stage="ready", is_admin=is_admin(user), member=member, areas=areas_of(db, user_id),
                           applied=len(applied), banners=_banners(db, user, member),
-                          job_filters=_job_filters(user), app_installed=user.app_opened_at is not None)
+                          job_filters=_job_filters(user))
 
 
 def _job_filters(user: User) -> JobFilters:

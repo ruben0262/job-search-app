@@ -8,7 +8,7 @@ from datetime import timedelta
 
 import pytest
 
-from libs.db import get, insert, now
+from libs.db import insert, now
 from libs.db.models import CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
 
@@ -115,22 +115,6 @@ def test_a_paused_account_is_told_it_is_paused(api):
     keys = {banner["key"] for banner in http.get("/dashboard").json()["banners"]}
     assert keys == {"paused"}
 
-
-
-def test_the_app_opened_on_a_phone_stops_the_asking_on_every_phone(api):
-    """Owner, 2026-11-17: installing the app is asked of a phone "until they do install it". Done is the site
-    opened from a home screen, or installed from the browser's offer, said by `POST /account/app`; an
-    iPhone's browser cannot tell, so the account remembers it. Kept the first time, said again harmlessly."""
-    http, db, user, _ = api
-    assert http.get("/dashboard").json()["app_installed"] is False
-    assert http.post("/account/app").status_code == 204
-    first = get(db, User, user.id).app_opened_at
-    assert first is not None
-    assert http.get("/dashboard").json()["app_installed"] is True
-    assert http.post("/account/app").status_code == 204
-    assert get(db, User, user.id).app_opened_at == first, "the first time is kept"
-    http.cookies.clear()
-    assert http.post("/account/app").status_code == 401
 
 def test_the_dashboard_requires_signing_in(api):
     http, _, _, _ = api

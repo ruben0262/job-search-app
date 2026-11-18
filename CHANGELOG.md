@@ -14,6 +14,27 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-18 — "Get the app" is asked until the app is on that phone, and a deleted one is asked for again
+
+The owner: "the 'get the app' does not appear for me in the top bar on the phone, after i pushed all the changes, it
+only appears on the dev one. I have installed the app, and then unsinstalled it, and now it disappeared, lets make
+sure it appears if the app is not on a device, even after its been installed once but deleted."
+
+- **Why it went: the account remembered it, not the phone.** Opened once from a home screen, the app said so
+  (`POST /account/app` → `User.app_opened_at`), and from then on the dashboard's `app_installed` stopped every
+  phone of that account being asked, for good. Nothing ever undid it, so a deleted app was never asked for again.
+  The dev site still asked because the owner's dev account had never opened the app.
+- **Now each phone decides.** Opened as the app, nothing is asked. In a browser it asks unless the app is known to be
+  on this phone: installed from the browser's offer in this visit, or so said by the browser. Chrome on Android
+  says it through `navigator.getInstalledRelatedApps()`, now that the manifest names the app as its own
+  (`related_applications`). An iPhone's browser has no way to tell, so an iPhone is asked in Safari even when the
+  app is on it: the price of asking whenever it might be missing.
+- **Removed with the evidence:** `POST /account/app`, `ReadyDashboard.app_installed` and `User.app_opened_at`.
+  Nothing else read them (searched across the code, tests and docs). `app_opened_at` is in `User.RETIRED`, so stored
+  accounts are read past it and the deploy's prune removes it.
+- Tests: the iPhone walk now asks in a browser tab after the app has been opened, which fails on the last commit.
+  A phone whose Chrome says the app is there is not asked, and the manifest names the app.
+
 ## 2026-11-18 — A pop-up scrolls between its rounded corners; a sheet's × stays in its corner, round
 
 The owner: "the popups have a weird scroll part, becuase each popup or modal has rounded edges and so the scroll
