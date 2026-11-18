@@ -1412,6 +1412,9 @@ def _what_is_missing(page, card) -> None:
     card.get_by_role("button", name="Make my CV").click()
     expect(toasts).to_have_text([re.compile(f"^{re.escape(NO_ACCOUNT)}")])
     expect(toasts.get_by_role("link", name="Open My documents")).to_have_count(0)
+    # Left alone: the pointer off it, as a finger lifts. One resting where it lands holds it, on purpose
+    # (`toast.tsx`), and on a phone the toast came to rest under the button just pressed (2026-11-18).
+    page.mouse.move(1, 1)
     expect(toasts).to_have_count(0, timeout=TOAST_MS + 3000)
 
 def test_the_jobs_filters_narrow_the_list_stay_as_they_were_left_and_clear_back(site, capsys):

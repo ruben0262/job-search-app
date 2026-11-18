@@ -14,6 +14,46 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-18 — One scale for every size on the site; the colour dots are round; a phone's bars a size down
+
+The owner: "lets make sure the colour selection is not oval, you keep making it in oval and not circle. then lets
+make sure that are the circles are appropriate sizes for the screens we use too ... reduce the size of the upper bar
+where we have the mahoraga title and the size of the notification as well a little bit ... review the whole site and
+determine a better sizing for fonts, containers and different parts of the site, all over the site though so if you
+change one thing in terms of proportion change all the others too don't leave one hanging."
+
+- **Why the dots were ovals: 40px wide and 44px tall.** The rule that gives every button in a page a thumb's
+  height (2.75rem) outranked the dot's own. Measured over every page at 390 and 1280px, they were the only circles
+  that came out oval (the landing page's halo rings are ellipses by design). A dot now takes its height from its
+  width (`aspect-ratio`), outside that rule. The dots are one row on any screen, a column each, as big as the card
+  allows between 22 and 40px: 24px at 320, 28 at 360, 31 at 390, and 40 from a tablet up.
+- **One scale, in `:root` (`styles.css`).** It holds text sizes from 11 to 34px, a control's height (44px), a
+  bar's circle (38px), the bar (60px), a card's room (24px) and corners (22px), and the gap between cards (20px).
+  A phone takes the smaller steps in one media query: circle 36, bar 52, card room 18, corners 18, page title 26.
+  In `styles.css`, 152 of 158 text sizes are now a step of it, where there were 38 different values from 0.62 to
+  2.1rem. Left as they were: the 9–11px labels drawn to their sparklines and axes, and one size given relative to
+  its line. The landing page's own words are on it too, 42 sizes: links, buttons, notes, tiles, the flow, Get
+  started, the price cards and the foot. Its headlines keep their sizes, and its pictures' labels (the phone, the
+  paper, the lock screen, the tiles' art) stay drawn to their pictures.
+- **Measured on a 390px phone, before and after.** The bar up top went from 64 to 52px, the name in it from 17.6 to
+  16px, and the bell from 44 to 36px; on a touch screen a tap still reaches 44px round it. The tab bar went from 65
+  to 62px and a page's title from 29.6 to 26px. Fields went from 48 to 44px, the height of the buttons beside them.
+  A card's room and corners went from 24 and 22 to 18px, and a job card's room from 18 × 20 to 14 × 18px. On a
+  laptop the bar is 60px, the bell 38px, a page's title 30px, and a job card's room 20 × 24px. A page used up to
+  10 text sizes (10.9, 12.8, 13.6, 14.4, 15.2, 16.8, 17.6, 18.4 and 29.6px among them) and now uses 5 to 7, each a
+  step of the scale. The landing page went from 19 sizes to 15 on a phone, the rest being its headlines and its
+  pictures.
+- **The landing page's bar is the same height (`--bar`).** On a laptop its dock is centred in it by sum,
+  `(var(--bar) - 50px) / 2`, not by a number that held only for 68px.
+- **A walk that met the new layout.** The sign-up walk waits for a toast to go by itself. At the new sizes the toast
+  came to rest under the button the test had just pressed, where its pointer still was, and a toast pointed at
+  waits on purpose (`toast.tsx`). The walk now moves the pointer off, as a finger lifts.
+- Gates, on a copy of the last commit with only this change, since another session's unfinished work is in the
+  shared folder: the site built; ruff clean on the test; test_e2e_site 36 passed, none skipped, on two workers
+  (four ran the machine out of memory beside the other session's processes). Its walks check that nothing runs off
+  the screen or over another thing from 320 to 1440px. No Python changed but the test: lint-imports, the schema
+  and the contract were not run again.
+
 ## 2026-11-17, last of all — A phone is asked to install the app until it does, and told why
 
 The owner: "I think we can make the app more obvious to install on phones through the browser, when logging in,
