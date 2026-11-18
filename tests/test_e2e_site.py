@@ -257,6 +257,14 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         demo.get_by_role("button", name="Apply on LinkedIn").click()
         expect(demo).to_contain_text("opens it on LinkedIn, and you apply there")
         assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+        # Sign in and Start free up top on a phone too, inside the smallest phone's bar (owner, 2026-11-18: "on
+        # the phone we have a sign in button on the top but no 'start free' button").
+        top = page.get_by_role("banner")
+        expect(top.get_by_role("link", name="Start free")).to_be_visible()
+        expect(top.get_by_role("link", name="Sign in")).to_be_visible()
+        for width in (320, 360, 390):
+            page.set_viewport_size({"width": width, "height": 844})
+            assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"the bar at {width}px"
         # The sections at the foot of a phone: a picture over each one's word (owner, 2026-11-07).
         expect(page.locator(".dock a").filter(has=page.locator(".short"))).to_have_text(
             ["What", "How", "See", "Price", "Start"], use_inner_text=True)

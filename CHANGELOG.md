@@ -14,6 +14,21 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-18 — Start free up top on a phone too, Sign in a step smaller beside it
+
+The owner: "on the phone we have a sign in button on the top but no 'start free' button, which i'd like to add ...
+also the sign in button can also be reduced slightly in size or font so the other button fits as well".
+
+- **Why it was missing:** under 520px the landing page's bar hid Start free, leaving the hero's button as the only
+  way in. It is shown on every screen now.
+- **Measured first:** at 320px the bar's name, Sign in, Start free and theme button take 338px of the 280px it
+  has, and at 360px they are 18px over. On a phone, Sign in is now 14px text (was 15) with less room either side,
+  and still 44px tall. Start free is 13px text and as tall as the theme's circle (36px). Under 360px the wheel
+  stands for the name, as in the app's bar when "Get the app" is up. Measured after: at 360px they fit with 17px
+  to spare, and at 320px nothing runs off or overlaps.
+- Test: the landing walk finds Sign in and Start free in the bar on a phone, and nothing off or over at 320, 360
+  and 390px. It fails on the last commit.
+
 ## 2026-11-18 — "Get the app" is asked until the app is on that phone, and a deleted one is asked for again
 
 The owner: "the 'get the app' does not appear for me in the top bar on the phone, after i pushed all the changes, it

@@ -208,7 +208,9 @@ export function Landing() {
       <div className="backdrop" aria-hidden="true" />
 
       <header className="lp-top">
-        <a className="brand" href="#top" onClick={jump("top")}><Mark />Mahoraga</a>
+        <a className="brand" href="#top" aria-label="Mahoraga" onClick={jump("top")}>
+          <Mark /><span className="brand-name">Mahoraga</span>
+        </a>
         <div className="lp-actions">
           <a className="lp-link" href="#/signin">Sign in</a>
           <a className="btn btn-primary btn-sm" href="#/signup">Start free</a>

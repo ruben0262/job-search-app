@@ -99,14 +99,30 @@
   color: var(--ink);
 }
 
-/* Sign in alone on a phone; Create account is the hero's first button there. */
-.landing .lp-top .btn {
-  display: none;
+/* Sign in and Start free on every screen (owner, 2026-11-18: "on the phone we have a sign in button on the top
+   but no 'start free' button ... the sign in button can also be reduced slightly"). On a phone both a step
+   smaller, Start free as tall as the theme's circle; under 360px the wheel stands for the name, as in the app. */
+@media (max-width: 519px) {
+  .lp-actions {
+    gap: 4px;
+  }
+
+  /* A thumb's height still (44px), at the smaller size. */
+  .lp-link {
+    padding: 11px 6px;
+    font-size: var(--text-sm);
+  }
+
+  .landing .lp-top .btn-sm {
+    --h: var(--circle);
+    padding: 0 14px;
+    font-size: var(--text-meta);
+  }
 }
 
-@media (min-width: 520px) {
-  .landing .lp-top .btn {
-    display: inline-flex;
+@media (max-width: 359px) {
+  .lp-top .brand-name {
+    display: none;
   }
 }
 
