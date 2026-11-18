@@ -14,6 +14,55 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-18 — Smoother on a phone: loops wait off screen and fade, the theme's circle alone, no blur behind a pop-up
+
+The owner: "lets also optimise all animations so they are super smooth on mobile as well everywhere including the
+app and the landing page please".
+
+**How it was measured.** A Chrome trace on a 390px phone screen with the CPU slowed 4x, for the time the main
+thread worked per second, the slowest frames, which animations Chrome could not hand to the compositor, and the
+compositor's and raster threads' own work ("drawing"). It covered seven scenes: the landing page still, swiped
+through and resting on each part, and the app's Jobs still, pop-ups, tabs and the theme switch. The last commit
+and this one were run three times each, alternating, and the ranges below are those three runs.
+
+- **The landing page drew loops nobody could see.** Every endless animation ran wherever its part was. The three
+  step dots in How it works animated their background, border and glow, and a bookmark its fill and stroke, so
+  both were laid out and painted again on every frame. Pausing the dots alone halved the page's work at the top.
+  Now:
+  - each part's loops wait while the part is off the screen (`Landing.tsx`, an observer; `.asleep` in
+    `landing.css`), and go on from there when it is back;
+  - a step done is a filled dot faded in over the ring;
+  - the bookmark is a filled copy faded in over the outline, and the small bounce is on a box around both.
+  Frozen at the same moments, old and new differ in at most 0.3% of the picture's pixels, mid-fade.
+  - Still at the top: 223–228 → 124–129 ms of work a second.
+  - Swiped top to bottom: 235–237 → 116–118.
+  - Resting on each part: 336–381 → 220–281.
+- **The theme's circle grew over a page that was fading its colours.** Cards, buttons, fields and rows each fade
+  their colour over `--fade`. Under the view transition's growing circle those fades repainted the whole page on
+  every frame. While the circle grows they are held now (`.theming`, `theme.tsx`).
+  - Main thread: 344–353 → 174–178 ms a second.
+  - Frames later than 25 ms: 5.2–5.9% → 0.7%; the 95th-percentile frame 33 → 17 ms.
+  - Drawing: 578–606 → 383–411 ms a second.
+- **On a touch screen the page behind a pop-up is dimmed, not blurred.** As the backdrop faded in, its blur was
+  drawn again on every frame. Opening and shutting pop-ups, the drawing went from 346–355 to 157–167 ms a second.
+  The main thread and frame times did not change in this setup. A laptop keeps the blur.
+- **Measured and kept as they were:**
+  - The frosted bars. Scrolling with and without every backdrop blur made no difference: landing drawing 289–416
+    with them against 386–400 without; Jobs 20–27 against 18.
+  - The hero's words, which come out of a blur. Without the blur, the first 2.5 s were 12% less work but just as
+    many late frames (2.0–2.7% either way).
+  - The section pill's width transition. A phone's dock links are all one width, so it only moves on a laptop,
+    and it was already contained.
+  - The alert dropping into the demo phone. It animates a grid row, which costs layout, but once per alert and
+    inside the phone (about 8 ms a second while resting there).
+- **What did not move:** the app's Jobs page still, its tabs and a swipe down Jobs, as expected, since nothing
+  there changed. One run of Jobs still came in at 65 ms a second against 34–37 for the others.
+- Test: `test_what_moves_on_a_phone_is_drawn_by_the_compositor_and_only_while_it_is_seen`. Every endless loop
+  on the landing page animates only what the compositor draws; How it works waits off screen and runs on it;
+  nothing fades under the theme's circle. On the last commit it fails on both halves, the loops (`lp-step`,
+  `lp-kept`) and the theme's fades.
+- With it, a test comment from `fd19e9f` that ruff found too long is wrapped.
+
 ## 2026-11-18 — Start free up top on a phone too, Sign in a step smaller beside it
 
 The owner: "on the phone we have a sign in button on the top but no 'start free' button, which i'd like to add ...

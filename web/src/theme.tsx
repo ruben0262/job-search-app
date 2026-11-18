@@ -34,9 +34,16 @@ export function useTheme() {
     const x = box.left + box.width / 2;
     const y = box.top + box.height / 2;
     const end = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
-    void document.startViewTransition(apply).ready.then(() => document.documentElement.animate(
+    // The circle is the change: the colours' own fades (`styles.css`) repainted the whole page under it on every
+    // frame, and on a phone a frame in twenty was late (2026-11-18). Held off until it has grown.
+    const root = document.documentElement;
+    root.classList.add("theming");
+    const growing = document.startViewTransition(apply);
+    void growing.ready.then(() => root.animate(
       { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${end}px at ${x}px ${y}px)`] },
       { duration: 650, easing: "cubic-bezier(.65, 0, .35, 1)", pseudoElement: "::view-transition-new(root)" }));
+    const grown = () => root.classList.remove("theming");
+    void growing.finished.then(grown, grown);
   };
   return { choice, next, toggle };
 }

@@ -391,6 +391,14 @@
   translate: none;
 }
 
+/* A part off the screen holds its loops still (`Landing.tsx`), and they go on from there when it is back. */
+.landing .asleep,
+.landing .asleep *,
+.landing .asleep *::before,
+.landing .asleep *::after {
+  animation-play-state: paused !important;
+}
+
 /* ── the hero: the wheel in its halo, lying flat, rising to face you as you scroll ─────────────── */
 
 .landing .hero {
@@ -2043,6 +2051,23 @@
   border: 2px solid rgba(var(--accent-rgb), 0.7);
   border-radius: 50%;
   background: var(--bg);
+}
+
+/* The step done: a filled dot over the ring, faded in and out. Its colour and glow, animated, were painted
+   again on every frame; a fade is the compositor's alone. Still, the steps done stand filled. */
+.landing .track-art li i {
+  position: absolute;
+  top: 0;
+  left: calc(50% - 12px);
+  /* The ring's own box: a pseudo-element is sized without its border, so 20px and its 2px each side. */
+  box-sizing: content-box;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.22);
+  opacity: 0;
   animation: lp-step 5.4s var(--out) infinite backwards;
   animation-delay: calc(0.3s + var(--i) * 0.9s);
 }
@@ -2051,10 +2076,8 @@
   color: var(--ink);
 }
 
-.landing .track-art li.done::before {
-  border-color: var(--accent);
-  background: var(--accent);
-  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.22);
+.landing .track-art li.done i {
+  opacity: 1;
 }
 
 .landing .track-art li + li::after {
@@ -2074,21 +2097,15 @@
 @keyframes lp-step {
   0%,
   6% {
-    border-color: rgba(var(--accent-rgb), 0.7);
-    background: var(--bg);
-    box-shadow: none;
+    opacity: 0;
   }
   14%,
   82% {
-    border-color: var(--accent);
-    background: var(--accent);
-    box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.22);
+    opacity: 1;
   }
   92%,
   100% {
-    border-color: rgba(var(--accent-rgb), 0.7);
-    background: var(--bg);
-    box-shadow: none;
+    opacity: 0;
   }
 }
 
@@ -2382,16 +2399,29 @@
   margin-top: 2px;
 }
 
-.landing .bookmark-card svg {
+.landing .bookmark-mark {
   position: absolute;
   top: 12px;
   right: 12px;
   width: 24px;
   height: 24px;
-  fill: var(--accent);
-  stroke: var(--accent);
+  animation: lp-kept-pop 5s var(--out) infinite;
+}
+
+.landing .bookmark-mark svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: transparent;
+  stroke: var(--muted);
   stroke-width: 1.8;
   stroke-linejoin: round;
+}
+
+.landing .bookmark-mark svg + svg {
+  fill: var(--accent);
+  stroke: var(--accent);
   animation: lp-kept 5s var(--out) infinite;
 }
 
@@ -2403,21 +2433,23 @@
 @keyframes lp-kept {
   0%,
   22% {
-    fill: transparent;
-    stroke: var(--muted);
-  }
-  30% {
-    scale: 1.3;
+    opacity: 0;
   }
   38%,
   90% {
-    fill: var(--accent);
-    stroke: var(--accent);
-    scale: 1;
+    opacity: 1;
   }
   100% {
-    fill: transparent;
-    stroke: var(--muted);
+    opacity: 0;
+  }
+}
+
+@keyframes lp-kept-pop {
+  30% {
+    scale: 1.3;
+  }
+  38% {
+    scale: 1;
   }
 }
 

@@ -212,6 +212,61 @@ def test_the_theme_button_is_a_circle_on_every_page_and_switches_the_theme(site,
         browser.close()
 
 
+# Endless loops the compositor draws alone: anything else is laid out or painted again on every frame.
+COMPOSITED = {"opacity", "transform", "translate", "scale", "rotate", "offset", "easing", "composite",
+              "computedOffset"}
+
+
+def test_what_moves_on_a_phone_is_drawn_by_the_compositor_and_only_while_it_is_seen(site, capsys):
+    """Owner, 2026-11-18: "lets also optimise all animations so they are super smooth on mobile as well
+    everywhere". Measured on a phone at a quarter of a laptop's speed, the landing page at rest kept the page
+    busy on loops nobody could see: the step dots far below were half its work, their colour and glow painted
+    on every frame, and a bookmark's colour with them. Each endless loop now animates only what the compositor
+    draws, and a part's loops wait until it is on the screen. Switching the theme, the colours' fades
+    repainted the whole page under the growing circle: during it nothing fades."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True,
+                                   is_mobile=True).new_page()
+        page.goto(f"{base}/")
+        expect(page.locator("h1")).to_have_text("Get seen first.")
+        page.wait_for_timeout(500)
+        loops = page.evaluate("""() => document.getAnimations()
+          .filter((a) => a.effect.getTiming().iterations === Infinity)
+          .map((a) => [a.animationName, a.playState, Boolean(a.effect.target.closest('#top')),
+                       Boolean(a.effect.target.closest('#how')),
+                       [...new Set(a.effect.getKeyframes().flatMap(Object.keys))]])""")
+        assert loops, "no endless loop on the landing page: this proves nothing"
+        painted = {name: sorted(set(keys) - COMPOSITED) for name, *_, keys in loops if set(keys) - COMPOSITED}
+        assert painted == {}, f"painted on every frame: {painted}"
+        assert {state for _, state, top, _, _ in loops if top} == {"running"}, "the hero stands still"
+        assert {state for _, state, _, how, _ in loops if how} == {"paused"}, "How it works runs out of sight"
+        page.evaluate("document.getElementById('how').scrollIntoView()")
+        for _ in range(30):
+            states = page.evaluate("""() => [...new Set(document.getAnimations()
+              .filter((a) => a.effect.target.closest('#how')).map((a) => a.playState))]""")
+            if states == ["running"]:
+                break
+            page.wait_for_timeout(100)
+        assert states == ["running"], f"How it works, on the screen: {states}"
+
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        page.get_by_role("dialog", name="Get the Mahoraga app").get_by_role("button", name="Got it").click()
+        page.get_by_role("button", name="More", exact=True).click()
+        page.evaluate("""() => { window.fading = new Promise((done) => new MutationObserver((_, watch) => {
+            watch.disconnect();
+            requestAnimationFrame(() => done(document.getAnimations()
+              .filter((a) => a instanceof CSSTransition).map((a) => a.transitionProperty)));
+          }).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]})); }""")
+        page.get_by_role("dialog", name="More").get_by_role("switch", name="Dark mode").click()
+        assert page.evaluate("window.fading") == [], "the colours faded under the growing circle"
+        expect(page.locator("html")).to_have_attribute("data-theme", "light")
+        expect(page.locator("html")).not_to_have_class(re.compile("theming"))
+        browser.close()
+
+
 def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in_a_picture_and_a_word(
         site, capsys):
     """The landing page's numbers are the server's (`/stats`): typed into it, they said 25 sources long
@@ -257,8 +312,8 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         demo.get_by_role("button", name="Apply on LinkedIn").click()
         expect(demo).to_contain_text("opens it on LinkedIn, and you apply there")
         assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
-        # Sign in and Start free up top on a phone too, inside the smallest phone's bar (owner, 2026-11-18: "on
-        # the phone we have a sign in button on the top but no 'start free' button").
+        # Sign in and Start free up top on a phone too, inside the smallest phone's bar (owner, 2026-11-18:
+        # "on the phone we have a sign in button on the top but no 'start free' button").
         top = page.get_by_role("banner")
         expect(top.get_by_role("link", name="Start free")).to_be_visible()
         expect(top.get_by_role("link", name="Sign in")).to_be_visible()

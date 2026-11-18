@@ -107,9 +107,16 @@ export function Landing() {
       seen.unobserve(entry.target);
     }), { rootMargin: "0px 0px -8% 0px" });
     page.querySelectorAll("[data-reveal]").forEach((el) => seen.observe(el));
+    // Each part's loops run only while it is on the screen. Off it, they were drawn again on every frame for
+    // nobody: on a phone at the top of the page, the step dots far below were half the page's work (2026-11-18).
+    const awake = new IntersectionObserver((entries) => entries.forEach((entry) => {
+      entry.target.classList.toggle("asleep", !entry.isIntersecting);
+    }));
+    page.querySelectorAll("main > section").forEach((el) => awake.observe(el));
     return () => {
       cancelAnimationFrame(frame);
       seen.disconnect();
+      awake.disconnect();
     };
   }, []);
 
@@ -607,7 +614,9 @@ function TrackArt() {
       <small>Acme Logistics</small>
       <ol>
         {["Applied", "Interview", "Offer"].map((step, i) => (
-          <li key={step} className={i < 2 ? "done" : undefined} style={{ "--i": i } as CSSProperties}>{step}</li>
+          <li key={step} className={i < 2 ? "done" : undefined} style={{ "--i": i } as CSSProperties}>
+            <i aria-hidden="true" />{step}
+          </li>
         ))}
       </ol>
     </div>
@@ -639,7 +648,8 @@ function BookmarkArt() {
         <b>Care Assistant</b>
         <small>Sunrise Care · Bristol</small>
         <i /><i />
-        {PICTURES.bookmark}
+        {/* Kept, it fills: the filled one fades in over the outline, drawn by the compositor. */}
+        <span className="bookmark-mark" aria-hidden="true">{PICTURES.bookmark}{PICTURES.bookmark}</span>
       </span>
       <span className="bookmark-kept">Kept in Bookmarks</span>
     </div>

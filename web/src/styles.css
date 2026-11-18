@@ -117,6 +117,14 @@
   mix-blend-mode: normal;
 }
 
+/* While it grows, nothing fades its colour: the circle is the change (`theme.tsx`). */
+.theming,
+.theming *,
+.theming *::before,
+.theming *::after {
+  transition: none !important;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
@@ -3459,6 +3467,16 @@ button.ai-provider {
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   animation: fade-in 0.35s var(--out);
+}
+
+/* On a touch screen the page behind is dimmed, not blurred: as it faded in, the blur was drawn again on
+   every frame, twice the drawing of opening one without it (2026-11-18). */
+@media (pointer: coarse) {
+  .prompt::backdrop,
+  .sheet::backdrop {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 @keyframes fade-in {
