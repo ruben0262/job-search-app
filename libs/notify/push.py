@@ -1,27 +1,54 @@
-"""The platform's Web Push key pair: made the first time anything asks for it, then kept in the database.
+"""Web Push: the platform's key pair, made the first time anything asks for it and then kept in the database,
+and the one way a message goes to a browser (`send`), an alert's or a test's.
 
-Browsers subscribe with the public half (`/push/key`) and the notifier signs each alert with the private half,
-so the two are one row and there is nothing to set up. Until 2026-11-18 they were three server settings made
-by hand; the live site ran without them, and no browser could turn notifications on (CHANGELOG).
+Browsers subscribe with the public half (`/push/key`) and every message is signed with the private half, so
+the two are one row and there is nothing to set up. Until 2026-11-18 they were three server settings made by
+hand; the live site ran without them, and no browser could turn notifications on (CHANGELOG).
 """
 from __future__ import annotations
 
 import base64
+import json
 import logging
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
+from pywebpush import WebPushException, webpush
 
 from libs.db import get, insert
-from libs.db.models import VapidKey
+from libs.db.models import PushSubscription, VapidKey
+from libs.notify import site_url
 from libs.secrets import KeyRing
+from libs.telegram import SEND_TIMEOUT_SEC
 
 logger = logging.getLogger(__name__)
 
 # The one pair's id, and what its wrapped private half is bound to.
 _PAIR = "vapid"
+# How long a push service holds a message for a phone that is asleep or offline: a day, because a job alert is
+# still worth reading the next morning.
+TTL_SEC = 24 * 3600
+
+
+def send(subscription: PushSubscription, payload: dict, key: str) -> bool:
+    """One message to one browser, signed with the private key (`private_key`). False when its push service
+    says the subscription is gone (404, 410); any other refusal is raised."""
+    try:
+        webpush({"endpoint": subscription.endpoint,
+                 "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth}},
+                json.dumps(payload),
+                vapid_private_key=key,
+                # A fresh dict every call: `webpush` writes the audience and expiry into it. The site's own
+                # address is how a push service reaches whoever runs it.
+                vapid_claims={"sub": site_url()},
+                timeout=SEND_TIMEOUT_SEC, ttl=TTL_SEC)
+    except WebPushException as exc:
+        if exc.status_code in (404, 410):
+            return False
+        raise
+    return True
 
 
 def public_key(db: Database) -> str:

@@ -10,6 +10,7 @@ PyJWT>=2.9
 argon2-cffi>=23.1
 pymongo>=4.19,<5
 cryptography>=44.0       # libs/secrets: the credential store the account page writes through
+pywebpush>=2.0           # libs/notify/push: "Send a test" to a phone, signed as an alert is (brings requests)
 httpx>=0.28              # libs/credentials: the API validates a credential by calling the provider
 python-multipart>=0.0.20  # multipart uploads; FastAPI needs it for File()/Form()
 pypdf>=5.1                # extracting text from an uploaded CV

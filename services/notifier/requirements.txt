@@ -1,5 +1,5 @@
-# services/notifier — new matches to a person's Telegram chat and browsers, through the platform's
-# one bot and its VAPID keys.
+# services/notifier — new matches to a person's Telegram chat and browsers, through their own bot and
+# the platform's push key (libs/notify/push).
 #
 # No numpy, no sklearn: the notifier matches words, it does not compute scores. Keeping it that light
 # is what makes it fast to rebuild and safe to run at concurrency 8.

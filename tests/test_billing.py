@@ -245,10 +245,11 @@ def is_member(http) -> bool:
     return http.get("/billing").json()["member"]
 
 
-# What turns an alert on: Telegram's three steps and a browser's subscription (the daily email is a field of
-# `PATCH /account`, asked below). Each is a plan's with alerts; turning one off is anybody's.
+# What turns an alert on: Telegram's three steps and a browser's subscription, and a test of each (the daily
+# email is a field of `PATCH /account`, asked below). Each is a plan's with alerts; turning one off is
+# anybody's.
 ALERTS_ON = {"PUT /telegram/bot", "POST /telegram/check", "POST /telegram/test", "POST /push/subscribe",
-             "POST /alerts"}
+             "POST /push/test", "POST /alerts"}
 
 
 def test_a_free_account_reaches_every_page_of_the_site(db, http, monkeypatch):

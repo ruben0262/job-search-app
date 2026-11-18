@@ -9637,6 +9637,48 @@
         ]
       }
     },
+    "/push/test": {
+      "post": {
+        "description": "One notification to this browser, as an alert's goes, to see that it arrives. Says what its push\nservice said when it would not take it.",
+        "operationId": "test_push_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushEndpoint"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test",
+        "tags": [
+          "push"
+        ]
+      }
+    },
     "/saved": {
       "delete": {
         "description": "Delete the kept documents My documents shows, to make room: the older ones, the ones a search\nfound, or all of them. Named one by one, so a call that names none deletes nothing.",

@@ -3809,6 +3809,8 @@ pass runs a minute apart (`libs.alerts.EVERY_SECONDS`), so the expectation is ab
 The first deploy could not have said so: the server had no push keys, and every "Turn on notifications" failed
 (2026-11-18). The platform now makes its own pair (CHANGELOG, 2026-11-18); after that deploy, notifications are
 turned on again on each phone before it is measured.
+Nor did any alert read a job: the pass never wrote its first cursor (fixed 2026-11-18, evening). Each phone now
+has "Send a test" to check it in seconds.
 
 **Not planned:** a native app; a Telegram channel per alert (owner, 2026-11-17: one chat, each card headed by its
 alert); an email per job (the mailbox's daily cap).

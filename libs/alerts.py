@@ -124,9 +124,11 @@ def _pass(db: Database, wait: int, alerts: list[Alert]) -> int:
     these alerts."""
     upto = now() - timedelta(hours=wait) - SETTLE
     cursor = db[AlertCursor.COLLECTION].find_one({"_id": str(wait)})
-    # The first pass starts from now: alerts announce what is new, not what the Jobs page already shows.
+    # The first pass starts from now, alerts announce what is new, not what the Jobs page already shows, and
+    # its empty read leaves the cursor there for the next. Returning here before writing it (`>=`) made every
+    # pass the first, and no alert read a job on the live site (2026-11-18).
     since = cursor["at"] if cursor else upto
-    if since >= upto:
+    if since > upto:
         return 0
     rows = _joined(db, since, upto, PASS_JOBS) if alerts else []
     reached = upto

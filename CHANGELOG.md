@@ -14,6 +14,32 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-18, evening — The alerts read new jobs at last, and a phone's notifications have a test
+
+The owner, after deploying the push keys: "the notifications are not appearing ... there are no jobs appearing
+anyway in the alert ... please have a look and fix it and then make sure the notifications can somehow come
+through as well."
+
+- **No alert had ever read a job, for anybody.** The pass keeps a cursor per wait (`AlertCursor`), and the
+  first pass starts it from now. That pass returned on `since >= upto` before writing the cursor, so the next one
+  found none either, and every pass was the first: no job was read, no cursor existed (`last_read` was empty),
+  and nothing raised or logged. The suite was green because every test placed the cursor itself (`_catch`);
+  none ran the pass from nothing, as a server does. `would_have_found`, which asks without a cursor, told the
+  owner each alert's count all along. Now the first pass's empty read writes the cursor (`>` for `>=`), and
+  `test_the_alerts_read_new_jobs_from_their_very_first_pass` runs two passes on a database with no cursor: the
+  second catches the job described between them (before: nothing). Alerts start from the deploy: jobs read
+  before it are on the Jobs page, not sent.
+- **"Send a test" beside "Turn off notifications"**, as Telegram has: one notification to this browser, sent
+  by the server and signed as an alert is (`POST /push/test`), so a phone is checked in seconds rather than at
+  the next job. If the push service refuses, the page says its answer (`said no (403)`); a browser it says is
+  gone is forgotten and the page says to turn notifications off and on again. One sender for both, moved from
+  the notifier to `libs.notify.push.send`; the API image carries `pywebpush` for it.
+- **Tests**: the pass from nothing (above); the test notification reaching one browser of two, with the
+  platform's key, a 403 said, a 410 forgotten; the browser test pressing "Send a test" and seeing "Sent.".
+- **Not measured**: a real phone, which needs this deployed. On an Android phone asleep, a push at normal
+  urgency may wait for the phone's next wake; if the test arrives late on a locked phone, `Urgency: high` is
+  the change to measure next.
+
 ## 2026-11-18 — Smoother on a phone: loops wait off screen and fade, the theme's circle alone, no blur behind a pop-up
 
 The owner: "lets also optimise all animations so they are super smooth on mobile as well everywhere including the

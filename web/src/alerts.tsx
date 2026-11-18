@@ -6,7 +6,7 @@ import { api, type Schema } from "./api";
 import { openInstall, standalone, useInstallable } from "./install";
 import { useKept } from "./kept";
 import { ACCOUNT } from "./pages/SettingsPage";
-import { disablePush, enablePush, pushState } from "./push";
+import { disablePush, enablePush, pushState, testPush } from "./push";
 import { Error, useAction } from "./ui";
 
 type Telegram = Schema<"TelegramState">;
@@ -172,10 +172,11 @@ export function Pause({ onChanged }: { onChanged: () => void }) {
   );
 }
 
-/** Notifications in this browser: on, off, or why they cannot be. */
+/** Notifications in this browser: on, off, or why they cannot be; on, a test to see one arrive. */
 export function PushButton() {
   const [state, setState] = useState<Awaited<ReturnType<typeof pushState>> | null>(null);
   const [refused, setRefused] = useState(false);
+  const [tested, setTested] = useState(false);
   useEffect(() => {
     void pushState().then(setState).catch(() => setState("unsupported"));
   }, []);
@@ -186,6 +187,11 @@ export function PushButton() {
       setState("off");
     } else if (await enablePush()) setState("on");
     else setRefused(true);
+  });
+  const test = useAction(async () => {
+    setTested(false);
+    if (await testPush()) setTested(true);
+    else setState("off");
   });
 
   if (state === "home-screen") {
@@ -203,11 +209,21 @@ export function PushButton() {
               onClick={() => void toggle.run()}>
         {toggle.busy ? "One moment…" : state === "on" ? "Turn off notifications" : "Turn on notifications"}
       </button>
-      {state === "on" ? <span className="small muted">On in this browser.</span> : null}
+      {state === "on" ? (
+        <>
+          <span className="small muted">On in this browser.</span>
+          <button type="button" className="secondary small" disabled={test.busy} onClick={() => void test.run()}>
+            {test.busy ? "Sending…" : "Send a test"}
+          </button>
+          {tested && !test.error ? (
+            <p className="small muted" role="status">Sent. It should appear in a few seconds.</p>
+          ) : null}
+        </>
+      ) : null}
       {refused ? (
         <p className="small muted">Your browser said no. Allow notifications for this site in its settings.</p>
       ) : null}
-      <Error>{toggle.error}</Error>
+      <Error>{toggle.error ?? test.error}</Error>
     </>
   );
 }

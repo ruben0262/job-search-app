@@ -152,6 +152,27 @@ def run(db, user, outbox, **transports):
 # ── what is caught ────────────────────────────────────────────────────────────────────────────
 
 @needs_db
+def test_the_alerts_read_new_jobs_from_their_very_first_pass(db, monkeypatch):
+    """The first pass starts from now and leaves its place there for the next. It returned before writing it,
+    so on a new platform every pass was the first, and no alert ever read a job (live, 2026-11-18): every
+    other test here placed the cursor itself, and none ran the alerts from nothing, as a server does."""
+    from libs import alerts
+    from libs.db.models import AlertCursor
+
+    user, word = _person(db)
+    db[AlertCursor.COLLECTION].delete_many({})
+    clock = [now() - timedelta(minutes=5)]
+    monkeypatch.setattr(alerts, "now", lambda: clock[0])
+    alerts.route(db)
+    assert _caught(db, user) == {}, "the first pass starts from now"
+
+    job = _posting(db, f"Senior {word}", minutes_ago=2)
+    clock[0] = now()
+    alerts.route(db)
+    assert list(_caught(db, user)) == [job.id]
+
+
+@needs_db
 def test_a_new_match_reaches_telegram_and_every_browser_once(db):
     from libs.notify import site_url
 
@@ -663,7 +684,7 @@ def test_the_push_transport_reads_404_and_410_as_gone(monkeypatch):
 
     from pywebpush import WebPushException
 
-    from services.notifier import __main__ as notifier
+    from libs.notify import push
 
     browser = SimpleNamespace(endpoint="https://push.example.com/x", p256dh="k", auth="a")
     alert = {"title": "Backend Engineer", "body": "Acme", "url": "https://jobs.example.com/#/feed?job=1"}
@@ -676,15 +697,15 @@ def test_the_push_transport_reads_404_and_410_as_gone(monkeypatch):
                 raise WebPushException("push failed", response=SimpleNamespace(status_code=status))
         return webpush
 
-    monkeypatch.setattr(notifier, "webpush", answering(201))
-    assert notifier.push(browser, alert, "key") is True
+    monkeypatch.setattr(push, "webpush", answering(201))
+    assert push.send(browser, alert, "key") is True
     assert seen == {"keys": {"p256dh": "k", "auth": "a"}, "alert": alert}
     for status in (404, 410):
-        monkeypatch.setattr(notifier, "webpush", answering(status))
-        assert notifier.push(browser, alert, "key") is False
-    monkeypatch.setattr(notifier, "webpush", answering(500))
+        monkeypatch.setattr(push, "webpush", answering(status))
+        assert push.send(browser, alert, "key") is False
+    monkeypatch.setattr(push, "webpush", answering(500))
     with pytest.raises(WebPushException):
-        notifier.push(browser, alert, "key")
+        push.send(browser, alert, "key")
 
 
 def _alerts(db, user):
@@ -938,6 +959,44 @@ def test_notifications_turn_on_with_nothing_set_up_and_an_alert_reaches_the_brow
     assert json.loads(unb64(claims))["sub"] == "https://jobs.example.com"
     alert = json.loads(http_ece.decrypt(sent["data"], private_key=phone, auth_secret=auth))
     assert alert["title"] == job.title
+
+
+@needs_db
+def test_a_test_notification_reaches_this_browser_and_one_its_service_dropped_is_forgotten(api, monkeypatch):
+    """"Send a test", as Telegram has: a way to see a notification arrive on a phone without waiting for a
+    job (owner, 2026-11-18: "make sure the notifications can somehow come through"). It goes to this browser
+    alone, signed as an alert is; a refusal says what the push service answered, and a browser it says is gone
+    is forgotten and said to be."""
+    from types import SimpleNamespace
+
+    from pywebpush import WebPushException
+
+    from libs.notify import push
+
+    http, db, user = api
+    phone, laptop = ({"endpoint": f"https://push.example.com/{uuid.uuid4()}",
+                      "keys": {"p256dh": "BKey", "auth": "secret"}} for _ in range(2))
+    for browser in (phone, laptop):
+        assert http.post("/push/subscribe", json=browser).status_code == 200
+    sent, answer = [], [201]
+
+    def webpush(subscription_info, data, **options):
+        sent.append((subscription_info["endpoint"], json.loads(data)["title"], options["vapid_private_key"]))
+        if answer[0] >= 400:
+            raise WebPushException("refused", response=SimpleNamespace(status_code=answer[0], text=""))
+
+    monkeypatch.setattr(push, "webpush", webpush)
+    tried = {"endpoint": phone["endpoint"]}
+    assert http.post("/push/test", json=tried).json() == {"status": "sent"}
+    assert sent == [(phone["endpoint"], "Notifications are on", push.private_key(db))]
+
+    answer[0] = 403
+    refused = http.post("/push/test", json=tried)
+    assert refused.status_code == 502 and "said no (403)" in refused.json()["detail"]
+    answer[0] = 410
+    assert http.post("/push/test", json=tried).status_code == 410
+    assert _endpoints(db, user) == [laptop["endpoint"]]
+    assert http.post("/push/test", json=tried).status_code == 409, "forgotten, so not signed up"
 
 
 @needs_db

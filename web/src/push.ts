@@ -36,6 +36,16 @@ export async function enablePush(): Promise<boolean> {
   return true;
 }
 
+/** One notification to this browser, sent by the server as an alert is, to see that it arrives. False when this
+ * browser has no subscription any more. */
+export async function testPush(): Promise<boolean> {
+  const subscription = await (await navigator.serviceWorker.getRegistration())?.pushManager
+    .getSubscription();
+  if (!subscription) return false;
+  await api.post("/push/test", { endpoint: subscription.endpoint });
+  return true;
+}
+
 /** Stop notifications in this browser, at the server and here. */
 export async function disablePush(): Promise<void> {
   if (!pushSupported()) return;

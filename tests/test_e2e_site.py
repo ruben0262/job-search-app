@@ -2659,7 +2659,7 @@ def _a_free_phone_is_not_asked(browser, base: str, email: str, capsys) -> None:
     expect(page.get_by_role("dialog", name="Get the Mahoraga app")).to_have_count(0)
     expect(page.get_by_role("button", name="Get the app")).to_have_count(0)
 
-def test_the_site_installs_as_an_app_and_a_job_it_pushes_shows_the_wheel(site, capsys, tmp_path):
+def test_the_site_installs_as_an_app_and_a_job_it_pushes_shows_the_wheel(site, capsys, tmp_path, monkeypatch):
     """Alerts on the phone without an app store (owner, 2026-11-17: "download it through chrome as a mini
     app"): Chrome finds nothing missing to install the site, and the Alerts page offers it; a job pushed to
     the phone shows the app's icon, and the wheel in the status bar; and the tab that turned notifications on
@@ -2722,13 +2722,24 @@ def test_the_site_installs_as_an_app_and_a_job_it_pushes_shows_the_wheel(site, c
         # stood in for, and it is handed the site's key as Chrome's would be.
         page.add_init_script("""PushManager.prototype.subscribe = async function (options) {
           window.subscribedWith = new Uint8Array(options.applicationServerKey).length;
-          return {endpoint: "https://push.example.com/e2e", toJSON: () => ({
+          window.subscription = {endpoint: "https://push.example.com/e2e", toJSON: () => ({
             endpoint: "https://push.example.com/e2e", keys: {p256dh: "BKey", auth: "secret"}})};
-        };""")
+          return window.subscription;
+        };
+        PushManager.prototype.getSubscription = async () => window.subscription ?? null;""")
         page.reload()
         page.get_by_role("button", name="Turn on notifications").click()
         expect(page.get_by_text("On in this browser.")).to_be_visible()
         assert page.evaluate("window.subscribedWith") == 65, "a P-256 point, as `subscribe` takes"
+
+        # And a test, to see one arrive without waiting for a job: sent by the server to this browser alone.
+        from libs.notify import push
+
+        pushed = []
+        monkeypatch.setattr(push, "webpush", lambda browser, *_, **__: pushed.append(browser["endpoint"]))
+        page.get_by_role("button", name="Send a test").click()
+        expect(page.get_by_role("status").filter(has_text="Sent.")).to_be_visible()
+        assert pushed == ["https://push.example.com/e2e"]
         context.close()
 
 
