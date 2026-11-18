@@ -3,11 +3,8 @@ such alert found since the last one under its name (owner, 2026-11-17) — and n
 was."""
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import UTC, datetime, timedelta
-
-import pytest
 
 from libs.db import get, insert, now
 from tests.conftest import agreed, needs_db
@@ -193,42 +190,3 @@ def test_nothing_new_sends_nothing_but_counts_as_today(db):
 
     assert inbox.sent == [], "no 'no new jobs' email"
     assert get(db, User, user.id).email_digest_at is not None
-
-
-# ── the switch ────────────────────────────────────────────────────────────────────────────────
-
-@pytest.fixture()
-def api(db, monkeypatch):
-    os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
-    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
-    from fastapi.testclient import TestClient
-
-    from libs.auth.access import issue_access_token
-    from libs.db.models import UserConfig
-    from services.api.app import app
-
-    user, word = _person(db, emailed=False, onboarding_completed_at=now(), full_name="Ada Example")
-    # A finished account's search: the jobs page waits for one missing a part.
-    db[UserConfig.COLLECTION].update_one({"user_id": user.id}, {"$set": {"config": {
-        "languages": ["en"], "sections": [{"platform": "all", "keywords": [word, "golang", "sql"],
-                                           "locations": ["germany"]}]}}})
-    with TestClient(app, base_url="https://testserver") as http:
-        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
-        yield http
-
-
-@needs_db
-def test_an_alert_with_the_email_counts_as_having_alerts(api):
-    """The jobs page stops offering alerts to somebody whose alert sends the email."""
-    def banners():
-        return [banner["key"] for banner in api.get("/dashboard").json()["banners"]]
-
-    assert "no_alerts" in banners()
-    [mine] = api.get("/alerts").json()["alerts"]
-
-    changed = {key: mine[key] for key in ("name", "search", "keywords", "companies", "places", "sources",
-                                          "min_fit", "on")}
-    emailed = {**changed, "channels": ["bell", "email"]}
-    assert api.put(f"/alerts/{mine['id']}", json=emailed).status_code == 200
-
-    assert "no_alerts" not in banners()

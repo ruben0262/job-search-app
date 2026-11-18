@@ -14,7 +14,7 @@ from pymongo.database import Database
 
 from libs import limits
 from libs.db import insert, now
-from libs.db.models import Alert, PushSubscription, User, UserJobState, UserNotification
+from libs.db.models import UserJobState, UserNotification
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +63,6 @@ def notify(db: Database, user_id: _uuid.UUID, event: Event, body: str = "") -> N
 def site_url(route: str = "") -> str:
     """An address on the site, for anything that leaves it: an email, a Telegram button, an alert."""
     return os.environ.get("PUBLIC_URL", "http://localhost:8000").rstrip("/") + route
-
-
-def reachable(db: Database, user: User) -> bool:
-    """Whether an alert can reach this person off the site: their Telegram, a browser that subscribed, or an
-    alert of theirs with the daily email."""
-    return (user.telegram_status == "connected"
-            or db[PushSubscription.COLLECTION].count_documents({"user_id": user.id}, limit=1) > 0
-            or db[Alert.COLLECTION].count_documents({"user_id": user.id, "on": True, "channels": "email"},
-                                                    limit=1) > 0)
 
 
 def sent_today(db: Database, user_id: _uuid.UUID) -> int:

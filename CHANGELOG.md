@@ -14,6 +14,21 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-18, night — No "Turn on alerts" banner once alerts are on
+
+The owner, of the Jobs page's "Get alerts on your phone when a new job matches your words. [Turn on alerts]":
+"once alerts are on there is no need for these all over inside the app. so you can get rid of them."
+
+- It showed to any member with no Telegram, no browser subscribed and no alert sending the daily email
+  (`libs.notify.reachable`), though every member's alerts are on from the start and reach the bell at least.
+  So it asked people whose alerts were on to turn them on. Removed, with `reachable`, which nothing else read,
+  and the button's "Turn on alerts" label.
+- Kept: "Telegram stopped taking our messages" and "Your alerts are paused", which say alerts have stopped; and
+  the free plan's line. Setting a phone up stays on the Alerts page and in a phone's "Get the app".
+- `test_alerts_that_reach_only_the_bell_are_not_nagged_about` (fails on the old code: the banner);
+  `test_with_no_alerts_at_all_the_page_offers_them_quietly` and the email file's
+  `test_an_alert_with_the_email_counts_as_having_alerts`, with its fixture, went with what they tested.
+
 ## 2026-11-18 — The site's Discord: under the landing page's question and at its foot, and in Help and More
 
 The owner: "here is my discord link, we need to add socials to the site in general, on the landing page where where

@@ -93,18 +93,13 @@ def test_a_stopped_telegram_is_a_reconnect_offer_not_an_error(api):
     assert banners[0]["level"] != "error", "nothing is broken that the person cannot mend in one tap"
 
 
-def test_with_no_alerts_at_all_the_page_offers_them_quietly(api):
-    """Alerts are optional, and a browser is a channel: "nothing is being delivered" was wrong twice."""
-    from libs.db.models import PushSubscription
-
+def test_alerts_that_reach_only_the_bell_are_not_nagged_about(api):
+    """No Telegram, no phone, no email: their alerts still go to the bell, so they are on, and the page does
+    not ask to turn them on (owner, 2026-11-18: "once alerts are on there is no need for these"). Setting a
+    phone up is the Alerts page's, and a phone's own "Get the app"."""
     http, db, user, _ = api
     _change(db, user, telegram_status="unconfigured", telegram_chat_id=None)
-    banners = http.get("/dashboard").json()["banners"]
-    assert [(banner["key"], banner["level"]) for banner in banners] == [("no_alerts", "info")]
-
-    insert(db, PushSubscription(user_id=user.id, endpoint=f"https://push.example/{uuid.uuid4()}",
-                                p256dh="key", auth="auth"))
-    assert http.get("/dashboard").json()["banners"] == [], "notifications on in a browser are enough"
+    assert http.get("/dashboard").json()["banners"] == []
 
 
 def test_a_paused_account_is_told_it_is_paused(api):

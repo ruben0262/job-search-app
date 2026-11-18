@@ -329,7 +329,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
           <span>{banner.text}</span>{" "}
           <a className="button small" href={banner.key === "free" ? "#/upgrade" : "#/alerts"}>
             {banner.key === "free" ? "Become a member" : banner.key === "telegram_broken" ? "Fix it in Alerts"
-              : banner.key === "paused" ? "Turn them back on" : "Turn on alerts"}
+              : "Turn them back on"}
           </a>
         </Banner>
       ))}

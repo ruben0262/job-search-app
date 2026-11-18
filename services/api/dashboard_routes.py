@@ -25,7 +25,6 @@ from libs.documents.saved import for_jobs
 from libs.legal import agreed
 from libs.matching import Match, marks, norm, page, scan_for
 from libs.membership import areas_of, choosing, delay_hours, has, is_admin, is_member, jobs_as_of
-from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
 from libs.settings import HARVEST_SOURCES
@@ -311,9 +310,9 @@ def _span(hours: int) -> str:
 
 
 def _banners(db: Database, user: User, member: bool) -> list[DashboardBanner]:
-    """What the jobs page says above the list, one thing at a time. Alerts are optional, so having
-    none is a quiet offer rather than a warning — and a Telegram that stopped is a button to press. A free
-    account is told first what it is looking at, and what a membership adds: alerts are paid plans' too."""
+    """What the jobs page says above the list, one thing at a time: alerts that stopped (a Telegram to mend, a
+    pause to lift), never an offer to turn them on, which a member's are from the start, to the bell at least
+    (owner, 2026-11-18). A free account is told first what it is looking at, and what a membership adds."""
     if not member:
         # How long they wait is said under the page's title, beside how long a job stays (`JobsPage`).
         text = "Alerts, match scores, CVs and cover letters come with a membership."
@@ -323,9 +322,6 @@ def _banners(db: Database, user: User, member: bool) -> list[DashboardBanner]:
     if user.telegram_status == "broken":
         return [DashboardBanner(level="warning", key="telegram_broken",
                                 text="Telegram stopped taking our messages.")]
-    if not reachable(db, user):
-        return [DashboardBanner(level="info", key="no_alerts",
-                                text="Get alerts on your phone when a new job matches your words.")]
     if not user.active:
         return [DashboardBanner(level="info", key="paused", text="Your alerts are paused.")]
     return []
