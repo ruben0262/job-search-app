@@ -28,11 +28,11 @@ from libs.auth import (
     verify_password,
 )
 from libs.auth.access import issue_access_token
-from libs.auth.sessions import ACCESS_TTL, REFRESH_TTL, session_owner
+from libs.auth.sessions import ACCESS_COOKIE, ACCESS_TTL, REFRESH_COOKIE, REFRESH_TTL, session_owner
 from libs.auth.tokens import RESET_TTL, VERIFICATION_TTL
 from libs.db import find_one, get, insert, now
 from libs.db.models import User, UserSession
-from libs.legal import DISCLOSURE_VERSION
+from libs.legal import LEGAL_VERSION
 from libs.mail import EmailSender, MailError, reset_email, send_within_cap, verification_email
 from libs.notify import site_url
 from libs.secrets import redacting
@@ -41,8 +41,6 @@ from services.api.deps import get_db, get_mailer, rate_limit
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-ACCESS_COOKIE = "access_token"
-REFRESH_COOKIE = "refresh_token"
 REFRESH_PATH = "/auth/refresh"
 
 # The response every signup and every failed login gets, whatever actually happened.
@@ -59,8 +57,9 @@ Plan = Literal["free", "starter", "member"]
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
-    # The privacy policy's version the page showed beside its box (`libs.legal`): ticking it is the only way
-    # to an account (owner, 2026-11-12), and agrees to the cookies and to the AI that writes documents too.
+    # The legal pages' version the page showed beside its box (`libs.legal`): ticking it agrees to the Terms
+    # of Service and says the Privacy, Cookie and Data Use policies were read, and is the only way to an
+    # account (owner, 2026-11-12; the Terms since 2026-11-18).
     consent_version: str | None = Field(None, max_length=16)
     plan: Plan = "free"
 
@@ -96,12 +95,10 @@ def signup(body: SignupRequest, request: Request, background: BackgroundTasks,
     rate_limit(request, "signup", limit=20, per_seconds=3600)
 
     if not body.consent_version:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            detail="Tick the box to agree to the privacy policy and cookies.")
-    if body.consent_version != DISCLOSURE_VERSION:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Tick the box to agree to the Terms.")
+    if body.consent_version != LEGAL_VERSION:
         raise HTTPException(status.HTTP_409_CONFLICT,
-                            detail="The privacy policy changed since this page opened. Reload it and read "
-                                   "it again.")
+                            detail="Our terms changed since this page opened. Reload it and read them again.")
     problems = password_problems(body.password, email=body.email)
     if problems:
         # The password rules are told to the caller: they are about the value they just chose.
@@ -112,7 +109,7 @@ def signup(body: SignupRequest, request: Request, background: BackgroundTasks,
     try:
         user = insert(db, User(email=email, password_hash=hash_password(body.password),
                                status="pending_verification", active=False,
-                               processing_consent_at=now(), processing_consent_version=DISCLOSURE_VERSION))
+                               processing_consent_at=now(), processing_consent_version=LEGAL_VERSION))
     except DuplicateKeyError:
         logger.info("signup for an existing address; answering opaquely")
         return OPAQUE_SIGNUP

@@ -1181,13 +1181,13 @@ def test_signing_up_starts_an_account_with_my_search(db, monkeypatch):
     from fastapi.testclient import TestClient
 
     from libs.db.models import User
-    from libs.legal import DISCLOSURE_VERSION
+    from libs.legal import LEGAL_VERSION
     from services.api.app import app
 
     email = f"{uuid.uuid4().hex[:10]}@example.com"
     with TestClient(app, base_url="https://testserver") as http:
         answered = http.post("/auth/signup", json={"email": email, "password": "a-long-Passw0rd-here!",
-                                                   "consent_version": DISCLOSURE_VERSION})
+                                                   "consent_version": LEGAL_VERSION})
     assert answered.status_code < 300, answered.text
     user = User.from_doc(db[User.COLLECTION].find_one({"email": email}))
     assert [(alert.name, alert.search) for alert in _alerts(db, user)] == [("My search", True)]

@@ -1,8 +1,9 @@
-"""The GDPR surface: what we disclose, what the user agreed to, and erasure."""
+"""The GDPR surface: the legal pages, what a person agreed to, and erasure."""
 from __future__ import annotations
 
 import logging
 import uuid as _uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
@@ -14,7 +15,8 @@ from libs.auth.sessions import revoke_all
 from libs.db import delete_account as erase_account
 from libs.db import get, now
 from libs.db.models import User
-from libs.legal import DISCLOSURE_VERSION, disclosure, has_consented
+from libs.legal import LEGAL_VERSION
+from libs.legal.documents import render
 from libs.obs import audit
 from services.api.auth_routes import _clear_session_cookies
 from services.api.billing_routes import _stripe_answers, end_membership
@@ -24,83 +26,41 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["account"])
 
 
-class DisclosedProcessor(BaseModel):
+class LegalDocument(BaseModel):
     name: str
-    purpose: str
-    data: str
-    on_your_credential: bool
-    location: str
-
-
-class DisclosedCookie(BaseModel):
-    name: str
-    purpose: str
-    kept: str
-
-
-class Disclosure(BaseModel):
+    title: str
+    # The version agreeing to it records (`libs.legal.LEGAL_VERSION`), the same on all four.
     version: str
-    headline: str
-    body: str
-    processors: list[DisclosedProcessor]
-    cookies: list[DisclosedCookie]
+    markdown: str
 
 
-@router.get("/legal/privacy", response_model=Disclosure)
-def privacy() -> dict:
-    """Every processor, named."""
-    return disclosure()
-
-
-class ConsentState(BaseModel):
-    granted: bool
-    granted_at: str | None
-    granted_version: str | None
-    current_version: str
-    disclosure: Disclosure
-
-
-@router.get("/account/consent", response_model=ConsentState)
-def consent_state(db: Database = Depends(get_db),
-                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Whether this account has agreed to the current disclosure."""
-    user = get(db, User, user_id)
-    return {
-        "granted": has_consented(db, user_id),
-        "granted_at": user.processing_consent_at.isoformat() if user.processing_consent_at else None,
-        "granted_version": user.processing_consent_version,
-        "current_version": DISCLOSURE_VERSION,
-        "disclosure": disclosure(),
-    }
+@router.get("/legal/{name}")
+def legal(name: Literal["terms", "privacy", "cookies", "data"],
+          db: Database = Depends(get_db)) -> LegalDocument:
+    """One of the four legal pages, filled in (`libs.legal.documents`). Public: sign-up links them before
+    anybody has an account."""
+    return LegalDocument(**render(db, name))
 
 
 class ConsentBody(BaseModel):
-    # The client echoes back the version it displayed.
+    # The version the screen showed, echoed back: an agreement is to what was read.
     version: str = Field(min_length=4, max_length=16)
 
 
 @router.post("/account/consent")
 def grant_consent(body: ConsentBody, db: Database = Depends(get_db),
                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    if body.version != DISCLOSURE_VERSION:
+    """Agree to the legal pages as they read now: what an account made before them is asked, once, before the
+    rest of the site (`dashboard_routes`, stage "agree"). Not withdrawn apart from the account: deleting it is
+    how a person stops (owner, 2026-11-18)."""
+    if body.version != LEGAL_VERSION:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail="the disclosure has changed since this was shown to you — please read it again")
+            detail="Our terms changed since this page opened. Reload it and read them again.")
 
-    _set(db, user_id, processing_consent_at=now(), processing_consent_version=DISCLOSURE_VERSION)
-    audit(logger, "consent.granted", user=user_id, version=DISCLOSURE_VERSION)
-    return {"status": "granted", "version": DISCLOSURE_VERSION}
-
-
-@router.delete("/account/consent")
-def withdraw_consent(db: Database = Depends(get_db),
-                     user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Withdraw."""
-    _set(db, user_id, processing_consent_at=None, processing_consent_version=None)
-    audit(logger, "consent.withdrawn", user=user_id)
-    return {"status": "withdrawn",
-            "detail": ("Processing is now unavailable. Your existing profile is unchanged — delete "
-                       "your account if you want everything removed.")}
+    _set(db, user_id, processing_consent_at=now(), processing_consent_version=LEGAL_VERSION)
+    audit(logger, "consent.granted", user=user_id, version=LEGAL_VERSION)
+    return {"status": "granted", "version": LEGAL_VERSION}
 
 
 class PasswordChange(BaseModel):
@@ -182,7 +142,6 @@ class AccountOut(BaseModel):
     # Whether alerts are sent at all: the person's pause.
     active: bool
     telegram_status: str
-    consent_version: str | None
 
 
 @router.get("/account")
@@ -191,5 +150,4 @@ def account(db: Database = Depends(get_db),
     """What the settings page shows, minus anything secret. Their name and links are on
     `/onboarding/identity`, their words on `/onboarding/review`."""
     user = get(db, User, user_id)
-    return AccountOut(email=user.email, active=user.active, telegram_status=user.telegram_status,
-                      consent_version=user.processing_consent_version)
+    return AccountOut(email=user.email, active=user.active, telegram_status=user.telegram_status)

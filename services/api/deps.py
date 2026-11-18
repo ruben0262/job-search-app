@@ -10,6 +10,7 @@ from fastapi import Depends, HTTPException, Request, status
 from pymongo.database import Database
 
 from libs.auth.access import InvalidAccessToken, read_access_token
+from libs.auth.sessions import ACCESS_COOKIE
 from libs.db import database
 from libs.mail import EmailSender, sender_from_env
 from libs.membership import has
@@ -34,7 +35,7 @@ def get_store(db: Database = Depends(get_db)) -> SecretStore:
 
 def current_user(request: Request) -> uuid.UUID:
     """Who is calling, from the access cookie."""
-    token = request.cookies.get("access_token")
+    token = request.cookies.get(ACCESS_COOKIE)
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="not signed in")
     try:

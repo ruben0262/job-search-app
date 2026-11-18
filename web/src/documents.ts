@@ -21,7 +21,8 @@ const POLL_MS = 800;
 
 /** A refusal said in plain words, where the server's answer is not written for the person. */
 const REFUSED: Record<number, string> = {
-  403: "AI writing sends your profile to the AI that writes it, so it needs your agreement first.",
+  // Only when the terms changed under an open page: a reload asks for them first.
+  403: "Our terms changed. Reload the page to read and agree to them.",
   429: "That is all the documents you can make today. You can make more tomorrow.",
   503: "Making documents is paused for a moment. Try again soon.",
 };
@@ -74,5 +75,5 @@ export function useBuild(jobId: number, kind: Ask["kind"]) {
     ? REFUSED[refused.status] ?? (refused.status === 409 ? refused.detail : "That did not work. Try again.")
     : build?.state === "failed" ? build.detail ?? "We could not make it this time. Try again."
       : build?.state === "expired" ? "It was deleted. Make it again." : null;
-  return { build, making, start, error, needsConsent: refused?.status === 403 };
+  return { build, making, start, error };
 }

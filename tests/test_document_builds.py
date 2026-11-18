@@ -107,7 +107,7 @@ def _status(api, build_id: int) -> dict:
 
 
 def _consent(api):
-    version = api.http.get("/account/consent").json()["current_version"]
+    version = api.http.get("/legal/terms").json()["version"]
     assert api.http.post("/account/consent", json={"version": version}).status_code == 200
 
 
@@ -464,14 +464,18 @@ def test_an_ai_document_asks_for_consent_first(api, monkeypatch):
     assert "agree" in refused.json()["detail"]
 
 
-def test_withdrawn_consent_stops_a_queued_ai_document_before_any_text_leaves(api, monkeypatch):
-    """The guarantee sits where text leaves the server, whatever was decided when it was queued."""
+def test_terms_changed_after_queueing_stop_an_ai_document_before_any_text_leaves(api, monkeypatch):
+    """The guarantee sits where text leaves the server, whatever was decided when it was queued: terms changed
+    since leave the person's agreement behind, and nothing is sent until they agree again."""
+    from libs.db.models import User
+
     _own(api)
     _consent(api)
     sent = _providers(monkeypatch)
     build_id = _ask(api, mode="ai").json()["id"]
 
-    api.http.delete("/account/consent")
+    api.db[User.COLLECTION].update_one({"_id": api.user.id},
+                                       {"$set": {"processing_consent_version": "2020-01-01"}})
     _work(api)
 
     status = _status(api, build_id)

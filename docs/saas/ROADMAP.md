@@ -3815,6 +3815,61 @@ has "Send a test" to check it in seconds.
 **Not planned:** a native app; a Telegram channel per alert (owner, 2026-11-17: one chat, each card headed by its
 alert); an email per job (the mailbox's daily cap).
 
+## Phase 12 — the legal pages (added 2026-11-18)
+
+**Why.** The owner: a privacy policy, a cookie policy, a data-use page and terms of service, "so we do not get
+fined or procecuted", each a page of its own at the foot of the site, agreed to by everybody.
+
+**Built (2026-11-18, CHANGELOG, night):** the four pages (`libs/legal/*.md`, `#/terms` `#/privacy` `#/cookies`
+`#/data`), filled in from the code's own numbers and the operator's details in Admin; the sign-up box agreeing
+to the Terms; the one screen that asks an account made before; messages deleted after three years and
+acknowledged by email; `deploy/scripts/export_account.py` for a person's copy of their data.
+
+**Before the site takes real payments — the owner's:**
+
+1. **Legal details** in Admin → Settings: name, address, registration and tax numbers, phone, and the hosting
+   provider's name, address and email (Ekertv. 4. §). Every page says "[not filled in yet]" until then.
+2. **The withdrawal button** (45/2014. Korm. r. 22. § (1a)–(1c); the EU's Article 11a, since 2026-06-19). For the
+   14 days after a paid plan starts, a button reading "Withdraw from contract here" / "elállás a szerződéstől",
+   a confirming step "Confirm withdrawal" / "elállás megerősítése", and a receipt by email giving what was sent,
+   with its date and time; then the plan ends and everything paid is refunded. Not built: until it is,
+   withdrawals arrive by email and are refunded by hand in Stripe.
+3. **The order button in Stripe's form.** It must read "order with obligation to pay" or words as plain
+   (45/2014. Korm. r. 15. § (2)), or the contract is void, at the consumer's choice. Only the words on the
+   button count (CJEU C-249/21), and a trial that becomes paid needs them too (C-400/22). Stripe's embedded
+   checkout says "Subscribe", or "Start trial". The choice is Stripe's button settings, if they reach that far, or
+   a payment form whose button is ours (the Elements form before 2026-11-12). Ask the lawyer.
+4. **VAT.** The Terms say prices include any VAT. An accountant should confirm Hungarian VAT, the EU's OSS for
+   consumers elsewhere in the EU, UK VAT for UK consumers (from the first sale, for a business outside the UK),
+   and Hungary's online invoice reporting (NAV). Stripe Tax is one way.
+
+**Soon after — decisions with a lawyer:**
+
+5. **AI Act Article 50(2)**, by 2026-12-02 for systems already offered (Regulation (EU) 2026/1744): text an AI
+   writes is marked as such in a machine-readable way, unless it only assists "standard editing". Whether a CV
+   written from the person's own falls under that exception is the lawyer's call. If it doesn't, the PDFs carry
+   a mark in their metadata, which employers' systems may also read.
+6. **A lawyer's read of the four pages**, above all Terms 14. A cap on a consumer's statutory rights is presumed
+   unfair in Hungary (Ptk. 6:104 (2) h)), so expect it to hold against business users more than consumers. Also
+   the conciliation boards (Fgytv. 17/A. § (1a)): the Terms link the national list and give Budapest's details
+   in full, while a strict reading lists each county's. And whether a Hungarian translation is wanted.
+7. **The UK.** Prices in pounds address UK consumers, so UK GDPR applies, and a business outside the UK may need
+   a UK representative (UK GDPR Art 27).
+
+**Habits the pages now promise:**
+
+8. Email everybody 30 days before a new `LEGAL_VERSION` (Terms 8.5, 11.3, 19.1). There is no bulk-email tool yet.
+9. The support inbox keeps messages too: set it to delete them after three years, as the Privacy Policy says.
+10. After restoring a backup, delete again the accounts deleted since it was taken. Nothing does it yet; the
+    `account.deleted` lines in the logs name them while the logs last.
+11. The database server keeps monthly copies for 12 months (server_db, `--keep-monthly 12`), and the Privacy
+    Policy says so (`libs.legal.documents.DATABASE_COPY_MONTHS`). Change both together.
+
+**Open, smaller:** accounts never verified, and accounts unused for years, are kept until deleted. Deleting the
+first after a week, and the second after a warning, would be a storage limit worth stating. The help-chat API
+still answers on the platform's AI key, though no page calls it. If it ever gets a page, the Privacy Policy names
+that provider, and the chat says it is an AI (AI Act Art 50(1)).
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.

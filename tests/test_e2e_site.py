@@ -393,7 +393,8 @@ def test_a_visitor_asks_a_person_a_question_from_the_foot_of_the_landing_page(si
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         page.goto(f"{base}/#/")
-        expect(page.locator(".foot-row a")).to_have_text(["Sign in", "Privacy", "Contact"])
+        expect(page.locator(".foot-row a")).to_have_text(
+            ["Sign in", "Terms", "Privacy", "Cookies", "Data use", "Contact"])
         page.locator(".foot-row").get_by_role("link", name="Contact").click()
         ask = page.locator("#ask")
         expect(ask.get_by_role("heading", name="Got a question? Ask us.")).to_be_in_viewport()
@@ -407,6 +408,39 @@ def test_a_visitor_asks_a_person_a_question_from_the_foot_of_the_landing_page(si
         browser.close()
     assert "Do I need a paid AI account" in capsys.readouterr().out, "the support inbox has it"
     assert database()["contact_messages"].find_one({"email": asker})["user_id"] is None
+
+
+def test_the_legal_pages_open_from_the_foot_of_the_landing_page_and_say_who_runs_the_site(site):
+    """Terms, Privacy, Cookies and Data use, each a page of its own from the landing page's foot (owner,
+    2026-11-18), the operator's details as Admin has them, the contents beside the text on a laptop, and
+    nothing off the screen of a phone, tables included."""
+    from libs import settings
+    from libs.db import database
+
+    settings.put(database(), "operator", {"name": "Example Kft.", "address": "1111 Budapest, Példa utca 1."})
+    base, _email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        for width, height in ((390, 844), (1280, 900)):
+            page = browser.new_context(viewport={"width": width, "height": height}).new_page()
+            page.goto(f"{base}/#/")
+            page.locator(".foot-row").get_by_role("link", name="Terms").click()
+            doc = page.locator("article.legal-doc")
+            expect(doc.get_by_role("heading", level=1)).to_have_text("Terms of Service")
+            expect(doc).to_contain_text("Name: Example Kft.")
+            expect(doc).to_contain_text("Address: 1111 Budapest, Példa utca 1.")
+            expect(doc).to_contain_text("Registration number: [not filled in yet]")
+            page.locator(".legal-toc").get_by_role("link", name="14. Our responsibility to you").click()
+            expect(doc.get_by_role("heading", name="14. Our responsibility to you")).to_be_in_viewport()
+            assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"Terms at {width}px"
+            for tab, title, shown in (("Privacy", "Privacy Policy", "Cloudflare"),
+                                      ("Cookies", "Cookie Policy", "install-later"),
+                                      ("Data use", "Data Use Policy", "Your data is yours")):
+                page.locator(".legal-tabs").get_by_role("link", name=tab).click()
+                expect(doc.get_by_role("heading", level=1)).to_have_text(title)
+                expect(doc).to_contain_text(shown)
+                assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"{title} at {width}px"
+        browser.close()
 
 
 def test_the_phone_goes_through_the_site_by_itself_until_a_visitor_touches_it(site):
@@ -1403,13 +1437,11 @@ def test_an_ai_account_linked_in_settings_is_what_the_make_buttons_were_missing(
         expect(accounts.get_by_text("Turning on…")).to_be_visible()
         expect(rows).to_have_text([re.compile("^Gemini API key.*Off"), re.compile("^Claude API key.*In use")])
 
-        # Their account is no longer what is missing. What is sent was agreed to with the box at sign-up,
-        # and taken back, the next press asks for it again; and a cover letter still needs one of theirs,
+        # Their account is no longer what is missing. What is sent was agreed to with the box at sign-up;
+        # terms changed since ask again before anything is sent; and a cover letter still needs one of theirs,
         # said with the one way to it.
-        _withdraw(page)
         page.goto(f"{base}/#/")
-        cards.first.get_by_role("button", name="Make my CV").click()
-        expect(cards.first.get_by_text("needs your agreement first")).to_be_visible()
+        _new_terms(page, email)
         expect(toasts).to_have_count(0)
         cards.first.get_by_role("button", name="Make my cover letter").click()
         expect(toasts).to_have_text([re.compile(
@@ -1437,13 +1469,24 @@ def _help_with_the_members_chat(page) -> None:
     expect(page.get_by_role("link", name="Open the members' chat")).to_have_attribute("href", chat)
 
 
-def _withdraw(page) -> None:
-    """Settings says the box at sign-up agreed to what an AI-written document sends (owner, 2026-11-12), and
-    takes it back."""
-    agreed = page.get_by_text("You agreed that AI-written documents may use your profile.")
-    expect(agreed).to_be_visible()
-    page.get_by_role("button", name="Withdraw").click()
-    expect(agreed).to_have_count(0)
+def _new_terms(page, email: str) -> None:
+    """Terms changed under an open page, as a new `LEGAL_VERSION` leaves everybody's agreement behind: the
+    next Make says so and sends nothing, and a reload asks once, with the Terms' short version and the four
+    pages a tap away, before anything else of the site. "I agree" goes back to the jobs."""
+    from libs.db import database
+
+    database()["users"].update_one({"email": email}, {"$set": {"processing_consent_version": "2020-01-01"}})
+    cards = page.locator("article.job-card")
+    cards.first.get_by_role("button", name="Make my CV").click()
+    changed = "Our terms changed. Reload the page to read and agree to them."
+    expect(cards.first.get_by_text(changed)).to_be_visible()
+    page.reload()
+    expect(page.get_by_role("heading", name="Our terms")).to_be_visible()
+    expect(page.get_by_text("We never sell your data and never show you adverts.")).to_be_visible()
+    expect(page.locator(".legal-links a")).to_have_text(["Terms", "Privacy", "Cookies", "Data use"])
+    expect(page.locator("nav a")).to_have_count(0)
+    page.get_by_role("button", name="I agree").click()
+    expect(cards).to_have_count(2)
 
 
 def _said_over_the_open_job(view) -> None:
@@ -1974,12 +2017,13 @@ PASSWORD = "correct-horse-battery-9"
 
 
 def _fill_sign_up(page, email: str, password: str = PASSWORD) -> None:
-    """The sign-up form as a person fills it: the password twice, and the box ticked that agrees to the
-    privacy policy and its cookies, without which there is no account (owner, 2026-11-12)."""
+    """The sign-up form as a person fills it: the password twice, and the box ticked that agrees to the Terms,
+    naming the limits on our liability, with the policies beside them; without it there is no account (owner,
+    2026-11-12)."""
     page.get_by_label("Email").fill(email)
     page.get_by_label(re.compile(r"^Password")).fill(password)
     page.get_by_label("Confirm password").fill(password)
-    page.get_by_label("I agree to the privacy policy and cookies.").check()
+    page.get_by_label(re.compile(r"^I agree to the Terms, including the limits on our liability")).check()
     page.get_by_role("button", name="Create account").click()
     expect(page.get_by_role("heading", name="Check your email")).to_be_visible()
 

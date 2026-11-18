@@ -73,10 +73,14 @@ def test_a_message_reaches_the_support_inbox_and_a_reply_reaches_the_person(api)
     assert sent.status_code == 202
     receipt = sent.json()
     assert receipt["email"] == user.email and receipt["reference"]
-    (mail,) = inbox.sent
+    mail, acknowledged = inbox.sent
     assert mail["to"] == http.get("/contact").json()["email"] == "hello@flow-solutions.xyz"
     assert mail["reply_to"] == user.email, "the reply goes to the person, not to no-reply"
     assert receipt["reference"] in mail["subject"] and "I am Janet" in mail["body"]
+    # Their receipt, as Hungarian consumer law has a complaint made through a form acknowledged (Fgytv. 17/A.
+    # § (6a)): the reference and when the answer comes.
+    assert acknowledged["to"] == user.email
+    assert receipt["reference"] in acknowledged["subject"] and "30 days" in acknowledged["body"]
 
     as_user(_admin(db))
     (row,) = http.get("/admin/contact").json()
@@ -134,8 +138,11 @@ def test_somebody_not_signed_in_reaches_the_same_inbox_from_the_landing_page(api
 
     assert sent.status_code == 202
     assert sent.json()["email"] == "sam@example.com" and sent.json()["reference"]
-    (mail,) = inbox.sent
+    mail, acknowledged = inbox.sent
     assert mail["reply_to"] == "sam@example.com" and "not signed in" in mail["body"]
+    # Anybody can type anybody's address here, so the receipt repeats none of what was typed.
+    assert acknowledged["to"] == "sam@example.com" and sent.json()["reference"] in acknowledged["subject"]
+    assert "paid AI account" not in acknowledged["subject"] + acknowledged["body"]
     assert "Do I need a paid AI account" in mail["subject"], "without a subject, the message's words are one"
     as_user(_admin(db))
     (row,) = http.get("/admin/contact").json()

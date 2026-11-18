@@ -5,7 +5,7 @@ import { api, type Schema } from "../api";
 import { keep, peek, readAhead, useKept } from "../kept";
 import { standingWord } from "../membership";
 import { AdminSubscriptions } from "./AdminSubscriptions";
-import { BinIcon, Error, Prompt, useAction } from "../ui";
+import { BinIcon, Error, Field, Prompt, useAction } from "../ui";
 import { JobsByCountry } from "./AdminCountries";
 
 type Alert = {
@@ -186,6 +186,8 @@ type Settings = {
   corpus_retention_days: number;
   /** Where the Help page's contact form is emailed. */
   support_email: string;
+  /** Who runs the site, as every legal page names them (`OPERATOR`). */
+  operator: Record<string, string>;
   /** The hour of each person's own day their daily email of new jobs goes out. */
   email_digest_hour: number;
   /** The free days a new membership starts with; 0 is none. */
@@ -193,6 +195,16 @@ type Settings = {
   /** How many hours after a member a free account sees a job; 0 is at once. */
   free_delay_hours: number;
 };
+
+/** The legal details, in the order the Terms name them (`libs.settings.OPERATOR_FIELDS`). */
+const OPERATOR: [string, string][] = [
+  ["name", "Name: the company, or yours as a sole trader"],
+  ["address", "Registered address"],
+  ["registration", "Registration number"],
+  ["tax_number", "Tax or VAT number"],
+  ["phone", "Phone number"],
+  ["hosting", "Hosting provider: its name, address and email"],
+];
 
 type Source = {
   name: string;
@@ -308,6 +320,13 @@ export function AdminPage({ tab: asked }: { tab: string }) {
   const saveAddress = useAction(async (value: string) => {
     if (!value || value === settings?.support_email) return;
     const body = await api.put<{ settings: Settings }>("/admin/settings/support_email", { value });
+    setSettings(body.settings);
+  });
+
+  const saveOperator = useAction(async (field: string, value: string) => {
+    if (!settings || value === (settings.operator[field] ?? "")) return;
+    const body = await api.put<{ settings: Settings }>("/admin/settings/operator",
+      { value: { ...settings.operator, [field]: value } });
     setSettings(body.settings);
   });
 
@@ -771,6 +790,19 @@ export function AdminPage({ tab: asked }: { tab: string }) {
             style={{ maxWidth: "20rem", marginTop: "0.5rem" }}
           />
           <Error>{saveAddress.error}</Error>
+
+          <p className="label" style={{ marginTop: "1.5rem" }}>Legal details</p>
+          <span className="hint">
+            Who runs the site, as the law requires the Terms, the Privacy Policy and the other legal pages to say
+            before anybody signs up or pays. One left empty shows there as not filled in yet.
+          </span>
+          {OPERATOR.map(([field, label]) => (
+            <Field key={field} label={label}>
+              <input defaultValue={settings.operator[field] ?? ""} maxLength={300} disabled={saveOperator.busy}
+                     onBlur={(event) => void saveOperator.run(field, event.target.value.trim())} />
+            </Field>
+          ))}
+          <Error>{saveOperator.error}</Error>
 
           <p className="label" style={{ marginTop: "1.5rem" }}>Help chat</p>
           <span className="hint">

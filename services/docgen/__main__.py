@@ -63,10 +63,10 @@ def handle(db, job: QueueJob) -> None:
 
 
 def _with_ai(db, job: QueueJob, *, job_id: int, kind: str, payer: str | None):
-    """The model's version, and only with consent: this is where their text leaves the server."""
+    """The model's version, and only from somebody who agreed to the terms as they read now: this is where
+    their text leaves the server."""
     if not has_consented(db, job.user_id):
-        raise NotBuildable("agree to how AI-written documents use your profile first — it is on "
-                           "the privacy page")
+        raise NotBuildable("Our terms changed. Reload the page to read and agree to them.")
     # Their CV, or cover letter, removed or switched off since they asked.
     lacking = needs.missing(db, job.user_id, kind, account=True)
     if lacking is not None:

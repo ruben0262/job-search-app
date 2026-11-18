@@ -78,6 +78,12 @@ def held(db: Database, name: str) -> bool:
     return db.locks.count_documents({"_id": name, "until": {"$gt": now()}}, limit=1) > 0
 
 
+# How many days the nightly backup (`deploy/scripts/backup.py`) keeps each copy. Here, not in the script,
+# because the Privacy Policy states it (`libs.legal.documents`): a deleted account lingers in a copy this
+# long.
+BACKUP_KEEP_DAYS = 30
+
+
 @dataclass(kw_only=True)
 class Document:
     """A collection's shape. Subclasses are dataclasses whose `id` field, if any, is stored as `_id`."""
@@ -205,3 +211,24 @@ def delete_account(db: Database, user_id: Any) -> dict[str, int]:
                for model in MODELS if model.OWNER}
     removed[User.COLLECTION] = db[User.COLLECTION].delete_one({"_id": user_id}).deleted_count
     return removed
+
+
+# What an export leaves out: what would let somebody into the account, and the credentials it holds sealed,
+# which nobody can read outside the platform and which are not the person's to carry elsewhere.
+EXPORT_LEFT_OUT = {"users": ("password_hash", "wrapped_dek"), "user_secrets": ("ciphertext", "nonce")}
+
+
+def export_account(db: Database, user_id: Any) -> dict[str, list[dict]]:
+    """Everything stored about one account, by the collections `delete_account` erases, so the two cannot
+    disagree: the copy the Privacy Policy and the Terms promise on request (GDPR Articles 15 and 20;
+    `deploy/scripts/export_account.py`). Collections holding nothing of theirs are left out."""
+    from libs.db.models import MODELS, User  # noqa: PLC0415 - the models import this module
+
+    copy = {model.COLLECTION: list(db[model.COLLECTION].find({model.OWNER: user_id}))
+            for model in MODELS if model.OWNER}
+    copy[User.COLLECTION] = list(db[User.COLLECTION].find({"_id": user_id}))
+    for name, left_out in EXPORT_LEFT_OUT.items():
+        for document in copy.get(name, []):
+            for field in left_out:
+                document.pop(field, None)
+    return {name: documents for name, documents in copy.items() if documents}

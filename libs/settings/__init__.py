@@ -131,6 +131,15 @@ DEFAULT_CORPUS_RETENTION_DAYS = 30
 # FlowSolutions inbox the owner's marketplace app already sends its support mail to.
 DEFAULT_SUPPORT_EMAIL = "hello@flow-solutions.xyz"
 
+# Who runs the site, as the law requires it be said before anybody signs up or pays (Hungary's e-commerce act,
+# the EU's consumer rights rules, the GDPR): every legal page names them (`libs.legal.documents`). The
+# operator's, in Admin → Settings, and never in the code (owner, 2026-11-17: their name off the site and the
+# project). Each is one line of text; empty until filled in, and a page then says so where it belongs.
+# `registration`: the company's or sole trader's registration number; `tax_number`: the tax or VAT number;
+# `hosting`: the hosting provider's name, address and email (Ekertv. 4. § h)).
+OPERATOR_FIELDS = ("name", "address", "registration", "tax_number", "phone", "hosting")
+DEFAULT_OPERATOR: dict[str, str] = dict.fromkeys(OPERATOR_FIELDS, "")
+
 # The hour of a person's own day (their timezone) their daily email of new jobs goes out, at the
 # notifier's next sweep after it.
 DEFAULT_EMAIL_DIGEST_HOUR = 8
@@ -431,6 +440,7 @@ DEFAULTS: dict[str, object] = {
     "support_chat_enabled": DEFAULT_SUPPORT_CHAT_ENABLED,
     "corpus_retention_days": DEFAULT_CORPUS_RETENTION_DAYS,
     "support_email": DEFAULT_SUPPORT_EMAIL,
+    "operator": DEFAULT_OPERATOR,
     "email_digest_hour": DEFAULT_EMAIL_DIGEST_HOUR,
     "trial_days": DEFAULT_TRIAL_DAYS,
     "free_delay_hours": DEFAULT_FREE_DELAY_HOURS,

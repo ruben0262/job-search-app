@@ -11,6 +11,7 @@ import pytest
 from libs.db import insert, now
 from libs.db.models import CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
+from tests.conftest import agreed
 
 pytest.importorskip("fastapi")
 
@@ -34,7 +35,7 @@ def api(db, monkeypatch):
     user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
                            subscription_status="active", status="active",
                            active=True, full_name="Alice Example", telegram_status="connected",
-                           telegram_chat_id="1", onboarding_completed_at=now()))
+                           telegram_chat_id="1", onboarding_completed_at=now(), **agreed()))
     insert(db, UserConfig(user_id=user.id, config=CONFIG, schema_version=2))
 
     jobs = [insert(db, CorpusJob(described_at=now(), url=f"https://example.com/{uuid.uuid4()}", source="test",

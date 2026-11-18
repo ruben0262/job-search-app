@@ -1031,7 +1031,8 @@ button[disabled] {
 /* The box that agrees to the privacy policy and its cookies: the switch, then its sentence. */
 .agree {
   display: flex;
-  align-items: center;
+  /* Its words run to three lines, and the box stays by the first. */
+  align-items: flex-start;
   gap: 0.75rem;
   margin-top: 0.25rem;
 }
@@ -5936,4 +5937,228 @@ button.toggle[aria-pressed="true"]::before {
 .chip.score-step.on:hover {
   background: var(--fit-ink);
   color: var(--bg);
+}
+
+/* ── the legal pages (`LegalPage.tsx`): Terms, Privacy, Cookies, Data use ─────────────────────────── */
+
+/* Wider than a form, for the column of contents beside the text. */
+.wizard.legal {
+  max-width: 66rem;
+}
+
+/* The four, as a row of pills: the one open lit. */
+.legal-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1.5rem 0 2rem;
+}
+
+.legal-tabs a {
+  padding: 0.45rem 1rem;
+  border: 1px solid var(--faint);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+
+.legal-tabs a:hover {
+  color: var(--ink);
+}
+
+.legal-tabs a[aria-current="page"] {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--ink);
+}
+
+/* The contents beside the text on a laptop, staying in view; above it on a phone. */
+.legal-body {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 3rem;
+  align-items: start;
+}
+
+.legal-toc {
+  position: sticky;
+  top: 1.5rem;
+  /* The Terms' contents are taller than a laptop's screen: they scroll on their own, so the last of them and
+     the print button can be reached while the text stays where it is. */
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
+  font-size: var(--text-sm);
+}
+
+.legal-toc ol {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  list-style: none;
+}
+
+.legal-toc a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.legal-toc a:hover {
+  color: var(--ink);
+}
+
+.legal-doc {
+  max-width: 46rem;
+  font-size: var(--text-base);
+  line-height: 1.7;
+}
+
+.legal-doc h1 {
+  margin: 0 0 0.5rem;
+  font: 600 var(--text-title)/1.15 var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.legal-doc h2 {
+  margin: 2.75rem 0 0.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--hairline);
+  font: 600 var(--text-lg)/1.3 var(--font-display);
+  scroll-margin-top: 1.5rem;
+}
+
+.legal-doc h3 {
+  margin: 1.75rem 0 0.5rem;
+  font-size: var(--text-base);
+}
+
+.legal-doc li + li {
+  margin-top: 0.35rem;
+}
+
+.legal-doc hr {
+  margin: 3rem 0;
+  border: 0;
+  border-top: 1px solid var(--faint);
+}
+
+/* A box the eye stops at: each page's short version, and what matters most in the Terms. */
+.legal-callout {
+  margin: 1.5rem 0;
+  padding: 0.25rem var(--card-pad);
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  border-radius: var(--radius);
+  background: rgba(var(--accent-rgb), 0.07);
+}
+
+.legal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.legal-table th,
+.legal-table td {
+  padding: 0.65rem 0.75rem 0.65rem 0;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+}
+
+.legal-table th {
+  color: var(--dim);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+.legal-back {
+  margin-top: 3rem;
+}
+
+.legal-refuse {
+  margin-top: var(--gap);
+}
+
+@media (max-width: 860px) {
+  .legal-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+
+  .legal-toc {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: var(--card-pad);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+  }
+}
+
+/* On a phone a table's rows stand as cards, each cell under its column's name. */
+@media (max-width: 720px) {
+  .legal-table thead {
+    display: none;
+  }
+
+  .legal-table tr {
+    display: block;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--faint);
+  }
+
+  .legal-table td {
+    display: block;
+    padding: 0.2rem 0;
+    border: 0;
+  }
+
+  .legal-table td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--dim);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+}
+
+/* Printed, or saved as a PDF: the text alone, black on white. */
+@media print {
+  .backdrop,
+  .shell-top,
+  .legal-tabs,
+  .legal-toc,
+  .legal-back {
+    display: none;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+  }
+
+  .legal-body {
+    display: block;
+  }
+
+  .legal-doc,
+  .legal-doc a {
+    max-width: none;
+    color: #000;
+  }
+
+  .legal-callout {
+    border-color: #999;
+    background: none;
+  }
 }

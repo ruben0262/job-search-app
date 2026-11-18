@@ -33,78 +33,68 @@ def api(db, monkeypatch):
         yield http, db, user
 
 
-# ── the disclosure ────────────────────────────────────────────────────────────────────────────
+# ── the legal pages ──────────────────────────────────────────────────────────────────────────
 
-def test_the_policy_names_each_processor_rather_than_trusted_third_parties(api):
-    """The entire requirement."""
+def test_the_privacy_policy_names_everyone_who_receives_a_persons_data(api):
+    """By name, not as "trusted third parties": the entire requirement. Cloudflare carries every visit."""
+    from libs.legal.disclosure import RECIPIENTS
+
     http, _, _ = api
-    body = http.get("/legal/privacy").json()
+    policy = http.get("/legal/privacy").json()["markdown"]
 
-    names = {processor["name"] for processor in body["processors"]}
-    assert {"Anthropic", "Telegram"} <= names
-    assert any("proxy" in name.lower() for name in names)
-    assert all(processor["purpose"] and processor["data"] for processor in body["processors"])
+    assert {"Cloudflare", "Stripe", "Anthropic (Claude)", "Telegram"} <= {r.name for r in RECIPIENTS}
+    for recipient in RECIPIENTS:
+        assert recipient.name in policy
+        assert recipient.purpose and recipient.data and recipient.terms
 
 
-def test_the_policy_is_public(api):
-    """It is linked from signup, before anybody has an account to sign in with."""
+def test_every_legal_page_is_public(api):
+    """Sign-up and the landing page link them before anybody has an account to sign in with."""
     http, _, _ = api
     http.cookies.clear()
-    assert http.get("/legal/privacy").status_code == 200
-
-
-def test_the_consent_screen_and_the_policy_come_from_one_source():
-    """Two copies drift, and the drift is invisible."""
-    from libs.legal import disclosure
-    from services.api.account_routes import privacy
-
-    assert privacy() == disclosure()
+    for name in ("terms", "privacy", "cookies", "data"):
+        assert http.get(f"/legal/{name}").status_code == 200, name
+    assert http.get("/legal/anything-else").status_code == 422
 
 
 # ── consent, at the moment it is owed ─────────────────────────────────────────────────────────
 
-def test_consent_to_a_superseded_disclosure_is_refused(api):
-    """A policy naming a new processor is a new disclosure, and an old agreement is not an answer to it."""
+def test_agreeing_to_a_superseded_version_is_refused(api):
+    """Terms that changed are new terms, and an old agreement is not an answer to them."""
     http, _, _ = api
     response = http.post("/account/consent", json={"version": "1999-01-01"})
     assert response.status_code == 409
     assert "changed" in response.json()["detail"]
 
 
-def test_adding_a_processor_re_asks_everyone(api):
-    """The mechanism, not the intention: consent is version-compared."""
+def test_new_terms_ask_an_account_once_before_anything_else(api):
+    """The mechanism, not the intention: the agreement is version-compared, and the site waits for it. An
+    account that agreed to an older version sees one screen and nothing else (`stage` "agree"); agreeing to
+    the version the pages show lets it through, and records when."""
+    from libs.db import get
     from libs.db.models import User
 
     http, db, user = api
-    http.post("/account/consent",
-              json={"version": http.get("/account/consent").json()["current_version"]})
-    assert http.get("/account/consent").json()["granted"] is True
+    assert http.get("/dashboard").json()["stage"] == "agree", "never agreed: asked first"
 
-    # What a bumped disclosure leaves behind.
+    version = http.get("/legal/terms").json()["version"]
+    assert http.post("/account/consent", json={"version": version}).status_code == 200
+    assert http.get("/dashboard").json()["stage"] != "agree"
+    assert get(db, User, user.id).processing_consent_version == version
+
+    # What new terms leave behind for everybody who agreed to the old ones.
     db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"processing_consent_version": "2020-01-01"}})
-    assert http.get("/account/consent").json()["granted"] is False
-
-
-def test_withdrawing_says_what_it_does_not_undo(api):
-    """A profile already built stays built, and what Anthropic processed cannot be recalled."""
-    http, _db, _ = api
-    http.post("/account/consent",
-              json={"version": http.get("/account/consent").json()["current_version"]})
-
-    body = http.delete("/account/consent").json()
-    assert body["status"] == "withdrawn"
-    assert "unchanged" in body["detail"]
-    assert http.get("/account/consent").json()["granted"] is False
+    assert http.get("/dashboard").json()["stage"] == "agree"
 
 
 # ── erasure ───────────────────────────────────────────────────────────────────────────────────
 
-def test_deleting_an_account_leaves_no_row_anywhere(api):
-    """The obligation, proved rather than asserted: a document in every collection an account owns,
-    and none of them left afterwards."""
+def _a_row_in_every_collection(db, user):
+    """A document in every collection an account owns, with the shared job and another person's account beside
+    them: what erasing and exporting are each proved against. Fails when a collection is added unseeded."""
     from datetime import timedelta
 
-    from libs.db import get, insert, now
+    from libs.db import insert, now
     from libs.db.models import (
         MODELS,
         AiRequest,
@@ -129,7 +119,6 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
         UserSession,
     )
 
-    http, db, user = api
     job = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer"))
     someone_else = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x"))
     insert(db, UserConfig(user_id=someone_else.id, config={"sections": [{"keywords": ["y"]}]}))
@@ -160,11 +149,22 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
             Alert(user_id=user.id, name="My search", search=True)):
         insert(db, document)
 
-    owned = [model for model in MODELS if model.OWNER]
-    unseeded = [model.COLLECTION for model in owned
-                if not db[model.COLLECTION].count_documents({model.OWNER: user.id})]
-    assert not unseeded, f"seed these too, or the erasure below proves nothing about them: {unseeded}"
+    unseeded = [model.COLLECTION for model in MODELS
+                if model.OWNER and not db[model.COLLECTION].count_documents({model.OWNER: user.id})]
+    assert not unseeded, f"seed these too, or what is proved below proves nothing about them: {unseeded}"
+    return job, someone_else, build
 
+
+def test_deleting_an_account_leaves_no_row_anywhere(api):
+    """The obligation, proved rather than asserted: a document in every collection an account owns,
+    and none of them left afterwards."""
+    from libs.db import get
+    from libs.db.models import MODELS, BuiltDocument, CorpusJob, User, UserConfig
+
+    http, db, user = api
+    job, someone_else, build = _a_row_in_every_collection(db, user)
+
+    owned = [model for model in MODELS if model.OWNER]
     assert http.request("DELETE", "/account", json={"password": PASSWORD}).status_code == 200
 
     for model in owned:
@@ -177,6 +177,36 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
     assert get(db, CorpusJob, job.id) is not None
     assert get(db, User, someone_else.id) is not None
     assert db[UserConfig.COLLECTION].count_documents({"user_id": someone_else.id}) == 1
+
+
+def test_a_copy_of_an_account_holds_everything_deleting_would_erase_and_no_secret(api, capsys):
+    """The copy the Privacy Policy and the Terms promise on request (GDPR Articles 15 and 20), made by the
+    operator's script: every collection an account owns, as deleting walks them, only that account's rows, and
+    nothing that would let anybody into it."""
+    import importlib.util
+    import json
+    from pathlib import Path
+
+    from libs.db.models import MODELS, User
+
+    _http, db, user = api
+    _a_row_in_every_collection(db, user)
+    script = Path(__file__).resolve().parents[1] / "deploy" / "scripts" / "export_account.py"
+    spec = importlib.util.spec_from_file_location("export_account", script)
+    export = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(export)
+
+    assert export.main([user.email.upper()]) == 0, "found by the address, however it is typed"
+    copy = json.loads(capsys.readouterr().out)
+    assert set(copy) == {model.COLLECTION for model in MODELS if model.OWNER} | {User.COLLECTION}
+    (account,) = copy[User.COLLECTION]
+    assert account["email"] == user.email and account["full_name"] == "Alice Example"
+    assert not {"password_hash", "wrapped_dek"} & set(account), "nothing that lets anybody in"
+    (secret,) = copy["user_secrets"]
+    assert secret["kind"] == "claude_api" and not {"ciphertext", "nonce"} & set(secret)
+    assert all(row["user_id"] == str(user.id) for name, rows in copy.items() if name != User.COLLECTION
+               for row in rows), "only this account's rows"
+    assert export.main(["nobody@example.com"]) == 1
 
 
 def test_deleting_requires_the_password_not_just_a_session(api):

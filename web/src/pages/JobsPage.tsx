@@ -767,7 +767,7 @@ export function JobCard({ job, focus, done, fresh, onMark }: {
 /** One document for one job: a button, then the words while it is made, then the download — and
  * the download straight away for one made before and kept. */
 function MakeDocument({ doc, kind, existing }: { doc: Build; kind: "cv" | "cover"; existing?: Made }) {
-  const { build, making, start, error, needsConsent } = doc;
+  const { build, making, start, error } = doc;
   const name = kind === "cv" ? "CV" : "cover letter";
   const ready = build?.state === "ready" && build.download_url ? build.download_url : null;
   // The CV is the one most people need, so the cover letter is the quieter of the two, made or not.
@@ -794,7 +794,6 @@ function MakeDocument({ doc, kind, existing }: { doc: Build; kind: "cv" | "cover
         {making ? `Making your ${name}…` : `Make my ${name}`}
       </button>
       <Error>{error}</Error>
-      {needsConsent ? <a className="small" href="#/privacy">Read what is sent, and agree</a> : null}
     </span>
   );
 }

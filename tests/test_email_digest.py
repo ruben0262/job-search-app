@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from libs.db import get, insert, now
-from tests.conftest import needs_db
+from tests.conftest import agreed, needs_db
 
 
 class Inbox:
@@ -29,7 +29,7 @@ def _person(db, *, emailed=True, **fields):
     word = f"wrangler{uuid.uuid4().hex[:8]}"
     user = insert(db, User(**{"email": f"{uuid.uuid4()}@example.com", "password_hash": "x",
                               "subscription_status": "active", "status": "active", "active": True,
-                              "created_at": now() - timedelta(days=3), **fields}))
+                              "created_at": now() - timedelta(days=3), **agreed(), **fields}))
     insert(db, UserConfig(user_id=user.id, schema_version=2,
                           config={"sections": [{"platform": "all", "keywords": [word]}]}))
     insert(db, Alert(user_id=user.id, name="My search", search=True, created_at=user.created_at,

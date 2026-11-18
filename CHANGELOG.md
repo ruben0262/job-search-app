@@ -14,6 +14,67 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-18, night — Terms of Service, and the Privacy, Cookie and Data Use policies, each a page of its own
+
+The owner: "create for me a fully legal privacy policy, cookies, data act/usage and terms of service, so we do
+not get fined or procecuted via the Hungarian or Euripean authorities or individuals ... a different page for
+each, and they can appear at the bottom of the page just like privacy policy now".
+
+- **Four pages** (`#/terms`, `#/privacy`, `#/cookies`, `#/data`), linked from the landing page's foot and from
+  Settings: Markdown in `libs/legal/*.md`, served filled in by `GET /legal/{name}` (3,707, 2,639, 823 and 1,534
+  words). Every period, limit and name in them comes from where it is decided (the cookies' and email links'
+  lifetimes, the backups, the job shelf, the plans' waits, the trial), so no page can state a period the code
+  does not keep. `libs.db.BACKUP_KEEP_DAYS` moved out of `backup.py`, whose `--keep-days` flag went with it, so
+  the policy reads the one number. Each page opens with its short version; the Terms' is what the agree screen
+  shows.
+- **Who runs the site** (Ekertv. 4. §, GDPR Art 13, the consumer rules) is the operator's to fill in: Admin →
+  Settings → Legal details (`operator`: name, address, registration and tax numbers, phone, hosting provider),
+  never in the code (owner, 2026-11-17). Until then a page says "[not filled in yet]" where each belongs.
+- **One agreement.** The sign-up box now agrees to the Terms, naming the limits on our liability (a term like it
+  binds only when pointed out and expressly accepted, Ptk. 6:78), and says the policies were read. An account
+  made before sees one screen, the Terms' short version and "I agree", before anything else (`/dashboard` stage
+  "agree"); a new `LEGAL_VERSION` asks everybody again. Removed with it, because each would now lock a person
+  out of the site: Settings' "Withdraw" (`DELETE /account/consent`), `GET /account/consent`, `PrivacyPage.tsx`
+  and the Jobs page's "Read what is sent, and agree". An AI document rests on the contract (the person asks for
+  each one) and stops with the account; the record of the agreement stays (`processing_consent_*`).
+- **What the old disclosure said that was no longer true:** that the proxy provider receives people's search
+  words (since 2026-11-04 LinkedIn is read by country, with nothing of anybody's), and that AI documents may run
+  on the platform's key (only on the person's own account since 2026-11-09). **What it left out:** Cloudflare,
+  which carries every visit; Zoho, which sends every email; browsers' push services; `install-later`, kept by
+  every phone that tapped Later; the service worker; Stripe's `m`, and Cloudflare's `cf_clearance` and `_cfuvid`.
+  What a document request sends was read from `services.docgen.build.prepare`: every switched-on document's text
+  (contact details included), the name, the languages searched for and the job ad.
+- **No cookie banner**, on purpose: everything kept on a device is strictly necessary (ePrivacy 5(3); Eht. 155.
+  § (4) as NAIH applies it), the fonts are our own, and nothing measures or advertises. The Cookie Policy says so.
+  `test_the_cookie_policy_names_everything_the_site_keeps_on_a_device` fails when the API sets a cookie, or the
+  site writes a storage key, that the policy does not name: it caught `install-later` with its line taken out.
+- **Messages expire** after 3 years (`CONTACT_KEEP_YEARS`, a TTL index); they were kept for ever. Fgytv. 17/A.
+  § (7) has a complaint and its answer kept three years. **Each sender now gets a receipt by email**, with the
+  reference and the 30-day answer (Fgytv. 17/A. § (6a), since 2025-07-23). It repeats none of their words, since
+  anybody can type any address on the landing page.
+- **A person's copy of their data** (GDPR Art 15 and 20; Terms 16.2): `deploy/scripts/export_account.py
+  <email>`, by `libs.db.export_account`, which walks the collections `delete_account` erases, so the two cannot
+  disagree. Passwords and sealed credentials are left out.
+- The session cookies' names moved into `libs.auth.sessions`: `deps.py` read the access cookie by a second
+  literal.
+- **Facts checked against primary sources** (njt.hu, the Official Journal, naih.hu, bkik.hu, Stripe's and
+  Cloudflare's cookie pages), 2026-11-18: NAIH's address; the Budapest conciliation board's (now I. em. 111);
+  Ptk. 6:152 as reworded from 2026-03-01 (only intent and harm to life or health). Gross negligence and crime
+  are kept out of the liability cap anyway, because 6:104 (2) h) presumes unfair any limit on a consumer's
+  statutory rights. Under 6:104 (1) h) liability for our own subcontractors may never be limited, so the Terms
+  say we answer for them. Also checked: the 3-year complaint record; the ODR platform's closure (so no link);
+  NKFH and the government offices; and the EU–US Data Privacy Framework, still in force (appeal C-703/25 P
+  pending).
+- **Tests**: every page whole, with nothing unfilled; the operator's details from Admin on the pages, and bad
+  ones refused; the cookie relationship; the TTL index at the period the policy states; new terms asking once
+  and letting through; the receipt; the export over a row in every collection an account owns; the browser walk
+  from the landing page's foot through all four pages at 390 and 1280px, with nothing off the screen; and the
+  agree screen after terms change under an open page. Accounts a test makes directly now carry the agreement
+  (`tests.conftest.agreed`), as sign-up's do.
+- **Not done, and the owner's** (ROADMAP, legal pages): fill in Legal details before launch; the withdrawal
+  button the law has required on paid plans since 2026-06-19; the order button's wording in Stripe's form; AI
+  Act Art 50(2) marking by 2026-12-02; and a lawyer's read.
+
 ## 2026-11-18, evening — The alerts read new jobs at last, and a phone's notifications have a test
 
 The owner, after deploying the push keys: "the notifications are not appearing ... there are no jobs appearing

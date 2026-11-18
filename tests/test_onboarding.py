@@ -13,7 +13,7 @@ import pytest
 pytest.importorskip("fastapi")
 
 from libs.contracts.onboarding import IdentitySchema
-from tests.conftest import needs_db
+from tests.conftest import agreed, needs_db
 
 # ── the identity contract (no database) ───────────────────────────────────────────────────────
 
@@ -59,7 +59,7 @@ def api(db, monkeypatch):
     from services.api.app import app
 
     user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
-                           subscription_status="active", status="active"))
+                           subscription_status="active", status="active", **agreed()))
 
     with TestClient(app, base_url="https://testserver") as http:
         http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")

@@ -78,6 +78,9 @@ The scripts in `scripts/` run on the VM itself, from `.venv`, with the settings 
 set -a && . certificates/server.env && set +a
 .venv/bin/python deploy/scripts/check_health.py        # exit 0 / 3 warnings / 2 needs a person
 .venv/bin/python deploy/scripts/show_accounts.py
+# Somebody asks for a copy of their data (Privacy Policy, Terms 16.2: within 30 days, free): send this file
+# to the address on the account, and only to it.
+.venv/bin/python deploy/scripts/export_account.py person@example.com > mahoraga-data.json
 ```
 
 ## Moving the accounts off the old VPS (once)

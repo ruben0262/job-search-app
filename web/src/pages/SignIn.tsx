@@ -1,11 +1,12 @@
 /** Sign in and sign up, on one screen — the first thing behind the landing page's CTAs. Signing up asks for the
- * address, the password twice and agreement to the privacy policy and its cookies, the only way to an account;
+ * address, the password twice and agreement to the Terms (the policies read beside them), the only way to an account;
  * the plan is picked after the email link, before setting up (owner, 2026-11-12: "not during the initial
  * signup"). */
 import { useEffect, useState } from "react";
 
 import { ApiError, api, type Schema } from "../api";
 import { Error, Field, useAction, useNewPassword } from "../ui";
+import type { LegalName } from "./LegalPage";
 import { ThemeToggle } from "../theme";
 import { Brand, Wheel } from "../wheel";
 
@@ -34,17 +35,17 @@ export function SignIn({
   const [picked] = useState<Picked>(planAsked);
   const [agreed, setAgreed] = useState(false);
   const [sent, setSent] = useState(false);
-  // What the box agrees to (`/legal/privacy`).
+  // What the box agrees to: the legal pages' version, the same on all four (`libs.legal`).
   const [policy, setPolicy] = useState<string | null>(null);
   useEffect(() => {
     if (mode !== "up") return;
-    void api.get<Schema<"Disclosure">>("/legal/privacy").then((body) => setPolicy(body.version)).catch(() => undefined);
+    void api.get<Schema<"LegalDocument">>("/legal/terms").then((body) => setPolicy(body.version)).catch(() => undefined);
   }, [mode]);
 
   const submit = useAction(async () => {
     if (mode === "up") {
-      if (!agreed) throw new ApiError(0, "Tick the box to agree to the privacy policy and cookies.");
-      if (!policy) throw new ApiError(0, "The privacy policy didn't load. Reload the page and try again.");
+      if (!agreed) throw new ApiError(0, "Tick the box to agree to the Terms.");
+      if (!policy) throw new ApiError(0, "Our terms didn't load. Reload the page and try again.");
       await api.post("/auth/signup", { email, password: chosen.check(), consent_version: policy, plan: picked });
       setSent(true);
       return;
@@ -103,8 +104,12 @@ export function SignIn({
         {mode === "up" ? (
           <label className="agree">
             <input type="checkbox" checked={agreed} required onChange={(event) => setAgreed(event.target.checked)} />
+            {/* Named in the box, the limit on our liability: a term like it binds only when it was pointed out and
+                agreed to (Hungary's Civil Code, 6:78). Each page opens in a tab of its own, so the form keeps. */}
             <span>
-              I agree to the <a href="#/privacy" target="_blank" rel="noreferrer">privacy policy and cookies</a>.
+              I agree to the <Page name="terms">Terms</Page>, including the limits on our liability, and I have read
+              the <Page name="privacy">Privacy</Page>, <Page name="cookies">Cookie</Page> and{" "}
+              <Page name="data">Data Use</Page> policies.
             </span>
           </label>
         ) : null}
@@ -199,4 +204,9 @@ export function AuthShell({
       </main>
     </>
   );
+}
+
+/** One legal page, opened in a tab of its own so the form keeps what was typed. */
+function Page({ name, children }: { name: LegalName; children: string }) {
+  return <a href={`#/${name}`} target="_blank" rel="noreferrer">{children}</a>;
 }

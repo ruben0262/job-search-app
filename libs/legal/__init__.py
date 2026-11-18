@@ -1,13 +1,6 @@
-"""The disclosures the cleared legal review depends on, and whether a person agreed to them."""
-from libs.legal.consent import has_consented
-from libs.legal.disclosure import (
-    CONSENT_BODY,
-    CONSENT_HEADLINE,
-    DISCLOSURE_VERSION,
-    PROCESSORS,
-    Processor,
-    disclosure,
-)
+"""Whether a person agreed to the legal pages, and to which version. Light on purpose: the docgen worker asks
+it, and its image installs nothing `libs.auth` needs. Who receives a person's data and what a device keeps are
+in `libs.legal.disclosure`; the pages themselves in `libs.legal.documents`."""
+from libs.legal.consent import LEGAL_VERSION, agreed, has_consented
 
-__all__ = ["CONSENT_BODY", "CONSENT_HEADLINE", "DISCLOSURE_VERSION", "PROCESSORS", "Processor",
-           "disclosure", "has_consented"]
+__all__ = ["LEGAL_VERSION", "agreed", "has_consented"]

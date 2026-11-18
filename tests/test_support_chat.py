@@ -258,7 +258,7 @@ def test_without_consent_what_their_documents_say_never_reaches_the_ai(api, monk
     assert "Zanzibar" not in json.dumps(model.seen), "nothing their documents say reached the AI"
     assert "my_words" in model.seen[0]["tools"], "their words and the site's help still answer"
 
-    version = api.http.get("/account/consent").json()["current_version"]
+    version = api.http.get("/legal/terms").json()["version"]
     assert api.http.post("/account/consent", json={"version": version}).status_code == 200
     _ask(api, "and now?")
     assert "suggested_words" in model.seen[2]["tools"]

@@ -24,6 +24,7 @@ from libs import settings
 from libs.db import get, insert, now
 from libs.db.models import Alert, CorpusJob, QueueJob, User, UserConfig, UserNotification
 from libs.db.models.tenant import record_state
+from tests.conftest import agreed
 
 stripe = pytest.importorskip("stripe")
 pytest.importorskip("fastapi")
@@ -197,7 +198,7 @@ def person(db, **fields) -> User:
     """Somebody who signed up and confirmed their email: no membership unless one is given."""
     return insert(db, User(email=fields.pop("email", f"{uuid.uuid4().hex[:12]}@example.com"),
                            password_hash=fields.pop("password_hash", "x"),
-                           status=fields.pop("status", "active"), active=True, **fields))
+                           status=fields.pop("status", "active"), active=True, **{**agreed(), **fields}))
 
 
 def sign_in(http, user: User) -> None:

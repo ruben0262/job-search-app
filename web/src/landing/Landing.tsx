@@ -10,6 +10,7 @@ import { Fragment, useEffect, useRef, useState, type CSSProperties, type MouseEv
 import { api, type Schema } from "../api";
 import { money } from "../membership";
 import { PICTURES } from "../pages/JobsPage";
+import { LegalLinks } from "../pages/LegalPage";
 import { PLACES } from "../places";
 import { ThemeToggle } from "../theme";
 import { Error, Explain, Field, useAction } from "../ui";
@@ -398,7 +399,7 @@ export function Landing() {
         <div className="foot-row">
           <span>The job search that runs itself</span>
           <a href="#/signin">Sign in</a>
-          <a href="#/privacy">Privacy</a>
+          <LegalLinks />
           <a href="#ask" onClick={jump("ask")}>Contact</a>
         </div>
       </footer>

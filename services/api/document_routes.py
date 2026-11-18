@@ -341,9 +341,9 @@ def _ai_payer(db: Database, user: User, kind: str) -> str:
         notify.notify(db, user.id, event, lacking["message"] if lacking else "")
         raise HTTPException(status.HTTP_409_CONFLICT, detail=lacking)
     if not has_consented(db, user.id):
+        # Only after the terms changed under an open page: the site asks before anything else (stage "agree").
         raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            detail="agree to how AI-written documents use your profile first — "
-                                   "it is on the privacy page")
+                            detail="Our terms changed. Reload the page to read and agree to them.")
     return payer.kind
 
 

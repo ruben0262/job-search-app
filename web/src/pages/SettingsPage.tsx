@@ -7,6 +7,7 @@ import { api, type Ready, type Schema } from "../api";
 import { useKept } from "../kept";
 import { MembershipCard } from "../membership";
 import { Card, Error, Field, Prompt, useAction, useNewPassword } from "../ui";
+import { LegalLinks } from "./LegalPage";
 
 type Account = Schema<"AccountOut">;
 
@@ -17,15 +18,8 @@ export function SettingsPage({ dashboard, onSignedOut }: {
   dashboard: Ready;
   onSignedOut: () => void;
 }) {
-  const { data: account, reload: reloadAccount } = useKept<Account>(ACCOUNT);
+  const { data: account } = useKept<Account>(ACCOUNT);
 
-  const reload = () => {
-    void reloadAccount();
-  };
-  const withdraw = useAction(async () => {
-    await api.del("/account/consent");
-    reload();
-  });
   const signOut = useAction(async () => {
     await api.post("/auth/logout");
     onSignedOut();
@@ -39,15 +33,6 @@ export function SettingsPage({ dashboard, onSignedOut }: {
 
       <Card title="Your AI accounts">
         <AiAccounts />
-        {account.consent_version ? (
-          <p className="small muted">
-            You agreed that AI-written documents may use your profile.{" "}
-            <button type="button" className="linklike" disabled={withdraw.busy} onClick={() => void withdraw.run()}>
-              Withdraw
-            </button>
-          </p>
-        ) : null}
-        <Error>{withdraw.error}</Error>
       </Card>
 
       <MembershipCard />
@@ -64,9 +49,9 @@ export function SettingsPage({ dashboard, onSignedOut }: {
         <Error>{signOut.error}</Error>
       </Card>
 
-      <p className="small">
-        <a href="#/privacy">Who sees your data</a>
-        {dashboard.is_admin ? <> · <a href="#/admin">Platform</a></> : null}
+      <p className="small legal-links">
+        <LegalLinks />
+        {dashboard.is_admin ? <a href="#/admin">Platform</a> : null}
       </p>
     </>
   );
@@ -108,7 +93,7 @@ function Password({ onChanged }: { onChanged: () => void }) {
   );
 }
 
-function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
+export function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
   const [asking, setAsking] = useState(false);
   const [password, setPassword] = useState("");
   const remove = useAction(async () => {

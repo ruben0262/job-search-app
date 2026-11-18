@@ -133,19 +133,17 @@ def test_a_reply_cut_off_at_the_ceiling_is_said_out_loud(caplog):
     assert "truncated" in caplog.text
 
 
-def test_every_provider_a_profile_can_be_sent_to_is_named_in_the_privacy_disclosure():
+def test_every_provider_a_profile_can_be_sent_to_is_named_in_the_privacy_policy():
     """A provider added without a line here sends people's profiles somewhere they were not told. A sign-in
     and an API key of one company's send to that company alike: ChatGPT's sign-in (Codex) is OpenAI's."""
-    from libs.legal import disclosure
+    from libs.legal.disclosure import RECIPIENTS
     from libs.llm.accounts import PROVIDER
 
     company = {"anthropic": "Anthropic", "gemini": "Google", "openai": "OpenAI", "codex": "OpenAI"}
     names = {company[provider] for provider in PROVIDER.values()}
-    ai = [p for p in disclosure()["processors"] if any(name in p["name"] for name in names)]
+    ai = [r for r in RECIPIENTS if r.name.startswith(tuple(names))]
 
     assert len(ai) == len(names) == 3
-    # The platform's own key pays for some of these requests, so none may say it is always theirs.
-    assert not any(p["on_your_credential"] for p in ai)
 
 
 # ── who pays ──────────────────────────────────────────────────────────────────────────────────

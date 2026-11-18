@@ -40,19 +40,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Consent State
-         * @description Whether this account has agreed to the current disclosure.
-         */
-        get: operations["consent_state_account_consent_get"];
+        get?: never;
         put?: never;
-        /** Grant Consent */
-        post: operations["grant_consent_account_consent_post"];
         /**
-         * Withdraw Consent
-         * @description Withdraw.
+         * Grant Consent
+         * @description Agree to the legal pages as they read now: what an account made before them is asked, once, before the
+         *     rest of the site (`dashboard_routes`, stage "agree"). Not withdrawn apart from the account: deleting it is
+         *     how a person stops (owner, 2026-11-18).
          */
-        delete: operations["withdraw_consent_account_consent_delete"];
+        post: operations["grant_consent_account_consent_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1505,7 +1502,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/legal/privacy": {
+    "/legal/{name}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1513,10 +1510,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Privacy
-         * @description Every processor, named.
+         * Legal
+         * @description One of the four legal pages, filled in (`libs.legal.documents`). Public: sign-up links them before
+         *     anybody has an account.
          */
-        get: operations["privacy_legal_privacy_get"];
+        get: operations["legal_legal__name__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2093,8 +2091,6 @@ export interface components {
         AccountOut: {
             /** Active */
             active: boolean;
-            /** Consent Version */
-            consent_version: string | null;
             /** Email */
             email: string;
             /** Telegram Status */
@@ -2229,6 +2225,21 @@ export interface components {
             sources: components["schemas"]["Tally"][];
             /** Workplaces */
             workplaces: string[];
+        };
+        /**
+         * AgreeDashboard
+         * @description An account made before the legal pages read as they do now (`libs.legal.LEGAL_VERSION`): asked to
+         *     agree, once, before anything else of the site. A new account agreed with the box at sign-up and never sees
+         *     it.
+         */
+        AgreeDashboard: {
+            /** Is Admin */
+            is_admin: boolean;
+            /**
+             * Stage
+             * @constant
+             */
+            stage: "agree";
         };
         /** AiAccount */
         AiAccount: {
@@ -2520,18 +2531,6 @@ export interface components {
             /** Version */
             version: string;
         };
-        /** ConsentState */
-        ConsentState: {
-            /** Current Version */
-            current_version: string;
-            disclosure: components["schemas"]["Disclosure"];
-            /** Granted */
-            granted: boolean;
-            /** Granted At */
-            granted_at: string | null;
-            /** Granted Version */
-            granted_version: string | null;
-        };
         /** ContactAddress */
         ContactAddress: {
             /** Channel */
@@ -2637,41 +2636,6 @@ export interface components {
             all: boolean;
             /** Ids */
             ids?: number[] | null;
-        };
-        /** DisclosedCookie */
-        DisclosedCookie: {
-            /** Kept */
-            kept: string;
-            /** Name */
-            name: string;
-            /** Purpose */
-            purpose: string;
-        };
-        /** DisclosedProcessor */
-        DisclosedProcessor: {
-            /** Data */
-            data: string;
-            /** Location */
-            location: string;
-            /** Name */
-            name: string;
-            /** On Your Credential */
-            on_your_credential: boolean;
-            /** Purpose */
-            purpose: string;
-        };
-        /** Disclosure */
-        Disclosure: {
-            /** Body */
-            body: string;
-            /** Cookies */
-            cookies: components["schemas"]["DisclosedCookie"][];
-            /** Headline */
-            headline: string;
-            /** Processors */
-            processors: components["schemas"]["DisclosedProcessor"][];
-            /** Version */
-            version: string;
         };
         /** DocumentList */
         DocumentList: {
@@ -3033,6 +2997,17 @@ export interface components {
          * @enum {string}
          */
         Language: "en" | "de" | "fr" | "es" | "nl" | "hu" | "pl" | "pt" | "it" | "sv" | "da";
+        /** LegalDocument */
+        LegalDocument: {
+            /** Markdown */
+            markdown: string;
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
+            /** Version */
+            version: string;
+        };
         /** LimitPatch */
         LimitPatch: {
             /** Value */
@@ -4065,26 +4040,6 @@ export interface operations {
             };
         };
     };
-    consent_state_account_consent_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConsentState"];
-                };
-            };
-        };
-    };
     grant_consent_account_consent_post: {
         parameters: {
             query?: never;
@@ -4116,28 +4071,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    withdraw_consent_account_consent_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
         };
@@ -5811,7 +5744,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlanDashboard"] | components["schemas"]["OnboardingDashboard"] | components["schemas"]["ReadyDashboard"];
+                    "application/json": components["schemas"]["AgreeDashboard"] | components["schemas"]["PlanDashboard"] | components["schemas"]["OnboardingDashboard"] | components["schemas"]["ReadyDashboard"];
                 };
             };
         };
@@ -6430,11 +6363,13 @@ export interface operations {
             };
         };
     };
-    privacy_legal_privacy_get: {
+    legal_legal__name__get: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                name: "terms" | "privacy" | "cookies" | "data";
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -6445,7 +6380,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Disclosure"];
+                    "application/json": components["schemas"]["LegalDocument"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -49,6 +49,14 @@ def db(_database):
         _database[name].delete_many({})
 
 
+def agreed() -> dict:
+    """What ticking sign-up's box records (`libs.legal`). An account a test makes without it is asked to agree
+    to the terms before anything else of the site (`/dashboard`'s stage "agree"), as a real one would be."""
+    from libs.db import now
+    from libs.legal import LEGAL_VERSION
+    return {"processing_consent_at": now(), "processing_consent_version": LEGAL_VERSION}
+
+
 @pytest.fixture()
 def user(db):
     """One active account, with nothing else."""
@@ -58,4 +66,4 @@ def user(db):
     from libs.db.models import User
     return insert(db, User(email=f"{uuid.uuid4().hex[:12]}@example.com", password_hash="x",
                            subscription_status="active",
-                           status="active", active=True))
+                           status="active", active=True, **agreed()))

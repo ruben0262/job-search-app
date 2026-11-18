@@ -90,6 +90,19 @@ def contact(body: ContactRequest, request: Request, db: Database = Depends(get_d
     except MailError:
         logger.warning("contact: message %s from %s was kept but not emailed; it is in the admin panel",
                        message.id, user_id or "a visitor", exc_info=True)
+    # The person's receipt, by email and at once: Hungary's consumer protection act has a complaint made
+    # through a website's form acknowledged so (Fgytv. 17/A. § (6a), since 2025-07-23), and any message may be
+    # one. It repeats none of their words: anybody can type anybody's address on the landing page, and a
+    # receipt that carried them would let the form send strangers whatever somebody typed.
+    try:
+        send_within_cap(db, mailer, email, f"We got your message ({reference})",
+                        f"Thank you for writing to Mahoraga. We got your message, reference {reference}, "
+                        "and a person will answer it within 30 days, usually much sooner.\n\n"
+                        "If you didn't write to us, you can ignore this email.",
+                        purpose="contact")
+    except MailError:
+        logger.warning("contact: the receipt for message %s did not go to its sender", message.id,
+                       exc_info=True)
     audit(logger, "contact.sent", user=user_id, message=message.id)
     return ContactReceipt(reference=reference, email=email)
 

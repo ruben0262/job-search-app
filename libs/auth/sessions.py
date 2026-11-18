@@ -14,6 +14,10 @@ from libs.db.models import UserSession
 
 ACCESS_TTL = timedelta(minutes=15)
 REFRESH_TTL = timedelta(days=30)
+# The two cookies a session is held in, named once: the API sets and reads them, and the Cookie Policy lists
+# them (`libs.legal.disclosure`).
+ACCESS_COOKIE = "access_token"
+REFRESH_COOKIE = "refresh_token"
 
 
 class SessionExpired(RuntimeError):

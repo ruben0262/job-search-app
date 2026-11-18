@@ -24,10 +24,9 @@ from bson import json_util
 from bson.binary import UuidRepresentation
 
 from libs.corpus.archive import MARKED
-from libs.db import database
+from libs.db import BACKUP_KEEP_DAYS, database
 from libs.db.models import MODELS, CorpusJob, User, UserJobState
 
-KEEP_DAYS = 30
 # Account ids are UUIDs; without saying how to write one, the first account fails the whole backup.
 OPTIONS = json_util.CANONICAL_JSON_OPTIONS.with_options(uuid_representation=UuidRepresentation.STANDARD)
 # The integer ids handed out so far. Kept so a restore never hands one out twice: an old alert's
@@ -103,7 +102,6 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, help="directory to write the backup into")
     parser.add_argument("--archive", help="corpus archive directory to copy alongside")
-    parser.add_argument("--keep-days", type=int, default=KEEP_DAYS)
     parser.add_argument("--verify-only", help="verify an existing backup and exit")
     args = parser.parse_args(argv)
 
@@ -143,9 +141,10 @@ def main(argv: list[str] | None = None) -> int:
             # Not an error: nothing has aged out yet. Said so an empty archive is a fact somebody read.
             print(f"  corpus archive: nothing at {source} yet")
 
-    removed = prune(out, args.keep_days)
+    # Not a flag: the Privacy Policy states this number (`libs.db.BACKUP_KEEP_DAYS`).
+    removed = prune(out, BACKUP_KEEP_DAYS)
     if removed:
-        print(f"  pruned {removed} backup(s) older than {args.keep_days} days")
+        print(f"  pruned {removed} backup(s) older than {BACKUP_KEEP_DAYS} days")
 
     print("\nREMINDER: SECRETS_KEK is NOT in this backup, on purpose. Back it up separately, to a "
           "different place, under different credentials — a restore without it yields a database "

@@ -65,6 +65,7 @@ from libs.settings import (
     DEFAULT_SOURCE_MIN_AGE_HOURS,
     DEFAULTS,
     HARVEST_SOURCES,
+    OPERATOR_FIELDS,
     all_settings,
     ats_companies_per_cycle,
     freshness_hours,
@@ -474,6 +475,14 @@ def write_setting(key: str, body: SettingPatch, db: Database = Depends(get_db),
     if key == "members_channel_url" and body.value and not str(body.value).startswith("https://"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="The members' chat link must be a web address starting with https://")
+    if key == "operator":
+        # Who runs the site, as every legal page names them (`libs.legal.documents`): a line of text each.
+        if not isinstance(body.value, dict) or set(body.value) - set(OPERATOR_FIELDS) or any(
+                not isinstance(text, str) or len(text) > 300 for text in body.value.values()):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=(
+                f"The legal details are {', '.join(OPERATOR_FIELDS)}: a line of text each, 300 characters at "
+                "most."))
+        body.value = {field: body.value.get(field, "").strip() for field in OPERATOR_FIELDS}
     try:
         put(db, key, body.value, by=admin.email)
     except KeyError as exc:
