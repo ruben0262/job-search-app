@@ -163,12 +163,12 @@ def test_the_alerts_read_new_jobs_from_their_very_first_pass(db, monkeypatch):
     db[AlertCursor.COLLECTION].delete_many({})
     clock = [now() - timedelta(minutes=5)]
     monkeypatch.setattr(alerts, "now", lambda: clock[0])
-    alerts.route(db)
-    assert _caught(db, user) == {}, "the first pass starts from now"
+    assert alerts.route(db).read == 0, "the first pass starts from now"
+    assert _caught(db, user) == {}
 
     job = _posting(db, f"Senior {word}", minutes_ago=2)
     clock[0] = now()
-    alerts.route(db)
+    assert alerts.route(db).read >= 1
     assert list(_caught(db, user)) == [job.id]
 
 
@@ -424,7 +424,7 @@ def test_nobody_without_alerts_or_with_them_paused_has_anything_caught(db):
     db[Alert.COLLECTION].update_many({"user_id": off.id}, {"$set": {"on": False}})
     _posting(db, word)
 
-    assert _catch(db) == 0
+    assert _catch(db).caught == 0
 
 
 @needs_db
@@ -452,7 +452,7 @@ def test_the_first_pass_starts_from_now(db):
     user, word = _person(db)
     _posting(db, word)
 
-    assert route(db) == 0
+    assert route(db).caught == 0
     assert _caught(db, user) == {}
 
 

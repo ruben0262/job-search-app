@@ -2587,7 +2587,7 @@ def test_an_alert_is_made_for_a_company_and_shows_what_it_found(site, capsys):
                              first_seen_at=read, described_at=read, posted_at=read))
         db[AlertCursor.COLLECTION].update_one({"_id": "0"}, {"$set": {"at": read - timedelta(minutes=1)}},
                                              upsert=True)
-        assert route(db) == 1
+        assert route(db).caught == 1
 
         page.reload()
         card.get_by_role("link", name="See what it found").click()

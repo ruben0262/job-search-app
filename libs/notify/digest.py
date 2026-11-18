@@ -33,10 +33,12 @@ def due(db: Database, user: User, hour: int, *, moment: datetime | None = None) 
     today. Whether an alert of theirs sends to it is the sweep's question."""
     if not user.active:
         return False
-    local = (moment or now()).astimezone(ZoneInfo(user.timezone or "UTC"))
-    if local.hour < hour:
+    moment = moment or now()
+    if moment.astimezone(ZoneInfo(user.timezone or "UTC")).hour < hour:
         return False
-    return user.email_digest_at is None or user.email_digest_at < limits.their_midnight(db, user.id)
+    # From the account in hand: asked of the database for each person, the sweep spent 265 ms finding nobody
+    # due among 500 (2026-11-18).
+    return user.email_digest_at is None or user.email_digest_at < limits.midnight(user.timezone, moment)
 
 
 def send_digest(db: Database, mailer: EmailSender, user: User) -> int:

@@ -12,7 +12,7 @@ requirement, and it constrains the contracts between them.
 | [`api/`](api/) | `api` | The site is away for the seconds it takes to start; everything else carries on |
 | [`harvester/`](harvester/) | `harvester`, `seed-ats` (one-shots) | New jobs stop arriving until the next tick; existing feeds unaffected |
 | [`docgen/`](docgen/) | `docgen` | CV builds queue up and are made when it is back |
-| [`notifier/`](notifier/) | `notifier` | Each new job tested against every alert once a minute; what was caught sent to the bell, phones, Telegram and the morning email |
+| [`notifier/`](notifier/) | `notifier` | Each new job tested against every alert every ten seconds; what was caught sent to the bell, phones, Telegram and the morning email |
 | [`oauthbroker/`](oauthbroker/) | `oauthbroker` | A Claude sign-in under way has to start again |
 
 What no longer runs (the embedder, the scorer, trainer, labeller, capture and setup agents) is in

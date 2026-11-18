@@ -139,7 +139,13 @@ def their_midnight(db: Database, user_id: _uuid.UUID) -> datetime:
     """The start of this person's today in their own timezone, as UTC: the one boundary every daily
     ceiling here counts from, so they all reset at the same moment."""
     found = db[User.COLLECTION].find_one({"_id": user_id}, {"timezone": 1}) or {}
-    today = datetime.now(ZoneInfo(found.get("timezone") or "UTC"))
+    return midnight(found.get("timezone"))
+
+
+def midnight(timezone: str | None, moment: datetime | None = None) -> datetime:
+    """The start of the day `moment` (now) falls in, in this timezone, as UTC: `their_midnight` for an account
+    already read, which the alerts' sweep asks of everybody with a daily email every pass."""
+    today = (moment or datetime.now(UTC)).astimezone(ZoneInfo(timezone or "UTC"))
     return today.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
 
 

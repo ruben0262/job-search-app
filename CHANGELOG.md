@@ -59,6 +59,44 @@ holds with other options, and `ensure_schema`, which every service runs at its s
   with a warning each, and the prune makes them 3 years and unique.
 - Checked on the owner's dev database: the schema step finishes, with the warning.
 
+## 2026-11-18, night — Alerts check every ten seconds, and the daily email asks nothing per person
+
+The owner, with notifications arriving: "we could optimize if possible on the speed at which alerts appear too
+so its speedy and its in the top most efficient code format as well."
+
+**Where a job waited, measured** through the notifier's real loop (`run_worker` with the pass as its periodic),
+the same 17 jobs arriving at random moments into two scratch databases, from a job's text being read to an alert
+catching it. Sending after that is immediate: the pass queues, and the same loop sends.
+
+| The alerts' pass | Caught | Read to caught, median | Mean | Longest |
+| --- | --- | --- | --- | --- |
+| Every 60 s (before) | 17 of 17 | 38.7 s | 38.5 s | 67.2 s |
+| Every 10 s (now) | 17 of 17 | 13.4 s | 14.6 s | 19.9 s |
+
+**What it costs**, on a copy of the dev corpus (39,844 postings) with 500 made-up members, each with My search
+and two alerts on broad words, seven runs each: a pass with 10 s of new jobs (8, at 70,000 a day) takes 396 ms,
+one with a minute's (49) 837 ms, one with none 38 ms. So six passes a minute are about 2.3 s of work against
+0.8 s: about 4% of a core for 500 accounts this broad, which real ones are not. Most of a pass is one query,
+`libs.matching.on_lists`, at about 0.7 ms per person caught: it grows with the people a pass catches for, not
+with the jobs, and is the thing to look at if a pass ever needs to be cheaper.
+
+- `libs.alerts.EVERY_SECONDS` 60 to 10. `SETTLE` stays 10 s: a job's read time is stamped and stored in one
+  write (`CorpusRepository.set_description`), and a pass that read before a slower write landed would leave
+  that job behind its cursor for good, unseen; 10 s of margin is the price of never missing one.
+- **The daily email's check ran a query per person** to learn their timezone, though it held their account:
+  265 ms to find nobody due among 500 emailing accounts, which six times a minute would have been 1.6 s of the
+  2.3. `libs.limits.midnight` now works from a timezone in hand, and `their_midnight` is it with the account
+  read; 29 ms. What is due is unchanged (`test_email_digest.py`).
+- **One log line a tick, not one a pass** (CLAUDE.md §8): six passes a minute would have been up to 8,640
+  INFO lines a day. The notifier says what the passes did each `PLATFORM_TICK_MIN`, with the jobs they read
+  (`route` now returns `Pass(read, caught)`): a run of noughts there is a pass that is not reading, which is how
+  no alert read a job for days without a line saying so. The per-pass line is DEBUG.
+
+**Not changed, and where the rest of the wait is:** a LinkedIn job waits for the 15-minute listing run and then
+for its text (`services.harvester.describer`); a company board's job for the cycle that reads its board. Those
+are minutes, against the seconds here, and are governed by the sources' own limits and the owner's decisions on
+them; their numbers on the live site are the next thing to measure, not to guess.
+
 ## 2026-11-18, night — Terms of Service, and the Privacy, Cookie and Data Use policies, each a page of its own
 
 The owner: "create for me a fully legal privacy policy, cookies, data act/usage and terms of service, so we do

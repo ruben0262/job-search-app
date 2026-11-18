@@ -1,12 +1,12 @@
 """Alerts: named searches a person follows, each sending what it finds to the bell, their phone, Telegram or
 the daily email (owner, 2026-11-17). Starter and Member have them (`libs.membership`).
 
-**One pass for everybody, not a query per person.** Once a minute (`route`, on the notifier's own clock) the
-jobs that joined a list since the last pass are read once, with only what an alert looks at, and every alert
-is tested against each of them in memory (`Rule.catches`): a word is a lookup in the words a posting already
-carries (`libs.corpus.terms`), a company, a place and a job site are a field each. Nobody costs a query unless
-something of theirs was caught, and nothing reads what was sent before. The two questions that need the
-database are asked only of what got that far: a match score (`libs.fit`) and "on my Jobs list"
+**One pass for everybody, not a query per person.** Every ten seconds (`route`, on the notifier's own clock)
+the jobs that joined a list since the last pass are read once, with only what an alert looks at, and every
+alert is tested against each of them in memory (`Rule.catches`): a word is a lookup in the words a posting
+already carries (`libs.corpus.terms`), a company, a place and a job site are a field each. Nobody costs a
+query unless something of theirs was caught, and nothing reads what was sent before. The two questions that
+need the database are asked only of what got that far: a match score (`libs.fit`) and "on my Jobs list"
 (`libs.matching`, the Jobs page's own question, so the alert and the page cannot disagree). On 500 accounts
 the per-account way it replaced spent 18.5 s a minute; see CHANGELOG 2026-11-17 for this one's number.
 
@@ -25,6 +25,7 @@ import uuid as _uuid
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
+from typing import NamedTuple
 
 from pymongo import UpdateOne
 from pymongo.database import Database
@@ -45,15 +46,19 @@ logger = logging.getLogger(__name__)
 
 # The alert every account starts with: their Jobs list as it fills, what alerts were before 2026-11-17.
 MY_SEARCH = "My search"
-# How many new jobs one pass reads for one wait. A minute brings tens; a notifier back from a stop reads its
-# backlog this many a pass rather than all at once.
+# How many new jobs one pass reads for one wait. Ten seconds bring a handful; a notifier back from a stop
+# reads its backlog this many a pass rather than all at once.
 PASS_JOBS = 2_000
 # How long after a job's text is stamped it is read: the stamp and the write that stores it are a round trip
 # apart, and a pass that read between the two would leave the job behind its cursor for good.
 SETTLE = timedelta(seconds=10)
 # How often a pass runs, on the notifier's own sweep (`services.notifier`): a job whose text is read now
-# reaches a member's phone within about this long, and `SETTLE` more at most.
-EVERY_SECONDS = 60.0
+# reaches a member's phone within about this long, `SETTLE` more, and the worker's idle wait at most:
+# 10-25 s.
+# Ten rather than sixty (2026-11-18, the owner: "speedy"): a pass with a handful of new jobs costs about
+# what one with a minute's does, 380 ms against 813 ms for 500 broad accounts, so 2.3 s of work a minute
+# against 0.8; one with nothing new, 47 ms.
+EVERY_SECONDS = 10.0
 # The most one pass holds the lease for: its own interval, so a process that stopped mid-pass lets the next
 # one in when it is due, and no second clock decides it (CLAUDE.md §6).
 LEASE_SECONDS = EVERY_SECONDS
@@ -102,13 +107,19 @@ class Rule:
         return not self.sources or job.get("source") in self.sources
 
 
-def route(db: Database) -> int:
+class Pass(NamedTuple):
+    """What a pass did: the new jobs it read, and the (person, job) it caught."""
+
+    read: int = 0
+    caught: int = 0
+
+
+def route(db: Database) -> Pass:
     """One pass: every job that joined somebody's list since the last pass against every alert that may hear
-    of it; how many (person, job) were caught. Whoever had one caught is queued to be sent it. Run by one
-    notifier at a time."""
+    of it. Whoever had one caught is queued to be sent it. Run by one notifier at a time."""
     with lease(db, "alerts.route", LEASE_SECONDS) as mine:
         if not mine:
-            return 0
+            return Pass()
         accounts = db[User.COLLECTION].distinct(
             "_id", {"$and": [{"active": True, "status": "active"}, having("alerts")]})
         waiting = set(db[User.COLLECTION].distinct("_id", {"$and": [{"_id": {"$in": accounts}}, starters()]}))
@@ -116,10 +127,11 @@ def route(db: Database) -> int:
         by_wait: dict[int, list[Alert]] = {0: [], starter_wait: []}
         for alert in find(db, Alert, {"on": True, "user_id": {"$in": accounts}}):
             by_wait[starter_wait if alert.user_id in waiting else 0].append(alert)
-        return sum(_pass(db, wait, alerts) for wait, alerts in by_wait.items())
+        done = [_pass(db, wait, alerts) for wait, alerts in by_wait.items()]
+        return Pass(sum(each.read for each in done), sum(each.caught for each in done))
 
 
-def _pass(db: Database, wait: int, alerts: list[Alert]) -> int:
+def _pass(db: Database, wait: int, alerts: list[Alert]) -> Pass:
     """The jobs that joined a list `wait` hours after their text was read, since this wait's cursor, against
     these alerts."""
     upto = now() - timedelta(hours=wait) - SETTLE
@@ -129,7 +141,7 @@ def _pass(db: Database, wait: int, alerts: list[Alert]) -> int:
     # pass the first, and no alert read a job on the live site (2026-11-18).
     since = cursor["at"] if cursor else upto
     if since > upto:
-        return 0
+        return Pass()
     rows = _joined(db, since, upto, PASS_JOBS) if alerts else []
     reached = upto
     if len(rows) == PASS_JOBS:
@@ -150,10 +162,10 @@ def _pass(db: Database, wait: int, alerts: list[Alert]) -> int:
             upsert=True) for (user_id, job_id), ids in caught.items()], ordered=False)
         people = sorted({user_id for user_id, _ in caught})
         enqueue_many(db, "notify", people, dedup_key="due")
-        logger.info("alerts: %d new job(s) read for a %dh wait; %d caught for %d account(s)", len(rows), wait,
-                    len(caught), len(people))
+        logger.debug("alerts: %d new job(s) read for a %dh wait; %d caught for %d account(s)", len(rows),
+                     wait, len(caught), len(people))
     db[AlertCursor.COLLECTION].update_one({"_id": str(wait)}, {"$set": {"at": reached}}, upsert=True)
-    return len(caught)
+    return Pass(len(rows), len(caught))
 
 
 def would_have_found(db: Database, alert: Alert, days: int) -> int:

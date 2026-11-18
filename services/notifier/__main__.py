@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from collections import Counter
+from time import monotonic
 
 from libs.alerts import EVERY_SECONDS, route
 from libs.db import database, ensure_schema, get
@@ -16,6 +18,7 @@ from libs.obs import configure
 from libs.queue.queue import dispatch_due_digests
 from libs.queue.worker import run_worker
 from libs.secrets import SecretStore, install, redacting
+from libs.settings import PLATFORM_TICK_MIN
 from libs.telegram import send as telegram
 from services.notifier.deliver import deliver
 
@@ -24,11 +27,24 @@ DISPATCH_EVERY_SEC = EVERY_SECONDS
 
 logger = logging.getLogger(__name__)
 
+# What the alerts' passes did since the last line, said once a tick rather than once a pass: six passes a
+# minute would be 8,640 lines a day (CLAUDE.md §8). The jobs read are the line's point: none, tick after tick,
+# is a pass that is not reading, which is how no alert read a job for days unseen (2026-11-18).
+_tally: Counter = Counter()
+_said = monotonic()
+
 
 def _dispatch(db) -> None:
     """The sweep: the alerts' pass, which queues whoever it caught a job for, and anybody whose daily email is
-    due. Silent when it finds none: the pass says what it caught itself."""
-    route(db)
+    due."""
+    global _said  # noqa: PLW0603
+    done = route(db)
+    _tally.update(passes=1, read=done.read, caught=done.caught)
+    if monotonic() - _said >= PLATFORM_TICK_MIN * 60:
+        logger.info("alerts: %d job(s) read and %d caught in %d pass(es)", _tally["read"], _tally["caught"],
+                    _tally["passes"])
+        _tally.clear()
+        _said = monotonic()
     if emails := dispatch_due_digests(db):
         logger.info("sweep: enqueued %d daily email(s)", emails)
 
@@ -66,8 +82,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if "--tick" in (argv if argv is not None else sys.argv[1:]):
         db = database()
-        caught, emails = route(db), dispatch_due_digests(db)
-        logger.info("dispatcher: %d job(s) caught by alerts, %d daily email(s) enqueued", caught, emails)
+        done, emails = route(db), dispatch_due_digests(db)
+        logger.info("dispatcher: %d job(s) read and %d caught by alerts, %d daily email(s) enqueued",
+                    done.read, done.caught, emails)
         return 0
 
     # The dispatcher runs inside the worker, not on its own timer.
