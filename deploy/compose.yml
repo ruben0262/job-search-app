@@ -146,11 +146,9 @@ services:
     environment:
       MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
       MONGODB_DB: ${MONGODB_DB:-mahoraga}
-      # Each person's own Telegram bot token is decrypted here, to send through it.
+      # Each person's own Telegram bot token is decrypted here, to send through it, and the platform's push
+      # key (`libs/notify/push.py`, which makes it in the database on first use).
       SECRETS_KEK: ${SECRETS_KEK:?the notifier sends through each person's own Telegram bot}
-      # The push keys; unset, browsers are skipped and the log says so.
-      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
-      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       # Every "Make my CV" button and notification tap links back here.
       PUBLIC_URL: ${PUBLIC_URL:?the alerts link back to the site}
       # The daily email of new jobs, through the same mailbox and the same daily cap as the API's.
@@ -211,8 +209,6 @@ services:
       # `.env.example` and in nothing that reads it. Required, because a silently wrong link is
       # worse than a container that refuses to start.
       PUBLIC_URL: ${PUBLIC_URL:?the verification and reset emails are built from it}
-      # The public push key.
-      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       # A pasted LinkedIn link is read through the site's proxy, as the harvest reads LinkedIn.
       HARVEST_PROXY: ${HARVEST_PROXY:-}
       # The membership (`services/api/billing_routes.py`). `:-`, by the rule at cloudflared below: without

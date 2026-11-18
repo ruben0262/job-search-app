@@ -78,10 +78,13 @@ def site(monkeypatch, built, db):
     from fastapi.staticfiles import StaticFiles
 
     from libs.mail import ConsoleSender
+    from libs.secrets import generate_key
     from services.api import deps
     from services.api.app import app
 
     monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
+    # As the deployed API has it (compose will not start one without): it seals the push key.
+    monkeypatch.setenv("SECRETS_KEK", f"k1:{generate_key()}")
     # Never Stripe from here: its form would be fetched from Stripe for every walk.
     for name in ("STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "STRIPE_PRICE_ID", "STRIPE_WEBHOOK_SECRET"):
         monkeypatch.delenv(name, raising=False)
@@ -2594,6 +2597,19 @@ def test_the_site_installs_as_an_app_and_a_job_it_pushes_shows_the_wheel(site, c
         assert shown == {**sent, "icon": f"{base}/icon-192.png", "badge": f"{base}/badge-96.png"}
         for picture in (shown["icon"], shown["badge"]):
             assert page.request.get(picture).headers["content-type"] == "image/png", picture
+
+        # The button itself, on a site given no push settings, as the live one was: it ran a night ending in
+        # "Notifications are not set up on this site yet" (2026-11-18). Only the browser's push service is
+        # stood in for, and it is handed the site's key as Chrome's would be.
+        page.add_init_script("""PushManager.prototype.subscribe = async function (options) {
+          window.subscribedWith = new Uint8Array(options.applicationServerKey).length;
+          return {endpoint: "https://push.example.com/e2e", toJSON: () => ({
+            endpoint: "https://push.example.com/e2e", keys: {p256dh: "BKey", auth: "secret"}})};
+        };""")
+        page.reload()
+        page.get_by_role("button", name="Turn on notifications").click()
+        expect(page.get_by_text("On in this browser.")).to_be_visible()
+        assert page.evaluate("window.subscribedWith") == 65, "a P-256 point, as `subscribe` takes"
         context.close()
 
 

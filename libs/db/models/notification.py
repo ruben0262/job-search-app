@@ -42,3 +42,18 @@ class PushSubscription(Document):
     p256dh: str
     auth: str
     created_at: datetime = field(default_factory=now)
+
+
+@dataclass(kw_only=True)
+class VapidKey(Document):
+    """The platform's one Web Push key pair (`libs.notify.push`). Kept beside the subscriptions made with it
+    and backed up with them, so a restore brings back both: a browser subscribed with one pair hears nothing
+    signed with another. The private half is wrapped under `SECRETS_KEK`, which never enters the database."""
+
+    COLLECTION = "vapid_keys"
+    OWNER = None
+
+    id: str
+    public: str
+    private: bytes
+    created_at: datetime = field(default_factory=now)

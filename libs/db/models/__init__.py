@@ -10,7 +10,7 @@ from libs.db.models.contact import ContactMessage
 from libs.db.models.corpus import WORKPLACES, CorpusJob, CountryCount, SweptPlace, Word
 from libs.db.models.document import DOCUMENT_KINDS, UploadedFile, UserDocument
 from libs.db.models.fit import FitScore
-from libs.db.models.notification import PushSubscription, UserNotification
+from libs.db.models.notification import PushSubscription, UserNotification, VapidKey
 from libs.db.models.profile_file import PROFILE_FILE_KINDS, UserProfileFile
 from libs.db.models.queue import (
     CLAIM_TIMEOUT_MIN,
@@ -37,7 +37,7 @@ MODELS = (User, UserConfig, UserSecret, UserSession, AuthToken, MailSend, Corpus
           UserJobState, SetupConversation, SetupMessage, UserNotification, PushSubscription,
           UserDocument, UserProfileFile, PlatformSetting, AiRequest, AtsToken, AtsEtag,
           BuiltDocument, LanePause, Lock, ContactMessage, Word, SweptPlace,
-          CountryCount, CompanyLookup, UploadedFile, FitScore, Alert, AlertCursor)
+          CountryCount, CompanyLookup, UploadedFile, FitScore, Alert, AlertCursor, VapidKey)
 
 __all__ = [
     "CHANNELS", "CLAIM_TIMEOUT_MIN", "DEFAULT_TITLE", "DOCUMENT_KINDS", "JOB_STATES", "LANES",
@@ -51,5 +51,5 @@ __all__ = [
     "MailSend", "PlatformSetting", "PushSubscription", "QueueJob",
     "SetupConversation", "SetupMessage", "SweptPlace", "UploadedFile", "User", "UserConfig", "UserDocument",
     "UserJobState",
-    "UserNotification", "UserProfileFile", "UserSecret", "UserSession", "Word",
+    "UserNotification", "UserProfileFile", "UserSecret", "UserSession", "VapidKey", "Word",
 ]

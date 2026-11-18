@@ -37,7 +37,7 @@ What is here is what runs: what the platform no longer uses is in [`retired/`](.
 | [`llm/`](llm/) | The one seam to the AI providers: Anthropic, Google and OpenAI, on an API key or a signed-in account's own tool; each person's AI accounts and the one in use |
 | [`mail/`](mail/) | Transactional email |
 | `membership.py` | The three plans, Free, Starter and Member, fixed in code (`PLANS`), and who is on which: paid or in its trial (Stripe), free access from an admin, or an admin. What an account may do is asked by area (`has`, `having`); how long its jobs wait is `delay_hours` |
-| [`notify/`](notify/) | In-app notifications, what an account's alerts caught and is owed to it (`owed`), and the morning email |
+| [`notify/`](notify/) | In-app notifications, what an account's alerts caught and is owed to it (`owed`), the morning email, and the platform's Web Push key pair, made on first use (`push.py`) |
 | [`obs/`](obs/) | Logging for every process |
 | [`onboarding/`](onboarding/) | What a new account must supply before it has jobs |
 | [`ops/`](ops/) | Seeing the platform, and being told when it needs a person |

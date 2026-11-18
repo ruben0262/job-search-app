@@ -3804,6 +3804,9 @@ there. Built:
 **Open:** measured on a real phone before it is claimed anywhere: a notification on a locked Android phone and a
 locked iPhone, each through the installed app, and the time from a job's text being read to the phone buzzing. The
 pass runs a minute apart (`libs.alerts.EVERY_SECONDS`), so the expectation is about a minute; no phone has said so.
+The first deploy could not have said so: the server had no push keys, and every "Turn on notifications" failed
+(2026-11-18). The platform now makes its own pair (CHANGELOG, 2026-11-18); after that deploy, notifications are
+turned on again on each phone before it is measured.
 
 **Not planned:** a native app; a Telegram channel per alert (owner, 2026-11-17: one chat, each card headed by its
 alert); an email per job (the mailbox's daily cap).

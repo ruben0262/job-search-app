@@ -139,8 +139,9 @@ with Telegram's `getMe`), and press **Start** in it. The site finds their chat f
 decrypted under `SECRETS_KEK`. Jobs arrive as cards with two plain links, **Apply on LinkedIn** (or
 whichever board posted it) and **Make my CV**, so nothing in the chat needs a webhook.
 
-**Browser notifications** need nothing beyond the `VAPID_*` keys in `server.env`. Generate that pair
-once: a new one strands every browser that subscribed with the old.
+**Browser notifications** need nothing set up: the platform makes its key pair on first use and keeps
+it in the database, the private half sealed with `SECRETS_KEK` (`libs/notify/push.py`). It is backed up
+with the browsers that subscribed with it; a new pair would strand every one of them.
 
 **The daily email** of new jobs goes out at `email_digest_hour` (a platform setting, 8 by default) of
 each person's own day, on the notifier's minute sweep, through the same SMTP mailbox and daily cap as

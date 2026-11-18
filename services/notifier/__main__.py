@@ -13,11 +13,13 @@ from libs.alerts import EVERY_SECONDS, route
 from libs.db import database, ensure_schema, get
 from libs.db.models import PushSubscription, QueueJob, User
 from libs.mail import sender_from_env
+from libs.notify import site_url
 from libs.notify.digest import send_digest
+from libs.notify.push import private_key
 from libs.obs import configure
 from libs.queue.queue import dispatch_due_digests
 from libs.queue.worker import run_worker
-from libs.secrets import SecretStore, install
+from libs.secrets import SecretStore, install, redacting
 from libs.telegram import SEND_TIMEOUT_SEC, send
 from services.notifier.deliver import deliver
 
@@ -31,15 +33,17 @@ DISPATCH_EVERY_SEC = EVERY_SECONDS
 logger = logging.getLogger(__name__)
 
 
-def push(subscription: PushSubscription, payload: dict) -> bool:
-    """One alert to one browser. False when its push service says the subscription is gone."""
+def push(subscription: PushSubscription, payload: dict, key: str) -> bool:
+    """One alert to one browser, signed with the platform's private key (`libs.notify.push`). False when its
+    push service says the subscription is gone."""
     try:
         webpush({"endpoint": subscription.endpoint,
                  "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth}},
                 json.dumps(payload),
-                vapid_private_key=os.environ["VAPID_PRIVATE_KEY"],
-                # A fresh dict every call: `webpush` writes the audience and expiry into it.
-                vapid_claims={"sub": os.environ["VAPID_SUBJECT"]},
+                vapid_private_key=key,
+                # A fresh dict every call: `webpush` writes the audience and expiry into it. The site's own
+                # address is how a push service reaches whoever runs it.
+                vapid_claims={"sub": site_url()},
                 timeout=SEND_TIMEOUT_SEC, ttl=PUSH_TTL_SEC)
     except WebPushException as exc:
         # 404 and 410 are an unsubscribed or expired browser. Anything else is a fault, and raised.
@@ -76,12 +80,12 @@ def handle(db, job: QueueJob) -> None:
         if user is not None:
             send_digest(db, _mailer(), user)
         return
-    vapid = os.environ.get("VAPID_PRIVATE_KEY") and os.environ.get("VAPID_SUBJECT")
-    with SecretStore(db).use(job.user_id, "telegram_bot") as secret:
+    key = private_key(db)
+    with SecretStore(db).use(job.user_id, "telegram_bot") as secret, redacting(key):
         token = secret.reveal() if secret else ""
         deliver(db, job.user_id,
                 telegram=(lambda chat, text, buttons: send(token, chat, text, buttons)) if token else None,
-                push=push if vapid else None)
+                push=lambda browser, alert: push(browser, alert, key))
 
 
 def main(argv: list[str] | None = None) -> int:

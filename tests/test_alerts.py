@@ -665,8 +665,6 @@ def test_the_push_transport_reads_404_and_410_as_gone(monkeypatch):
 
     from services.notifier import __main__ as notifier
 
-    monkeypatch.setenv("VAPID_PRIVATE_KEY", "unused-by-the-stub")
-    monkeypatch.setenv("VAPID_SUBJECT", "mailto:ops@example.com")
     browser = SimpleNamespace(endpoint="https://push.example.com/x", p256dh="k", auth="a")
     alert = {"title": "Backend Engineer", "body": "Acme", "url": "https://jobs.example.com/#/feed?job=1"}
     seen = {}
@@ -679,14 +677,14 @@ def test_the_push_transport_reads_404_and_410_as_gone(monkeypatch):
         return webpush
 
     monkeypatch.setattr(notifier, "webpush", answering(201))
-    assert notifier.push(browser, alert) is True
+    assert notifier.push(browser, alert, "key") is True
     assert seen == {"keys": {"p256dh": "k", "auth": "a"}, "alert": alert}
     for status in (404, 410):
         monkeypatch.setattr(notifier, "webpush", answering(status))
-        assert notifier.push(browser, alert) is False
+        assert notifier.push(browser, alert, "key") is False
     monkeypatch.setattr(notifier, "webpush", answering(500))
     with pytest.raises(WebPushException):
-        notifier.push(browser, alert)
+        notifier.push(browser, alert, "key")
 
 
 def _alerts(db, user):
@@ -747,7 +745,6 @@ def api(monkeypatch, db):
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
     monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
     monkeypatch.setenv("SECRETS_KEK", f"k1:{generate_key()}")
-    monkeypatch.setenv("VAPID_PUBLIC_KEY", "BPublicKey")
     monkeypatch.setenv("PUBLIC_URL", "https://jobs.example.com")
 
     from fastapi.testclient import TestClient
@@ -879,11 +876,75 @@ def test_the_notifier_sends_each_person_their_jobs_through_their_own_bot(api, te
 
 
 @needs_db
+def test_notifications_turn_on_with_nothing_set_up_and_an_alert_reaches_the_browser_signed_by_its_key(
+        api, monkeypatch):
+    """The live site ran a night with no key pair set, so every "Turn on notifications" ended in "not set up"
+    and no phone ever heard of a job (2026-11-18). The pair is now the platform's own, made on first asking:
+    the key a browser subscribes with is the one its alerts are signed with, and they open with its keys."""
+    import base64
+    from types import SimpleNamespace
+
+    import http_ece
+    import requests
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+
+    from libs.db.models import QueueJob, User, UserConfig
+    from services.notifier.__main__ import handle
+
+    def b64(raw):
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+    def unb64(text):
+        return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+    http, db, user = api
+    served = http.get("/push/key")
+    assert served.status_code == 200, served.text
+    key = served.json()["key"]
+    assert http.get("/push/key").json() == {"key": key}, "one pair, kept"
+
+    # A browser as Chrome's is: its own P-256 pair and auth secret, subscribed through the site.
+    phone, auth = ec.generate_private_key(ec.SECP256R1()), os.urandom(16)
+    endpoint = f"https://push.example.com/{uuid.uuid4()}"
+    point = phone.public_key().public_bytes(serialization.Encoding.X962,
+                                            serialization.PublicFormat.UncompressedPoint)
+    assert http.post("/push/subscribe", json={"endpoint": endpoint, "keys": {
+        "p256dh": b64(point), "auth": b64(auth)}}).status_code == 200
+
+    word = f"wrangler{uuid.uuid4().hex[:8]}"
+    insert(db, UserConfig(user_id=user.id, schema_version=2,
+                          config={"sections": [{"platform": "all", "keywords": [word]}]}))
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"active": True,
+                                                              "created_at": now() - timedelta(days=1)}})
+    _alert(db, get(db, User, user.id))
+    job = _posting(db, f"Senior {word}")
+    _catch(db)
+    posted = []
+    monkeypatch.setattr(requests, "post", lambda url, **sent: posted.append((url, sent)) or SimpleNamespace(
+        status_code=201, text="", reason="Created", headers={}))
+    handle(db, insert(db, QueueJob(lane="notify", user_id=user.id)))
+
+    assert [url for url, _ in posted] == [endpoint]
+    sent = posted[0][1]
+    token, signer = sent["headers"]["Authorization"].removeprefix("vapid t=").split(",k=")
+    assert signer == key, "signed by the key the browser subscribed with"
+    head, claims, signature = token.split(".")
+    numbers = unb64(signature)
+    ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), unb64(key)).verify(
+        encode_dss_signature(int.from_bytes(numbers[:32]), int.from_bytes(numbers[32:])),
+        f"{head}.{claims}".encode(), ec.ECDSA(hashes.SHA256()))
+    assert json.loads(unb64(claims))["sub"] == "https://jobs.example.com"
+    alert = json.loads(http_ece.decrypt(sent["data"], private_key=phone, auth_secret=auth))
+    assert alert["title"] == job.title
+
+
+@needs_db
 def test_a_browser_subscribes_once_and_can_unsubscribe(api):
     from libs.db.models import PushSubscription
 
     http, db, user = api
-    assert http.get("/push/key").json() == {"key": "BPublicKey"}
     browser = {"endpoint": f"https://push.example.com/{uuid.uuid4()}", "expirationTime": None,
                "keys": {"p256dh": "BKey", "auth": "secret"}}
 

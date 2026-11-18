@@ -54,6 +54,35 @@ change one thing in terms of proportion change all the others too don't leave on
   the screen or over another thing from 320 to 1440px. No Python changed but the test: lint-imports, the schema
   and the contract were not run again.
 
+## 2026-11-18 — Notifications turn on with nothing set up: the site makes its own push keys
+
+The owner, after deploying the phone phase: "I don't get any notifications on my phone after the install even
+though I allow it, it says notifications are not set up on this site yet ... all night it should have been
+working."
+
+- **Why nothing arrived.** Web Push needed three server settings an operator made by hand (`VAPID_PUBLIC_KEY`,
+  `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, a one-line Python command in `server.env.example`). The live server never
+  had them, so `GET /push/key` answered 503 "Notifications are not set up on this site yet" to every "Turn on
+  notifications", no browser ever subscribed, and the notifier skipped push with nothing to say it: there was
+  nobody to skip. Nothing in the deploy or the suite ran the button against the deployed configuration. The
+  browser test stood the subscription in by hand, because a headless browser has no push service.
+- **Now the platform makes the pair** the first time anything asks (`libs/notify/push.py`): one `vapid_keys` row
+  beside the `push_subscriptions` made with it, backed up with them, the private half wrapped under `SECRETS_KEK`
+  as a data key is. The API serves the public half and the notifier signs with the private half, from the same
+  row. Two processes asking at once keep the first one stored. The subject is the site's own address
+  (`PUBLIC_URL`), which every deploy already proves reaches the site (`deploy/reach.sh`).
+- **Removed**: the three settings from `deploy/compose.yml`, `deploy/server.env.example`, `deploy/SERVER.md` and
+  `deploy/README.md`; the 503; the notifier's no-keys branch, where `deliver` dropped every browser (its warning
+  now names only Telegram). Nobody could have subscribed with an old pair, so none is stranded.
+- **Tests that fail on the old code.** `test_notifications_turn_on_with_nothing_set_up_and_an_alert_reaches_the_
+  browser_signed_by_its_key`: on a site with no push settings, `/push/key` answers (before: 503 with the owner's
+  words). A browser with its own P-256 keys subscribes, an alert catches a job, and the notifier's request is
+  signed by that key (the JWT verifies against it, `sub` is the site), and decrypts with the browser's keys to the
+  job's title. The browser test now presses "Turn on notifications" itself, with only the push service stood in,
+  and sees "On in this browser." (before: the 503). The test site gets a `SECRETS_KEK`, as compose requires.
+- **Not measured**: a notification on a real phone. That needs this deployed, then notifications turned on
+  again on the phone (the old tap never subscribed it).
+
 ## 2026-11-17, last of all — A phone is asked to install the app until it does, and told why
 
 The owner: "I think we can make the app more obvious to install on phones through the browser, when logging in,

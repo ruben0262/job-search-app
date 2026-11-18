@@ -45,22 +45,20 @@ def unlimited_items(gap_seconds: float) -> int:
 
 def deliver(db: Database, user_id: _uuid.UUID, *,
             telegram: Callable[[str, str, dict], None] | None,
-            push: Callable[[PushSubscription, dict], bool] | None) -> int:
+            push: Callable[[PushSubscription, dict], bool]) -> int:
     """Send what this person is owed wherever the alerts that caught it send; how many jobs went.
 
-    `telegram(chat_id, text, keyboard)` and `push(subscription, payload)` are the transports, `None`
-    when the notifier holds no key for them. `push` answers False for a browser that has gone.
+    `telegram(chat_id, text, keyboard)` and `push(subscription, payload)` are the transports, `telegram`
+    `None` when no bot token is stored. `push` answers False for a browser that has gone.
     """
     user = get(db, User, user_id)
     if user is None:
         return 0
     browsers = find(db, PushSubscription, {"user_id": user_id})
     chat = user.telegram_status == "connected" and bool(user.telegram_chat_id)
-    if (chat and telegram is None) or (browsers and push is None):
-        logger.warning("notify: %s has a channel nothing can send to — Telegram connected with no "
-                       "bot token stored, or browsers with no VAPID keys set", user_id)
-    if push is None:
-        browsers = []
+    if chat and telegram is None:
+        logger.warning("notify: %s has Telegram connected with no bot token stored, so nothing "
+                       "can send to it", user_id)
 
     # The operator's ceilings for this account, and `None` means unlimited (`libs.limits`).
     gap, limit = _run_budget(db, user)
@@ -106,7 +104,7 @@ def deliver(db: Database, user_id: _uuid.UUID, *,
 
 def _send(db: Database, user: User, job: CorpusJob, alerts: list[Alert], mine: set[str], *,
           browsers: list[PushSubscription], telegram: Callable[[str, str, dict], None] | None,
-          push: Callable[[PushSubscription, dict], bool] | None, pause: float) -> bool:
+          push: Callable[[PushSubscription, dict], bool], pause: float) -> bool:
     """One job wherever any of the alerts that caught it sends, headed by their names; whether it went to
     Telegram, which paces the next."""
     ways = {way for alert in alerts for way in alert.channels}
@@ -148,7 +146,7 @@ def _to_telegram(db: Database, user: User, job: CorpusJob, *, names: list[str], 
 
 
 def _to_browsers(db: Database, user_id: _uuid.UUID, browsers: list[PushSubscription], job: CorpusJob, *,
-                 names: list[str], push: Callable[[PushSubscription, dict], bool] | None) -> bool:
+                 names: list[str], push: Callable[[PushSubscription, dict], bool]) -> bool:
     """The job to every browser still open this run; whether any took it. A gone one is deleted."""
     reached = False
     payload = notification(job, names)

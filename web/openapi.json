@@ -9555,7 +9555,7 @@
     },
     "/push/key": {
       "get": {
-        "description": "The public half of the platform's VAPID key pair: what a browser subscribes with.",
+        "description": "The public half of the platform's key pair: what a browser subscribes with. Made on first asking.",
         "operationId": "key_push_key_get",
         "responses": {
           "200": {

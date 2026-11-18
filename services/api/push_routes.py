@@ -2,15 +2,15 @@
 from __future__ import annotations
 
 import logging
-import os
 import uuid as _uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from pymongo.database import Database
 
 from libs.db import now
 from libs.db.models import PushSubscription
+from libs.notify.push import public_key
 from libs.obs import audit
 from services.api.deps import current_user, get_db, with_alerts
 
@@ -44,14 +44,9 @@ class PushStatus(BaseModel):
 
 
 @router.get("/key")
-def key() -> PushKey:
-    """The public half of the platform's VAPID key pair: what a browser subscribes with."""
-    public = os.environ.get("VAPID_PUBLIC_KEY", "")
-    if not public:
-        logger.warning("push: VAPID_PUBLIC_KEY is not set, so no browser can subscribe")
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail="Notifications are not set up on this site yet.")
-    return PushKey(key=public)
+def key(db: Database = Depends(get_db)) -> PushKey:
+    """The public half of the platform's key pair: what a browser subscribes with. Made on first asking."""
+    return PushKey(key=public_key(db))
 
 
 @router.post("/subscribe")

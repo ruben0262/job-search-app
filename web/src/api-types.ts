@@ -1740,7 +1740,7 @@ export interface paths {
         };
         /**
          * Key
-         * @description The public half of the platform's VAPID key pair: what a browser subscribes with.
+         * @description The public half of the platform's key pair: what a browser subscribes with. Made on first asking.
          */
         get: operations["key_push_key_get"];
         put?: never;

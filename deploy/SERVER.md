@@ -142,7 +142,6 @@ Each setting says in the file what it is and how to make it. In short:
 | `ADMIN_EMAILS` | Your own address, or several, comma-separated: those accounts are the site's admins |
 | `TUNNEL_TOKEN` | Step 6 |
 | `SMTP_PASSWORD` | The Zoho mailbox's password (an app password, with 2FA) |
-| `VAPID_*` | Made **once**, with the command in the file (run it with `.venv/bin/python`). A new pair stops every browser that already subscribed |
 | `HARVEST_PROXY` | If the Proxmox host is on the same network as your proxy (`192.168.50.223`), the same value as on your laptop: LinkedIn then works from here. Otherwise empty, and LinkedIn is skipped |
 | `STRIPE_*` | Step 10. Without them nobody can start a membership: everybody is on the free plan, but admins and people given free access |
 | the rest | Optional: the platform's AI key, and the Adzuna, Jooble and Findwork keys |
