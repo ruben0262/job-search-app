@@ -7,6 +7,7 @@ import { standingWord } from "../membership";
 import { AdminSubscriptions } from "./AdminSubscriptions";
 import { BinIcon, Error, Field, Prompt, useAction } from "../ui";
 import { JobsByCountry } from "./AdminCountries";
+import { NETWORKS } from "../socials";
 
 type Alert = {
   severity: "page" | "warn";
@@ -194,6 +195,8 @@ type Settings = {
   trial_days: number;
   /** How many hours after a member a free account sees a job; 0 is at once. */
   free_delay_hours: number;
+  /** Each social network's link (`libs.settings.SOCIAL_NETWORKS`): empty is not shown. */
+  socials: Record<string, string>;
 };
 
 /** The legal details, in the order the Terms name them (`libs.settings.OPERATOR_FIELDS`). */
@@ -320,6 +323,13 @@ export function AdminPage({ tab: asked }: { tab: string }) {
   const saveAddress = useAction(async (value: string) => {
     if (!value || value === settings?.support_email) return;
     const body = await api.put<{ settings: Settings }>("/admin/settings/support_email", { value });
+    setSettings(body.settings);
+  });
+
+  const saveSocial = useAction(async (network: string, value: string) => {
+    if (!settings || value === (settings.socials[network] ?? "")) return;
+    const body = await api.put<{ settings: Settings }>("/admin/settings/socials",
+      { value: { ...settings.socials, [network]: value } });
     setSettings(body.settings);
   });
 
@@ -819,6 +829,20 @@ export function AdminPage({ tab: asked }: { tab: string }) {
             <option value={0}>Off</option>
             <option value={1}>On</option>
           </select>
+
+          <p className="label" style={{ marginTop: "1.5rem" }}>Social links</p>
+          <span className="hint">
+            Shown to everybody: under the question and at the foot of the landing page, and in Help and More in
+            the app. Empty hides it.
+          </span>
+          {Object.keys(settings.socials).map((network) => (
+            <input key={network} type="url" placeholder="https://" maxLength={300}
+                   aria-label={`${NETWORKS[network]?.name ?? network} link`}
+                   defaultValue={settings.socials[network]} disabled={saveSocial.busy}
+                   onBlur={(event) => void saveSocial.run(network, event.target.value.trim())}
+                   style={{ maxWidth: "26rem", marginTop: "0.5rem" }} />
+          ))}
+          <Error>{saveSocial.error}</Error>
         </div>
       ) : null}</> : null}
 

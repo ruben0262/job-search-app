@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { api, type Schema } from "./api";
+import { SocialMark, useSocials } from "./socials";
 import { Error, Field, Sheet, useAction } from "./ui";
 
 type Receipt = Schema<"ContactReceipt">;
@@ -69,6 +70,7 @@ function HelpAndContact() {
   useEffect(() => {
     api.get<Schema<"ContactAddress">>("/contact").then(setReach).catch(() => undefined);
   }, []);
+  const socials = useSocials();
   const send = useAction(async () => {
     setSent(await api.post<Receipt>("/contact", { subject: subject.trim(), message: message.trim() }));
     setSubject("");
@@ -107,6 +109,24 @@ function HelpAndContact() {
           </a>
         </section>
       ) : null}
+
+      {/* Everybody's way to the people who build it, and to each other (owner, 2026-11-18). */}
+      {socials.map((social) => (
+        <section key={social.network} className="contact social">
+          <div className="contact-head">
+            <span className="contact-icon social" style={{ color: social.colour }} aria-hidden="true">
+              <SocialMark social={social} />
+            </span>
+            <div>
+              <h3>Join us on {social.name}</h3>
+              <p>Tell us what you think, ask for what you want next, and talk with the people who build Mahoraga.</p>
+            </div>
+          </div>
+          <a className="button secondary contact-send" href={social.url} target="_blank" rel="noreferrer">
+            {social.join}
+          </a>
+        </section>
+      ))}
 
       {/* Its own card: a person at the other end, said so, and a receipt once it is sent. */}
       <section className="contact">

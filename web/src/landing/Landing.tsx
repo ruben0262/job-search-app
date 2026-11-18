@@ -12,6 +12,7 @@ import { money } from "../membership";
 import { PICTURES } from "../pages/JobsPage";
 import { LegalLinks } from "../pages/LegalPage";
 import { PLACES } from "../places";
+import { SocialMark, useSocials } from "../socials";
 import { ThemeToggle } from "../theme";
 import { Error, Explain, Field, useAction } from "../ui";
 import { Mark, Wheel } from "../wheel";
@@ -92,6 +93,7 @@ export function Landing() {
   const [reach, setReach] = useState<Reach | null>(null);
   const [pricing, setPricing] = useState<Pricing | null>(null);
   const [at, setAt] = useState(0);
+  const socials = useSocials();
 
   useEffect(() => {
     api.get<Reach>("/stats").then(setReach).catch(() => undefined);
@@ -401,6 +403,11 @@ export function Landing() {
           <a href="#/signin">Sign in</a>
           <LegalLinks />
           <a href="#ask" onClick={jump("ask")}>Contact</a>
+          {socials.map((social) => (
+            <a key={social.network} className="foot-social" href={social.url} target="_blank" rel="noreferrer">
+              <SocialMark social={social} />{social.name}
+            </a>
+          ))}
         </div>
       </footer>
     </div>
@@ -678,6 +685,7 @@ function AtsArt() {
  * inside the app, so users can freely ask any questions they like"). Two fields and one button, and the
  * receipt where the form was. */
 function Ask() {
+  const socials = useSocials();
   const [email, setEmail] = useState("");
   const [question, setQuestion] = useState("");
   const [sent, setSent] = useState<Schema<"ContactReceipt"> | null>(null);
@@ -721,6 +729,22 @@ function Ask() {
           </form>
         )}
       </div>
+      {/* The people who build it, and each other, a tap away (owner, 2026-11-18). Drawn when its link has come,
+          after the reveals are counted: it is not one of them. */}
+      {socials.map((social) => (
+        <div key={social.network} className="tile community">
+          <span className="social-chip" style={{ color: social.colour }}>
+            <SocialMark social={social} />
+          </span>
+          <div>
+            <h3>Join us on {social.name}</h3>
+            <p>Tell us what you think, ask for what you want next, and talk with the people who build Mahoraga.</p>
+          </div>
+          <a className="btn btn-glass" href={social.url} target="_blank" rel="noreferrer">
+            <SocialMark social={social} />{social.join}
+          </a>
+        </div>
+      ))}
     </section>
   );
 }

@@ -1858,6 +1858,61 @@
   box-shadow: none;
 }
 
+/* The site's places on social networks (`socials.tsx`) under the question: a second way to the people who
+   build it, its mark on its own colour, its button quiet beside the form's. */
+.landing .community {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 18px;
+  max-width: 620px;
+  margin: 16px auto 0;
+  padding: clamp(18px, 3.5vw, 26px) clamp(22px, 4vw, 36px);
+}
+
+.landing .social-chip {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.landing .social-chip svg {
+  width: 26px;
+  height: 26px;
+}
+
+.landing .community div {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.landing .community h3 {
+  margin: 0;
+  font: 600 var(--text-xl)/1.2 var(--font-display);
+}
+
+.landing .community p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: var(--text-control);
+}
+
+.landing .community .btn svg,
+.lp-foot .foot-social svg {
+  width: 20px;
+  height: 20px;
+}
+
+@media (max-width: 519px) {
+  .landing .community .btn {
+    width: 100%;
+  }
+}
+
 /* ── the foot ──────────────────────────────────────────────────────────────────────────────── */
 
 .lp-foot {
@@ -1914,6 +1969,12 @@
 
 .lp-foot .foot-row a:hover {
   color: var(--ink);
+}
+
+.lp-foot .foot-row .foot-social {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 @media (min-width: 1024px) {

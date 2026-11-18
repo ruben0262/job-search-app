@@ -415,6 +415,15 @@ DEFAULT_PRICING_LINES: dict[str, object] = {
 # the Member card does not promise it.
 DEFAULT_MEMBERS_CHANNEL_URL = ""
 
+# The site's own places on social networks, for everybody: the landing page's foot and its Ask, and Help
+# and More in the app, so people join, say what they think and ask the people who build it for what they
+# want (owner, 2026-11-18: "users can join and share their thoughts as well as their requests to the
+# devs"). A link each, the operator's in Admin → Settings, the owner's Discord to begin with; empty is not
+# shown. A network's name and picture are the site's (`web/src/socials.tsx`): another network is a line
+# there and a name here.
+SOCIAL_NETWORKS = ("discord",)
+DEFAULT_SOCIALS: dict[str, str] = {"discord": "https://discord.gg/UR3FNC4gyT"}
+
 # The price each plan is shown as reduced from, in the smallest unit of the plan's currency (2999 is 29.99),
 # the operator's in Admin → Subscriptions; 0 shows none. The card crosses it out beside Stripe's price and
 # works out the saving, so the two cannot disagree (owner, 2026-11-16: 4.99 from 29.99, 2.99 from 18.99).
@@ -449,6 +458,7 @@ DEFAULTS: dict[str, object] = {
     "pricing_lines": DEFAULT_PRICING_LINES,
     "price_was": DEFAULT_PRICE_WAS,
     "members_channel_url": DEFAULT_MEMBERS_CHANNEL_URL,
+    "socials": DEFAULT_SOCIALS,
 }
 
 

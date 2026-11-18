@@ -66,6 +66,7 @@ from libs.settings import (
     DEFAULTS,
     HARVEST_SOURCES,
     OPERATOR_FIELDS,
+    SOCIAL_NETWORKS,
     all_settings,
     ats_companies_per_cycle,
     freshness_hours,
@@ -472,6 +473,15 @@ def write_setting(key: str, body: SettingPatch, db: Database = Depends(get_db),
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=(
                 f"Starter would see jobs after Free does: {_span(hours[WAITS[STARTER]])} after we find them, "
                 f"against {_span(hours[WAITS[FREE]])}. Keep Starter's wait no longer than Free's."))
+    if key == "socials":
+        # The site's places on social networks (`SOCIAL_NETWORKS`): a web address each, or empty for none.
+        links = body.value if isinstance(body.value, dict) else None
+        if links is None or set(links) - set(SOCIAL_NETWORKS) or any(
+                not isinstance(link, str) or len(link) > 300 or (link.strip() and not link.strip().startswith(
+                    "https://")) for link in links.values()):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=(
+                "A social link must be a web address starting with https://, or empty."))
+        body.value = {network: links.get(network, "").strip() for network in SOCIAL_NETWORKS}
     if key == "members_channel_url" and body.value and not str(body.value).startswith("https://"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="The members' chat link must be a web address starting with https://")

@@ -1818,6 +1818,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/socials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Socials
+         * @description The site's places on social networks that have a link, for anybody, signed in or not (`socials`).
+         */
+        get: operations["socials_socials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/stats": {
         parameters: {
             query?: never;
@@ -3615,6 +3635,13 @@ export interface components {
              * @enum {string}
              */
             plan: "free" | "starter" | "member";
+        };
+        /** SocialLink */
+        SocialLink: {
+            /** Network */
+            network: string;
+            /** Url */
+            url: string;
         };
         /** SourceSeries */
         SourceSeries: {
@@ -6893,6 +6920,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    socials_socials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SocialLink"][];
                 };
             };
         };

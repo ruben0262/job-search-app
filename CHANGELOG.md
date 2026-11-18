@@ -14,6 +14,32 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-18 — The site's Discord: under the landing page's question and at its foot, and in Help and More
+
+The owner: "here is my discord link, we need to add socials to the site in general, on the landing page where where
+its appropriate like at the bottom, and somewhere in the app as well, so users can join and share their thoughts as
+well as their requests to the devs and so on."
+
+- **One setting, `socials`** (`libs.settings`): a link for each network in `SOCIAL_NETWORKS`. Discord is the only
+  one so far, and starts as the owner's invite. The operator changes or empties it in Admin → Settings → Social
+  links. Only a web address starting with https:// is kept, and an empty one is not shown. A public
+  `GET /socials` returns the networks that have a link, signed in or not, and every place below reads it.
+- **Where it shows, for every plan.** On the landing page, a "Join us on Discord" card sits under "Got a
+  question? Ask us.", its button quiet beside the form's, and Discord is in the foot's row after Contact. In the
+  app, Help and contact has a card above "Write to us", and on a phone More has a "Join our Discord" row that
+  ends in a way-out arrow. Each opens Discord in a tab of its own.
+- **Its mark is Discord's own, from Simple Icons (CC0),** in Discord's colour (`web/src/socials.tsx`). Nothing of
+  Discord's is loaded on the site, so the cookie page's "no social media buttons ... that track you" still holds.
+  Another network is a name in `SOCIAL_NETWORKS` and a line in `socials.tsx`.
+- **Not the members' chat.** `members_channel_url` (Admin → Subscriptions) is still Member's "A chat with the
+  team", promised on the Member card only while it is set. The Discord is public, so it is a setting of its own.
+- Tests: `tests/test_socials.py` covers the link for anybody signed out, an admin changing it, non-admins and
+  anything but an https address refused, and emptied it is gone. The browser walk
+  `test_the_discord_is_under_the_landing_pages_question_and_at_its_foot_and_in_help_and_more` checks the landing
+  page's two links, nothing off or over at 320 and 390px, and More and Help for a Free account.
+  The three walks that list the foot's links or More's rows list Discord too. The foot's had passed with it
+  only because the link comes a moment after the page, before the list was checked.
+
 ## 2026-11-18 — A changed index no longer stops every service at its start
 
 The owner, running `scripts/dev.sh` after the legal pages: the API and docgen died at start with `IndexOptionsConflict`.

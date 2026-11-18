@@ -51,6 +51,20 @@ class ContactAddress(BaseModel):
     channel: str | None = None
 
 
+class SocialLink(BaseModel):
+    # One of `libs.settings.SOCIAL_NETWORKS`, whose name and picture the site draws.
+    network: str
+    url: str
+
+
+@router.get("/socials")
+def socials(db: Database = Depends(get_db)) -> list[SocialLink]:
+    """The site's places on social networks that have a link, for anybody, signed in or not (`socials`)."""
+    links = settings.get(db, "socials") or {}
+    return [SocialLink(network=network, url=links[network]) for network in settings.SOCIAL_NETWORKS
+            if links.get(network)]
+
+
 @router.get("/contact")
 def contact_address(db: Database = Depends(get_db),
                     user_id: _uuid.UUID = Depends(current_user)) -> ContactAddress:

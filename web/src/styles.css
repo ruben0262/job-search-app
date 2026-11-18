@@ -4997,6 +4997,22 @@ input[type="checkbox"]:disabled {
   color: var(--score);
 }
 
+/* A social network's mark (`socials.tsx`): its own filled shape in its own colour, where the site's pictures
+   are lines. */
+.social-mark path {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* Everybody's way to the people who build the site (`help.tsx`), over the form, on its network's colour. */
+.contact.social {
+  margin-bottom: 1rem;
+}
+
+.contact-icon.social {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
 .contact-icon svg,
 .contact-mail svg {
   width: 1.25rem;

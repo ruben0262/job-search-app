@@ -267,6 +267,40 @@ def test_what_moves_on_a_phone_is_drawn_by_the_compositor_and_only_while_it_is_s
         browser.close()
 
 
+def test_the_discord_is_under_the_landing_pages_question_and_at_its_foot_and_in_help_and_more(site, capsys):
+    """Owner, 2026-11-18: "we need to add socials to the site in general, on the landing page where its
+    appropriate like at the bottom, and somewhere in the app as well, so users can join and share their
+    thoughts as well as their requests to the devs". The owner's Discord: under the landing page's question
+    and in its foot, and in the app in More and in Help, for every plan, Free too. Each opens in a tab of its
+    own."""
+    from libs.settings import DEFAULT_SOCIALS
+
+    base, email, _ = site
+    discord = DEFAULT_SOCIALS["discord"]
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True,
+                                   is_mobile=True).new_page()
+        page.goto(f"{base}/")
+        for link in (page.locator("#ask").get_by_role("link", name="Join our Discord"),
+                     page.get_by_role("contentinfo").get_by_role("link", name="Discord")):
+            expect(link).to_have_attribute("href", discord)
+            expect(link).to_have_attribute("target", "_blank")
+        for width in (320, 390):
+            page.set_viewport_size({"width": width, "height": 844})
+            assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"the landing page at {width}px"
+
+        _sign_up(page, base, email, capsys, member=False)
+        _onboard(page)
+        page.get_by_role("button", name="More", exact=True).click()
+        more = page.get_by_role("dialog", name="More")
+        expect(more.get_by_role("link", name="Join our Discord")).to_have_attribute("href", discord)
+        more.get_by_role("button", name="Help and contact").click()
+        help_sheet = page.get_by_role("dialog", name="Help and contact")
+        expect(help_sheet.get_by_role("link", name="Join our Discord")).to_have_attribute("href", discord)
+        browser.close()
+
+
 def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in_a_picture_and_a_word(
         site, capsys):
     """The landing page's numbers are the server's (`/stats`): typed into it, they said 25 sources long
@@ -373,8 +407,8 @@ def _a_phones_bar(page) -> None:
         == ["rgba(0, 0, 0, 0)"] * 5, "a tap draws the phone's own box"
     page.get_by_role("button", name="More", exact=True).click()
     more = page.get_by_role("dialog", name="More")
-    expect(more.locator(".more-row")).to_have_text(["My search", "Settings", "Help and contact", "Dark mode"],
-                                                    use_inner_text=True)
+    expect(more.locator(".more-row")).to_have_text(
+        ["My search", "Settings", "Help and contact", "Join our Discord", "Dark mode"], use_inner_text=True)
     more.get_by_role("link", name="My search").click()
     expect(page.get_by_role("heading", name="The jobs you want", level=1)).to_be_visible()
     expect(more).to_have_count(0)
@@ -394,7 +428,7 @@ def test_a_visitor_asks_a_person_a_question_from_the_foot_of_the_landing_page(si
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         page.goto(f"{base}/#/")
         expect(page.locator(".foot-row a")).to_have_text(
-            ["Sign in", "Terms", "Privacy", "Cookies", "Data use", "Contact"])
+            ["Sign in", "Terms", "Privacy", "Cookies", "Data use", "Contact", "Discord"])
         page.locator(".foot-row").get_by_role("link", name="Contact").click()
         ask = page.locator("#ask")
         expect(ask.get_by_role("heading", name="Got a question? Ask us.")).to_be_in_viewport()
@@ -1194,7 +1228,8 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
             })"""), "a word cut short, or a tab past the screen's edge"
         page.get_by_role("button", name="More", exact=True).click()
         expect(page.get_by_role("dialog", name="More").locator(".more-row")).to_have_text(
-            ["My search", "Admin", "Settings", "Help and contact", "Dark mode"], use_inner_text=True)
+            ["My search", "Admin", "Settings", "Help and contact", "Join our Discord", "Dark mode"],
+            use_inner_text=True)
         page.keyboard.press("Escape")
         page.evaluate("scrollTo(0, 0)")
         assert page.locator(".app > nav").bounding_box()["y"] == 0, "space above the bar"

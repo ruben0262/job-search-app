@@ -4481,6 +4481,24 @@
         "title": "SignupRequest",
         "type": "object"
       },
+      "SocialLink": {
+        "properties": {
+          "network": {
+            "title": "Network",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "network",
+          "url"
+        ],
+        "title": "SocialLink",
+        "type": "object"
+      },
       "SourceSeries": {
         "properties": {
           "counts": {
@@ -9670,6 +9688,32 @@
         "summary": "Delete One",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/socials": {
+      "get": {
+        "description": "The site's places on social networks that have a link, for anybody, signed in or not (`socials`).",
+        "operationId": "socials_socials_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SocialLink"
+                  },
+                  "title": "Response Socials Socials Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Socials",
+        "tags": [
+          "contact"
         ]
       }
     },
