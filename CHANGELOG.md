@@ -14,6 +14,34 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-18 — A pop-up scrolls between its rounded corners; a sheet's × stays in its corner, round
+
+The owner: "the popups have a weird scroll part, becuase each popup or modal has rounded edges and so the scroll
+goes beyond the page, lets fix that somehow please".
+
+- **Why: each pop-up scrolled as a whole box.** A sheet, a question, the notifications and the admin chart's pick
+  lists were each one rounded box that scrolled, and a box's scrollbar runs straight down its side, so it ran on
+  into the curved corners and was cut off by them. Measured with scrollbars drawn, on the Filters sheet: the bar
+  started 1px from the top edge, where the corner is 26px tall.
+- **Now the box holds still and clips at its curve, and the part inside it scrolls** (`styles.css`, one rule
+  for all four). That part stops a corner's height short of each end, where the side is straight: `--round` is
+  the box's own corner, used for its curve and its gap, so the two cannot drift. The notifications' head covers
+  the top curve, so only their list stops short of the bottom. The rows are in a list of their own
+  (`notifications.tsx`), and so are the admin pick list's (`AdminCountries.tsx`). At its end, a swipe stops there
+  rather than scrolling the page behind (`overscroll-behavior`).
+- **A sheet's × belongs to the sheet, not to what scrolls** (`ui.tsx`): it stays in its corner, the words going by
+  under it, so a long job can be closed without scrolling back up.
+- **Two things the same pictures showed, fixed with it.** The Filters' foot was set to the sheet's old room in
+  rems, so on a phone, where a card's room is 18px, it ran 6px past each side and the sheet scrolled sideways; it
+  is on the scale now (`--card-pad`). And the × was an oval, 36 by 44, on every sheet opened from inside a page
+  (Filters, a job, an alert, the looks): the rule giving a page's buttons a thumb's height outranked its size,
+  as it did the colour dots. It is out of that rule; on a touch screen its `::before` already reaches 44px.
+  Looked for in Filters, a job, Skip, the notifications, Help, More, the looks, a new alert and the app's
+  sheet, on a laptop and a phone: no other circle is an oval.
+- Test: `test_a_box_over_the_page_scrolls_between_its_rounded_corners`. On the last commit it fails
+  (`top 1, round 26`, the × scrolled away), and it passes on this one. Browser suite 37 passed, 0 skipped; ruff
+  clean; contracts 2 kept.
+
 ## 2026-11-18 — One scale for every size on the site; the colour dots are round; a phone's bars a size down
 
 The owner: "lets make sure the colour selection is not oval, you keep making it in oval and not circle. then lets

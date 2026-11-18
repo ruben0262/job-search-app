@@ -1407,10 +1407,12 @@ td.num {
   right: 0;
   width: min(24rem, 88vw);
   max-height: 26rem;
-  overflow-y: auto;
+  /* Its head covers the top curve; the list stops short of the bottom one (`--round`). */
+  --round: var(--radius-lg);
+  padding-bottom: var(--round);
   background: var(--bg-raised);
   border: 1px solid var(--glass-line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--round);
   z-index: 60;
   box-shadow: 0 30px 60px -24px rgb(0 0 0 / 60%);
 }
@@ -1421,9 +1423,6 @@ td.num {
   align-items: center;
   padding: 0.9rem 1.2rem 0.7rem;
   border-bottom: 1px solid var(--hairline);
-  position: sticky;
-  top: 0;
-  background: var(--bg-raised);
 }
 
 /* The two header affordances. Icons, because "Mark all read" and "Delete all" side by side are
@@ -1576,9 +1575,10 @@ td.num {
  */
 
 /* Taps, not clicks. Admin is a laptop tool and keeps its dense controls. A link inside a sentence is a
-   word of it: a thumb's height there pushed its line away from the one above ("Read it all"). */
-.app main:not(.admin) :is(button, .button):not(.theme-toggle, .swatch, p .linklike),
-.wizard :is(button, .button):not(.theme-toggle, .swatch, p .linklike) {
+   word of it: a thumb's height there pushed its line away from the one above ("Read it all"). A round
+   one is out of it, or it is drawn an oval; a sheet's × reaches a thumb by its `::before` instead. */
+.app main:not(.admin) :is(button, .button):not(.theme-toggle, .swatch, .sheet .close, p .linklike),
+.wizard :is(button, .button):not(.theme-toggle, .swatch, .sheet .close, p .linklike) {
   min-height: var(--control);
 }
 
@@ -3412,12 +3412,32 @@ button.ai-provider {
    in over a page gone soft behind it. */
 .prompt {
   width: min(30rem, calc(100% - 2rem));
-  padding: 0;
+  --round: calc(var(--radius-lg) + 4px);
+  padding: var(--round) 0;
   border: 1px solid var(--glass-line);
-  border-radius: calc(var(--radius-lg) + 4px);
+  border-radius: var(--round);
   background: var(--bg-raised);
   color: var(--ink);
   box-shadow: 0 40px 80px -30px rgb(0 0 0 / 70%);
+}
+
+/* A rounded box over the page holds still and scrolls what is inside it (owner, 2026-11-18: "the scroll
+   goes beyond the page"). Scrolled whole, its scrollbar ran down the straight side and on into the
+   curved corners, cut off by them. Now the box clips at its curve, and the part that scrolls stops a
+   corner's height (`--round`, the curve's own number) short of each end, where the side is straight. */
+:is(.prompt, .sheet)[open],
+.bell-panel,
+.lines-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+:is(.prompt-body, .sheet-body, .bell-list, .lines-list) {
+  min-height: 0;
+  overflow-y: auto;
+  /* At its end, a swipe stops there rather than scrolling the page behind. */
+  overscroll-behavior: contain;
 }
 
 .prompt[open],
@@ -3448,7 +3468,7 @@ button.ai-provider {
 }
 
 .prompt-body {
-  padding: 1.5rem;
+  padding: 0 var(--card-pad);
 }
 
 .prompt-body h2 {
@@ -4489,12 +4509,15 @@ button.ai-provider {
   top: calc(100% + 0.4rem);
   width: min(40rem, 100%);
   max-height: min(28rem, 60vh);
-  overflow: auto;
-  padding: 0.25rem 0.75rem;
+  --round: var(--radius);
+  padding: var(--round) 0;
   background: var(--bg-raised);
   border: 1px solid var(--faint);
-  border-radius: var(--radius);
+  border-radius: var(--round);
   box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.55);
+}
+.lines-list {
+  padding: 0 0.75rem;
 }
 
 /* The per-source table in Settings: name, freshness, query ceiling, and what that source is
@@ -5258,8 +5281,8 @@ input[type="checkbox"]:disabled {
   display: flex;
   justify-content: flex-end;
   gap: 0.6rem;
-  margin: 0.25rem -1.5rem -1.75rem;
-  padding: 0.9rem 1.5rem 1.1rem;
+  margin: 0.25rem calc(-1 * var(--card-pad)) 0;
+  padding: 0.9rem var(--card-pad) 0;
   border-top: 1px solid var(--hairline);
   background: var(--bg-raised);
 }
@@ -5356,19 +5379,20 @@ input[type="checkbox"]:disabled {
 .sheet {
   width: min(44rem, calc(100% - 2rem));
   max-height: calc(100dvh - 2rem);
-  overflow: auto;
-  padding: 0;
+  --round: calc(var(--radius-lg) + 4px);
+  padding: var(--round) 0;
   border: 1px solid var(--glass-line);
-  border-radius: calc(var(--radius-lg) + 4px);
+  border-radius: var(--round);
   background: var(--bg-raised);
   color: var(--ink);
   box-shadow: 0 40px 80px -30px rgb(0 0 0 / 70%);
   cursor: auto;
 }
 
+/* Anything placed inside it scrolls with it. */
 .sheet-body {
   position: relative;
-  padding: var(--card-pad) var(--card-pad) calc(var(--card-pad) + 0.25rem);
+  padding: 0 var(--card-pad);
 }
 
 .sheet h2 {
@@ -5377,9 +5401,11 @@ input[type="checkbox"]:disabled {
   line-height: 1.35;
 }
 
-/* A bar's circle (--circle), its sides set both ways: narrower than tall, it was an oval. */
+/* A bar's circle (--circle). The sheet's, not the scrolled part's: it stays in its corner, the words going
+   by under it. */
 .sheet .close {
   position: absolute;
+  z-index: 1;
   top: 0.75rem;
   right: 0.75rem;
   width: var(--circle);
@@ -5387,7 +5413,7 @@ input[type="checkbox"]:disabled {
   padding: 0;
   border: 1px solid var(--faint);
   border-radius: 50%;
-  background: transparent;
+  background: var(--bg-raised);
   color: var(--muted);
   font-size: var(--text-xl);
   line-height: 1;

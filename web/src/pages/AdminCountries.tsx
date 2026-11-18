@@ -330,7 +330,7 @@ function Dropdown({ label, value, children }: { label: string; value: string; ch
                  }
                }}>
         <summary aria-label={`${label}: ${value}`}>{value}</summary>
-        <div className="lines-panel">{children}</div>
+        <div className="lines-panel"><div className="lines-list">{children}</div></div>
       </details>
     </div>
   );

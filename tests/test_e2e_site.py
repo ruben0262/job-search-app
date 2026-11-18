@@ -1471,6 +1471,49 @@ def test_the_jobs_filters_narrow_the_list_stay_as_they_were_left_and_clear_back(
         browser.close()
 
 
+def test_a_box_over_the_page_scrolls_between_its_rounded_corners(site, capsys):
+    """Owner, 2026-11-18: "the popups have a weird scroll part, because each popup or modal has rounded
+    edges". A sheet scrolled whole, so its scrollbar ran down its side and on into its curved corners, and on
+    a phone the Filters' foot was wider than the sheet, so it scrolled sideways too. The part that scrolls
+    stops a corner's height short of each end, does not scroll sideways, and the round × is still in its
+    corner at the end."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 560}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        filters = page.get_by_role("dialog", name="Filters")
+        for width, height in ((1280, 560), (390, 600)):
+            page.set_viewport_size({"width": width, "height": height})
+            page.get_by_role("button", name="Filters").click()
+            expect(filters).to_be_visible()
+            filters.evaluate("(box) => Promise.all(box.getAnimations().map((a) => a.finished))")
+            seen = filters.evaluate("""(box) => {
+                const scroller = [box, ...box.querySelectorAll("*")].find((e) =>
+                  e.scrollHeight > e.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(e).overflowY));
+                if (!scroller) return null;
+                scroller.scrollTo({top: scroller.scrollHeight, behavior: "instant"});
+                const outer = box.getBoundingClientRect(), inner = scroller.getBoundingClientRect();
+                const close = box.querySelector(".close").getBoundingClientRect();
+                const hit = document.elementFromPoint(close.x + close.width / 2, close.y + close.height / 2);
+                return {round: parseFloat(getComputedStyle(box).borderTopRightRadius),
+                        top: inner.top + scroller.clientTop - outer.top,
+                        bottom: outer.bottom - (inner.top + scroller.clientTop + scroller.clientHeight),
+                        sideways: scroller.scrollWidth - scroller.clientWidth,
+                        close: hit?.getAttribute("aria-label"), closeSides: [close.width, close.height]};
+            }""")
+            assert seen, f"{width}px: the Filters do not scroll {height}px tall, so this proves nothing"
+            assert seen["top"] >= seen["round"] and seen["bottom"] >= seen["round"], f"{width}px: {seen}"
+            assert seen["sideways"] <= 0, f"{width}px: {seen}"
+            assert seen["close"] == "Close", f"{width}px: {seen}"
+            # Round: a page's thumb-height rule drew it 36 by 44 on Jobs, round only opened outside a page.
+            assert seen["closeSides"][0] == seen["closeSides"][1], f"{width}px: {seen}"
+            filters.get_by_role("button", name="Close").click()
+            expect(filters).to_have_count(0)
+        browser.close()
+
+
 def test_the_match_score_filter_is_a_row_of_numbers_that_keeps_the_jobs_scored_that_or_more(site, db, capsys):
     """Owner, 2026-11-16: a filter of its own, numbers rather than words, "for a score or above it". Each
     card's badge says its score out of 10; a number picked leaves the jobs whose badge shows it or more, and

@@ -143,8 +143,8 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
               event.stopPropagation();
               if (event.target === dialog.current) onClose();
             }}>
+      <button type="button" className="close" aria-label="Close" onClick={onClose}>×</button>
       <div className="sheet-body">
-        <button type="button" className="close" aria-label="Close" onClick={onClose}>×</button>
         <h2>{title}</h2>
         {children}
       </div>

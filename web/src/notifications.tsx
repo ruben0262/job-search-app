@@ -123,31 +123,34 @@ export function NotificationBell() {
               ) : null}
             </div>
           </div>
-          {feed.notifications.length === 0 ? (
-            <p className="muted small" style={{ padding: "1rem 1.2rem" }}>
-              Nothing yet. Anything worth knowing about your account lands here.
-            </p>
-          ) : (
-            feed.notifications.map((item) => (
-              // A row rather than one button: the dismiss control has to live inside the item.
-              <div key={item.id} className={`bell-row${item.read ? "" : " unread"} ${item.level}`}>
-                <button type="button" className="bell-item" onClick={() => void openOne(item)}>
-                  <span className="bell-title">{item.title}</span>
-                  {item.body ? <span className="bell-body">{item.body}</span> : null}
-                  <When at={item.created_at} />
-                </button>
-                <button
-                  type="button"
-                  className="bell-x"
-                  aria-label={`Dismiss: ${item.title}`}
-                  title="Dismiss"
-                  onClick={(event) => void dismiss(event, item.id)}
-                >
-                  <XIcon />
-                </button>
-              </div>
-            ))
-          )}
+          {/* The part that scrolls, under the head (`styles.css`, a rounded box that scrolls). */}
+          <div className="bell-list">
+            {feed.notifications.length === 0 ? (
+              <p className="muted small" style={{ padding: "1rem 1.2rem" }}>
+                Nothing yet. Anything worth knowing about your account lands here.
+              </p>
+            ) : (
+              feed.notifications.map((item) => (
+                // A row rather than one button: the dismiss control has to live inside the item.
+                <div key={item.id} className={`bell-row${item.read ? "" : " unread"} ${item.level}`}>
+                  <button type="button" className="bell-item" onClick={() => void openOne(item)}>
+                    <span className="bell-title">{item.title}</span>
+                    {item.body ? <span className="bell-body">{item.body}</span> : null}
+                    <When at={item.created_at} />
+                  </button>
+                  <button
+                    type="button"
+                    className="bell-x"
+                    aria-label={`Dismiss: ${item.title}`}
+                    title="Dismiss"
+                    onClick={(event) => void dismiss(event, item.id)}
+                  >
+                    <XIcon />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       ) : null}
     </div>
