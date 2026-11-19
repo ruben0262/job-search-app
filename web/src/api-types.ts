@@ -1118,6 +1118,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/discord": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Discord
+         * @description Whether they can link a Discord account here, and the one they linked.
+         */
+        get: operations["discord_discord_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Unlink
+         * @description Their Discord account let go, here and at Stripe: RoleLogic takes the plan's role from it.
+         */
+        delete: operations["unlink_discord_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/discord/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Link
+         * @description Discord's page asking them to link their account, for the browser to open.
+         */
+        post: operations["link_discord_link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents": {
         parameters: {
             query?: never;
@@ -2615,6 +2659,13 @@ export interface components {
             /** Ids */
             ids?: number[] | null;
         };
+        /** DiscordLink */
+        DiscordLink: {
+            /** Available */
+            available: boolean;
+            /** Name */
+            name: string | null;
+        };
         /** DocumentList */
         DocumentList: {
             /** Documents */
@@ -3034,6 +3085,11 @@ export interface components {
              * @enum {string}
              */
             outcome: "known" | "added" | "closed" | "draft";
+        };
+        /** LinkPage */
+        LinkPage: {
+            /** Url */
+            url: string;
         };
         /**
          * LinkPlatform
@@ -5693,6 +5749,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanDashboard"] | components["schemas"]["OnboardingDashboard"] | components["schemas"]["ReadyDashboard"];
+                };
+            };
+        };
+    };
+    discord_discord_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordLink"];
+                };
+            };
+        };
+    };
+    unlink_discord_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordLink"];
+                };
+            };
+        };
+    };
+    link_discord_link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkPage"];
                 };
             };
         };

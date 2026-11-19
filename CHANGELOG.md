@@ -14,6 +14,49 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-19 — Link your Discord, then join: a Discord button on every page, and RoleLogic gives the plan's role
+
+The owner: "I'd like to add a visible link your discord to the app button, so users can get their roles in the
+discord community ... make sure people do not miss the fact that there is a discord on the app ... they can not
+just join the group but also link their discord first through the app, and then they can join the group after, so
+we can assign proper roles for them". RoleLogic, a bot in the owner's server, gives the Starter and Member roles
+from Stripe: it reads `discord_user_id` on the Stripe customer and subscription.
+
+- **Linking** (`services/api/discord_routes.py`). "Link my Discord" opens Discord's own page with the `identify`
+  scope alone, so the site gets the account's ID and name, and nothing of the person's servers or messages. Discord
+  sends the browser back to `/discord/callback`. The `state` it carries is signed by the site for this one
+  purpose and lasts ten minutes (`libs.auth.access.sign_for`). It names the account, so the callback trusts no
+  cookie, and it cannot pass as a sign-in token. The ID and name are kept on the account (`User.discord_id`,
+  `discord_name`). Settings says how it went, once, and the address is cleaned. Unlinking takes the ID off here and
+  at Stripe. A Discord account belongs to one person: linked from a second account, it leaves the first.
+- **Stripe carries the ID for RoleLogic** (`billing_routes.DISCORD_KEY`). At linking, it goes on the customer and
+  the running subscription. A customer and subscription made later get it as they are made: `_customer`, and the
+  payment form's `subscription_data`. A subscription that started from a form opened before linking gets it at
+  `sync`, on Stripe's next webhook or the person's return. Somebody on the free plan has nothing at Stripe yet,
+  so nothing is sent until they pay.
+- **Hard to miss.** A Discord button sits in the bar up top on every page, phone and laptop, with the two steps
+  behind it: link, then join. The next step is the main button. The same steps are a Discord card in Settings,
+  where RoleLogic's pinned note sends people, and in Help. The "Join our Discord" row in More (2026-11-18) is gone,
+  since the bar's button is always there. The bar fits at 320, 360 and 390px. The landing page keeps its plain
+  link, as a visitor has no account to link.
+- **Setup, the owner's** (`deploy/server.env.example`): a Discord application's `DISCORD_CLIENT_ID` and
+  `DISCORD_CLIENT_SECRET`, with `<PUBLIC_URL>/discord/callback` as its redirect (and the laptop's for dev.env).
+  Unset, the steps offer joining alone, and an attempt to link says why in the log. RoleLogic's rule must read
+  `discord_user_id`.
+- **The Privacy Policy** names Discord and RoleLogic, says Stripe now also receives the Discord ID, and says what
+  linking keeps (`libs.legal.disclosure`, `privacy.md`). `LEGAL_VERSION` is 2026-11-19. RoleLogic's operator
+  states no company or location, which the owner is to confirm (ROADMAP Phase 12).
+- `.telegram-steps` is `.steps`, one look for Telegram's steps and Discord's.
+- Tests:
+  - `test_billing.py`, five new, run against a Discord in memory with the exact requests the site must send. A
+    member links and both Stripe objects carry it, then unlinks. A free account linking sends Stripe nothing, and
+    its checkout makes the customer and subscription with it. A subscription from an earlier form is told at
+    refresh. A return is refused for no state, a tampered one, a sign-in token, another purpose or an expired one,
+    and a refused code fails while a cancel says so. A link's state as a cookie signs nobody in. A Discord account
+    is one person's. Unset, linking is not offered.
+  - The browser walk `test_a_person_links_their_discord_from_the_bar_and_then_joins` goes from the bar to
+    Discord's page (a stand-in that says yes) and back to Settings, "Linked as Jordan E", with joining next.
+
 ## 2026-11-18, late night — The terms are agreed to at sign-up, and nowhere else; the legal pages are plain text
 
 The owner, on the "Our terms" screen after signing in: "there shouldnt be any of those, that's something users

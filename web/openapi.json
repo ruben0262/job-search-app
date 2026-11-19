@@ -1705,6 +1705,31 @@
         "title": "Discard",
         "type": "object"
       },
+      "DiscordLink": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "available",
+          "name"
+        ],
+        "title": "DiscordLink",
+        "type": "object"
+      },
       "DocumentList": {
         "properties": {
           "documents": {
@@ -2848,6 +2873,19 @@
           "outcome"
         ],
         "title": "LinkAnswer",
+        "type": "object"
+      },
+      "LinkPage": {
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "LinkPage",
         "type": "object"
       },
       "LinkPlatform": {
@@ -7885,6 +7923,70 @@
         "summary": "Dashboard",
         "tags": [
           "dashboard"
+        ]
+      }
+    },
+    "/discord": {
+      "delete": {
+        "description": "Their Discord account let go, here and at Stripe: RoleLogic takes the plan's role from it.",
+        "operationId": "unlink_discord_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordLink"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Unlink",
+        "tags": [
+          "discord"
+        ]
+      },
+      "get": {
+        "description": "Whether they can link a Discord account here, and the one they linked.",
+        "operationId": "discord_discord_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordLink"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Discord",
+        "tags": [
+          "discord"
+        ]
+      }
+    },
+    "/discord/link": {
+      "post": {
+        "description": "Discord's page asking them to link their account, for the browser to open.",
+        "operationId": "link_discord_link_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Link",
+        "tags": [
+          "discord"
         ]
       }
     },

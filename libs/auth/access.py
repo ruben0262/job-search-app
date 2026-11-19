@@ -49,3 +49,23 @@ def read_access_token(token: str, *, env: dict[str, str] | None = None) -> tuple
         raise
     except Exception as exc:
         raise InvalidAccessToken(str(exc)) from exc
+
+
+def sign_for(user_id: _uuid.UUID, purpose: str, ttl: timedelta, *, env: dict[str, str] | None = None) -> str:
+    """A short-lived token naming this account for one purpose (`aud`), such as the `state` a link through
+    another site carries there and back. It is not an access token and cannot be read as one: a token with an
+    audience is refused where none is asked for."""
+    now = datetime.now(UTC)
+    return jwt.encode({"sub": str(user_id), "aud": purpose, "iss": ISSUER, "iat": now, "exp": now + ttl},
+                      _secret(env), algorithm=ALGORITHM)
+
+
+def signed_by(token: str, purpose: str, *, env: dict[str, str] | None = None) -> _uuid.UUID:
+    """The account a `sign_for` token names, if it was signed here, for this purpose, and has not expired."""
+    try:
+        claims = jwt.decode(token, _secret(env), algorithms=[ALGORITHM], issuer=ISSUER, audience=purpose)
+        return _uuid.UUID(claims["sub"])
+    except InvalidAccessToken:
+        raise
+    except Exception as exc:
+        raise InvalidAccessToken(str(exc)) from exc

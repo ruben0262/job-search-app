@@ -20,7 +20,7 @@ import threading
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse, urlsplit
 
 import pytest
 
@@ -292,12 +292,70 @@ def test_the_discord_is_under_the_landing_pages_question_and_at_its_foot_and_in_
 
         _sign_up(page, base, email, capsys, member=False)
         _onboard(page)
+        # The bar's Discord button on every page; where linking is not set up, joining alone behind it.
+        page.get_by_role("button", name="Discord", exact=True).click()
+        sheet = page.get_by_role("dialog", name="Join us on Discord")
+        expect(sheet.get_by_role("link", name="Join our Discord")).to_have_attribute("href", discord)
+        page.keyboard.press("Escape")
         page.get_by_role("button", name="More", exact=True).click()
-        more = page.get_by_role("dialog", name="More")
-        expect(more.get_by_role("link", name="Join our Discord")).to_have_attribute("href", discord)
-        more.get_by_role("button", name="Help and contact").click()
+        page.get_by_role("dialog", name="More").get_by_role("button", name="Help and contact").click()
         help_sheet = page.get_by_role("dialog", name="Help and contact")
         expect(help_sheet.get_by_role("link", name="Join our Discord")).to_have_attribute("href", discord)
+        browser.close()
+
+
+def test_a_person_links_their_discord_from_the_bar_and_then_joins(site, capsys, monkeypatch):
+    """Owner, 2026-11-19: "a solid way to make sure people do not miss the fact that there is a discord on
+    the app ... link their discord first through the app, and then they can join the group after, so we can
+    assign proper roles for them". The Discord button is in a phone's bar, fitting the smallest; behind it,
+    step one links on Discord's own page (here a stand-in that says yes), and they are back in Settings, told
+    it worked, with joining the next step."""
+    import httpx
+
+    from services.api import discord_routes
+
+    monkeypatch.setenv("DISCORD_CLIENT_ID", "discord-client-1")
+    monkeypatch.setenv("DISCORD_CLIENT_SECRET", "discord-secret-1")
+
+    def discord_api(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/oauth2/token"):
+            return httpx.Response(200, json={"access_token": "token-1", "token_type": "Bearer"})
+        return httpx.Response(200, json={"id": "111111111111111111", "username": "jordan_e",
+                                         "global_name": "Jordan E"})
+
+    monkeypatch.setattr(discord_routes, "_client",
+                        lambda: httpx.Client(transport=httpx.MockTransport(discord_api)))
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True,
+                                   is_mobile=True).new_page()
+        _sign_up(page, base, email, capsys, member=False)
+        _onboard(page)
+        bar = page.locator(".app > nav")
+        expect(bar.get_by_role("button", name="Discord", exact=True)).to_be_visible()
+        for width in (320, 360, 390):
+            page.set_viewport_size({"width": width, "height": 844})
+            assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"the bar with Discord at {width}px"
+
+        # Discord's page, saying yes: straight back to the address it was given, with a code and the state.
+        def says_yes(route) -> None:
+            asked = parse_qs(urlsplit(route.request.url).query)
+            assert asked["scope"] == ["identify"]
+            route.fulfill(status=302, headers={"location": asked["redirect_uri"][0]
+                                               + f"?code=code-1&state={asked['state'][0]}"})
+
+        page.route("https://discord.com/oauth2/authorize**", says_yes)
+        bar.get_by_role("button", name="Discord", exact=True).click()
+        sheet = page.get_by_role("dialog", name="Join us on Discord")
+        expect(sheet.get_by_role("link", name="Join our Discord")).to_be_visible()
+        sheet.get_by_role("button", name="Link my Discord").click()
+
+        expect(page.get_by_text("Your Discord is linked.")).to_be_visible()
+        card = page.locator("section.card").filter(has=page.get_by_role("heading", name="Discord"))
+        expect(card).to_contain_text("Linked as Jordan E")
+        expect(card.get_by_role("link", name="Join our Discord")).to_have_class(re.compile(r"\bmain\b"))
+        assert "discord=" not in page.url, "said once: a reload says nothing"
         browser.close()
 
 
@@ -408,7 +466,7 @@ def _a_phones_bar(page) -> None:
     page.get_by_role("button", name="More", exact=True).click()
     more = page.get_by_role("dialog", name="More")
     expect(more.locator(".more-row")).to_have_text(
-        ["My search", "Settings", "Help and contact", "Join our Discord", "Dark mode"], use_inner_text=True)
+        ["My search", "Settings", "Help and contact", "Dark mode"], use_inner_text=True)
     more.get_by_role("link", name="My search").click()
     expect(page.get_by_role("heading", name="The jobs you want", level=1)).to_be_visible()
     expect(more).to_have_count(0)
@@ -1229,7 +1287,7 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
             })"""), "a word cut short, or a tab past the screen's edge"
         page.get_by_role("button", name="More", exact=True).click()
         expect(page.get_by_role("dialog", name="More").locator(".more-row")).to_have_text(
-            ["My search", "Admin", "Settings", "Help and contact", "Join our Discord", "Dark mode"],
+            ["My search", "Admin", "Settings", "Help and contact", "Dark mode"],
             use_inner_text=True)
         page.keyboard.press("Escape")
         page.evaluate("scrollTo(0, 0)")

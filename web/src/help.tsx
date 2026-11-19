@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { api, type Schema } from "./api";
+import { DiscordSteps, WHY_DISCORD } from "./discord";
 import { SocialMark, useSocials } from "./socials";
 import { Error, Field, Sheet, useAction } from "./ui";
 
@@ -119,12 +120,15 @@ function HelpAndContact() {
             </span>
             <div>
               <h3>Join us on {social.name}</h3>
-              <p>Tell us what you think, ask for what you want next, and talk with the people who build Mahoraga.</p>
+              <p>{WHY_DISCORD}</p>
             </div>
           </div>
-          <a className="button secondary contact-send" href={social.url} target="_blank" rel="noreferrer">
-            {social.join}
-          </a>
+          {/* Discord's link first, so the server gives their plan's role (`discord.tsx`). */}
+          {social.network === "discord" ? <DiscordSteps /> : (
+            <a className="button secondary contact-send" href={social.url} target="_blank" rel="noreferrer">
+              {social.join}
+            </a>
+          )}
         </section>
       ))}
 

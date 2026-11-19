@@ -24,7 +24,7 @@ We have not appointed a data protection officer, because the law does not requir
 
 ## 2. What this policy covers
 
-This policy covers Mahoraga at {site}, the app you can install from it, and the emails, notifications and Telegram messages it sends. It doesn't cover other websites you open from Mahoraga, such as job boards, or what Stripe, your AI provider or Telegram do under their own privacy policies (section 7).
+This policy covers Mahoraga at {site}, the app you can install from it, and the emails, notifications and Telegram messages it sends. It doesn't cover other websites you open from Mahoraga, such as job boards, or what Stripe, your AI provider, Telegram or Discord do under their own privacy policies (section 7).
 
 ## 3. What we collect, why, and on what legal basis
 
@@ -36,7 +36,7 @@ This policy covers Mahoraga at {site}, the app you can install from it, and the 
 
 **Your match scores and suggestions.** Worked out by fixed rules from your documents and your search, not by AI. They only sort and filter your own list. No decision about you is ever made by them, and no one else sees them. *Legal basis:* contract.
 
-**Your linked accounts.** The sign-in or API key of the AI account you link, and the token of your own Telegram bot, each encrypted with a key that belongs to your account alone. They are never shown back, not even in part. *Legal basis:* contract.
+**Your linked accounts.** The sign-in or API key of the AI account you link, and the token of your own Telegram bot, each encrypted with a key that belongs to your account alone. They are never shown back, not even in part. If you link your Discord account, its ID and name, which Discord gives us once you agree on its page; we put the ID on your record at Stripe, where RoleLogic reads it to give you your plan's role in our Discord server. You can unlink it in Settings at any time. *Legal basis:* contract.
 
 **Notifications.** The address your browser gives us when you turn notifications on, your Telegram chat, and the notices in Mahoraga's bell. *Legal basis:* contract. Your browser asks for your permission before it shows any notification, and you can turn notifications off at any time.
 
@@ -62,7 +62,7 @@ Almost everything comes from you. Payment details come from Stripe, and job ads 
 
 ## 6. Do you have to give us your data?
 
-Your email address and a password are needed to create an account. Everything else is up to you, but some features need it: there are no match scores or CVs without a CV, and no alerts on Telegram without a Telegram bot.
+Your email address and a password are needed to create an account. Everything else is up to you, but some features need it: there are no match scores or CVs without a CV, no alerts on Telegram without a Telegram bot, and no plan role in our Discord server without linking your Discord account.
 
 ## 7. Who receives your data
 
@@ -76,7 +76,7 @@ We never sell or rent your data, and we never share it with employers, recruiter
 
 ## 8. Transfers outside Europe
 
-Some of the companies above are outside the European Economic Area, mostly in the United States. Where a company is certified under the EU–US Data Privacy Framework, the European Commission's adequacy decision protects the transfer. Otherwise we rely on the European Commission's standard contractual clauses. Where you connect your own account with a company (your AI provider, Telegram, your browser's push service), we send it what it needs because you asked us to, to provide the service you chose (Article 49(1)(b)). Ask us for a copy of the safeguards for any transfer.
+Some of the companies above are outside the European Economic Area, mostly in the United States. Where a company is certified under the EU–US Data Privacy Framework, the European Commission's adequacy decision protects the transfer. Otherwise we rely on the European Commission's standard contractual clauses. Where you connect your own account with a company (your AI provider, Telegram, your browser's push service, Discord), we send it what it needs because you asked us to, to provide the service you chose (Article 49(1)(b)). Ask us for a copy of the safeguards for any transfer.
 
 ## 9. How long we keep it
 

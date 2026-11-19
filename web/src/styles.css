@@ -5330,14 +5330,14 @@ input[type="checkbox"]:disabled {
   flex: 0 1 15rem;
 }
 
-/* ── Telegram, step by step ─────────────────────────────────────────────────────────────────── */
+/* ── steps, one after another: Telegram's, and Discord's (`discord.tsx`) ────────────────────────── */
 
 .channel.stacked {
   flex-direction: column;
   align-items: stretch;
 }
 
-.telegram-steps {
+.steps {
   list-style: none;
   margin: 0.25rem 0 0;
   padding: 0;
@@ -5345,7 +5345,7 @@ input[type="checkbox"]:disabled {
   gap: 0.9rem;
 }
 
-.telegram-steps li {
+.steps li {
   display: grid;
   grid-template-columns: 1.75rem 1fr;
   gap: 0.75rem;
@@ -5356,11 +5356,11 @@ input[type="checkbox"]:disabled {
 
 /* The token's box at the page's size, not the step's: under 16px, an iPhone zooms the page in when it is
    tapped (measured: the one box on the site under 16px, at 15px). */
-.telegram-steps input {
+.steps input {
   font-size: var(--text-base);
 }
 
-.telegram-steps .step-number {
+.steps .step-number {
   display: grid;
   place-items: center;
   width: 1.75rem;
@@ -5371,18 +5371,41 @@ input[type="checkbox"]:disabled {
   font-weight: 650;
 }
 
-.telegram-steps li.done .step-number {
+.steps li.done .step-number {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
 }
 
-.telegram-steps .row {
+.steps .row {
   margin-top: 0.5rem;
 }
 
-.telegram-steps .button {
+.steps :is(.button, button.main) {
   margin-top: 0.5rem;
+}
+
+.steps p {
+  margin: 0.1rem 0 0;
+}
+
+/* Discord, up top (`discord.tsx`): its mark in its own colour, a little larger than the bell's line. */
+.discord-button svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.steps button.main .social-mark {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-right: 0.45rem;
+  color: currentColor !important;
+  vertical-align: -0.2em;
+}
+
+.discord-why {
+  margin: 0 0 1rem;
+  color: var(--muted);
 }
 
 .telegram-on .row {

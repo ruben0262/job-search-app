@@ -80,6 +80,11 @@ class User(Document):
     # The colour both are made in: an id in `libs.templates.COLOURS`, picked beside the looks (owner,
     # 2026-11-17). None until they pick one: each look's own.
     look_colour: str | None = None
+    # Their Discord account, linked from the site (`services/api/discord_routes.py`; owner, 2026-11-19): its
+    # id, which Stripe carries for RoleLogic to give the plan's role in the owner's server, and its name, to
+    # show them which. None until linked, and again once unlinked.
+    discord_id: str | None = None
+    discord_name: str | None = None
     # This account's data key, wrapped by the platform key (`libs.secrets`).
     wrapped_dek: bytes | None = None
     # Their membership: a Stripe subscription, seven days free and then billed (owner, 2026-11-11). Stripe is

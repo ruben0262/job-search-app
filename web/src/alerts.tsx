@@ -84,7 +84,7 @@ export function TelegramSetup() {
     </div>
   );
   const steps = (
-    <ol className="telegram-steps">
+    <ol className="steps">
       <li className={waiting ? "done" : ""}>
         <span className="step-number" aria-hidden="true">1</span>
         <div>

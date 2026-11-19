@@ -25,6 +25,7 @@ from services.api.billing_routes import router as billing_router
 from services.api.billing_routes import setup_problems
 from services.api.contact_routes import router as contact_router
 from services.api.dashboard_routes import router as dashboard_router
+from services.api.discord_routes import router as discord_router
 from services.api.document_routes import router as document_router
 from services.api.link_routes import router as link_router
 from services.api.notification_routes import router as notification_router
@@ -68,6 +69,7 @@ app.include_router(pricing_router)
 app.include_router(push_router)
 app.include_router(saved_router)
 app.include_router(dashboard_router)
+app.include_router(discord_router)
 app.include_router(link_router)
 app.include_router(notification_router)
 app.include_router(suggestion_router)

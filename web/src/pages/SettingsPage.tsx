@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { AiAccounts } from "../aiaccounts";
 import { api, type Ready, type Schema } from "../api";
+import { DiscordSteps, WHY_DISCORD } from "../discord";
 import { useKept } from "../kept";
 import { MembershipCard } from "../membership";
 import { Card, Error, Field, Prompt, useAction, useNewPassword } from "../ui";
@@ -36,6 +37,11 @@ export function SettingsPage({ dashboard, onSignedOut }: {
       </Card>
 
       <MembershipCard />
+
+      <Card title="Discord">
+        <p>{WHY_DISCORD}</p>
+        <DiscordSteps />
+      </Card>
 
       <Card title="Your account">
         <p>{account.email}</p>

@@ -40,7 +40,8 @@ RECIPIENTS = (
         purpose="Takes the payments for Starter and Member, and runs the page where you change or cancel "
                 "them. Stripe also uses payment data to prevent fraud and to meet its own legal duties.",
         data="Your email address, the plan you pick, and the card details you type into Stripe's own form, "
-             "which never reach us. Nothing about your searches, your CV or your documents.",
+             "which never reach us. If you link your Discord account, its ID, for RoleLogic (below). Nothing "
+             "about your searches, your CV or your documents.",
         location="Ireland and the United States",
         terms="Ours for billing; Stripe's own privacy policy for fraud prevention",
     ),
@@ -81,6 +82,26 @@ RECIPIENTS = (
              "chat id.",
         location="Outside the EU",
         terms="Yours: your Telegram account",
+    ),
+    # Linking a Discord account (`services/api/discord_routes.py`; owner, 2026-11-19).
+    Recipient(
+        name="Discord",
+        purpose="Runs our community server, and the page where you link your Discord account to Mahoraga, "
+                "if you choose to.",
+        data="Nothing from us. When you link your account, Discord tells us its ID and name, after you agree "
+             "on Discord's own page.",
+        location="United States",
+        terms="Yours: your Discord account",
+    ),
+    # The bot that reads `discord_user_id` from Stripe (`billing_routes.DISCORD_KEY`). Its operator states no
+    # company or location (checked 2026-11-19): the owner's to confirm, with its terms (ROADMAP Phase 12).
+    Recipient(
+        name="RoleLogic",
+        purpose="A bot in our Discord server that gives you your plan's role there (Starter or Member), if "
+                "you link your Discord account.",
+        data="Your Discord account's ID and the state of your plan, which it reads from Stripe.",
+        location="Not stated by its operator",
+        terms="Ours",
     ),
     Recipient(
         name="Your browser's push service (Google, Apple, Mozilla or Microsoft)",

@@ -219,6 +219,9 @@ services:
       # Optional: the Starter plan's price. Unset, there is no Starter plan on the site.
       STRIPE_STARTER_PRICE_ID: ${STRIPE_STARTER_PRICE_ID:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # Linking a Discord account (`services/api/discord_routes.py`). Unset, the site offers only to join.
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
       LOG_DIR: /var/log/jobsearch
     volumes:
       - ../logs:/var/log/jobsearch

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api, type Dashboard } from "./api";
+import { DiscordButton, sayBackFromDiscord } from "./discord";
 import { HelpButton } from "./help";
 import { GetAppButton, InstallSheet, useAsked } from "./install";
 import { Landing } from "./landing/Landing";
@@ -67,6 +68,7 @@ export function App() {
       // Back from Stripe's form or portal: Stripe is read again first, so what they did there shows now,
       // not when its webhook arrives.
       if (backFromStripe()) await api.post("/billing/refresh").catch(() => undefined);
+      sayBackFromDiscord();
       setSession({ state: "in", dashboard: await api.get<Dashboard>("/dashboard") });
     } catch (error) {
       // 401 is the ordinary signed-out case — `request` has already tried a refresh.
@@ -184,6 +186,7 @@ export function App() {
           </div>
           <div className="nav-icons">
             {asked ? <GetAppButton /> : null}
+            <DiscordButton />
             <HelpButton />
             <NotificationBell />
             <ThemeToggle />

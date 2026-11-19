@@ -8,6 +8,7 @@ with the endpoint's secret.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -16,8 +17,9 @@ import re
 import time
 import uuid
 from datetime import timedelta
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qs, parse_qsl, urlsplit
 
+import httpx
 import pytest
 
 from libs import settings
@@ -61,7 +63,7 @@ class FakeStripe(stripe.HTTPClient):
             "status": status, "created": created or int(time.time()) + len(self.subscriptions),
             "currency": "eur",
             "trial_end": trial_end, "cancel_at": cancel_at, "cancel_at_period_end": cancel_at is not None,
-            "ended_at": ended_at, "latest_invoice": invoice, "pause_collection": None,
+            "ended_at": ended_at, "latest_invoice": invoice, "pause_collection": None, "metadata": {},
             "items": {"object": "list", "url": "/v1/subscription_items", "has_more": False, "data": [
                 {"id": "si_1", "object": "subscription_item", "current_period_end": period_end,
                  "price": {"id": price, "object": "price"}}]},
@@ -90,9 +92,12 @@ class FakeStripe(stripe.HTTPClient):
                                            "message": f"No such customer: '{params['customer']}'"}})
         if (method, path) == ("POST", "/v1/customers"):
             made = {"id": f"cus_{len(self.customers) + 1}", "object": "customer",
-                    "email": params.get("email"), "metadata": {"user_id": params.get("metadata[user_id]")}}
+                    "email": params.get("email"), "metadata": _metadata({}, params)}
             self.customers[made["id"]] = made
             return _answer(200, made)
+        if method == "POST" and (found := re.fullmatch(r"/v1/customers/(\w+)", path)):
+            _metadata(self.customers[found[1]]["metadata"], params)
+            return _answer(200, self.customers[found[1]])
         if method == "DELETE" and (found := re.fullmatch(r"/v1/customers/(\w+)", path)):
             if found[1] not in self.customers:
                 return _answer(404, {"error": {"type": "invalid_request_error", "code": "resource_missing",
@@ -112,6 +117,7 @@ class FakeStripe(stripe.HTTPClient):
                 subscription["pause_collection"] = {"behavior": params["pause_collection[behavior]"]}
             elif params.get("pause_collection") == "":
                 subscription["pause_collection"] = None
+            _metadata(subscription["metadata"], params)
             return _answer(200, subscription)
         if (method, path) == ("GET", "/v1/invoices"):
             return _list("/v1/invoices", [each for each in self.invoices
@@ -149,6 +155,17 @@ class FakeStripe(stripe.HTTPClient):
     def calls(self, method: str, path: str) -> list[dict]:
         return [params for sent_method, sent_path, params in self.sent
                 if (sent_method, sent_path) == (method, path)]
+
+
+def _metadata(held: dict, params: dict) -> dict:
+    """Metadata as Stripe takes it, `metadata[key]=value`, with "" taking a key off: `held` changed by it."""
+    for key, value in params.items():
+        if key.startswith("metadata[") and key.endswith("]"):
+            if value == "":
+                held.pop(key[len("metadata["):-1], None)
+            else:
+                held[key[len("metadata["):-1]] = value
+    return held
 
 
 def _answer(code: int, body: dict):
@@ -1087,3 +1104,153 @@ def test_the_deploy_lets_in_every_account_there_was_before_memberships_once(db, 
     assert "free access" not in capsys.readouterr().out
     assert not is_member(db, later.id), "an account made afterwards pays"
     assert not is_member(db, there[0].id), "an admin's Off stays off"
+
+
+# ── a Discord account, linked for RoleLogic ─────────────────────────────────────────────────────────────
+# Owner, 2026-11-19: "link their discord first through the app, and then they can join the group after, so
+# we can assign proper roles for them". Discord's page says yes, the site reads the account, and Stripe
+# carries its id as `discord_user_id` on the customer and the running subscription, where RoleLogic reads it
+# to give the Starter or Member role (`services/api/discord_routes.py`).
+
+CLIENT = ("discord-client-1", "discord-secret-1")
+BASIC = "Basic " + base64.b64encode(":".join(CLIENT).encode()).decode()
+JORDAN = {"id": "111111111111111111", "username": "jordan_e", "global_name": "Jordan E"}
+SAM = {"id": "222222222222222222", "username": "sam", "global_name": None}
+
+
+@pytest.fixture()
+def discord(monkeypatch):
+    """Discord's API in memory: a code for each account that said yes, refused for anything else, and the
+    exact request the site has to send for it."""
+    from services.api import discord_routes
+
+    monkeypatch.setenv("DISCORD_CLIENT_ID", CLIENT[0])
+    monkeypatch.setenv("DISCORD_CLIENT_SECRET", CLIENT[1])
+    accounts = {"code-jordan": JORDAN, "code-sam": SAM}
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v10/oauth2/token":
+            form = {key: value for key, [value] in parse_qs(request.content.decode()).items()}
+            assert request.headers["authorization"] == BASIC
+            assert form["grant_type"] == "authorization_code"
+            assert form["redirect_uri"] == "https://jobs.example/discord/callback"
+            if form["code"] not in accounts:
+                return httpx.Response(400, json={"error": "invalid_grant"})
+            return httpx.Response(200, json={"access_token": f"token-{form['code']}",
+                                             "token_type": "Bearer"})
+        if request.url.path == "/api/v10/users/@me":
+            code = request.headers["authorization"].removeprefix("Bearer token-")
+            return httpx.Response(200, json=accounts[code])
+        return httpx.Response(404)
+
+    monkeypatch.setattr(discord_routes, "_client",
+                        lambda: httpx.Client(transport=httpx.MockTransport(answer)))
+
+
+def _link(http, code: str, **change) -> httpx.Response:
+    """Settings' "Link my Discord", Discord's page, and Discord sending them back with `code`."""
+    page = urlsplit(http.post("/discord/link").json()["url"])
+    asked = {key: value for key, [value] in parse_qs(page.query).items()}
+    assert (page.netloc, page.path) == ("discord.com", "/oauth2/authorize")
+    assert asked["client_id"] == CLIENT[0] and asked["scope"] == "identify"
+    assert asked["redirect_uri"] == "https://jobs.example/discord/callback"
+    return http.get("/discord/callback", params={"code": code, "state": asked["state"], **change},
+                    follow_redirects=False)
+
+
+def _member(db, fake) -> tuple[User, dict]:
+    """A Member, paying, as Stripe and the account both hold it."""
+    customer = f"cus_{uuid.uuid4().hex[:6]}"
+    fake.customers[customer] = {"id": customer, "object": "customer", "email": "m@example.com",
+                                "metadata": {}}
+    subscription = fake.subscribe(customer, "active")
+    return person(db, stripe_customer_id=customer, subscription_id=subscription["id"],
+                  subscription_status="active", subscription_plan="member"), subscription
+
+
+def test_a_member_links_their_discord_and_stripe_carries_it_for_rolelogic(db, http, fake, discord):
+    member, subscription = _member(db, fake)
+    sign_in(http, member)
+    assert http.get("/discord").json() == {"available": True, "name": None}
+
+    back = _link(http, "code-jordan")
+    assert (back.status_code, back.headers["location"]) == (303, "https://jobs.example/?discord=linked#/settings")
+    assert http.get("/discord").json() == {"available": True, "name": "Jordan E"}
+    assert get(db, User, member.id).discord_id == JORDAN["id"]
+    assert fake.customers[member.stripe_customer_id]["metadata"]["discord_user_id"] == JORDAN["id"]
+    assert subscription["metadata"]["discord_user_id"] == JORDAN["id"]
+
+    # Unlinked: gone here and at Stripe, so RoleLogic takes the role away.
+    assert http.delete("/discord").json() == {"available": True, "name": None}
+    assert get(db, User, member.id).discord_id is None
+    assert "discord_user_id" not in fake.customers[member.stripe_customer_id]["metadata"]
+    assert "discord_user_id" not in subscription["metadata"]
+
+
+def test_a_discord_linked_before_paying_reaches_the_customer_and_subscription_stripe_makes(db, http, fake,
+                                                                                           discord):
+    """Linked on the free plan, nothing is sent to Stripe: there is nothing there yet. The payment form then
+    makes the customer and the subscription with it; and a subscription from a form opened before linking is
+    told at the next read."""
+    newcomer = person(db)
+    sign_in(http, newcomer)
+    assert _link(http, "code-sam").headers["location"].endswith("?discord=linked#/settings")
+    assert fake.sent == [], "no customer at Stripe yet, so nothing to tell it"
+    assert http.get("/discord").json()["name"] == "sam", "no display name: the user name"
+
+    assert http.post("/billing/checkout").status_code == 200
+    [made] = fake.customers.values()
+    assert made["metadata"] == {"user_id": str(newcomer.id), "discord_user_id": SAM["id"]}
+    form = fake.calls("POST", "/v1/checkout/sessions")[-1]
+    assert form["subscription_data[metadata][discord_user_id]"] == SAM["id"]
+
+    older = fake.subscribe(made["id"], "active")
+    assert "discord_user_id" not in older["metadata"]
+    assert http.post("/billing/refresh").status_code == 200
+    assert older["metadata"]["discord_user_id"] == SAM["id"]
+
+
+def test_a_return_from_discord_counts_only_with_a_state_this_site_signed_for_linking(db, http, discord):
+    from libs.auth.access import issue_access_token, sign_for
+
+    someone = person(db)
+    sign_in(http, someone)
+    cookie = http.cookies.get("access_token")
+    for state in ("", "not-a-token", cookie, sign_for(someone.id, "password-reset", timedelta(minutes=5)),
+                  sign_for(someone.id, "discord-link", timedelta(seconds=-1))):
+        back = http.get("/discord/callback", params={"code": "code-jordan", "state": state},
+                        follow_redirects=False)
+        assert back.headers["location"].endswith("?discord=failed#/settings"), state
+    assert get(db, User, someone.id).discord_id is None
+
+    assert _link(http, "code-nobody").headers["location"].endswith("?discord=failed#/settings")
+    assert _link(http, "code-jordan", error="access_denied").headers["location"].endswith(
+        "?discord=cancelled#/settings")
+    assert get(db, User, someone.id).discord_id is None
+
+    # A link's state is no access token: as a cookie it signs nobody in.
+    http.cookies.set("access_token", sign_for(someone.id, "discord-link", timedelta(minutes=5)), path="/")
+    assert http.get("/discord").status_code == 401
+    http.cookies.set("access_token", issue_access_token(someone.id, uuid.uuid4()), path="/")
+    assert http.get("/discord").status_code == 200
+
+
+def test_a_discord_account_is_one_persons(db, http, fake, discord):
+    """Linked again from another account, it leaves the first, at Stripe too: a plan's role goes with one
+    account only."""
+    first, subscription = _member(db, fake)
+    sign_in(http, first)
+    _link(http, "code-jordan")
+    second = person(db)
+    sign_in(http, second)
+    _link(http, "code-jordan")
+    assert (get(db, User, first.id).discord_id, get(db, User, second.id).discord_id) == (None, JORDAN["id"])
+    assert "discord_user_id" not in subscription["metadata"]
+
+
+def test_without_the_discord_application_only_joining_is_offered(db, http, monkeypatch):
+    for name in ("DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET"):
+        monkeypatch.delenv(name, raising=False)
+    sign_in(http, person(db))
+    assert http.get("/discord").json() == {"available": False, "name": None}
+    assert http.post("/discord/link").status_code == 503

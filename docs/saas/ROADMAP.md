@@ -3865,6 +3865,12 @@ deleted after three years and acknowledged by email; `deploy/scripts/export_acco
 11. The database server keeps monthly copies for 12 months (server_db, `--keep-monthly 12`), and the Privacy
     Policy says so (`libs.legal.documents.DATABASE_COPY_MONTHS`). Change both together.
 
+**Discord linking (2026-11-19), the owner's:** the Privacy Policy names RoleLogic as working for us
+(`libs.legal.disclosure`), but its operator states no company or location (searched 2026-11-19). Confirm who
+runs it, where, and whether its terms protect what it reads, a Discord ID and the state of a plan, from Stripe;
+or replace it. `LEGAL_VERSION` moved to 2026-11-19 for the change. It adds an optional use and changes no
+existing one, so whether to email everybody first (8) is the owner's call.
+
 **Open, smaller:** accounts never verified, and accounts unused for years, are kept until deleted. Deleting the
 first after a week, and the second after a warning, would be a storage limit worth stating. The help-chat API
 still answers on the platform's AI key, though no page calls it. If it ever gets a page, the Privacy Policy names

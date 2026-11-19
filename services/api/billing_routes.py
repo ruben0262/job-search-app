@@ -54,6 +54,11 @@ EVENTS = frozenset({
     "invoice.paid", "invoice.payment_failed",
 })
 
+# Where RoleLogic, the bot in the owner's Discord server, finds a member's Discord account: on their Stripe
+# customer and running subscription (owner, 2026-11-19). It gives that account the plan's role, Starter or
+# Member, changes it with the plan and takes it when the plan ends. The name is RoleLogic's setting.
+DISCORD_KEY = "discord_user_id"
+
 # On the addresses Stripe sends a person back to: the app reads Stripe again before it draws (`/refresh`).
 BACK = "stripe=back"
 
@@ -151,6 +156,7 @@ def sync(db: Database, user: User) -> User:
                      user.id, len(running), ", ".join(running))
     fields: dict = {"billing_synced_at": started}
     if current := min(found, key=_rank, default=None):
+        _keep_discord(user, current)
         items = current.items.data
         fields.update(
             subscription_id=current.id, subscription_status=current.status, currency=current.currency,
@@ -180,6 +186,38 @@ def sync(db: Database, user: User) -> User:
         audit(logger, "billing.status_changed", user=user.id, was=was.get("subscription_status"),
               now=fields["subscription_status"])
     return get(db, User, user.id)
+
+
+def _discord(user: User) -> dict[str, str]:
+    """Their Discord account as Stripe's metadata holds it: \"\" takes it off."""
+    return {DISCORD_KEY: user.discord_id or ""}
+
+
+def tell_discord(user: User) -> None:
+    """Their Discord account, or none, on their Stripe customer and running subscription, where RoleLogic
+    reads it. Nothing for somebody Stripe has no customer for yet: theirs is made with it (`_customer`), and
+    a subscription with it (`checkout`). Raises `stripe.StripeError`."""
+    if not user.stripe_customer_id:
+        return
+    client = _stripe()
+    client.v1.customers.update(user.stripe_customer_id, params={"metadata": _discord(user)})
+    if user.subscription_id and user.subscription_status in ONGOING:
+        client.v1.subscriptions.update(user.subscription_id, params={"metadata": _discord(user)})
+
+
+def _keep_discord(user: User, subscription: stripe.Subscription) -> None:
+    """A running subscription without their Discord account, told it: one a payment form opened before they
+    linked it started, or one changed at Stripe. Not told, it is said, and told at Stripe's next word."""
+    metadata = getattr(subscription, "metadata", None)
+    held = (metadata.to_dict() if metadata is not None else {}).get(DISCORD_KEY) or ""
+    if subscription.status not in ONGOING or held == (user.discord_id or ""):
+        return
+    try:
+        _stripe().v1.subscriptions.update(subscription.id, params={"metadata": _discord(user)})
+        logger.info("billing: Stripe told %s's Discord account on %s", user.id, subscription.id)
+    except stripe.StripeError as exc:
+        logger.warning("billing: Stripe was not told %s's Discord account on %s (%s)", user.id,
+                       subscription.id, exc)
 
 
 def price_id(which: str) -> str:
@@ -242,12 +280,17 @@ def _customer(db: Database, user: User) -> User:
     if user.stripe_customer_id:
         return user
     customer = _stripe().v1.customers.create(
-        params={"email": user.email, "metadata": {"user_id": str(user.id)}},
+        params={"email": user.email, "metadata": {"user_id": str(user.id), **_linked(user)}},
         options={"idempotency_key": f"customer-{user.id}"})
     db[User.COLLECTION].update_one({"_id": user.id, "stripe_customer_id": None},
                                    {"$set": {"stripe_customer_id": customer.id}})
     logger.info("billing: %s is Stripe customer %s", user.id, customer.id)
     return get(db, User, user.id)
+
+
+def _linked(user: User) -> dict[str, str]:
+    """Their Discord account for a customer or subscription being made, if they linked one before it."""
+    return {DISCORD_KEY: user.discord_id} if user.discord_id else {}
 
 
 def trial_for(db: Database, user: User, which: str = MEMBER) -> int:
@@ -379,7 +422,7 @@ def checkout(request: Request, which: Literal["member", "starter"] = Query("memb
             "line_items": [{"price": _env(PRICE_ENV[which]), "quantity": 1}],
             # A card even for a free trial, so the first payment is taken by itself when the trial ends.
             "payment_method_collection": "always",
-            "subscription_data": {"metadata": {"user_id": str(user.id), "plan": which},
+            "subscription_data": {"metadata": {"user_id": str(user.id), "plan": which, **_linked(user)},
                                   **({"trial_period_days": days} if days else {})},
             # A card finishes in the page (`onComplete`); a payment that goes to a bank's page comes back
             # here. The mark is in the query, not after the `#`, which is the app's own address.

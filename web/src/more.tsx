@@ -4,9 +4,8 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 
 import { HELP_ICON, HelpSheet } from "./help";
-import { DOWN, OPEN, openInstall } from "./install";
+import { DOWN, openInstall } from "./install";
 import { MORE_ICON, PLACES, TABS } from "./places";
-import { SocialMark, useSocials } from "./socials";
 import { useTheme } from "./theme";
 import { Sheet } from "./ui";
 
@@ -58,7 +57,6 @@ export function More({ admin, section, asked }: {
               <span>Help and contact</span>
               {CHEVRON}
             </button>
-            <SocialRows />
             {/* The theme grows from the row, as it does from the circle on a laptop. */}
             <button type="button" className="more-row" role="switch" aria-checked={choice === "dark"}
                     onClick={toggle}>
@@ -74,14 +72,3 @@ export function More({ admin, section, asked }: {
   );
 }
 
-/** Each social network the site is on (`socials.tsx`), asked for when More first opens: it opens in a tab of its
- * own, so the row ends in a way out, not a chevron. */
-function SocialRows() {
-  return useSocials().map((social) => (
-    <a key={social.network} className="more-row" href={social.url} target="_blank" rel="noreferrer">
-      <SocialMark social={social} />
-      <span>{social.join}</span>
-      <svg className="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d={OPEN} /></svg>
-    </a>
-  ));
-}

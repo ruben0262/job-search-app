@@ -187,7 +187,7 @@ const FULL = "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5";
 const SHARE = "M12 3.5v11M8 7.5l4-4 4 4M7.5 10.5H5.5v10h13v-10h-2";
 const ADD = "M6.5 4.5h11a2 2 0 012 2v11a2 2 0 01-2 2h-11a2 2 0 01-2-2v-11a2 2 0 012-2zM12 8.5v7M8.5 12h7";
 const MENU = "M12 5.5h.01M12 12h.01M12 18.5h.01";
-export const OPEN = "M9.5 4.5h-5v15h15v-5M13.5 4.5h6v6M19.5 4.5L11 13";
+const OPEN = "M9.5 4.5h-5v15h15v-5M13.5 4.5h6v6M19.5 4.5L11 13";
 
 /** Safari's way, and Chrome's on an iPhone: Share, Add to Home Screen, then the app, signed in once there. */
 const APPLE: [string, string, string][] = [
