@@ -4,9 +4,11 @@ The routes are the real app on the test database; the providers' checks and the 
 stand-ins (`tests/test_credentials.py` and `tests/test_signin.py` are theirs)."""
 from __future__ import annotations
 
+import base64
 import json
 import os
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
@@ -67,7 +69,7 @@ def test_a_key_is_checked_linked_put_in_use_and_never_shown_back(api):
 
     assert linked.status_code == 200
     (account,) = linked.json()["accounts"]
-    assert set(account) == {"id", "kind", "label", "in_use", "linked_at", "model"}
+    assert set(account) == {"id", "kind", "label", "in_use", "linked_at", "model", "plan_limits"}
     assert (account["kind"], account["label"], account["in_use"]) == ("claude_api", "Claude API key", True)
     shown = http.get("/ai-accounts").text + linked.text
     assert API_KEY not in shown and API_KEY[-4:] not in shown
@@ -328,6 +330,46 @@ def test_limits_that_cannot_be_read_are_none_and_never_cost_the_sign_in(caplog):
     assert "sk-ant-oat01" not in caplog.text
 
 
+def _chatgpt(expires: float) -> str:
+    """A ChatGPT sign-in as Codex leaves it: its access token a JWT, which carries its own expiry."""
+    claims = base64.urlsafe_b64encode(json.dumps({"exp": expires}).encode()).decode().rstrip("=")
+    return json.dumps({"auth.json": json.dumps({"auth_mode": "chatgpt", "tokens": {
+        "access_token": f"eyJhbGciOiJSUzI1NiJ9.{claims}.c2lnbmF0dXJl", "account_id": "acct-7",
+        "refresh_token": "rt_" + "r" * 40}})})
+
+
+# What ChatGPT answered a Plus plan on 2026-11-19, but for who it is.
+CHATGPT_USAGE = {"plan_type": "plus", "rate_limit": {
+    "allowed": True, "limit_reached": False,
+    "primary_window": {"used_percent": 99, "limit_window_seconds": 18000, "reset_after_seconds": 7391,
+                       "reset_at": 1795105188},
+    "secondary_window": {"used_percent": 17, "limit_window_seconds": 604800, "reset_after_seconds": 274646,
+                         "reset_at": 1795372443}}, "credits": {"has_credits": False}}
+
+
+def test_a_chatgpt_sign_in_shows_its_five_hour_and_weekly_limits_and_a_spent_token_is_left_alone():
+    """Owner, 2026-11-19: GPT's usage shown as Claude's is. Read as Codex's own /status reads it, with the
+    token the sign-in holds and the account it names, and called by the same names; never asked with a token
+    whose time is up, which only the next document renews."""
+    import httpx
+
+    from libs.llm import limits
+
+    http, seen = _anthropic(lambda request: httpx.Response(200, json=CHATGPT_USAGE))
+
+    windows = limits.read("codex_login", _chatgpt(expires=4_000_000_000), http=http)
+
+    assert [(each.id, each.label, each.percent) for each in windows] == [
+        ("five_hour", "5-hour limit", 99.0), ("seven_day", "Weekly limit", 17.0)]
+    assert windows[0].resets_at == datetime.fromtimestamp(1795105188, UTC)
+    assert str(seen[0].url) == limits.CODEX_USAGE_URL
+    assert seen[0].headers["authorization"].startswith("Bearer eyJ")
+    assert seen[0].headers["chatgpt-account-id"] == "acct-7"
+
+    assert limits.read("codex_login", _chatgpt(expires=1_000), http=http) == []
+    assert len(seen) == 1, "a token that ran out is left alone"
+
+
 @needs_db
 def test_settings_asks_for_an_accounts_limits_and_only_its_owner_may(api, monkeypatch):
     http, _, user, store = api
@@ -341,5 +383,8 @@ def test_settings_asks_for_an_accounts_limits_and_only_its_owner_may(api, monkey
     assert http.get(f"/ai-accounts/{account}/limits").json() == {"windows": [
         {"id": "five_hour", "label": "5-hour limit", "percent": 37.0, "resets_at": None}]}
     assert http.get(f"/ai-accounts/{key}/limits").json() == {"windows": []}, "a key has no plan"
+    # Said with each account, so Settings shows a plan's limits where there are some and nowhere else.
+    assert {each["id"]: each["plan_limits"] for each in http.get("/ai-accounts").json()["accounts"]} == {
+        str(account): True, key: False}
     assert http.get("/ai-accounts/not-an-id/limits").status_code == 404
     assert http.get(f"/ai-accounts/{'0' * 24}/limits").status_code == 404

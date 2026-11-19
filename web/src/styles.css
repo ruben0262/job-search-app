@@ -2001,6 +2001,25 @@ button.making::after {
   to { transform: translateX(100%); }
 }
 
+/* A document being made, on every page until it is ready (owner, 2026-11-19), with the same light passing over
+   it as over its button. One line each, above the page. */
+.banner.making-now {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 0.25rem;
+  border-left-color: var(--accent);
+}
+
+.banner.making-now::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 18%), transparent 70%);
+  animation: making 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
 .more {
   margin-top: 1.25rem;
 }

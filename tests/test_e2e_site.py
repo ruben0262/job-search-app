@@ -1361,6 +1361,73 @@ def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents
         browser.close()
 
 
+def test_a_cv_being_made_is_said_on_every_page_after_a_refresh_and_on_applied_until_it_is_ready(
+        site, capsys, monkeypatch):
+    """Owner, 2026-11-19: a CV being made was seen only on its own button, so a refresh, or its job moving to
+    Applied, made it vanish while it was still being written, and people press again. It is said above every
+    page until it is ready, Applied says it too, and ready, a notice hands it over with what the AI account
+    has left, read then: a ChatGPT plan's limits as a Claude one's are."""
+    import json
+
+    from libs.db import database, insert, now
+    from libs.db.models import BuiltDocument, QueueJob
+    from libs.llm import accounts, limits
+    from libs.secrets import SecretStore
+
+    monkeypatch.setattr(limits, "read", lambda kind, blob, **kw: [
+        limits.Window("five_hour", "5-hour limit", 37.0, None)] if kind == "codex_login" else [])
+    base, email, ids = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 860}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        db = database()
+        user = db.users.find_one({"email": email})["_id"]
+        chatgpt = SecretStore(db).add(user, "codex_login", json.dumps({"auth.json": "{}"}),
+                                      label="ChatGPT Plus · jordan@example.com")
+        accounts.use(db, user, str(chatgpt))
+        # Asked for and being written, as the worker holds it: claimed just now, so this test's own worker
+        # leaves it be.
+        job = ids[TITLES[0]]
+        build = insert(db, QueueJob(lane="docgen", user_id=user, dedup_key=f"ai:cv:{job}", state="claimed",
+                                    payload={"job_id": job, "kind": "cv", "mode": "ai"},
+                                    claimed_at=now(), claimed_by="elsewhere"))
+
+        page.reload()
+        making = page.locator(".making-now")
+        expect(making).to_have_text(f"Making your CV for {TITLES[0]}…")
+        card = page.locator("article.job-card").filter(
+            has=page.get_by_role("button", name=TITLES[0], exact=True))
+        expect(card.get_by_role("button", name="Making your CV…")).to_be_disabled()
+
+        card.get_by_role("button", name="Mark as applied").click()
+        page.goto(f"{base}/#/documents")
+        expect(making).to_be_visible()
+        page.goto(f"{base}/#/applied")
+        applied = page.locator("article.job-card")
+        expect(applied.get_by_role("button", name="Making your CV…")).to_be_disabled()
+        expect(making).to_be_visible()
+
+        # Made: what the worker writes.
+        insert(db, BuiltDocument(id=build.id, user_id=user, job_id=job, kind="cv", mode="ai",
+                                 filename="cv.pdf", content=b"%PDF-1.4 made", size=13, saved=True,
+                                 tokens=5400))
+        db[QueueJob.COLLECTION].update_one({"_id": build.id},
+                                           {"$set": {"state": "done", "finished_at": now()}})
+
+        expect(making).to_have_count(0)
+        expect(applied.get_by_role("link", name="Download CV")).to_be_visible()
+        notice = page.locator(".toast")
+        expect(notice).to_contain_text(f"Your CV for {TITLES[0]} is ready.")
+        expect(notice).to_contain_text("ChatGPT 5-hour limit: 37% used")
+        expect(notice.get_by_role("link", name="Download CV")).to_have_attribute(
+            "href", f"/documents/build/{build.id}/file")
+        page.goto(f"{base}/#/settings")
+        expect(page.locator(".ai-accounts li")).to_contain_text("5-hour limit: 37% used")
+        browser.close()
+
+
 def test_a_person_picks_how_their_cvs_and_letters_look_and_it_stays_picked(site, capsys):
     """My documents shows the look of each kind in use; Change opens the shelf, the most popular first and
     then every sector, each look a picture of itself; a tap picks one, and it stays picked (owner,

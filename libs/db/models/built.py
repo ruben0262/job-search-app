@@ -41,4 +41,7 @@ class BuiltDocument(Document):
     # account's own tool chose it: the same outcomes, read wording by wording. Never on the document itself.
     prompt_version: str | None = None
     model: str | None = None
+    # The tokens its calls used, in and out together, None where the account's tool does not count them: what
+    # a person paying for their own API key sees it cost (owner, 2026-11-19), said as it is ready.
+    tokens: int | None = None
     created_at: datetime = field(default_factory=now)

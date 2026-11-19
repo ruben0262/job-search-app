@@ -7,6 +7,9 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 
 const kept = new Map<string, unknown>();
+// Told when a path is read again, so every page drawing it draws the new answer: a plan's limits read
+// as a document is ready show in Settings too (owner, 2026-11-19).
+const fresh = new EventTarget();
 
 /** The last answer from `path`, if there is one. */
 export function peek<T>(path: string): T | null {
@@ -23,11 +26,16 @@ export function keep<T>(path: string, value: T): void {
 export function useKept<T>(path: string, first?: () => Promise<unknown>) {
   const [data, setData] = useState<T | null>(() => peek<T>(path));
   const [failed, setFailed] = useState(false);
-  const reload = useCallback(() => Promise.resolve(first?.()).then(() => api.get<T>(path)).then((fresh) => {
-    kept.set(path, fresh);
-    setData(fresh);
+  const reload = useCallback(() => Promise.resolve(first?.()).then(() => api.get<T>(path)).then((answer) => {
+    kept.set(path, answer);
     setFailed(false);
+    fresh.dispatchEvent(new Event(path));
   }).catch(() => setFailed(true)), [path, first]);
+  useEffect(() => {
+    const again = () => setData(peek<T>(path));
+    fresh.addEventListener(path, again);
+    return () => fresh.removeEventListener(path, again);
+  }, [path]);
   useEffect(() => {
     void reload();
   }, [reload]);
@@ -43,7 +51,7 @@ export function useKept<T>(path: string, first?: () => Promise<unknown>) {
  * as the next. */
 export function readAhead(paths: string[]): void {
   for (const path of paths) {
-    if (!kept.has(path)) api.get(path).then((fresh) => kept.set(path, fresh)).catch(() => undefined);
+    if (!kept.has(path)) api.get(path).then((answer) => kept.set(path, answer)).catch(() => undefined);
   }
 }
 

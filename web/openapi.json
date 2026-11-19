@@ -582,6 +582,10 @@
               }
             ],
             "title": "Model"
+          },
+          "plan_limits": {
+            "title": "Plan Limits",
+            "type": "boolean"
           }
         },
         "required": [
@@ -590,7 +594,8 @@
           "label",
           "in_use",
           "linked_at",
-          "model"
+          "model",
+          "plan_limits"
         ],
         "title": "AiAccount",
         "type": "object"
@@ -1233,6 +1238,25 @@
             "title": "Id",
             "type": "integer"
           },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "kind": {
+            "enum": [
+              "cv",
+              "cover"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "saved": {
             "anyOf": [
               {
@@ -1254,11 +1278,35 @@
             ],
             "title": "State",
             "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens"
           }
         },
         "required": [
           "id",
-          "state"
+          "state",
+          "job_id",
+          "kind"
         ],
         "title": "BuildStatus",
         "type": "object"
@@ -8171,6 +8219,32 @@
           }
         },
         "summary": "Build File",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/builds": {
+      "get": {
+        "description": "Their documents still being made, oldest first: what the site shows as being made wherever they are,\nand after a refresh, until each is ready (owner, 2026-11-19: \"it doesn't just disappear\").",
+        "operationId": "builds_in_progress_documents_builds_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BuildStatus"
+                  },
+                  "title": "Response Builds In Progress Documents Builds Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Builds In Progress",
         "tags": [
           "documents"
         ]

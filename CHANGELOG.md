@@ -14,6 +14,40 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-19 — A document being made is said on every page until it is ready, and the AI's limits show as it is
+
+The owner: "make sure we are displaying some 'making cv' or 'cover' message, while its being generated, even if
+we add the jobs to the applied section ... even if the page is being refreshed ... otherwise they'll keep
+clicking it or bug it out"; and "I would like to see the usage limit on claude and codex and gemini that is left
+faster ... For GPT and Gemini we don't even have this usage being displayed".
+
+- **One record of the builds for the whole site** (`web/src/documents.tsx`, was `.ts`). A build was held by the
+  button that started it: marking the job applied took the card, and the build, off the page, and a reload forgot
+  it, though the server knew all along (the docgen queue row is the build). `GET /documents/builds` now lists the
+  ones still being made and is read as the site opens. The buttons, the Applied card and a line above every page
+  ("Making your CV for …") read that one record, and one timer asks about all of them. Ready, a notice hands it
+  over with its Download; refused, it says why. `BuildStatus` names its job, kind and title.
+- **ChatGPT's plan limits** (`libs.llm.limits`): the 5-hour and weekly windows, read as Codex's own /status reads
+  them (`chatgpt.com/backend-api/wham/usage`, found in Codex 0.167's binary), with the access token the sign-in
+  holds and the account it names. No tool is run, so nothing is renewed (the 2026-11-14 lesson), and a token past
+  its `exp` is not used. On the owner's Plus plan: 5-hour 99%, weekly 17%. A window of another length is passed
+  over rather than given the wrong name. Which accounts have limits is the server's to say
+  (`AiAccount.plan_limits`, from `limits.LIMITED_KINDS`), not a second list in the page.
+- **Faster.** Measured on the owner's accounts: Anthropic answers in 0.7 to 1.3 s and ChatGPT in 1.1 to 4.4 s,
+  and Settings drew nothing until then, every time it opened. The limits are now read as the site opens and
+  again by the ready notice, which shows them; `kept.ts` tells every view of an address when it is read again,
+  so an open Settings moves with it. Not measured: how soon after a call Anthropic's own figure moves, which
+  would cost a document on the owner's plan.
+- **Gemini's cannot be read.** Google has served no Gemini CLI sign-in since 2026-06-18, and nothing lets another
+  site read what is left on an API key. What a document cost a key can be: its tokens are kept
+  (`BuiltDocument.tokens`, in and out over its calls) and the notice says them. Claude Code's stream has a
+  `rate_limit_event`, but it names one window and only near a threshold, so it is not used.
+- Tests: `test_a_document_being_made_is_listed_for_its_job_until_it_is_ready_and_says_what_it_used`, nobody
+  else's listed (`test_a_build_is_its_owners_alone`), `test_a_chatgpt_sign_in_shows_its_five_hour_and_weekly_
+  limits_and_a_spent_token_is_left_alone` (an answer of the shape ChatGPT gave), and the browser walk
+  `test_a_cv_being_made_is_said_on_every_page_after_a_refresh_and_on_applied_until_it_is_ready`. Each failed on
+  the code before it.
+
 ## 2026-11-19 — Link your Discord, then join: a Discord button on every page, and RoleLogic gives the plan's role
 
 The owner: "I'd like to add a visible link your discord to the app button, so users can get their roles in the

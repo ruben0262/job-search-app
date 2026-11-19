@@ -241,12 +241,18 @@ class BuildRequest(BaseModel):
 class BuildStatus(BaseModel):
     id: int
     state: Literal["queued", "building", "ready", "failed", "expired"]
+    # What it is for, so any page can say it is being made, after a refresh too (owner, 2026-11-19).
+    job_id: int | None
+    kind: Literal["cv", "cover"]
+    title: str | None = None
     # Why it failed or was refused, written for the person.
     detail: str | None = None
     # Set once `state` is "ready".
     download_url: str | None = None
     # Once ready: whether it is kept, or only waits for its download because the storage is full.
     saved: bool | None = None
+    # Once ready: the tokens its calls used, None where the account's tool does not count them.
+    tokens: int | None = None
 
 
 @router.post("/build", status_code=status.HTTP_202_ACCEPTED, response_model=BuildStatus)
@@ -285,6 +291,16 @@ def build_document(body: BuildRequest, db: Database = Depends(get_db),
         audit(logger, "documents.build_requested", user=user_id, job=body.job_id,
               kind=body.kind, mode=body.mode, payer=payload.get("payer"))
     return _status(db, get(db, QueueJob, build_id))
+
+
+@router.get("/builds", response_model=list[BuildStatus])
+def builds_in_progress(db: Database = Depends(get_db),
+                       user_id: _uuid.UUID = Depends(current_user)) -> list[BuildStatus]:
+    """Their documents still being made, oldest first: what the site shows as being made wherever they are,
+    and after a refresh, until each is ready (owner, 2026-11-19: "it doesn't just disappear")."""
+    return [_status(db, build) for build in find(
+        db, QueueJob, {"lane": "docgen", "user_id": user_id, "state": {"$in": ["ready", "claimed"]}},
+        sort=[("_id", 1)])]
 
 
 @router.get("/build/{build_id}", response_model=BuildStatus)
@@ -343,14 +359,17 @@ def _ai_payer(db: Database, user: User, kind: str) -> str:
 
 def _status(db: Database, build: QueueJob) -> BuildStatus:
     """The queue row, said the way the page shows it."""
-    refused = (build.payload or {}).get("refused")
+    payload = build.payload or {}
+    job = db[CorpusJob.COLLECTION].find_one({"_id": payload.get("job_id")}, {"title": 1})
+    said = {"id": build.id, "job_id": payload.get("job_id"), "kind": payload.get("kind") or "cv",
+            "title": job.get("title") if job else None}
+    refused = payload.get("refused")
     if build.state == "dead" or refused:
-        return BuildStatus(id=build.id, state="failed", detail=refused or build.last_error)
+        return BuildStatus(**said, state="failed", detail=refused or build.last_error)
     if build.state != "done":
-        return BuildStatus(id=build.id, state="building" if build.state == "claimed" else "queued")
-    kept = db[BuiltDocument.COLLECTION].find_one({"_id": build.id}, {"saved": 1})
+        return BuildStatus(**said, state="building" if build.state == "claimed" else "queued")
+    kept = db[BuiltDocument.COLLECTION].find_one({"_id": build.id}, {"saved": 1, "tokens": 1})
     if kept is None:
-        return BuildStatus(id=build.id, state="expired",
-                           detail="this document was deleted — make it again")
-    return BuildStatus(id=build.id, state="ready", download_url=f"/documents/build/{build.id}/file",
-                       saved=kept["saved"])
+        return BuildStatus(**said, state="expired", detail="this document was deleted — make it again")
+    return BuildStatus(**said, state="ready", download_url=f"/documents/build/{build.id}/file",
+                       saved=kept["saved"], tokens=kept.get("tokens"))

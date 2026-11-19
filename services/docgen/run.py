@@ -48,6 +48,8 @@ class Built:
     # The wording that wrote it and the model it ran on, kept with the document for the outcomes.
     prompt_version: str | None = None
     model: str | None = None
+    # In and out over its calls; None where the account's tool does not count them.
+    tokens: int | None = None
 
 
 def run_ai(db, user_id: _uuid.UUID, job_id: int, *, client, model: str, kind: str,
@@ -140,7 +142,8 @@ def _done(db, user: User, job: CorpusJob, *, kind: str, mode: str, document: byt
           write_s=round(seconds["write"], 1), render_s=round(seconds["render"], 1),
           tokens_in=tokens_in, tokens_out=tokens_out)
     return Built(_filename(user.full_name, kind), document, report.pages, calls,
-                 revised=calls > 1, ats_ok=report.ats_ok, prompt_version=version, model=model or None)
+                 revised=calls > 1, ats_ok=report.ats_ok, prompt_version=version, model=model or None,
+                 tokens=tokens_in + tokens_out if counts else None)
 
 
 def _load(db, user_id: _uuid.UUID, job_id: int) -> tuple[User, CorpusJob]:

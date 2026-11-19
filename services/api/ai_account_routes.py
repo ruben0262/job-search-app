@@ -50,6 +50,8 @@ class AiAccount(BaseModel):
     # The model it writes with, the one the platform picked for its provider (owner, 2026-11-10: one model
     # each, chosen in Admin, never by the person); None where the tool picks from their plan (ChatGPT).
     model: str | None
+    # Whether its plan's limits can be read (`libs.llm.limits.LIMITED_KINDS`): a Claude or ChatGPT sign-in.
+    plan_limits: bool
 
 
 class AiAccounts(BaseModel):
@@ -61,7 +63,8 @@ def _listing(db: Database, user_id: _uuid.UUID) -> AiAccounts:
     chosen = settings.snapshot(db)
     return AiAccounts(accounts=[
         AiAccount(id=each.id, kind=each.kind, label=each.label, in_use=each.in_use, linked_at=each.created_at,
-                  model=settings.document_model(chosen, accounts.PROVIDER[each.kind]) or None)
+                  model=settings.document_model(chosen, accounts.PROVIDER[each.kind]) or None,
+                  plan_limits=each.kind in plan_limits.LIMITED_KINDS)
         for each in accounts.listing(db, user_id)])
 
 

@@ -3461,13 +3461,16 @@ work, or opening and closing sessions faster, would help):
     - **Speed: measured, medium stays** (2026-11-15). The live wording at `low`: 22.1 s and 5.3k tokens out
       against about 37 s and 9.1k, and 3.4 things a CV that are not theirs against 2.2 (+1.28 ± 0.39),
       honesty −0.72 ± 0.25. Most of a CV's time is thinking, and the thinking is what keeps it honest.
-    - **A Claude plan's limits in Settings: seen on a real account** (2026-11-15: "5-hour limit 18%, Weekly
-      limit 15%"; nothing once the token has run out, as designed). ChatGPT's and Gemini's are not built; the
-      owner asked for them if possible. Reading them means their tools or their private addresses with a
-      stored sign-in, which is what broke the Claude one: to be tried only through the one place that saves
-      a renewed sign-in (`libs.llm.cli.CliClient`).
-    - **Tokens are logged, not yet shown.** `docgen.built` carries the seconds and tokens of every document.
-      A count by wording in Admin's Outcomes would need them kept on the document as well.
+    - **A plan's limits in Settings: Claude's seen on a real account** (2026-11-15: "5-hour limit 18%, Weekly
+      limit 15%"; nothing once the token has run out, as designed). **ChatGPT's built 2026-11-19**, read as
+      Codex's own /status reads them (`chatgpt.com/backend-api/wham/usage`) with the stored access token and no
+      tool run, so nothing is renewed: the owner's Plus plan answered 5-hour 99%, weekly 17%, in 1.1 to 4.4 s.
+      Both are read when the site opens and again as each document is ready, and the ready notice says them.
+      **Gemini's cannot be**: Google has served no Gemini CLI sign-in since 2026-06-18, and nothing lets another
+      site read what is left on an API key. A document made with a key says the tokens it used instead.
+    - **Tokens are kept on each document** (`BuiltDocument.tokens`, 2026-11-19), as `docgen.built` logs them:
+      what the ready notice tells somebody on an API key, and what a count by wording in Admin's Outcomes would
+      read.
     - **Later (owner, 2026-11-14): small models of our own** for parts of writing or checking, to use less AI.
       They need data first. Each document now keeps the prompt's version and the model that wrote it
       (`BuiltDocument.prompt_version`, `model`), and Admin's Outcomes counts interviews by wording: that, the

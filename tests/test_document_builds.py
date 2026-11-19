@@ -228,6 +228,36 @@ def test_asking_twice_while_it_waits_is_the_same_build(ready):
     assert _ask(ready).json()["id"] == _ask(ready).json()["id"]
 
 
+def test_a_document_being_made_is_listed_for_its_job_until_it_is_ready_and_says_what_it_used(
+        ready, monkeypatch):
+    """Owner, 2026-11-19: a CV being made must not vanish when its card leaves the page or the page is
+    refreshed. The server says which are still being made, and for which job; once ready it drops off, and
+    says the tokens it used, which is what someone paying for their own key sees it cost."""
+    from libs.llm import providers
+    from libs.llm.rest import GeminiClient
+
+    api = ready
+    answer = {"candidates": [{"content": {"parts": [{"text": WRITTEN}]}, "finishReason": "STOP"}],
+              "usageMetadata": {"promptTokenCount": 4200, "candidatesTokenCount": 900,
+                                "thoughtsTokenCount": 300}}
+    calls: list[httpx.Request] = []
+    http = httpx.Client(transport=httpx.MockTransport(
+        lambda request: calls.append(request) or httpx.Response(200, json=answer)))
+    monkeypatch.setattr(providers, "GeminiClient", lambda key: GeminiClient(key, http=http))
+    cover = _ask(api, kind="cover").json()["id"]
+
+    making = api.http.get("/documents/builds").json()
+    assert [(each["id"], each["job_id"], each["kind"], each["title"], each["state"]) for each in making] == [
+        (cover, api.job.id, "cover", "Backend Engineer", "queued")]
+
+    assert _work(api)
+
+    assert api.http.get("/documents/builds").json() == []
+    done = _status(api, cover)
+    assert (done["state"], done["job_id"], done["kind"]) == ("ready", api.job.id, "cover")
+    assert done["tokens"] == 5400 * len(calls), "every call it took, a letter asked again included"
+
+
 def test_a_build_is_its_owners_alone(ready):
     from libs.auth.access import issue_access_token
     from libs.db import insert
@@ -243,6 +273,11 @@ def test_a_build_is_its_owners_alone(ready):
 
     assert api.http.get(f"/documents/build/{build_id}").status_code == 404
     assert api.http.get(f"/documents/build/{build_id}/file").status_code == 404
+    api.http.cookies.set("access_token", issue_access_token(api.user.id, uuid.uuid4()), path="/")
+    _ask(api)
+    assert len(api.http.get("/documents/builds").json()) == 1, "the premise: one being made"
+    api.http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
+    assert api.http.get("/documents/builds").json() == [], "nobody else's are listed"
 
 
 def test_a_refusal_says_what_to_do_and_is_not_a_dead_letter(ready):

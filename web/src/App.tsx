@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api, type Dashboard } from "./api";
 import { DiscordButton, sayBackFromDiscord } from "./discord";
+import { Making, forgetBuilds, resumeBuilds } from "./documents";
 import { HelpButton } from "./help";
 import { GetAppButton, InstallSheet, useAsked } from "./install";
 import { Landing } from "./landing/Landing";
@@ -30,7 +31,7 @@ import { REVIEW, WordsPage } from "./pages/WordsPage";
 import { NotificationBell } from "./notifications";
 import { More } from "./more";
 import { PLACES, TABS } from "./places";
-import { AI_ACCOUNTS } from "./aiaccounts";
+import { readLimitsAhead } from "./aiaccounts";
 import { TEMPLATES } from "./templates";
 import { ThemeToggle } from "./theme";
 import { Toasts } from "./toast";
@@ -76,6 +77,7 @@ export function App() {
         // What the pages kept dies with the session.
         forgetKept();
         forgetMarks();
+        forgetBuilds();
         setSession({ state: "out" });
         return;
       }
@@ -109,7 +111,10 @@ export function App() {
   useEffect(() => {
     if (ready) {
       readAhead([ADDED, BOOKMARKED, APPLIED, REVIEW, ALERTS, DOCUMENTS, SAVED, HISTORY, IDENTITY, TEMPLATES, ACCOUNT,
-                 AI_ACCOUNTS, MEMBERSHIP]);
+                 MEMBERSHIP]);
+      readLimitsAhead();
+      // A CV still being made when the page was loaded again is said again, wherever they are.
+      resumeBuilds();
     }
   }, [ready]);
   // And Admin's, for whoever sees it: its first open draws at once too.
@@ -195,6 +200,7 @@ export function App() {
         {/* No fade between places: it began each one invisible, and switching tabs showed nothing for
             a moment (owner, 2026-11-03). Each page draws at once from what it read last (`kept.ts`). */}
         <main className={section === "admin" ? "admin" : undefined}>
+          <Making />
           {path?.startsWith("/add") ? (
             // A tab of Jobs, not a place of its own; and so is the next.
             <AddJobPage onChanged={reload} can={dashboard.areas.includes("add_job")} />

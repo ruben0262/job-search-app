@@ -8,7 +8,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { ApiError, api, type Schema } from "./api";
-import { useKept } from "./kept";
+import { keep, readAhead, useKept } from "./kept";
 import { Error, Field, Prompt, useAction } from "./ui";
 
 type Accounts = Schema<"AiAccounts">;
@@ -76,21 +76,45 @@ const SWITCH_MS = 900;
 const linked = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" });
 const again = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
 
-/** Where a Claude plan's limits stand: the 5-hour one and the weekly one (owner, 2026-11-14), as Claude's
- * own usage page gives them. Asked when the card opens. A sign-in not used for some hours has none to
- * show until the next document is made with it, and says so. */
-function PlanLimits({ account }: { account: Account }) {
-  const { data } = useKept<Schema<"Limits">>(`${AI_ACCOUNTS}/${account.id}/limits`);
+/** Where an account's plan limits are read: a Claude sign-in's (owner, 2026-11-14) and a ChatGPT one's
+ * (2026-11-19), as the server says in `plan_limits`. Not Gemini's: Google ended Gemini CLI's sign-ins on
+ * 2026-06-18, and an API key has no plan. */
+const limitsOf = (account: Account) => `${AI_ACCOUNTS}/${account.id}/limits`;
+
+/** Every plan's limits read before Settings opens, so they are there at once (owner, 2026-11-19: "faster"). */
+export function readLimitsAhead(): void {
+  api.get<Accounts>(AI_ACCOUNTS).then((list) => {
+    keep(AI_ACCOUNTS, list);
+    readAhead(list.accounts.filter((each) => each.plan_limits).map(limitsOf));
+  }).catch(() => undefined);
+}
+
+/** What the account in use has left, said as a document is ready: its plan's limits, read again then, or
+ * what the document cost an API key (owner, 2026-11-19). */
+export function InUse({ tokens }: { tokens?: number | null }) {
+  const { data } = useKept<Accounts>(AI_ACCOUNTS);
+  const account = data?.accounts.find((each) => each.in_use);
+  if (!account) return null;
+  if (account.plan_limits) return <PlanLimits account={account} named />;
+  return tokens ? <span className="ai-limits small muted">It used {tokens.toLocaleString()} tokens of your {account.label}.</span>
+    : null;
+}
+
+/** Where a plan's limits stand: the 5-hour one and the weekly one (owner, 2026-11-14), as the provider's
+ * own usage page gives them. Asked when the card opens, and drawn at once from what was read ahead. A
+ * sign-in not used for some hours has none to show until the next document is made with it, and says so. */
+function PlanLimits({ account, named }: { account: Account; named?: boolean }) {
+  const { data } = useKept<Schema<"Limits">>(limitsOf(account));
   if (!data) return null;
   if (!data.windows.length) {
-    return <span className="small muted">Your plan's limits show here after your next CV or cover letter.</span>;
+    return named ? null : <span className="small muted">Your plan's limits show here after your next CV or cover letter.</span>;
   }
   return (
     <span className="ai-limits">
       {data.windows.map((each) => (
         <span key={each.id} className="small muted ai-limit">
           <span>
-            {each.label}: <strong>{Math.round(each.percent)}% used</strong>
+            {named ? `${SIGN_IN[account.kind as LoginKind].name} ` : ""}{each.label}: <strong>{Math.round(each.percent)}% used</strong>
             {each.resets_at ? `, starts again ${again.format(new Date(each.resets_at))}` : ""}
           </span>
           <span className="storage-bar" aria-hidden="true">
@@ -161,7 +185,7 @@ export function AiAccounts() {
                     <span className="small muted">
                       Writes with {account.model ? <code>{account.model}</code> : "the model your plan includes"}
                     </span>
-                    {account.kind === "claude_login" ? <PlanLimits account={account} /> : null}
+                    {account.plan_limits ? <PlanLimits account={account} /> : null}
                   </span>
                   <label className="ai-switch">
                     {/* Not disabled while one moves, which would grey every switch out: a click then is

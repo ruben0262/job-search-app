@@ -1250,6 +1250,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/documents/builds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Builds In Progress
+         * @description Their documents still being made, oldest first: what the site shows as being made wherever they are,
+         *     and after a refresh, until each is ready (owner, 2026-11-19: "it doesn't just disappear").
+         */
+        get: operations["builds_in_progress_documents_builds_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents/{document_id}": {
         parameters: {
             query?: never;
@@ -2288,6 +2309,8 @@ export interface components {
             linked_at: string;
             /** Model */
             model: string | null;
+            /** Plan Limits */
+            plan_limits: boolean;
         };
         /** AiAccounts */
         AiAccounts: {
@@ -2503,6 +2526,13 @@ export interface components {
             download_url?: string | null;
             /** Id */
             id: number;
+            /** Job Id */
+            job_id: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cv" | "cover";
             /** Saved */
             saved?: boolean | null;
             /**
@@ -2510,6 +2540,10 @@ export interface components {
              * @enum {string}
              */
             state: "queued" | "building" | "ready" | "failed" | "expired";
+            /** Title */
+            title?: string | null;
+            /** Tokens */
+            tokens?: number | null;
         };
         /** Checkout */
         Checkout: {
@@ -5957,6 +5991,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    builds_in_progress_documents_builds_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildStatus"][];
                 };
             };
         };
