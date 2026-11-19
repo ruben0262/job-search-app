@@ -765,8 +765,8 @@ export function JobCard({ job, focus, done, fresh, onMark }: {
 }
 
 /** One document for one job: a button, then the words while it is made, then the download — and
- * the download straight away for one made before and kept. */
-function MakeDocument({ doc, kind, existing }: { doc: Build; kind: "cv" | "cover"; existing?: Made }) {
+ * the download straight away for one made before and kept. On Jobs and on Applied alike. */
+export function MakeDocument({ doc, kind, existing }: { doc: Build; kind: "cv" | "cover"; existing?: Made }) {
   const { build, making, start, error } = doc;
   const name = kind === "cv" ? "CV" : "cover letter";
   const ready = build?.state === "ready" && build.download_url ? build.download_url : null;

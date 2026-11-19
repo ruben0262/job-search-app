@@ -10,7 +10,7 @@ import { JobView } from "../jobview";
 import { useKept } from "../kept";
 import { ago, useNow } from "../time";
 import { Error, Prompt, useAction } from "../ui";
-import { MORE_PICTURES, PICTURES, latest } from "./JobsPage";
+import { MakeDocument, MORE_PICTURES, PICTURES, latest } from "./JobsPage";
 
 type Applied = Schema<"AppliedJob">;
 type Step = Schema<"Step">;
@@ -98,20 +98,17 @@ function AppliedCard({ job, busy, onUndo, onProgress }: {
       {[job.location, `Applied ${ago(job.applied_at, now)}`].filter(Boolean).join(" · ")}
     </p>
   );
-  // Made before, made since, or still being made, as the job moved here mid-way (owner, 2026-11-19).
+  // Made, being made, or to make: the same buttons as on Jobs, as a job marked applied may still want its
+  // documents (owner, 2026-11-19).
   const made = latest(job.documents);
-  const builds = { cv: useBuild(job.id, "cv"), cover: useBuild(job.id, "cover") };
-  const shown = (["cv", "cover"] as const).map((kind) => {
-    const { build, making } = builds[kind];
-    const name = kind === "cv" ? "CV" : "cover letter";
-    const quiet = kind === "cover" ? " secondary" : "";
-    if (making) return <button key={kind} type="button" className={`making${quiet}`} disabled>Making your {name}…</button>;
-    const href = build?.state === "ready" ? build.download_url : made[kind]?.download_url;
-    return href ? (
-      <a key={kind} className={`button${quiet}`} href={href} download>{MORE_PICTURES.download}Download {name}</a>
-    ) : null;
-  }).filter(Boolean);
-  const documents = shown.length ? <div className="job-docs">{shown}</div> : null;
+  const cv = useBuild(job.id, "cv");
+  const cover = useBuild(job.id, "cover");
+  const documents = (
+    <div className="job-docs">
+      <MakeDocument doc={cv} kind="cv" existing={made.cv} />
+      <MakeDocument doc={cover} kind="cover" existing={made.cover} />
+    </div>
+  );
   const marks = (
     <div className="job-bar">
       <a className="bar-action apply" href={job.url} target="_blank" rel="noreferrer">

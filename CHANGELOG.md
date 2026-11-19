@@ -42,6 +42,10 @@ faster ... For GPT and Gemini we don't even have this usage being displayed".
   site read what is left on an API key. What a document cost a key can be: its tokens are kept
   (`BuiltDocument.tokens`, in and out over its calls) and the notice says them. Claude Code's stream has a
   `rate_limit_event`, but it names one window and only near a threshold, so it is not used.
+- **Applied has the Make buttons Jobs has** (the owner, later: "make sure the make cv and cover buttons are still
+  available to click on in the applied page"). It never had them: since 2026-11-01 it offered only the download of
+  a document already made, so a job marked applied had no way left to make one. Both pages use the Jobs card's own
+  button (`MakeDocument`), so they cannot drift apart.
 - Tests: `test_a_document_being_made_is_listed_for_its_job_until_it_is_ready_and_says_what_it_used`, nobody
   else's listed (`test_a_build_is_its_owners_alone`), `test_a_chatgpt_sign_in_shows_its_five_hour_and_weekly_
   limits_and_a_spent_token_is_left_alone` (an answer of the shape ChatGPT gave), and the browser walk

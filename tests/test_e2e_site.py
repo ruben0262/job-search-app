@@ -1365,8 +1365,8 @@ def test_a_cv_being_made_is_said_on_every_page_after_a_refresh_and_on_applied_un
         site, capsys, monkeypatch):
     """Owner, 2026-11-19: a CV being made was seen only on its own button, so a refresh, or its job moving to
     Applied, made it vanish while it was still being written, and people press again. It is said above every
-    page until it is ready, Applied says it too, and ready, a notice hands it over with what the AI account
-    has left, read then: a ChatGPT plan's limits as a Claude one's are."""
+    page until it is ready, Applied says it too and has the Make buttons Jobs has, and ready, a notice hands
+    it over with what the AI account has left, read then: a ChatGPT plan's limits as a Claude one's are."""
     import json
 
     from libs.db import database, insert, now
@@ -1408,6 +1408,8 @@ def test_a_cv_being_made_is_said_on_every_page_after_a_refresh_and_on_applied_un
         applied = page.locator("article.job-card")
         expect(applied.get_by_role("button", name="Making your CV…")).to_be_disabled()
         expect(making).to_be_visible()
+        # A job marked applied can still have its documents made, as on Jobs (owner, 2026-11-19).
+        expect(applied.get_by_role("button", name="Make my cover letter")).to_be_enabled()
 
         # Made: what the worker writes.
         insert(db, BuiltDocument(id=build.id, user_id=user, job_id=job, kind="cv", mode="ai",
@@ -1418,6 +1420,7 @@ def test_a_cv_being_made_is_said_on_every_page_after_a_refresh_and_on_applied_un
 
         expect(making).to_have_count(0)
         expect(applied.get_by_role("link", name="Download CV")).to_be_visible()
+        expect(applied.get_by_role("button", name="Make it again")).to_be_enabled()
         notice = page.locator(".toast")
         expect(notice).to_contain_text(f"Your CV for {TITLES[0]} is ready.")
         expect(notice).to_contain_text("ChatGPT 5-hour limit: 37% used")
