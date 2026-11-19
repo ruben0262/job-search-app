@@ -10,13 +10,15 @@ they no longer allow, and the prune changes every row it removes a retired field
 kept before 2026-11-10 are split by source (`libs.ops.countries.split_by_source`), which also does nothing
 once done. Then every account from before memberships began is given free access, once ever
 (`libs.membership.free_for_existing`), and every account from before alerts were named its "My search" alert,
-once ever (`libs.alerts.alerts_for_existing`): before the prune, which removes the switch it reads.
+once ever (`libs.alerts.alerts_for_existing`): before the prune, which removes the switch it reads. And every
+alert of an account that had paused them all is switched off, once ever (`libs.alerts.paused_for_existing`),
+the pause having gone.
 """
 from __future__ import annotations
 
 import sys
 
-from libs.alerts import alerts_for_existing
+from libs.alerts import alerts_for_existing, paused_for_existing
 from libs.db import database, ensure_schema
 from libs.db.models import MODELS
 from libs.llm.accounts import settle
@@ -33,6 +35,8 @@ def main() -> int:
         print(f"users: {freed} account(s) from before memberships given free access")
     if alerted := alerts_for_existing(db):
         print(f"alerts: {alerted} account(s) given their My search alert")
+    if paused := paused_for_existing(db):
+        print(f"alerts: every alert switched off for {paused} account(s) that had paused them")
     ensure_schema(db, prune="--prune" in sys.argv[1:])
     for model in MODELS:
         indexes = len(list(db[model.COLLECTION].list_indexes()))

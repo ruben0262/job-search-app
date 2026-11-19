@@ -45,7 +45,6 @@ type AdminUser = {
   id: string;
   email: string;
   status: string;
-  active: boolean;
   telegram: string;
   onboarded: boolean;
   is_admin: boolean;
@@ -877,7 +876,6 @@ export function AdminPage({ tab: asked }: { tab: string }) {
               <td>{user.email}</td>
               <td className="job-sub">
                 {user.status}
-                {user.active ? "" : " · paused"}
               </td>
               <td className="job-sub">{user.telegram}</td>
               <td className="job-sub">{user.onboarded ? "yes" : "no"}</td>

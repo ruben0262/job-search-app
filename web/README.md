@@ -24,7 +24,7 @@ npm run build    # tsc --noEmit, then vite build
 | `src/pages/{Jobs,Words,Documents,Settings}Page.tsx` | the places after signup; Help is the support chat's |
 | `src/documents.ts` | a CV or cover letter for a job: start it, show it being made, hand over the PDF |
 | `src/pages/AlertsPage.tsx` | the person's named alerts: made, changed, switched off, and what each found |
-| `src/alerts.tsx`, `src/push.ts`, `public/sw.js` | where alerts reach somebody: Telegram through their own bot, and this phone's or browser's notifications, with a test of each |
+| `src/alerts.tsx`, `src/push.ts`, `public/sw.js` | where an alert reaches somebody, set up inside the alert (`AlertsPage`'s form): this phone's or browser's notifications, asked for as an alert sending to them is saved or switched on, and Telegram through their own bot, with a test of each |
 | `src/install.tsx`, `public/manifest.webmanifest` | the site as an app on a phone's home screen: the browser's offer kept from the first moment, and a phone asked once a visit until the app is on it (Chrome on Android tells by `related_applications`; an iPhone's browser cannot, and asks), with "Get the app" up top and in More; the icons are `branding/build.py`'s |
 | `src/ui.tsx` | the pieces every page needs: word chips, the upload button, errors |
 

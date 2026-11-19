@@ -18,7 +18,7 @@ from libs.corpus.boards import board_name
 from libs.corpus.geo import CITIES, COUNTRIES
 from libs.corpus.terms import learn
 from libs.db import find, find_one, get, insert, now
-from libs.db.models import Alert, User, UserJobState
+from libs.db.models import Alert, PushSubscription, User, UserJobState
 from libs.matching import green_words
 from libs.membership import has
 from libs.obs import audit
@@ -86,6 +86,10 @@ class AlertsPage(BaseModel):
     scores: bool
     # When the alerts last read new jobs, which the page says to show they are running.
     checked_at: datetime | None
+    # Where an alert can reach them, so a card says when one it sends to is not set up: their Telegram as
+    # `TelegramState` says it, and how many phones or browsers have notifications on.
+    telegram: Literal["unconfigured", "waiting", "connected", "broken"]
+    phones: int
     found_days: int
     places: list[Choice]
     sources: list[Choice]
@@ -112,9 +116,10 @@ def alerts_page(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(cu
     scored = has(db, user_id, "match_scores") and fit.profile(db, user) is not None
     most = limits.resolve(user, "alerts_per_account")
     # None is unlimited, and the page says so.
+    phones = db[PushSubscription.COLLECTION].count_documents({"user_id": user_id})
     return AlertsPage(alerts=alerts, can=has(db, user_id, "alerts"), most=most, scores=scored,
-                      checked_at=last_read(db), found_days=FOUND_DAYS, places=PLACE_CHOICES,
-                      sources=SOURCE_CHOICES)
+                      checked_at=last_read(db), telegram=user.telegram_status, phones=phones,
+                      found_days=FOUND_DAYS, places=PLACE_CHOICES, sources=SOURCE_CHOICES)
 
 
 @router.post("")

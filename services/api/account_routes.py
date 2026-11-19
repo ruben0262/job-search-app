@@ -96,29 +96,12 @@ def delete_account(body: DeleteBody, db: Database = Depends(get_db),
     return {"status": "deleted"}
 
 
-class AccountPatch(BaseModel):
-    # How often the feed is sent is no longer here; nor the daily email, which each alert sends or not.
-    active: bool | None = None
-
-
-@router.patch("/account")
-def patch_account(body: AccountPatch, db: Database = Depends(get_db),
-                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Settings the user may change directly. Only what is named is touched."""
-    if body.active is not None:
-        _set(db, user_id, active=body.active)
-        audit(logger, "account.delivery_toggled", user=user_id, active=body.active)
-    return {"status": "ok", "active": get(db, User, user_id).active}
-
-
 def _set(db: Database, user_id: _uuid.UUID, **fields) -> None:
     db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {**fields, "updated_at": now()}})
 
 
 class AccountOut(BaseModel):
     email: str
-    # Whether alerts are sent at all: the person's pause.
-    active: bool
     telegram_status: str
 
 
@@ -128,4 +111,4 @@ def account(db: Database = Depends(get_db),
     """What the settings page shows, minus anything secret. Their name and links are on
     `/onboarding/identity`, their words on `/onboarding/review`."""
     user = get(db, User, user_id)
-    return AccountOut(email=user.email, active=user.active, telegram_status=user.telegram_status)
+    return AccountOut(email=user.email, telegram_status=user.telegram_status)

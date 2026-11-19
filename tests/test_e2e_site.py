@@ -130,7 +130,7 @@ def test_a_new_person_goes_from_sign_up_to_their_jobs(site, capsys):
         _bookmarks(page)
         _marks(page)
         _alert_links(page, base, ids)
-        _settings(browser, page, base)
+        _alerts_on_an_iphone(browser, page, base)
         _more(page, base)
         browser.close()
 
@@ -2093,9 +2093,11 @@ def _made_documents(page, user_id, job_id: int) -> None:
 
 def test_telegram_is_three_steps_with_no_chat_id_and_the_morning_email_is_one_tick(site, capsys,
                                                                                     monkeypatch):
-    """Their own bot, on the Alerts page: paste its token, press Start in it, and the page says it is
-    connected by itself. Telegram's Bot API is the stand-in from the alerts tests; everything else is the real
-    site. The morning email is an alert's own (owner, 2026-11-17): one tick on My search."""
+    """Their own bot, set up inside the alert that sends to Telegram (owner, 2026-11-19): paste its token,
+    press Start in it, and the form says it is connected by itself; until then the alert's card says Telegram
+    is not connected. Reached from setting up's last screen. Telegram's Bot API is the stand-in from the
+    alerts tests; everything else is the real site. The morning email is an alert's own (owner, 2026-11-17):
+    one tick on My search."""
     from libs import telegram as bot_api
     from libs.secrets import generate_key
     from tests.test_alerts import FakeTelegram
@@ -2109,34 +2111,42 @@ def test_telegram_is_three_steps_with_no_chat_id_and_the_morning_email_is_one_ti
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         _sign_up(page, base, email, capsys)
-        _onboard(page)
-        page.goto(f"{base}/#/alerts")
+        _onboard(page, then="Set up alerts")
+        expect(page.get_by_role("heading", name="Alerts", exact=True)).to_be_visible()
 
-        # Folded until opened, saying where it stands.
-        expect(page.get_by_text("Make your bot.")).not_to_be_visible()
-        page.locator("summary", has_text="Telegram").click()
-        expect(page.get_by_text("Make your bot.")).to_be_visible()
-        page.get_by_label("Bot token").fill(token)
-        page.get_by_role("button", name="Save token").click()
-        expect(page.get_by_text("Saved: @alice_jobs_bot.")).to_be_visible()
-        expect(page.get_by_role("link", name="Open @alice_jobs_bot")).to_have_attribute(
-            "href", "https://t.me/alice_jobs_bot")
-        expect(page.get_by_text("Waiting for you to press Start…")).to_be_visible()
-
-        fake.press_start(token)
-        expect(page.get_by_text("Connected to @alice_jobs_bot. New jobs arrive there.")).to_be_visible(
-            timeout=10_000)
-        page.get_by_role("button", name="Send a test").click()
-        expect(page.get_by_text("Sent. Check Telegram.")).to_be_visible()
-        assert [chat for _, chat, _ in fake.sent] == ["4242", "4242"], "the welcome, then the test"
-
+        # My search sends to Telegram from the start, and its card says Telegram is not set up.
         mine = page.locator("li.alert-card").filter(has=page.get_by_role("link", name="My search"))
-        expect(mine).not_to_contain_text("a morning email")
+        unset = "Telegram is not connected yet. Tap Change to connect it."
+        expect(mine).to_contain_text(unset)
+        expect(page.get_by_role("button", name="Pause alerts")).to_have_count(0)
         mine.get_by_role("button", name="Change").click()
         form = page.get_by_role("dialog", name="Change “My search”")
+        expect(form.get_by_text("Make your bot.")).to_be_visible()
+        # Enter in the token box saves the token, not the alert around it.
+        form.get_by_label("Bot token").fill(token)
+        form.get_by_label("Bot token").press("Enter")
+        expect(form.get_by_text("Saved: @alice_jobs_bot.")).to_be_visible()
+        expect(form.get_by_role("link", name="Open @alice_jobs_bot")).to_have_attribute(
+            "href", "https://t.me/alice_jobs_bot")
+        expect(form.get_by_text("Waiting for you to press Start…")).to_be_visible()
+
+        fake.press_start(token)
+        expect(form.get_by_text("Connected to @alice_jobs_bot. Every alert that sends to Telegram uses it.")
+               ).to_be_visible(timeout=10_000)
+        form.get_by_role("button", name="Send a test").click()
+        expect(form.get_by_text("Sent. Check Telegram.")).to_be_visible()
+        assert [chat for _, chat, _ in fake.sent] == ["4242", "4242"], "the welcome, then the test"
+        # Unticked, Telegram's setup goes; ticked again, it says where it stands.
+        form.get_by_label("Telegram").uncheck()
+        expect(form.get_by_text("Connected to @alice_jobs_bot.", exact=False)).to_have_count(0)
+        form.get_by_label("Telegram").check()
+        expect(form.get_by_role("button", name="Disconnect")).to_be_visible()
+
+        expect(mine).not_to_contain_text("a morning email")
         form.get_by_label("Morning email").check()
-        form.get_by_role("button", name="Save").click()
+        form.get_by_role("button", name="Save", exact=True).click()
         expect(mine).to_contain_text("a morning email")
+        expect(mine).not_to_contain_text(unset)
         page.reload()
         expect(mine).to_contain_text("a morning email")
         browser.close()
@@ -2258,7 +2268,6 @@ def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_wh
         expect(page.get_by_text("CVs and cover letters for each job come with a membership.")).to_be_visible()
         page.goto(f"{base}/#/alerts")
         expect(page.get_by_text("Alerts come with a membership.")).to_be_visible()
-        expect(page.get_by_role("button", name="Pause alerts")).to_have_count(0)
         # And so does bringing a job in by its link (owner, 2026-11-16): the tab says so, with the way there.
         page.goto(f"{base}/#/add")
         expect(page.get_by_text("Adding a job by its link comes with a membership.")).to_be_visible()
@@ -2451,8 +2460,9 @@ def _upload(page) -> None:
     expect(page.get_by_role("heading", name="What we found")).to_be_visible()
 
 
-def _onboard(page) -> None:
-    """The screens: the CV, About you, what was read off them, done."""
+def _onboard(page, then: str = "See my jobs") -> None:
+    """The screens: the CV, About you, what was read off them, done, and out by `then`: "See my jobs", or
+    "Set up alerts", which finishes them as well."""
     _upload(page)
     # Read off the CV by rules: their name, and the job they do as a green word.
     expect(page.get_by_label("Your name")).to_have_value("Jordan Ellery")
@@ -2463,7 +2473,7 @@ def _onboard(page) -> None:
     page.get_by_role("button", name="Looks good").click()
 
     expect(page.get_by_role("heading", name="You're all set")).to_be_visible()
-    page.get_by_role("button", name="See my jobs").click()
+    page.get_by_role("button", name=then).click()
 
 
 def _bookmarks(page) -> None:
@@ -2557,22 +2567,19 @@ def _alert_links(page, base: str, ids: dict[str, int]) -> None:
                 expect(page.locator("nav a[aria-current=page]")).to_have_attribute("href", event.url)
 
 
-def _settings(browser, page, base: str) -> None:
-    """Alerts pause and resume on the Alerts page; an iPhone outside its home screen is told what to do there,
-    not failed."""
-    page.goto(f"{base}/#/alerts")
-    page.get_by_role("button", name="Pause alerts").click()
-    expect(page.get_by_text("Alerts are paused")).to_be_visible()
-    page.get_by_role("button", name="Turn alerts back on").click()
-    expect(page.get_by_text("Alerts are on")).to_be_visible()
-
+def _alerts_on_an_iphone(browser, page, base: str) -> None:
+    """An iPhone or iPad outside its home screen is told what to do, not failed: on the card of an alert that
+    sends to the phone, and inside it, where the phone is set up (owner, 2026-11-19)."""
     for agent in (IPHONE, IPAD):
         apple = browser.new_context(storage_state=page.context.storage_state(), user_agent=agent)
         apple.add_init_script("delete window.PushManager;"
                               "Object.defineProperty(navigator, 'maxTouchPoints', {get: () => 5})")
         settings = apple.new_page()
         settings.goto(f"{base}/#/alerts")
-        expect(settings.get_by_text("Add this site to your home screen first")).to_be_visible()
+        mine = settings.locator("li.alert-card").filter(has=settings.get_by_role("link", name="My search"))
+        expect(mine).to_contain_text("No phone gets these yet. Open this alert on your phone and save it.")
+        mine.get_by_role("button", name="Change").click()
+        expect(settings.get_by_text("On an iPhone, add this site to your Home Screen first")).to_be_visible()
 
 
 def _more(page, base: str) -> None:
@@ -2653,7 +2660,7 @@ def test_an_alert_is_made_for_a_company_and_shows_what_it_found(site, capsys):
     it."""
     from libs.alerts import route
     from libs.db import database, insert, now
-    from libs.db.models import Alert, AlertCursor, CorpusJob
+    from libs.db.models import Alert, AlertCursor, CorpusJob, UserJobState
 
     base, email, _ = site
     with sync_api.sync_playwright() as playwright:
@@ -2687,13 +2694,17 @@ def test_an_alert_is_made_for_a_company_and_shows_what_it_found(site, capsys):
         read = now() - timedelta(minutes=5)
         # Made before the job was read: an alert announces what is new after it.
         db[Alert.COLLECTION].update_many({}, {"$set": {"created_at": read - timedelta(hours=1)}})
-        insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="linkedin", country="DK",
-                             title="Brick Designer", company="The LEGO Group",
-                             description="Design bricks. " * 30,
-                             first_seen_at=read, described_at=read, posted_at=read))
+        brick = insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="linkedin",
+                                     country="DK", title="Brick Designer", company="The LEGO Group",
+                                     description="Design bricks. " * 30,
+                                     first_seen_at=read, described_at=read, posted_at=read))
         db[AlertCursor.COLLECTION].update_one({"_id": "0"}, {"$set": {"at": read - timedelta(minutes=1)}},
                                              upsert=True)
-        assert route(db).caught == 1
+        route(db)
+        # What the LEGO alert caught, not how many were caught in all: My search catches the page's own
+        # Backend Engineer jobs too once they are `SETTLE` old, which a slower run reaches first.
+        lego = db[Alert.COLLECTION].find_one({"name": "LEGO in Denmark"})["_id"]
+        assert db[UserJobState.COLLECTION].distinct("job_id", {"alerts": lego}) == [brick.id]
 
         page.reload()
         card.get_by_role("link", name="See what it found").click()
@@ -2846,10 +2857,12 @@ def _a_free_phone_is_not_asked(browser, base: str, email: str, capsys) -> None:
 
 def test_the_site_installs_as_an_app_and_a_job_it_pushes_shows_the_wheel(site, capsys, tmp_path, monkeypatch):
     """Alerts on the phone without an app store (owner, 2026-11-17: "download it through chrome as a mini
-    app"): Chrome finds nothing missing to install the site, and the Alerts page offers it; a job pushed to
-    the phone shows the app's icon, and the wheel in the status bar; and the tab that turned notifications on
-    is the service worker's at once, so tapping one can take that tab to the job. Before: two icons missing,
-    so never offered, a notification with neither, and a tab the worker could not move."""
+    app"): Chrome finds nothing missing to install the site, and an alert that sends to the phone offers it; a
+    job pushed to the phone shows the app's icon, and the wheel in the status bar; and the tab that turned
+    notifications on is the service worker's at once, so tapping one can take that tab to the job. Before: two
+    icons missing, so never offered, a notification with neither, and a tab the worker could not move.
+    Notifications are asked for by saving an alert that sends to the phone (owner, 2026-11-19), with no button
+    of their own."""
     import json
 
     base, email, ids = site
@@ -2864,8 +2877,12 @@ def test_the_site_installs_as_an_app_and_a_job_it_pushes_shows_the_wheel(site, c
         cdp = context.new_cdp_session(page)
         assert cdp.send("Page.getInstallabilityErrors")["installabilityErrors"] == []
         page.goto(f"{base}/#/alerts")
-        expect(page.get_by_role("button", name="Install the app")).to_be_visible()
+        mine = page.locator("li.alert-card").filter(has=page.get_by_role("link", name="My search"))
+        mine.get_by_role("button", name="Change").click()
+        form = page.get_by_role("dialog", name="Change “My search”")
+        expect(form.get_by_role("button", name="Install the app")).to_be_visible()
         _fits(page)
+        form.get_by_role("button", name="Close").click()
 
         workers: list[dict] = []
         cdp.on("ServiceWorker.workerRegistrationUpdated",
@@ -2902,30 +2919,56 @@ def test_the_site_installs_as_an_app_and_a_job_it_pushes_shows_the_wheel(site, c
         for picture in (shown["icon"], shown["badge"]):
             assert page.request.get(picture).headers["content-type"] == "image/png", picture
 
-        # The button itself, on a site given no push settings, as the live one was: it ran a night ending in
-        # "Notifications are not set up on this site yet" (2026-11-18). Only the browser's push service is
-        # stood in for, and it is handed the site's key as Chrome's would be.
-        page.add_init_script("""PushManager.prototype.subscribe = async function (options) {
-          window.subscribedWith = new Uint8Array(options.applicationServerKey).length;
-          window.subscription = {endpoint: "https://push.example.com/e2e", toJSON: () => ({
-            endpoint: "https://push.example.com/e2e", keys: {p256dh: "BKey", auth: "secret"}})};
-          return window.subscription;
-        };
-        PushManager.prototype.getSubscription = async () => window.subscription ?? null;""")
-        page.reload()
-        page.get_by_role("button", name="Turn on notifications").click()
-        expect(page.get_by_text("On in this browser.")).to_be_visible()
-        assert page.evaluate("window.subscribedWith") == 65, "a P-256 point, as `subscribe` takes"
-
-        # And a test, to see one arrive without waiting for a job: sent by the server to this browser alone.
-        from libs.notify import push
-
-        pushed = []
-        monkeypatch.setattr(push, "webpush", lambda browser, *_, **__: pushed.append(browser["endpoint"]))
-        page.get_by_role("button", name="Send a test").click()
-        expect(page.get_by_role("status").filter(has_text="Sent.")).to_be_visible()
-        assert pushed == ["https://push.example.com/e2e"]
+        _notifications_asked_by_the_alert(page, mine, form, monkeypatch)
         context.close()
+
+
+def _notifications_asked_by_the_alert(page, mine, form, monkeypatch) -> None:
+    """No button of their own (owner, 2026-11-19): an alert that sends to the phone asks this one as it is
+    switched on or saved, and then sends a test from inside it."""
+    # Asked for by saving the alert, on a site given no push settings, as the live one was: it ran a night
+    # ending in "Notifications are not set up on this site yet" (2026-11-18). Only the browser's push
+    # service is stood in for, and it is handed the site's key as Chrome's would be.
+    page.add_init_script("""PushManager.prototype.subscribe = async function (options) {
+      window.subscribedWith = new Uint8Array(options.applicationServerKey).length;
+      window.subscription = {endpoint: "https://push.example.com/e2e", toJSON: () => ({
+        endpoint: "https://push.example.com/e2e", keys: {p256dh: "BKey", auth: "secret"}})};
+      return window.subscription;
+    };
+    PushManager.prototype.getSubscription = async () => window.subscription ?? null;""")
+    page.reload()
+    expect(page.get_by_role("button", name="Turn on notifications")).to_have_count(0)
+    expect(mine).to_contain_text("No phone gets these yet.")
+    # Its switch turned on asks this phone too, as the owner asked of the switch.
+    switch = mine.get_by_role("switch", name="My search on")
+    switch.uncheck()
+    switch.check()
+    expect(mine).not_to_contain_text("No phone gets these yet.")
+    assert page.evaluate("window.subscribedWith") == 65, "asked as the switch went on"
+    # And saving asks, which the same phone, forgotten, shows.
+    from libs.db import database
+
+    database().push_subscriptions.delete_many({})
+    page.evaluate("delete window.subscription; window.subscribedWith = 0")
+    page.reload()
+    expect(mine).to_contain_text("No phone gets these yet.")
+    mine.get_by_role("button", name="Change").click()
+    expect(form.get_by_text("When you save, this phone asks to allow notifications.")).to_be_visible()
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(form).to_have_count(0)
+    assert page.evaluate("window.subscribedWith") == 65, "a P-256 point, as `subscribe` takes"
+    expect(mine).not_to_contain_text("No phone gets these yet.")
+    mine.get_by_role("button", name="Change").click()
+    expect(form.get_by_text("On for this phone.")).to_be_visible()
+
+    # And a test, to see one arrive without waiting for a job: sent by the server to this browser alone.
+    from libs.notify import push
+
+    pushed = []
+    monkeypatch.setattr(push, "webpush", lambda browser, *_, **__: pushed.append(browser["endpoint"]))
+    form.get_by_role("button", name="Send a test").click()
+    expect(form.get_by_role("status").filter(has_text="Sent.")).to_be_visible()
+    assert pushed == ["https://push.example.com/e2e"]
 
 
 def _fits(page) -> None:

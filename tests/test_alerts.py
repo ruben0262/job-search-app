@@ -409,22 +409,46 @@ def test_starter_hears_of_a_job_when_its_own_list_has_it(db):
 
 
 @needs_db
-def test_nobody_without_alerts_or_with_them_paused_has_anything_caught(db):
-    """A free account has no alerts (`libs.membership`); a paused or switched-off one sends nothing."""
-    from libs.db.models import Alert, User
+def test_nobody_without_alerts_or_with_them_switched_off_has_anything_caught(db):
+    """A free account has no alerts (`libs.membership`); a switched-off one sends nothing, its switch being
+    the only on and off (owner, 2026-11-19)."""
+    from libs.db.models import Alert, UserConfig
 
     _free, word = _person(db, subscription_status=None)
-    paused, _ = _person(db)
     off, _ = _person(db)
-    for user in (paused, off):
-        from libs.db.models import UserConfig
-        db[UserConfig.COLLECTION].update_one({"user_id": user.id}, {"$set": {"config": {"sections": [
-            {"keywords": [word]}]}}})
-    db[User.COLLECTION].update_one({"_id": paused.id}, {"$set": {"active": False}})
+    db[UserConfig.COLLECTION].update_one({"user_id": off.id}, {"$set": {"config": {"sections": [
+        {"keywords": [word]}]}}})
     db[Alert.COLLECTION].update_many({"user_id": off.id}, {"$set": {"on": False}})
     _posting(db, word)
 
     assert _catch(db).caught == 0
+
+
+@needs_db
+def test_an_account_that_had_paused_its_alerts_has_every_one_switched_off_once(db):
+    """The pause went (owner, 2026-11-19), and each alert's switch is the only one: somebody who had paused
+    keeps hearing nothing, an account not yet confirmed (never "active" either) is not taken for paused, and
+    it is done once ever, so a switch turned back on afterwards stays on."""
+    from libs.alerts import paused_for_existing
+    from libs.db.models import Alert, User
+
+    paused, _ = _person(db)
+    unconfirmed, _ = _person(db)
+    hearing, _ = _person(db)
+    db[User.COLLECTION].update_many({"_id": {"$in": [paused.id, unconfirmed.id]}},
+                                    {"$set": {"active": False}})
+    db[User.COLLECTION].update_one({"_id": unconfirmed.id}, {"$set": {"status": "pending_verification"}})
+    db.counters.delete_one({"_id": "alerts.paused_for_existing"})
+
+    def on(user):
+        return [alert["on"] for alert in db[Alert.COLLECTION].find({"user_id": user.id})]
+
+    assert paused_for_existing(db) >= 1
+    assert (on(paused), on(unconfirmed), on(hearing)) == ([False], [True], [True])
+
+    db[Alert.COLLECTION].update_many({"user_id": paused.id}, {"$set": {"on": True}})
+    assert paused_for_existing(db) == 0
+    assert on(paused) == [True]
 
 
 @needs_db
@@ -1000,7 +1024,20 @@ def test_a_test_notification_reaches_this_browser_and_one_its_service_dropped_is
 
 
 @needs_db
-def test_a_browser_subscribes_once_and_can_unsubscribe(api):
+def test_the_alerts_page_says_where_its_alerts_can_reach(api):
+    """Where an alert sends is set up inside it (owner, 2026-11-19), and a card says when a place it sends to
+    is not: so the page is told their Telegram and how many phones or browsers have notifications on."""
+    http, _, _ = api
+    page = http.get("/alerts").json()
+    assert (page["telegram"], page["phones"]) == ("unconfigured", 0)
+    phone = {"endpoint": f"https://push.example.com/{uuid.uuid4()}",
+             "keys": {"p256dh": "BKey", "auth": "secret"}}
+    assert http.post("/push/subscribe", json=phone).status_code == 200
+    assert http.get("/alerts").json()["phones"] == 1
+
+
+@needs_db
+def test_a_browser_subscribes_once(api):
     from libs.db.models import PushSubscription
 
     http, db, user = api
@@ -1012,10 +1049,6 @@ def test_a_browser_subscribes_once_and_can_unsubscribe(api):
     assert http.post("/push/subscribe", json=browser).status_code == 200
     assert _endpoints(db, user) == [browser["endpoint"]]
     assert db[PushSubscription.COLLECTION].count_documents({"endpoint": browser["endpoint"]}) == 1
-
-    assert http.request("DELETE", "/push/subscribe",
-                        json={"endpoint": browser["endpoint"]}).status_code == 200
-    assert _endpoints(db, user) == []
 
 
 @needs_db

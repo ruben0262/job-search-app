@@ -46,6 +46,12 @@ class User(Document):
     onboarding_completed_at: datetime | None = None
     last_active_at: datetime | None = None
     timezone: str = "UTC"
+    # The pause on every alert, which went on 2026-11-19 (owner: each alert's switch is the only one). Nothing
+    # reads or writes it now but the step that switched the paused accounts' alerts off
+    # (`libs.alerts.paused_for_existing`). Kept declared for one deploy: the notifier still running while that
+    # deploy prunes asks for `active: True`, and finding nobody it would move past the jobs it read without
+    # alerting anyone. The next change deployed after it retires it (RETIRED), with the `active=` the tests
+    # still give (ROADMAP Phase 11).
     active: bool = False
     is_admin: bool = False
     # Per-account overrides of `libs.limits`; a key absent here means the catalogue's default.

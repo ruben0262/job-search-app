@@ -1,12 +1,11 @@
-/** Where alerts reach somebody off the site: Telegram through their own bot, and this phone's or browser's
- * notifications; and the pause on every alert. All optional; the site works the same without them. */
+/** Where an alert reaches somebody off the site, set up inside the alert itself (owner, 2026-11-19): this phone's
+ * or browser's notifications, asked for as an alert that sends to them is saved or switched on, and Telegram through
+ * their own bot. Each alert's switch is the only on and off. */
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type Schema } from "./api";
 import { openInstall, standalone, useInstallable } from "./install";
-import { useKept } from "./kept";
-import { ACCOUNT } from "./pages/SettingsPage";
-import { disablePush, enablePush, pushState, testPush } from "./push";
+import { enablePush, pushState, testPush, type PushState } from "./push";
 import { Error, useAction } from "./ui";
 
 type Telegram = Schema<"TelegramState">;
@@ -14,11 +13,62 @@ type Telegram = Schema<"TelegramState">;
 /** How often the page asks whether Start has been pressed in their bot. */
 const START_POLL_MS = 2000;
 
-/** Telegram through their own bot: three steps, and their chat found by itself once they press Start
- * in it. Connected, it offers a test message and a way to disconnect. Folded away until opened, with
- * where it stands said on the fold: it is optional, and three steps read as a chore (owner,
- * 2026-11-02). Open by itself while it waits for Start, or when it has stopped working. */
-export function TelegramSetup() {
+/** This phone's or browser's notifications: where they stand, and a way to ask for them, which only asks when the
+ * browser can and has not been answered yet. */
+export function usePhone() {
+  const [state, setState] = useState<PushState | null>(null);
+  useEffect(() => {
+    void pushState().then(setState).catch(() => setState("unsupported"));
+  }, []);
+  /** True once this phone is on: asked here, or already. Asked only in a tap, which a browser requires. */
+  const allow = useCallback(async () => {
+    if (state !== "off") return state === "on";
+    const on = await enablePush();
+    setState(on ? "on" : await pushState());
+    return on;
+  }, [state]);
+  return { state, allow };
+}
+
+export type Phone = ReturnType<typeof usePhone>;
+
+/** Under "Your phone or browser" in an alert: what this one will do, and a test once it is on. */
+export function PhoneSetup({ phone }: { phone: Phone }) {
+  const [tested, setTested] = useState(false);
+  const test = useAction(async () => {
+    setTested(false);
+    setTested(await testPush());
+  });
+  const said = {
+    on: "On for this phone.",
+    off: "When you save, this phone asks to allow notifications.",
+    blocked: "Notifications are blocked here. Allow them for this site in your browser's settings.",
+    "home-screen": "On an iPhone, add this site to your Home Screen first, then open it from there.",
+    unsupported: "This browser cannot show notifications. Open the site on your phone.",
+  };
+  if (!phone.state) return null;
+  return (
+    <div className="channel-setup">
+      <p className="small muted">{said[phone.state]}</p>
+      <div className="row">
+        <InstallButton />
+        {phone.state === "on" ? (
+          <button type="button" className="secondary small" disabled={test.busy} onClick={() => void test.run()}>
+            {test.busy ? "Sending…" : "Send a test"}
+          </button>
+        ) : null}
+      </div>
+      {tested && !test.error ? <p className="small muted" role="status">Sent. It should appear in a few seconds.</p>
+        : null}
+      <Error>{test.error}</Error>
+    </div>
+  );
+}
+
+/** Under "Telegram" in an alert: their own bot in three steps, their chat found by itself once they press Start
+ * in it; connected, a test message and a way to disconnect. One bot for every alert of theirs that sends to
+ * Telegram. No form of its own: it sits inside the alert's, and Enter in the token box saves the token. */
+export function TelegramSetup({ onChanged }: { onChanged: () => void }) {
   const [state, setState] = useState<Telegram | null>(null);
   const [token, setToken] = useState("");
   const [tested, setTested] = useState(false);
@@ -29,14 +79,17 @@ export function TelegramSetup() {
   const waiting = state?.status === "waiting";
   useEffect(() => {
     if (!waiting) return;
-    const look = () => void api.post<Telegram>("/telegram/check").then(setState).catch(() => undefined);
+    const look = () => void api.post<Telegram>("/telegram/check").then((next) => {
+      setState(next);
+      if (next.status === "connected") onChanged();
+    }).catch(() => undefined);
     const timer = window.setInterval(look, START_POLL_MS);
     window.addEventListener("focus", look);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("focus", look);
     };
-  }, [waiting]);
+  }, [waiting, onChanged]);
   const save = useAction(async () => {
     setState(await api.put<Telegram>("/telegram/bot", { token: token.trim() }));
     setToken("");
@@ -44,47 +97,47 @@ export function TelegramSetup() {
   const test = useAction(async () => {
     setState(await api.post<Telegram>("/telegram/test"));
     setTested(true);
+    // A Telegram that had stopped and takes the test is working again, which the cards say.
+    onChanged();
   });
   const forget = useAction(async () => {
     setState(await api.del<Telegram>("/telegram/bot"));
     setTested(false);
+    onChanged();
   });
 
-  // Opened by itself when it needs them, and never closed by itself: finishing must not fold it away.
-  const needed = state?.status === "broken" || waiting;
-  const fold = useCallback((node: HTMLDetailsElement | null) => {
-    if (node && needed) node.open = true;
-  }, [needed]);
-
   if (!state) return null;
-  const said = state.status === "connected" ? `On: @${state.bot}`
-    : state.status === "broken" ? "Stopped working" : waiting ? "Waiting for you to press Start" : "Off";
-  const connected = (
-    <div className="telegram-on">
-      <p className="small">
-        {state.status === "broken"
-          ? `Telegram stopped taking messages from @${state.bot}. Open it, press Start, then send a test.`
-          : `Connected to @${state.bot}. New jobs arrive there.`}
-      </p>
-      <div className="row">
-        <button type="button" className="secondary small" disabled={test.busy} onClick={() => void test.run()}>
-          {test.busy ? "Sending…" : "Send a test"}
-        </button>
-        {state.status === "broken" && state.open_url ? (
-          <a className="button secondary small" href={state.open_url} target="_blank" rel="noreferrer">
-            Open @{state.bot}
-          </a>
-        ) : null}
-        <button type="button" className="secondary small" disabled={forget.busy} onClick={() => void forget.run()}>
-          Disconnect
-        </button>
+  if (state.status === "connected" || state.status === "broken") {
+    return (
+      <div className="channel-setup">
+        <p className="small">
+          {state.status === "broken"
+            ? `Telegram stopped taking messages from @${state.bot}. Open it, press Start, then send a test.`
+            : `Connected to @${state.bot}. Every alert that sends to Telegram uses it.`}
+        </p>
+        <div className="row">
+          <button type="button" className="secondary small" disabled={test.busy} onClick={() => void test.run()}>
+            {test.busy ? "Sending…" : "Send a test"}
+          </button>
+          {state.status === "broken" && state.open_url ? (
+            <a className="button secondary small" href={state.open_url} target="_blank" rel="noreferrer">
+              Open @{state.bot}
+            </a>
+          ) : null}
+          <button type="button" className="secondary small" disabled={forget.busy} onClick={() => void forget.run()}>
+            Disconnect
+          </button>
+        </div>
+        {tested && !test.error ? <p className="small muted" role="status">Sent. Check Telegram.</p> : null}
+        <Error>{test.error ?? forget.error}</Error>
       </div>
-      {tested && !test.error ? <p className="small muted" role="status">Sent. Check Telegram.</p> : null}
-      <Error>{test.error ?? forget.error}</Error>
-    </div>
-  );
-  const steps = (
-    <ol className="steps">
+    );
+  }
+  const keep = () => {
+    if (token.trim()) void save.run();
+  };
+  return (
+    <ol className="steps channel-setup">
       <li className={waiting ? "done" : ""}>
         <span className="step-number" aria-hidden="true">1</span>
         <div>
@@ -103,16 +156,19 @@ export function TelegramSetup() {
               <button type="button" className="linklike small" onClick={() => void forget.run()}>Use another bot</button>
             </p>
           ) : (
-            <form className="row" onSubmit={(event) => {
-              event.preventDefault();
-              if (token.trim()) void save.run();
-            }}>
+            <div className="row">
               <input aria-label="Bot token" placeholder="123456789:AAH…" value={token} autoComplete="off"
-                     spellCheck={false} onChange={(event) => setToken(event.target.value)} />
-              <button type="submit" className="secondary small" disabled={!token.trim() || save.busy}>
+                     spellCheck={false} onChange={(event) => setToken(event.target.value)}
+                     onKeyDown={(event) => {
+                       if (event.key === "Enter") {
+                         event.preventDefault();
+                         keep();
+                       }
+                     }} />
+              <button type="button" className="secondary small" disabled={!token.trim() || save.busy} onClick={keep}>
                 {save.busy ? "Checking…" : "Save token"}
               </button>
-            </form>
+            </div>
           )}
           <Error>{save.error}</Error>
         </div>
@@ -133,99 +189,6 @@ export function TelegramSetup() {
       </li>
     </ol>
   );
-  return (
-    <details ref={fold} className="fold-plain telegram">
-      <summary>
-        <span className="label">Telegram</span>
-        <span className="small muted">{said}</span>
-      </summary>
-      {state.status === "connected" || state.status === "broken" ? connected : steps}
-    </details>
-  );
-}
-
-/** Every alert at once: paused, nothing is sent anywhere, and the Jobs page fills up as usual. Was in Settings
- * until alerts had a page of their own (owner, 2026-11-17). */
-export function Pause({ onChanged }: { onChanged: () => void }) {
-  const { data: account, reload } = useKept<Schema<"AccountOut">>(ACCOUNT);
-  const pause = useAction(async () => {
-    await api.patch("/account", { active: !account?.active });
-    await reload();
-    // The Jobs page's banner says when they are paused, and it is the dashboard's.
-    onChanged();
-  });
-  if (!account) return null;
-  return (
-    <div className="channel">
-      <span>
-        <span className="label">{account.active ? "Alerts are on" : "Alerts are paused"}</span>
-        <span className="hint">
-          {account.active ? "Pausing stops every alert. Your Jobs page keeps filling up."
-            : "Nothing is sent. Your Jobs page keeps filling up as usual."}
-        </span>
-      </span>
-      <button type="button" className="secondary" disabled={pause.busy} onClick={() => void pause.run()}>
-        {account.active ? "Pause alerts" : "Turn alerts back on"}
-      </button>
-      <Error>{pause.error}</Error>
-    </div>
-  );
-}
-
-/** Notifications in this browser: on, off, or why they cannot be; on, a test to see one arrive. */
-export function PushButton() {
-  const [state, setState] = useState<Awaited<ReturnType<typeof pushState>> | null>(null);
-  const [refused, setRefused] = useState(false);
-  const [tested, setTested] = useState(false);
-  useEffect(() => {
-    void pushState().then(setState).catch(() => setState("unsupported"));
-  }, []);
-  const toggle = useAction(async () => {
-    setRefused(false);
-    if (state === "on") {
-      await disablePush();
-      setState("off");
-    } else if (await enablePush()) setState("on");
-    else setRefused(true);
-  });
-  const test = useAction(async () => {
-    setTested(false);
-    if (await testPush()) setTested(true);
-    else setState("off");
-  });
-
-  if (state === "home-screen") {
-    return (
-      <p className="small muted">
-        Add this site to your home screen first: tap Share, then Add to Home Screen, and open it from
-        there.
-      </p>
-    );
-  }
-  if (state === "unsupported") return <p className="small muted">This browser cannot show notifications.</p>;
-  return (
-    <>
-      <button type="button" className="secondary" disabled={state === null || toggle.busy}
-              onClick={() => void toggle.run()}>
-        {toggle.busy ? "One moment…" : state === "on" ? "Turn off notifications" : "Turn on notifications"}
-      </button>
-      {state === "on" ? (
-        <>
-          <span className="small muted">On in this browser.</span>
-          <button type="button" className="secondary small" disabled={test.busy} onClick={() => void test.run()}>
-            {test.busy ? "Sending…" : "Send a test"}
-          </button>
-          {tested && !test.error ? (
-            <p className="small muted" role="status">Sent. It should appear in a few seconds.</p>
-          ) : null}
-        </>
-      ) : null}
-      {refused ? (
-        <p className="small muted">Your browser said no. Allow notifications for this site in its settings.</p>
-      ) : null}
-      <Error>{toggle.error ?? test.error}</Error>
-    </>
-  );
 }
 
 /** Where the alerts are, for an account without a membership: they come with one (owner, 2026-11-12), and a
@@ -240,27 +203,10 @@ export function AlertsForMembers() {
   );
 }
 
-/** Where alerts can reach somebody off the site, each with where it stands. Which alert sends where is the
- * alert's own (`AlertsPage`); the morning email needs no setting up, so it is only there. */
-export function Alerts() {
-  return (
-    <div className="channels">
-      <div className="channel stacked">
-        <TelegramSetup />
-      </div>
-      <div className="channel">
-        <span className="label">This phone or browser</span>
-        <InstallButton />
-        <PushButton />
-      </div>
-    </div>
-  );
-}
-
 /** The site as an app: the sheet that says why and how (`install.tsx`), on a phone or wherever the browser
  * offers it; nothing once it is the app. */
 function InstallButton() {
   const installable = useInstallable();
   if (standalone() || (!installable && !matchMedia("(pointer: coarse)").matches)) return null;
-  return <button type="button" className="secondary" onClick={openInstall}>Install the app</button>;
+  return <button type="button" className="secondary small" onClick={openInstall}>Install the app</button>;
 }

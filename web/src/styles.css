@@ -2460,29 +2460,26 @@ button.toast-close:hover:not([disabled]) {
   width: 100%;
 }
 
-/* Telegram, this browser, the pause: one row each, saying where it stands. */
-.channels {
-  margin: 0.5rem 0 0;
+/* A place an alert sends to that is not set up, on its card: plainly, since nothing would arrive there. */
+.alert-card .unset {
+  padding-left: calc(var(--gap) / 2);
+  border-left: 2px solid var(--accent);
+  color: var(--ink);
 }
 
-.channel {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 0.9rem;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid var(--hairline);
+/* What a ticked place needs, under its tick in an alert's form (owner, 2026-11-19: set up inside the alert): set
+   in to the tick's words, and there only while it is ticked. In the form's box, so Telegram's steps (`.steps`,
+   later) take it too. */
+.picker .channel-setup {
+  margin: 0 0 calc(var(--gap) / 2) calc(var(--switch) + 0.55rem);
 }
 
-.channel .label {
+.channel-setup p {
   margin: 0;
 }
 
-.channel .error,
-.channel p {
-  flex-basis: 100%;
-  margin: 0;
+.channel-setup .row {
+  margin-top: calc(var(--gap) / 3);
 }
 
 .optional {
@@ -2979,7 +2976,7 @@ button.toast-close:hover:not([disabled]) {
 .more-row .knob {
   position: relative;
   flex: none;
-  width: 2.6rem;
+  width: var(--switch);
   height: 1.5rem;
   border-radius: 999px;
   background: var(--faint);
@@ -4736,8 +4733,9 @@ button.ai-provider {
    itself (`role="switch"` in the markup), so it stays a real form control: a label still toggles it,
    the keyboard still reaches it, and a new one anywhere gets the same look with no extra code. */
 
-/* On is the purple, in both themes. */
+/* On is the purple, in both themes. Its width, which what sits under a switch's words lines up by. */
 :root {
+  --switch: 2.6rem;
   --track-off: #2a2b31;
   --track-on: var(--accent);
   --knob-off: #d8d9de;
@@ -4754,7 +4752,7 @@ input[type="checkbox"] {
   -webkit-appearance: none;
   position: relative;
   flex: none;
-  width: 2.6rem;
+  width: var(--switch);
   height: 1.5rem;
   min-height: 0;
   margin: 0;
@@ -5425,10 +5423,6 @@ input[type="checkbox"]:disabled {
 .discord-why {
   margin: 0 0 1rem;
   color: var(--muted);
-}
-
-.telegram-on .row {
-  margin-top: 0.5rem;
 }
 
 /* ── a job's description, and two columns where there is room ──────────────────────────────── */

@@ -1,5 +1,5 @@
 /** Browser notifications: register the service worker, ask, subscribe with the site's key and tell the
- * server — and the reverse. Only the plumbing; the button that calls these belongs to a page. */
+ * server. Only the plumbing; an alert asks for them when it is saved or switched on (`alerts.tsx`). */
 import { api } from "./api";
 import type { components } from "./api-types";
 import { onApple } from "./install";
@@ -11,10 +11,13 @@ export function pushSupported(): boolean {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
-/** Whether this browser is on. "home-screen" is an iPhone or iPad, which can only once the site is
- * added to its home screen and opened from there. */
-export async function pushState(): Promise<"on" | "off" | "home-screen" | "unsupported"> {
+/** Where this browser stands. "home-screen" is an iPhone or iPad, which can only once the site is added to its
+ * home screen and opened from there; "blocked", one whose person said no, which only its own settings undo. */
+export type PushState = "on" | "off" | "blocked" | "home-screen" | "unsupported";
+
+export async function pushState(): Promise<PushState> {
   if (!pushSupported()) return onApple() ? "home-screen" : "unsupported";
+  if (Notification.permission === "denied") return "blocked";
   const subscription = await (await navigator.serviceWorker.getRegistration())?.pushManager
     .getSubscription();
   return subscription && Notification.permission === "granted" ? "on" : "off";
@@ -44,16 +47,6 @@ export async function testPush(): Promise<boolean> {
   if (!subscription) return false;
   await api.post("/push/test", { endpoint: subscription.endpoint });
   return true;
-}
-
-/** Stop notifications in this browser, at the server and here. */
-export async function disablePush(): Promise<void> {
-  if (!pushSupported()) return;
-  const subscription = await (await navigator.serviceWorker.getRegistration())?.pushManager
-    .getSubscription();
-  if (!subscription) return;
-  await api.del("/push/subscribe", { endpoint: subscription.endpoint });
-  await subscription.unsubscribe();
 }
 
 /** The key arrives base64url-encoded, and `subscribe` wants its bytes. */

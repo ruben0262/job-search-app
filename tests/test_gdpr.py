@@ -238,21 +238,6 @@ def test_changing_the_password_refuses_a_wrong_current_or_a_weak_new_one(api):
     assert same.status_code == 400
 
 
-def test_the_delivery_interval_is_not_a_user_setting(api):
-    """The cadence belongs to the platform (owner, 2026-08-01)."""
-    from libs.db.models import User
-
-    http, db, user = api
-    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"active": True}})
-
-    # Ignored, not honoured: the field is not part of the request model any more.
-    assert http.patch("/account", json={"notify_interval_min": 30}).status_code == 200
-    assert "notify_interval_min" not in db[User.COLLECTION].find_one({"_id": user.id})
-
-    assert http.patch("/account", json={"active": False}).status_code == 200
-    assert db[User.COLLECTION].find_one({"_id": user.id})["active"] is False
-
-
 def test_the_settings_page_never_returns_a_credential(api):
     """It shows everything onboarding collected, and the credentials are write-only everywhere."""
     http, _, _ = api

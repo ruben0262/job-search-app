@@ -115,7 +115,7 @@ def dispatch_due_digests(db: Database) -> int:
     hour = settings.get(db, "email_digest_hour")
     emailed = db[Alert.COLLECTION].distinct("user_id", {"on": True, "channels": "email"})
     enqueued = 0
-    for user in find(db, User, {"$and": [{"_id": {"$in": emailed}, "active": True, "status": "active"},
+    for user in find(db, User, {"$and": [{"_id": {"$in": emailed}, "status": "active"},
                                          having("alerts")]}):
         if due(db, user, hour) and enqueue(db, "notify", user.id, payload={"digest": True},
                                            dedup_key="digest") is not None:

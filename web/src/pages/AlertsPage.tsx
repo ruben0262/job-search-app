@@ -1,9 +1,11 @@
 /** Alerts (owner, 2026-11-17): named alerts, each following words, companies, places, job sites or a match score,
  * and sending what it finds to the bell, this phone, Telegram or the morning email. One main button: New alert.
- * `#/alerts?alert=<id>` is one alert's own list of what it found, where its bell line and its Telegram cards go. */
+ * Where an alert sends is set up inside it, and its switch is the only on and off (owner, 2026-11-19): no pause,
+ * and no notifications or Telegram apart from the alerts. `#/alerts?alert=<id>` is one alert's own list of what it
+ * found, where its bell line and its Telegram cards go. */
 import { useState } from "react";
 
-import { Alerts, AlertsForMembers, Pause } from "../alerts";
+import { AlertsForMembers, PhoneSetup, TelegramSetup, usePhone, type Phone } from "../alerts";
 import { api, type Schema } from "../api";
 import { useKept } from "../kept";
 import { ago } from "../time";
@@ -21,22 +23,27 @@ type Channel = Draft["channels"][number];
 /** What the page reads, as `kept.ts` keeps it. */
 export const ALERTS = "/alerts";
 
-const BLANK: Draft = {
-  name: "", search: false, keywords: [], companies: [], places: [], sources: [], min_fit: null,
-  channels: ["bell", "push", "telegram"], on: true,
-};
+/** A new alert: the bell and this phone, and Telegram too once it is connected, so a new one asks nobody to set
+ * up a bot they did not want. */
+function blank(page: Page): Draft {
+  return {
+    name: "", search: false, keywords: [], companies: [], places: [], sources: [], min_fit: null,
+    channels: page.telegram === "connected" ? ["bell", "push", "telegram"] : ["bell", "push"], on: true,
+  };
+}
 
 /** Where an alert can send, said as a person would: on the form, a hint under it, and on the card. */
 const CHANNELS: [Channel, string, string, string][] = [
   ["bell", "Here on the site", "Under the bell at the top", "the site"],
-  ["push", "Your phone or browser", "Once notifications are on, below", "your phone"],
-  ["telegram", "Telegram", "Once Telegram is connected, below", "Telegram"],
+  ["push", "Your phone or browser", "A notification, the moment a job matches", "your phone"],
+  ["telegram", "Telegram", "Through a Telegram bot of your own", "Telegram"],
   ["email", "Morning email", "One email a day with what it found", "a morning email"],
 ];
 
 export function AlertsPage({ onChanged, query }: { onChanged: () => void; query: string }) {
   const { data: page, failed, reload } = useKept<Page>(ALERTS);
   const [editing, setEditing] = useState<Alert | "new" | null>(null);
+  const phone = usePhone();
   const shown = Number(new URLSearchParams(query).get("alert")) || null;
 
   if (!page) return failed ? <p className="error">Your alerts did not load. Refresh the page.</p>
@@ -60,19 +67,15 @@ export function AlertsPage({ onChanged, query }: { onChanged: () => void; query:
           {page.checked_at ? <p className="small muted">Checked for new jobs {ago(page.checked_at)}.</p> : null}
           <ul className="alert-list">
             {page.alerts.map((alert) => (
-              <AlertCard key={alert.id} alert={alert} page={page} onEdit={() => setEditing(alert)} onChanged={reload} />
+              <AlertCard key={alert.id} alert={alert} page={page} phone={phone} onEdit={() => setEditing(alert)}
+                         onChanged={reload} />
             ))}
           </ul>
-          <section className="optional">
-            <h2>Where alerts reach you</h2>
-            <Alerts />
-            <Pause onChanged={onChanged} />
-          </section>
         </>
       )}
       {editing ? (
         <Sheet title={editing === "new" ? "New alert" : `Change “${editing.name}”`} onClose={() => setEditing(null)}>
-          <AlertForm page={page} alert={editing === "new" ? null : editing}
+          <AlertForm page={page} alert={editing === "new" ? null : editing} phone={phone} onChanged={reload}
                      onSaved={(saved) => {
                        setEditing(null);
                        toast({ text: wouldHaveFound(saved, page.found_days) });
@@ -85,15 +88,19 @@ export function AlertsPage({ onChanged, query }: { onChanged: () => void; query:
   );
 }
 
-/** One alert: what it follows, where it sends, what it found lately, and a switch. */
-function AlertCard({ alert, page, onEdit, onChanged }: {
-  alert: Alert; page: Page; onEdit: () => void; onChanged: () => void;
+/** One alert: what it follows, where it sends, what it found lately, and its switch: the only on and off. A place
+ * it sends to that is not set up is said on it, since nothing would arrive there and nothing else would say. */
+function AlertCard({ alert, page, phone, onEdit, onChanged }: {
+  alert: Alert; page: Page; phone: Phone; onEdit: () => void; onChanged: () => void;
 }) {
   // Flipped the moment it is tapped, and back if the server says no: a switch that waits for an answer looks
   // dead.
   const [on, setOn] = useState(alert.on);
   const flip = useAction(async (next: boolean) => {
     setOn(next);
+    // Switched on, an alert that sends to the phone asks this one, in the tap a browser requires. No is no
+    // reason to keep it off: it still reaches the bell and anywhere else it sends.
+    if (next && alert.channels.includes("push")) await phone.allow();
     try {
       await api.put(`/alerts/${alert.id}`, { ...draftOf(alert), on: next });
     } catch (error) {
@@ -106,7 +113,13 @@ function AlertCard({ alert, page, onEdit, onChanged }: {
     await api.del(`/alerts/${alert.id}`);
     onChanged();
   });
+  const allow = useAction(async () => {
+    await phone.allow();
+    onChanged();
+  });
   const sends = CHANNELS.filter(([way]) => alert.channels.includes(way)).map(([, , , said]) => said);
+  const telegram = alert.channels.includes("telegram") && page.telegram !== "connected";
+  const noPhone = alert.channels.includes("push") && !page.phones;
   return (
     <li className={`card alert-card${on ? "" : " off"}`}>
       <div className="alert-head">
@@ -122,13 +135,29 @@ function AlertCard({ alert, page, onEdit, onChanged }: {
         {alert.found ? `${alert.found} found in the last ${page.found_days} days` : "Nothing found yet"}
         {sends.length ? ` · Sends to ${sends.join(", ")}` : " · Sends nowhere"}
       </p>
+      {telegram ? (
+        <p className="small unset">
+          {page.telegram === "broken" ? "Telegram stopped taking messages. Tap Change to fix it."
+            : "Telegram is not connected yet. Tap Change to connect it."}
+        </p>
+      ) : null}
+      {noPhone ? (
+        <p className="small unset">
+          No phone gets these yet.{" "}
+          {phone.state === "off" ? (
+            <button type="button" className="linklike small" disabled={allow.busy} onClick={() => void allow.run()}>
+              Allow on this phone
+            </button>
+          ) : "Open this alert on your phone and save it."}
+        </p>
+      ) : null}
       <div className="row">
         <a className="button secondary small" href={`#/alerts?alert=${alert.id}`}>See what it found</a>
         <button type="button" className="secondary small" onClick={onEdit}>Change</button>
         <button type="button" className="linklike small" disabled={remove.busy}
                 onClick={() => void remove.run()}>Delete</button>
       </div>
-      <Error>{flip.error ?? remove.error}</Error>
+      <Error>{flip.error ?? remove.error ?? allow.error}</Error>
     </li>
   );
 }
@@ -161,13 +190,15 @@ function draftOf(alert: Alert): Draft {
   return { name, search, keywords, companies, places, sources, min_fit, channels, on };
 }
 
-/** Making or changing an alert: a name, what to look for, where, and where to send it. */
-function AlertForm({ page, alert, onSaved }: {
-  page: Page; alert: Alert | null; onSaved: (saved: Saved) => void;
+/** Making or changing an alert: a name, what to look for, where, and where to send it, with what each place needs
+ * set up shown under it once it is ticked. Saved sending to the phone, it asks this one first, in the tap. */
+function AlertForm({ page, alert, phone, onChanged, onSaved }: {
+  page: Page; alert: Alert | null; phone: Phone; onChanged: () => void; onSaved: (saved: Saved) => void;
 }) {
-  const [draft, setDraft] = useState<Draft>(() => (alert ? draftOf(alert) : BLANK));
+  const [draft, setDraft] = useState<Draft>(() => (alert ? draftOf(alert) : blank(page)));
   const set = (change: Partial<Draft>) => setDraft((now) => ({ ...now, ...change }));
   const save = useAction(async () => {
+    if (draft.on && draft.channels.includes("push")) await phone.allow();
     onSaved(await (alert ? api.put<Saved>(`/alerts/${alert.id}`, draft) : api.post<Saved>(ALERTS, draft)));
   });
   const toggle = <T,>(values: T[], value: T) =>
@@ -213,11 +244,15 @@ function AlertForm({ page, alert, onSaved }: {
       <fieldset className="picker">
         <legend>Send new jobs to</legend>
         {CHANNELS.map(([way, label, hint]) => (
-          <label key={way} className="pick">
-            <input type="checkbox" checked={draft.channels.includes(way)}
-                   onChange={() => set({ channels: toggle(draft.channels, way) })} />
-            <span>{label}<span className="pick-hint">{hint}</span></span>
-          </label>
+          <div key={way}>
+            <label className="pick">
+              <input type="checkbox" checked={draft.channels.includes(way)}
+                     onChange={() => set({ channels: toggle(draft.channels, way) })} />
+              <span>{label}<span className="pick-hint">{hint}</span></span>
+            </label>
+            {draft.channels.includes(way) && way === "push" ? <PhoneSetup phone={phone} /> : null}
+            {draft.channels.includes(way) && way === "telegram" ? <TelegramSetup onChanged={onChanged} /> : null}
+          </div>
         ))}
       </fieldset>
       <Error>{save.error}</Error>

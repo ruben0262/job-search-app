@@ -14,6 +14,45 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-19 — Each alert is set up inside itself, and its switch is the only on and off
+
+The owner: "its confusing so lets remove the button 'turn off/on notifications' instead add this property to the
+notifications when they are created and the slider should turn the notifications on and off for each individual
+alert set up. Pause alerts can also be removed ... For each alerts users can also set up their Telegram inside the
+Alert instead of outside ... without losing any functionality."
+
+**The Alerts page** is now New alert and the alerts: "Where alerts reach you" is gone, with its Telegram fold,
+its "Turn on/off notifications" and its "Pause alerts".
+
+- **Inside an alert's form**, under "Send new jobs to", each ticked place shows what it needs. Your phone or
+  browser: where this device stands (on, asks when you save, blocked, an iPhone that needs the Home Screen with
+  Install the app, a browser that cannot), and Send a test once on. Telegram: the three steps, or connected with
+  Send a test and Disconnect; one bot still serves every alert that sends to Telegram, and the token box is no
+  form of its own (Enter saves the token, not the alert). A new alert sends to the bell and the phone, and to
+  Telegram once it is connected.
+- **Notifications are asked for by the alert**: saving one that sends to the phone, or switching one on, asks
+  this device, in the tap a browser requires. No is not a reason to keep it off; it still reaches the bell.
+- **A card says when a place it sends to is not set up** (`AlertsPage.telegram`, `.phones`): "Telegram is not
+  connected yet" or "stopped taking messages", and "No phone gets these yet", with "Allow on this phone" where
+  this device can. Without these, an alert would say it sends to your phone while nothing arrived.
+- **Setting up's last screen** says My search already reaches the bell, with "Set up alerts", which finishes
+  setting up and opens the Alerts page.
+
+**Removed, with what made them:** the pause (`PATCH /account`, `AccountOut.active`, the Jobs page's "Your alerts
+are paused" banner, the Admin "paused" marks) and the per-browser turn-off (`disablePush`,
+`DELETE /push/subscribe`); a browser's own site settings still stop notifications on one device. Every account
+that had paused has every alert switched off once at the deploy (`libs.alerts.paused_for_existing`), so the
+pause's going starts nothing. `User.active` itself stays declared, read by nothing, for one deploy: the notifier
+still running while it prunes asks for `active: True`, and finding nobody would pass over the jobs it read. The
+next deployed change retires it (ROADMAP Phase 11). The health page's "active users" counts confirmed accounts.
+
+**Tests:** the switch-off (a paused account's alerts go off, an unconfirmed one is not taken for paused, once
+ever); the page saying Telegram's state and the phones; the browser tests connect Telegram inside My search's form
+from setting up's "Set up alerts", ask for notifications by the switch and by Save, and tell an iPhone what to do
+on the card and in the form. `test_an_alert_is_made_for_a_company_and_shows_what_it_found` asserted that a pass
+caught exactly one job, which held only while the test ran faster than `SETTLE`: My search catches the page's own
+Backend Engineer jobs once they are ten seconds old. It now asserts what the LEGO alert caught.
+
 ## 2026-11-19 — A document being made is said on every page until it is ready, and the AI's limits show as it is
 
 The owner: "make sure we are displaying some 'making cv' or 'cover' message, while its being generated, even if

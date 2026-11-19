@@ -328,8 +328,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
         <Banner key={banner.key} level={banner.level}>
           <span>{banner.text}</span>{" "}
           <a className="button small" href={banner.key === "free" ? "#/upgrade" : "#/alerts"}>
-            {banner.key === "free" ? "Become a member" : banner.key === "telegram_broken" ? "Fix it in Alerts"
-              : "Turn them back on"}
+            {banner.key === "free" ? "Become a member" : "Fix it in Alerts"}
           </a>
         </Banner>
       ))}

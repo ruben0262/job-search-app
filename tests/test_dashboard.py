@@ -102,16 +102,6 @@ def test_alerts_that_reach_only_the_bell_are_not_nagged_about(api):
     assert http.get("/dashboard").json()["banners"] == []
 
 
-def test_a_paused_account_is_told_it_is_paused(api):
-    """It used to be said only to accounts with a trained model, which after Phase 8 is nobody."""
-    http, db, user, _ = api
-    assert http.get("/dashboard").json()["banners"] == [], "alerts on and working: nothing to say"
-    _change(db, user, active=False)
-
-    keys = {banner["key"] for banner in http.get("/dashboard").json()["banners"]}
-    assert keys == {"paused"}
-
-
 def test_the_dashboard_requires_signing_in(api):
     http, _, _, _ = api
     http.cookies.clear()

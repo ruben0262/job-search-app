@@ -3,7 +3,7 @@
  * server does not wait for: it can be skipped, so its screen says what it is for (owner, 2026-11-17). */
 import { useState } from "react";
 
-import { Alerts, AlertsForMembers } from "../alerts";
+import { AlertsForMembers } from "../alerts";
 import { api, type Schema } from "../api";
 import { ThemeToggle } from "../theme";
 import { Brand } from "../wheel";
@@ -123,8 +123,19 @@ export function Onboarding({ state, member, scores, onChanged }: {
               </button>
               <section className="optional">
                 <h2>Get alerts</h2>
-                <p className="small muted">Optional. New jobs on this phone or by Telegram. More on the Alerts page.</p>
-                {member ? <Alerts /> : <AlertsForMembers />}
+                {member ? (
+                  <>
+                    <p className="small muted">
+                      Optional. Your alert, My search, already sends new jobs to the bell here. Send them to your
+                      phone or Telegram too, from the Alerts page.
+                    </p>
+                    {/* Their jobs first, then the Alerts page: finishing is what opens the rest of the site. */}
+                    <button type="button" className="secondary" disabled={finish.busy} onClick={() => {
+                      window.location.hash = "#/alerts";
+                      void finish.run();
+                    }}>Set up alerts</button>
+                  </>
+                ) : <AlertsForMembers />}
               </section>
             </>
           )}

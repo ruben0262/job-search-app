@@ -75,14 +75,15 @@ def test_it_is_due_after_the_hour_of_their_own_day_and_only_once_a_day(db):
 
 
 @needs_db
-def test_nobody_without_an_emailing_alert_or_with_alerts_paused_is_queued(db, monkeypatch):
+def test_nobody_without_an_emailing_alert_or_with_it_switched_off_is_queued(db, monkeypatch):
     from libs import settings
-    from libs.db.models import QueueJob
+    from libs.db.models import Alert, QueueJob
     from libs.queue.queue import dispatch_due_digests
 
     settings.put(db, "email_digest_hour", 0)
     _person(db, emailed=False)
-    _person(db, active=False)
+    off, _ = _person(db)
+    db[Alert.COLLECTION].update_many({"user_id": off.id}, {"$set": {"on": False}})
     emailed, _ = _person(db)
 
     assert dispatch_due_digests(db) == 1

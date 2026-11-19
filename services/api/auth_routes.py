@@ -108,7 +108,7 @@ def signup(body: SignupRequest, request: Request, background: BackgroundTasks,
     email = body.email.lower()
     try:
         user = insert(db, User(email=email, password_hash=hash_password(body.password),
-                               status="pending_verification", active=False,
+                               status="pending_verification",
                                processing_consent_at=now(), processing_consent_version=LEGAL_VERSION))
     except DuplicateKeyError:
         logger.info("signup for an existing address; answering opaquely")
@@ -259,7 +259,7 @@ def _sign_in(request: Request, response: Response, db: Database, user: User) -> 
 def _verified(db: Database, user: User) -> None:
     """The inbox is proven: the account is active, and verified from the first time that was shown."""
     db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {
-        "email_verified_at": user.email_verified_at or now(), "status": "active", "active": True,
+        "email_verified_at": user.email_verified_at or now(), "status": "active",
         "updated_at": now()}})
 
 

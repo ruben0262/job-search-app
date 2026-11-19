@@ -246,7 +246,6 @@ def users(db: Database = Depends(get_db), admin: User = Depends(require_admin)) 
                 "id": str(row.id),
                 "email": row.email,
                 "status": row.status,
-                "active": row.active,
                 "telegram": row.telegram_status,
                 # Effective access, not just the column.
                 "is_admin": is_admin(row),
@@ -272,7 +271,6 @@ class AdminAccount(BaseModel):
     email: str
     full_name: str | None
     status: str
-    active: bool
     is_admin: bool
     telegram: str
     onboarded: bool
@@ -364,7 +362,7 @@ def user_detail(user_id: _uuid.UUID, db: Database = Depends(get_db),
     return AdminAccountDetail(
         user=AdminAccount(
             id=str(user.id), email=user.email, full_name=user.full_name, status=user.status,
-            active=user.active, is_admin=user.is_admin, telegram=user.telegram_status,
+            is_admin=user.is_admin, telegram=user.telegram_status,
             onboarded=user.onboarding_completed_at is not None, created_at=user.created_at,
             email_verified_at=user.email_verified_at, onboarding_completed_at=user.onboarding_completed_at,
             last_active_at=user.last_active_at, member=is_member(db, user.id), tier=tier(db, user.id),

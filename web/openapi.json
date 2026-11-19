@@ -3,10 +3,6 @@
     "schemas": {
       "AccountOut": {
         "properties": {
-          "active": {
-            "title": "Active",
-            "type": "boolean"
-          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -18,35 +14,13 @@
         },
         "required": [
           "email",
-          "active",
           "telegram_status"
         ],
         "title": "AccountOut",
         "type": "object"
       },
-      "AccountPatch": {
-        "properties": {
-          "active": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Active"
-          }
-        },
-        "title": "AccountPatch",
-        "type": "object"
-      },
       "AdminAccount": {
         "properties": {
-          "active": {
-            "title": "Active",
-            "type": "boolean"
-          },
           "billing_synced_at": {
             "anyOf": [
               {
@@ -288,7 +262,6 @@
           "email",
           "full_name",
           "status",
-          "active",
           "is_admin",
           "telegram",
           "onboarded",
@@ -997,6 +970,10 @@
             ],
             "title": "Most"
           },
+          "phones": {
+            "title": "Phones",
+            "type": "integer"
+          },
           "places": {
             "items": {
               "$ref": "#/components/schemas/Choice"
@@ -1014,6 +991,16 @@
             },
             "title": "Sources",
             "type": "array"
+          },
+          "telegram": {
+            "enum": [
+              "unconfigured",
+              "waiting",
+              "connected",
+              "broken"
+            ],
+            "title": "Telegram",
+            "type": "string"
           }
         },
         "required": [
@@ -1022,6 +1009,8 @@
           "most",
           "scores",
           "checked_at",
+          "telegram",
+          "phones",
           "found_days",
           "places",
           "sources"
@@ -5642,48 +5631,6 @@
         "tags": [
           "account"
         ]
-      },
-      "patch": {
-        "description": "Settings the user may change directly. Only what is named is touched.",
-        "operationId": "patch_account_account_patch",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AccountPatch"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Patch Account Account Patch",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Patch Account",
-        "tags": [
-          "account"
-        ]
       }
     },
     "/account/password": {
@@ -9547,46 +9494,6 @@
       }
     },
     "/push/subscribe": {
-      "delete": {
-        "description": "Forget this browser.",
-        "operationId": "unsubscribe_push_subscribe_delete",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PushEndpoint"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PushStatus"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Unsubscribe",
-        "tags": [
-          "push"
-        ]
-      },
       "post": {
         "description": "Remember this browser. Subscribing it again replaces its row, whichever account it was on.",
         "operationId": "subscribe_push_subscribe_post",

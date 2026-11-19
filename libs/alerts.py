@@ -120,8 +120,7 @@ def route(db: Database) -> Pass:
     with lease(db, "alerts.route", LEASE_SECONDS) as mine:
         if not mine:
             return Pass()
-        accounts = db[User.COLLECTION].distinct(
-            "_id", {"$and": [{"active": True, "status": "active"}, having("alerts")]})
+        accounts = db[User.COLLECTION].distinct("_id", {"$and": [{"status": "active"}, having("alerts")]})
         waiting = set(db[User.COLLECTION].distinct("_id", {"$and": [{"_id": {"$in": accounts}}, starters()]}))
         starter_wait = wait_hours(db, STARTER)
         by_wait: dict[int, list[Alert]] = {0: [], starter_wait: []}
@@ -291,6 +290,19 @@ def first_alert(db: Database, user_id: _uuid.UUID, channels: list[str] | None = 
     if not db[Alert.COLLECTION].count_documents({"user_id": user_id}, limit=1):
         insert(db, Alert(user_id=user_id, name=MY_SEARCH, search=True,
                          **({"channels": channels} if channels is not None else {})))
+
+
+def paused_for_existing(db: Database) -> int:
+    """Every alert off for an account that had paused them all, once ever (its counter, `next_ids`, says so
+    after): the pause went on 2026-11-19 (owner), each alert's switch is the only one now, and somebody who
+    paused must not start hearing because the pause is gone. Run by the deploy's schema step. How many
+    accounts."""
+    if next_ids(db, "alerts.paused_for_existing")[0] != 1:
+        return 0
+    paused = db[User.COLLECTION].distinct("_id", {"status": "active", "active": False})
+    if paused:
+        db[Alert.COLLECTION].update_many({"user_id": {"$in": paused}}, {"$set": {"on": False}})
+    return len(paused)
 
 
 def alerts_for_existing(db: Database) -> int:

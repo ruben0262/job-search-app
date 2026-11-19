@@ -15,7 +15,7 @@ from libs.db.models import PushSubscription
 from libs.notify.push import private_key, public_key, send
 from libs.obs import audit
 from libs.secrets import redacting
-from services.api.deps import current_user, get_db, with_alerts
+from services.api.deps import get_db, with_alerts
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/push", tags=["push"])
@@ -90,11 +90,3 @@ def test(body: PushEndpoint, db: Database = Depends(get_db),
                             detail="This phone stopped taking notifications. Turn them off and on again.")
     audit(logger, "push.tested", user=user_id)
     return PushStatus(status="sent")
-
-
-@router.delete("/subscribe")
-def unsubscribe(body: PushEndpoint, db: Database = Depends(get_db),
-                user_id: _uuid.UUID = Depends(current_user)) -> PushStatus:
-    """Forget this browser."""
-    db[PushSubscription.COLLECTION].delete_one({"endpoint": body.endpoint, "user_id": user_id})
-    return PushStatus(status="unsubscribed")

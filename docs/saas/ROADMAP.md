@@ -3815,6 +3815,12 @@ turned on again on each phone before it is measured.
 Nor did any alert read a job: the pass never wrote its first cursor (fixed 2026-11-18, evening). Each phone now
 has "Send a test" to check it in seconds.
 
+**Set up inside each alert ✅ 2026-11-19 (the owner).** Where an alert sends is set up in its own form, and its
+switch is the only on and off: no pause, no "Turn on notifications", no Telegram apart from the alerts (CHANGELOG).
+**Open:** `User.active`, the pause, is declared and read by nothing. Retire it (RETIRED, and the `active=` the tests
+still give) in the next change deployed after that one, not with it: the notifier still running while that deploy
+prunes asks for `active: True`, and finding nobody it would pass over the jobs it read without alerting anyone.
+
 **Not planned:** a native app; a Telegram channel per alert (owner, 2026-11-17: one chat, each card headed by its
 alert); an email per job (the mailbox's daily cap).
 

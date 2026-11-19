@@ -29,10 +29,8 @@ DIGEST_LIMIT = 20
 
 
 def due(db: Database, user: User, hour: int, *, moment: datetime | None = None) -> bool:
-    """Whether this person's email is due: alerts not paused, past `hour` in their day, and none sent yet
-    today. Whether an alert of theirs sends to it is the sweep's question."""
-    if not user.active:
-        return False
+    """Whether this person's email is due: past `hour` in their day, and none sent yet today. Whether an alert
+    of theirs sends to it is the sweep's question."""
     moment = moment or now()
     if moment.astimezone(ZoneInfo(user.timezone or "UTC")).hour < hour:
         return False

@@ -26,11 +26,7 @@ export interface paths {
         delete: operations["delete_account_account_delete"];
         options?: never;
         head?: never;
-        /**
-         * Patch Account
-         * @description Settings the user may change directly. Only what is named is touched.
-         */
-        patch: operations["patch_account_account_patch"];
+        patch?: never;
         trace?: never;
     };
     "/account/password": {
@@ -1785,11 +1781,7 @@ export interface paths {
          * @description Remember this browser. Subscribing it again replaces its row, whichever account it was on.
          */
         post: operations["subscribe_push_subscribe_post"];
-        /**
-         * Unsubscribe
-         * @description Forget this browser.
-         */
-        delete: operations["unsubscribe_push_subscribe_delete"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2152,22 +2144,13 @@ export interface components {
     schemas: {
         /** AccountOut */
         AccountOut: {
-            /** Active */
-            active: boolean;
             /** Email */
             email: string;
             /** Telegram Status */
             telegram_status: string;
         };
-        /** AccountPatch */
-        AccountPatch: {
-            /** Active */
-            active?: boolean | null;
-        };
         /** AdminAccount */
         AdminAccount: {
-            /** Active */
-            active: boolean;
             /** Billing Synced At */
             billing_synced_at: string | null;
             /** Cancels At */
@@ -2438,12 +2421,19 @@ export interface components {
             found_days: number;
             /** Most */
             most: number | null;
+            /** Phones */
+            phones: number;
             /** Places */
             places: components["schemas"]["Choice"][];
             /** Scores */
             scores: boolean;
             /** Sources */
             sources: components["schemas"]["Choice"][];
+            /**
+             * Telegram
+             * @enum {string}
+             */
+            telegram: "unconfigured" | "waiting" | "connected" | "broken";
         };
         /** AppliedJob */
         AppliedJob: {
@@ -4053,41 +4043,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DeleteBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    patch_account_account_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AccountPatch"];
             };
         };
         responses: {
@@ -6844,39 +6799,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PushSubscriptionBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PushStatus"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    unsubscribe_push_subscribe_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PushEndpoint"];
             };
         };
         responses: {
