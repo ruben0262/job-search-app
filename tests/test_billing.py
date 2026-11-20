@@ -219,8 +219,9 @@ def person(db, **fields) -> User:
 
 
 def sign_in(http, user: User) -> None:
-    from libs.auth.access import issue_access_token
-    http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+    from libs.db import database
+    from tests.conftest import access_cookie
+    http.cookies.set("access_token", access_cookie(database(), user.id), path="/")
 
 
 def deliver(http, kind: str, obj: dict, *, secret: str = SECRET, at: int | None = None):
@@ -1211,7 +1212,8 @@ def test_a_discord_linked_before_paying_reaches_the_customer_and_subscription_st
 
 
 def test_a_return_from_discord_counts_only_with_a_state_this_site_signed_for_linking(db, http, discord):
-    from libs.auth.access import issue_access_token, sign_for
+    from libs.auth.access import sign_for
+    from tests.conftest import access_cookie
 
     someone = person(db)
     sign_in(http, someone)
@@ -1231,8 +1233,26 @@ def test_a_return_from_discord_counts_only_with_a_state_this_site_signed_for_lin
     # A link's state is no access token: as a cookie it signs nobody in.
     http.cookies.set("access_token", sign_for(someone.id, "discord-link", timedelta(minutes=5)), path="/")
     assert http.get("/discord").status_code == 401
-    http.cookies.set("access_token", issue_access_token(someone.id, uuid.uuid4()), path="/")
+    http.cookies.set("access_token", access_cookie(db, someone.id), path="/")
     assert http.get("/discord").status_code == 200
+
+
+def test_a_link_one_person_asked_for_links_nothing_in_another_persons_browser(db, http, discord):
+    """The return from Discord named its account by the state alone. So a link one person asked for and sent
+    to another, opened in that one's browser, put their Discord account on the first person's account and
+    took it, and their plan's role, off their own (2026-11-20). The browser that comes back is the one that
+    asked."""
+    asker, opener = person(db), person(db)
+    sign_in(http, asker)
+    page = urlsplit(http.post("/discord/link").json()["url"])
+    state = parse_qs(page.query)["state"][0]
+
+    sign_in(http, opener)
+    back = http.get("/discord/callback", params={"code": "code-jordan", "state": state},
+                    follow_redirects=False)
+
+    assert back.headers["location"].endswith("?discord=failed#/settings")
+    assert (get(db, User, asker.id).discord_id, get(db, User, opener.id).discord_id) == (None, None)
 
 
 def test_a_discord_account_is_one_persons(db, http, fake, discord):

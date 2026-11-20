@@ -87,15 +87,15 @@ def api(db, monkeypatch):
     from fastapi.testclient import TestClient
 
     from libs import assistant
-    from libs.auth.access import issue_access_token
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     _env(monkeypatch)
     user = _account(db)
     monkeypatch.setattr(assistant, "start", lambda reply_id: assistant.run(db, reply_id))
 
     with TestClient(app, base_url="https://testserver") as http:
-        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        http.cookies.set("access_token", access_cookie(db, user.id), path="/")
         yield SimpleNamespace(http=http, db=db, user=user)
 
 
@@ -154,9 +154,9 @@ def test_a_red_word_tapped_before_any_green_one_is_refused_and_says_why(api, mon
 
 
 def test_a_button_is_only_what_was_offered_and_only_for_whoever_asked(api, monkeypatch):
-    from libs.auth.access import issue_access_token
     from libs.db import insert
     from libs.db.models import User
+    from tests.conftest import access_cookie
 
     _answers(monkeypatch, Scripted(("", [("my_words", {}), ("remove_word", {"word": "Senior"})]),
                                    ("Tap the button to remove it.", [])))
@@ -170,7 +170,7 @@ def test_a_button_is_only_what_was_offered_and_only_for_whoever_asked(api, monke
     stranger = insert(api.db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
                                    subscription_status="active", status="active"))
     mine = api.http.cookies.get("access_token")
-    api.http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
+    api.http.cookies.set("access_token", access_cookie(api.db, stranger.id), path="/")
     assert api.http.post(f"{button}/1").status_code == 404, "somebody else's button"
     assert api.http.get(f"/support/replies/{reply['id']}/stream").status_code == 404
     api.http.cookies.set("access_token", mine, path="/")
@@ -248,8 +248,8 @@ def live(db, monkeypatch):
     """The app as it runs: each reply written on a thread of its own, through `libs.db.database()`."""
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     _env(monkeypatch)
     user_id = _account(db).id
@@ -258,7 +258,7 @@ def live(db, monkeypatch):
     def started():
         """The API starting: its start-up runs, as it does after a deploy or a crash."""
         with TestClient(app, base_url="https://testserver") as http:
-            http.cookies.set("access_token", issue_access_token(user_id, uuid.uuid4()), path="/")
+            http.cookies.set("access_token", access_cookie(db, user_id), path="/")
             yield http
 
     yield SimpleNamespace(db=db, user_id=user_id, started=started)

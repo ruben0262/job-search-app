@@ -131,6 +131,10 @@ _STATES = frozenset(("registered", "qualified", "certified", "experienced", "ski
                      "organized"))
 # A role line is a short line, not a sentence.
 _ROLE_WORDS = 12
+# And at most this long: twelve words with more than this between them are padding, and cutting a line into
+# its parts costs the square of a run of spaces (20,000 took 2.4 s, and 300,000, a file at the size limit,
+# nine minutes: 2026-11-20).
+_ROLE_CHARS = 1_000
 # A role part is at most this many words.
 _PART_WORDS = 8
 # How far into a sentence its head may be for its opening to be read as a role ("Registered General Nurse"),
@@ -162,7 +166,7 @@ def role_phrases(text: str, name: str | None = None, *, sentences: bool = True) 
             continue
         plain = _DATE_WORDS.sub(" ", line)
         tokens = _TOKEN.findall(plain)
-        if 0 < len(tokens) <= _ROLE_WORDS and not line.rstrip().endswith("."):
+        if 0 < len(tokens) <= _ROLE_WORDS and len(plain) <= _ROLE_CHARS and not line.rstrip().endswith("."):
             for part in _LINE_PARTS.split(plain):
                 part_tokens = _TOKEN.findall(part or "")
                 if (

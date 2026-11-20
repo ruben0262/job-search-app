@@ -136,3 +136,45 @@ def test_every_deploy_checks_the_emails_address():
     """A check nobody runs is no check: `deploy.sh` runs it with the address the running site uses."""
     text = (DEPLOY / "deploy.sh").read_text(encoding="utf-8")
     assert re.search(r"^deploy/reach\.sh .*site_url", text, re.MULTILINE)
+
+
+# ── the nightly backup (2026-11-20) ───────────────────────────────────────────────────────────
+
+def _backup():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("backup", DEPLOY / "scripts" / "backup.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_backup_is_started_with_the_databases_address_and_nothing_else_of_the_servers_settings():
+    """Its unit says the key to every stored credential is absent from its environment, and gave it all of
+    `server.env`, the key with it: a dump written by a process that holds the key to what is in it."""
+    unit = (DEPLOY / "backup.service").read_text()
+    [started] = re.findall(r"^ExecStart=(.+)$", unit, flags=re.M)
+    command = started.split()
+
+    assert command[:2] == ["/usr/bin/env", "-i"], "started with an empty environment"
+    given = {word.split("=", 1)[0] for word in command[2:command.index("@REPO@/.venv/bin/python")]}
+    assert given == {"PATH", "MONGODB_URI", "MONGODB_DB"}
+
+
+def test_old_copies_of_the_archive_go_with_the_backups_and_the_newest_never_does(tmp_path):
+    """A whole copy of the corpus archive was written beside each night's backup and none was ever removed.
+    Each copy holds everything the ones before it do, so the old ones go; the newest stays whatever its
+    age, as the only copy of a posting retention has deleted."""
+    import os
+    import time
+
+    month_ago, today = time.time() - 40 * 86400, time.time()
+    for name, written in (("mahoraga-old.jsonl.gz", month_ago), ("mahoraga-new.jsonl.gz", today),
+                          ("corpus-archive-1.tar.gz", month_ago), ("corpus-archive-2.tar.gz", month_ago)):
+        (tmp_path / name).write_bytes(b"x")
+        os.utime(tmp_path / name, (written, written))
+
+    assert _backup().prune(tmp_path, 30) == 2
+
+    left = sorted(path.name for path in tmp_path.iterdir())
+    assert left == ["corpus-archive-2.tar.gz", "mahoraga-new.jsonl.gz"]

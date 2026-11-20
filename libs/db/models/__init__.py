@@ -4,7 +4,7 @@ from __future__ import annotations
 from libs.db.models.ai import AiRequest
 from libs.db.models.alert import CHANNELS, Alert, AlertCursor
 from libs.db.models.ats import AtsEtag, AtsToken, CompanyLookup
-from libs.db.models.auth import MAIL_PURPOSES, TOKEN_PURPOSES, AuthToken, MailSend, UserSession
+from libs.db.models.auth import MAIL_PURPOSES, TOKEN_PURPOSES, AuthToken, MailSend, RateCount, UserSession
 from libs.db.models.built import BuiltDocument
 from libs.db.models.contact import ContactMessage
 from libs.db.models.corpus import WORKPLACES, CorpusJob, CountryCount, SweptPlace, Word
@@ -37,7 +37,7 @@ MODELS = (User, UserConfig, UserSecret, UserSession, AuthToken, MailSend, Corpus
           UserJobState, SetupConversation, SetupMessage, UserNotification, PushSubscription,
           UserDocument, UserProfileFile, PlatformSetting, AiRequest, AtsToken, AtsEtag,
           BuiltDocument, LanePause, Lock, ContactMessage, Word, SweptPlace,
-          CountryCount, CompanyLookup, UploadedFile, FitScore, Alert, AlertCursor, VapidKey)
+          CountryCount, CompanyLookup, UploadedFile, FitScore, Alert, AlertCursor, VapidKey, RateCount)
 
 __all__ = [
     "CHANNELS", "CLAIM_TIMEOUT_MIN", "DEFAULT_TITLE", "DOCUMENT_KINDS", "JOB_STATES", "LANES",
@@ -48,7 +48,7 @@ __all__ = [
     "ContactMessage",
     "CorpusJob", "CountryCount", "FitScore",
     "LanePause", "Lock",
-    "MailSend", "PlatformSetting", "PushSubscription", "QueueJob",
+    "MailSend", "PlatformSetting", "PushSubscription", "QueueJob", "RateCount",
     "SetupConversation", "SetupMessage", "SweptPlace", "UploadedFile", "User", "UserConfig", "UserDocument",
     "UserJobState",
     "UserNotification", "UserProfileFile", "UserSecret", "UserSession", "VapidKey", "Word",

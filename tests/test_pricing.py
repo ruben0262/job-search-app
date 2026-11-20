@@ -69,14 +69,14 @@ def api(db, monkeypatch):
 
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     operator = insert(db, User(email=ADMIN, password_hash="x", status="active"))
     ordinary = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
 
     def sign_in(http, user):
-        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        http.cookies.set("access_token", access_cookie(db, user.id), path="/")
 
     with TestClient(app, base_url="https://testserver") as http:
         yield http, db, operator, ordinary, sign_in

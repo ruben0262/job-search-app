@@ -222,8 +222,9 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   const read = useCallback(async (offset: number, foundAfter?: string): Promise<Feed> => {
     const params = asked(filters, offset);
     if (foundAfter) {
+      // How many there are now and how many are new, and nothing else: no job comes back with it.
       params.set("found_after", foundAfter);
-      params.set("limit", "1");
+      params.set("counts", "true");
     }
     return api.get<Feed>(`/feed?${params}`);
   }, [filters]);

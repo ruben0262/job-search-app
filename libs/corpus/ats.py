@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping
 from pymongo import ReplaceOne, UpdateOne
 from pymongo.database import Database
 
-from libs.db import now
+from libs.db import next_ids, now
 from libs.db.models import AtsEtag, AtsToken, CompanyLookup
 
 
@@ -70,10 +70,6 @@ class AtsRepository:
         self._tokens.update_one({"ats": ats, "token": token, "dead_at": None},
                                 {"$set": {"dead_at": now()}})
 
-    def revive(self, ats: str, token: str) -> None:
-        """A board that answered again after being marked dead."""
-        self._tokens.update_one({"ats": ats, "token": token}, {"$set": {"dead_at": None}})
-
     # ── etags ────────────────────────────────────────────────────────────────────────────────
 
     def etags(self, ats: str) -> dict[str, str]:
@@ -92,10 +88,22 @@ class AtsRepository:
         self._etags.delete_one({"ats": ats, "token": token})
 
     def record_poll(self, ats: str, token: str, *, etag: str | None, alive: bool) -> None:
-        """Apply one board's poll outcome."""
+        """Apply one board's poll outcome: not `alive` is a board its ATS said is not there, never one that
+        failed to answer or had nothing open (`services.harvester.sources.ats.gather_ats`)."""
         if not alive:
             self.forget_etag(ats, token)
             self.mark_dead(ats, token)
             return
         if etag:
             self.set_etag(ats, token, etag)
+
+
+def revive_all_once(db: Database) -> int:
+    """Every board given up before 2026-11-20 asked again, once ever (its counter, `next_ids`, says so
+    after); how many. Until then a board that failed to answer one poll, or had nothing open that day, was
+    marked dead with the boards that are gone, and nothing tells them apart afterwards. One that is gone
+    says so on the next run and is given up again, at the cost of that one request."""
+    if next_ids(db, "ats.revive_all_once")[0] != 1:
+        return 0
+    return db[AtsToken.COLLECTION].update_many({"dead_at": {"$ne": None}},
+                                               {"$set": {"dead_at": None}}).modified_count

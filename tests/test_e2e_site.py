@@ -1042,6 +1042,70 @@ def test_the_admin_chart_counts_every_job_board_at_first_and_only_those_ticked(s
         browser.close()
 
 
+def test_admins_accounts_come_a_page_at_a_time_and_an_address_finds_one(site, capsys):
+    """Every account was read and drawn on each open of Admin, whichever tab was asked for. The Accounts tab
+    reads a page of them, says how many there are, and finds one by a piece of its address (2026-11-20)."""
+    from datetime import timedelta
+
+    from libs.db import database, insert, now
+    from libs.db.models import User
+    from services.api.admin_routes import USERS_PAGE
+
+    base, email, _ = site
+    for at in range(USERS_PAGE):  # joined after the admin, who is the first on the first page
+        insert(database(), User(email=f"member{at:03}@example.org", password_hash="x", status="active",
+                                created_at=now() + timedelta(days=1, seconds=at)))
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
+        page.goto(f"{base}/#/admin/accounts")
+        rows = page.locator("tr.row-link")
+
+        expect(page.get_by_text(f"{USERS_PAGE + 1} accounts.")).to_be_visible()
+        expect(rows).to_have_count(USERS_PAGE)
+        expect(rows.first).to_contain_text(email)
+
+        page.get_by_role("button", name="Next").click()
+        expect(rows).to_have_count(1)
+        expect(rows.first).to_contain_text(f"member{USERS_PAGE - 1:03}@example.org")
+
+        page.get_by_role("searchbox", name="Find an account by its email address").fill("member007")
+        expect(page.get_by_text("1 account with this in their address.")).to_be_visible()
+        expect(rows).to_have_count(1)
+        expect(rows.first).to_contain_text("member007@example.org")
+        browser.close()
+
+
+def test_two_parts_of_a_page_that_read_one_address_ask_for_it_once(site, capsys):
+    """The Subscriptions tab's figures and its pricing editor both draw the prices as visitors see them, and
+    each asked the server for them, as a page and the read-ahead of the same address did. Whoever asks for a
+    read already on its way gets its answer (`kept.ts`, 2026-11-20)."""
+    from urllib.parse import urlparse
+
+    from libs.db import database
+
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
+        page.reload()
+        expect(page.locator("nav .places a", has_text="Admin")).to_be_visible()
+        asked: list[str] = []
+        page.on("request", lambda request: asked.append(urlparse(request.url).path))
+
+        page.goto(f"{base}/#/admin/subscriptions")
+        expect(page.locator(".pricing-admin")).to_be_visible()
+
+        assert asked.count("/pricing") == 1, asked
+        browser.close()
+
+
 def test_an_account_page_goes_back_to_all_accounts(site, capsys):
     """Its back link, and the browser's, land on Admin's Accounts, not on its first tab: each tab has its
     own address (owner, 2026-11-10)."""

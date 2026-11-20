@@ -56,6 +56,14 @@ def agreed() -> dict:
     return {"processing_consent_at": now(), "processing_consent_version": LEGAL_VERSION}
 
 
+def access_cookie(db, user_id) -> str:
+    """The access cookie of a browser this account is signed in on: a token for a session it has. A token
+    alone is not signed in: every request asks whether its session was ended (`services.api.deps`)."""
+    from libs.auth.access import issue_access_token
+    from libs.auth.sessions import issue_session
+    return issue_access_token(user_id, issue_session(db, user_id).session_id)
+
+
 @pytest.fixture()
 def user(db):
     """One active account, with nothing else."""

@@ -123,6 +123,25 @@ def test_an_expired_claim_returns_to_ready(db):
     assert recovered.attempts == 2, "the retry counts, so a job that always kills its worker dies"
 
 
+def test_a_job_that_always_kills_its_worker_dies_and_is_not_claimed_for_ever(db):
+    """The test above says so and nothing did it: a job whose worker stops under it never reaches `fail`,
+    where attempts are counted, so its expired claim went back to ready however many it had had. On the
+    docgen lane each of those claims writes a document on the person's own AI plan (2026-11-20)."""
+    from libs.db.models import MAX_ATTEMPTS
+
+    user = _user(db)
+    enqueue(db, "docgen", user.id, payload={"job_id": 1})
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        job = claim(db, "docgen", f"worker-{attempt}")
+        assert job is not None and job.attempts == attempt
+        _age(db, job.id, claimed_at=timedelta(hours=1))
+        sweep_expired(db, "docgen")
+
+    assert claim(db, "docgen", "one-more") is None
+    dead = get(db, QueueJob, job.id)
+    assert dead.state == "dead" and "stopped under it" in dead.last_error
+
+
 def test_a_live_claim_is_not_swept(db):
     """The sweep returns only what has outlived its lane's timeout, or two workers run one job."""
     user = _user(db)

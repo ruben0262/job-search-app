@@ -134,23 +134,54 @@ def api(db, monkeypatch):
 
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from libs.db import insert
     from libs.db.models import User
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     users = [insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
                              subscription_status="active", status="active"))
              for _ in range(2)]
 
     with TestClient(app, base_url="https://testserver") as http:
-        http.cookies.set("access_token", issue_access_token(users[0].id, uuid.uuid4()), path="/")
+        http.cookies.set("access_token", access_cookie(db, users[0].id), path="/")
         yield http, db, users
 
 
 def _upload(http, name="cv.txt", body=b"Alice Example\nBackend Engineer at Acme", kind="cv"):
     return http.post("/documents", data={"kind": kind},
                      files={"file": (name, body, "text/plain")})
+
+
+@needs_db
+def test_the_site_goes_on_answering_while_a_file_is_read(api, monkeypatch):
+    """A file was read on the server's event loop, so nobody else that worker serves was answered until it
+    was done: 350 ms for an ordinary CV, and as long as it took for a large one (2026-11-20)."""
+    import threading
+
+    from services.api import document_routes
+
+    http, _db, _users = api
+    reading, release, read_file = threading.Event(), threading.Event(), document_routes.extract_text
+
+    def held(*args, **kwargs):
+        reading.set()
+        release.wait(30)
+        return read_file(*args, **kwargs)
+
+    monkeypatch.setattr(document_routes, "extract_text", held)
+    upload = threading.Thread(target=_upload, args=(http,), daemon=True)
+    upload.start()
+    try:
+        assert reading.wait(10), "the premise: the upload got as far as reading its file"
+        answered: list[int] = []
+        other = threading.Thread(target=lambda: answered.append(http.get("/health").status_code), daemon=True)
+        other.start()
+        other.join(5)
+        assert answered == [200]
+    finally:
+        release.set()
+        upload.join(30)
 
 
 @needs_db
@@ -217,14 +248,14 @@ def test_a_file_uploaded_before_files_were_kept_downloads_in_its_own_format(api,
 
 @needs_db
 def test_one_user_cannot_download_anothers_file_and_a_removed_document_takes_its_file(api):
-    from libs.auth.access import issue_access_token
     from libs.db.models import UploadedFile
+    from tests.conftest import access_cookie
 
     http, db, users = api
     document_id = _upload(http).json()["id"]
     theirs = http.cookies.get("access_token")
 
-    http.cookies.set("access_token", issue_access_token(users[1].id, uuid.uuid4()), path="/")
+    http.cookies.set("access_token", access_cookie(db, users[1].id), path="/")
     assert http.get(f"/documents/{document_id}/file").status_code == 404
     http.cookies.set("access_token", theirs, path="/")
     assert http.delete(f"/documents/{document_id}").status_code == 200
@@ -273,6 +304,20 @@ def test_an_ordinary_upload_carries_no_warning(api):
     body = _upload(http).json()
     assert body["truncated"] is False
     assert body["note"] is None
+
+
+def test_a_word_file_that_unpacks_to_more_than_a_document_holds_is_refused_unread(monkeypatch):
+    """A Word file is a zip, and only its packed size was looked at: 10 MB of zeros unpacks to gigabytes, in
+    a container of 1 GiB, for anybody signed in (2026-11-20). Here the limit is brought down to an ordinary
+    file, where the real one is ten times the largest upload."""
+    from libs.documents import extract
+
+    ordinary = _docx_bytes(["Alice Example", "Backend Engineer at Acme"])
+    assert "Alice Example" in extract_text("cv.docx", ordinary).text, "the premise: it reads"
+    monkeypatch.setattr(extract, "MAX_UNPACKED_BYTES", 1_000, raising=False)
+
+    with pytest.raises(UnsupportedDocument, match="unpacks to more"):
+        extract_text("cv.docx", ordinary)
 
 
 @needs_db

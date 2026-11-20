@@ -88,14 +88,16 @@ def verify(path: Path) -> bool:
 
 
 def prune(directory: Path, keep_days: int) -> int:
-    """Delete backups older than the retention window. Returns how many went."""
+    """Delete backups older than the retention window, and the copies of the corpus archive made beside
+    them; how many went. Each copy is the whole archive, so the newest holds everything the older ones do,
+    and it is never one of those that go. None of them ever went: a whole copy a night, for good."""
     cutoff = datetime.now(UTC).timestamp() - keep_days * 86400
-    removed = 0
-    for path in sorted(directory.glob("mahoraga-*.jsonl.gz")):
-        if path.stat().st_mtime < cutoff:
-            path.unlink()
-            removed += 1
-    return removed
+    old = [path for path in directory.glob("mahoraga-*.jsonl.gz") if path.stat().st_mtime < cutoff]
+    old += [path for path in sorted(directory.glob("corpus-archive-*.tar.gz"))[:-1]
+            if path.stat().st_mtime < cutoff]
+    for path in old:
+        path.unlink()
+    return len(old)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -108,14 +110,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.verify_only:
         return 0 if verify(Path(args.verify_only)) else 1
 
+    # Read by the account that wrote it and nobody else: password hashes, every sealed credential and
+    # people's own documents are in it, and it was written for anybody on the machine to read.
+    os.umask(0o077)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-
-    kek_file = os.environ.get("SECRETS_KEK_FILE")
-    if kek_file and Path(kek_file).resolve().parent == out.resolve():
-        print("REFUSING: the KEK lives in the backup directory. A backup beside its key is not an "
-              "encrypted backup — it is a credential breach in one file.", file=sys.stderr)
-        return 2
 
     stamp = f"{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
     target = out / f"mahoraga-{stamp}.jsonl.gz"
@@ -130,8 +129,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # **The archive is the only copy of a posting once retention has deleted it**
-    # (`libs.corpus.archive`). Copied whole rather than rotated: it is append-only by design, and
-    # pruning it here would re-create the deletion it exists to prevent.
+    # (`libs.corpus.archive`). Copied whole rather than in parts: it is append-only by design, so each
+    # copy holds all of it, and `prune` lets the old copies go but never the newest.
     if args.archive:
         source = Path(args.archive)
         if source.is_dir() and any(source.iterdir()):

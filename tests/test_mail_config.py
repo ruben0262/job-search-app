@@ -120,3 +120,26 @@ def test_an_account_email_shows_its_link_as_a_button_and_in_full_and_how_long_it
     assert html.count(f'href="{escape(url)}"') == 2, "the button, and the link in full"
     assert f">{escape(url)}</a>" in html and f"expires in {lasts}" in html
     assert f"<title>{subject}</title>" in html
+
+
+# ── where no email can be sent ────────────────────────────────────────────────────────────────
+
+def test_an_email_that_cannot_be_sent_is_printed_only_on_somebodys_own_computer(monkeypatch, capsys, caplog):
+    """Without SMTP an email is printed: how a sign-up link is read on a laptop (`scripts/dev.sh`). On the
+    server, the same fallback wrote every link that signs somebody in, or sets their password, to the log
+    (2026-11-20). There it says the email was not sent, and prints none of it."""
+    import logging
+
+    link = "https://jobs.example/#/reset?token=the-one-that-sets-a-password"
+    monkeypatch.setenv("PUBLIC_URL", "http://localhost:5180")
+    ConsoleSender().send("a@example.com", "Reset your password", link)
+    assert link in capsys.readouterr().out
+
+    monkeypatch.setenv("PUBLIC_URL", "https://jobs.example")
+    with caplog.at_level(logging.ERROR):
+        sender = ConsoleSender()
+        sender.send("a@example.com", "Reset your password", link)
+    assert "token=" not in capsys.readouterr().out
+    assert any("was not sent" in record.message and "token=" not in record.message
+               for record in caplog.records)
+    assert sender.sent == [("a@example.com", "Reset your password", link)]

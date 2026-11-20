@@ -21,7 +21,7 @@ from postings' links only.
 
 What answers goes into `ats_tokens`, with the company's name as the line gives it: Ashby and Lever say
 no name, and their jobs would read "Openai". Every harvest polls those boards (with their ETags), and
-one that stops answering is marked dead (`AtsRepository.record_poll`). Run again any time: a board
+one its ATS says is gone is given up (`AtsRepository.record_poll`). Run again any time: a board
 already stored keeps its place and takes the line's name. `--ats` probes only those ATS, to try one
 again after it refused a burst.
 """

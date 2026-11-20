@@ -14,6 +14,253 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-20 — The review's fixes: an account's password is its owner's, sign-out ends the session, and two silent losses in the harvest
+
+The owner asked for a full review of the code and its history ("do a full code review and flag parts that can be
+changed ... strengthen our security"), then: "start with group 1 and work your way through to 4, and make sure you do
+tests as well, and those tests are robust, not brittle or flaky". Every fix here has a test that fails on the code
+before it (each was run against it), and none of them waits on a clock: where time matters a row is aged in the
+database, and where threads do, an event says when.
+
+### Sign-up, sessions and sign-in
+
+- **An unconfirmed address is whoever signs up for it last** (`auth_routes.signup`). A second sign-up for an address
+  nobody had confirmed was dropped without a word, so a stranger who signed up with somebody's address first kept a
+  password to the account that person later confirmed: run on a scratch database, the stranger signed in and the
+  owner's own password was refused. The later sign-up now sets the password and is mailed a link, which spends the
+  earlier ones; a confirmed address is left as it is and mailed nothing. One email is signed up for three times an
+  hour (`SIGNUPS_PER_EMAIL`), counted for every email alike so the limit says nothing about which have an account.
+  **What is left**: a stranger who signs up in the minutes between a person's own sign-up and their opening the
+  link still wins, if the person then opens the newer email. Closing that means asking for the password after the
+  link is opened, which undoes "the link signs you in" (2026-10-28): the owner's to decide.
+- **Sign-out ends the session at the server.** The refresh cookie was scoped to `/auth/refresh`, so `/auth/logout`
+  never received the token it was to end and `/auth/logout-everywhere` answered 401 to everybody: after signing
+  out, a copy of the cookie still opened the account for its thirty days. `test_logout_ends_the_session` passed
+  because the browser had dropped its cookie. The cookie is scoped to `/auth` (`REFRESH_PATH`); the one a browser
+  holds under the old path is taken away whenever the cookies are set or cleared (`OLD_REFRESH_PATH`, which goes
+  after 2026-12-21, when no browser can hold one).
+- **Two tabs refreshing together stay signed in** (`libs.auth.sessions.ROTATION_GRACE`, 10 s). The second tab
+  presents the token the first has just spent, which was read as a theft: every session ended, on every device,
+  and the cookies were cleared. A laptop waking with two tabs open does exactly this. A token spent within the
+  grace earns a session of its own; after it, it is a theft as before.
+- **One address cannot have passwords checked without end.** Each check takes 64 MiB by design, the only limit
+  counted each email apart, and nothing bounded how many ran together in a container of 1 GiB. An address is
+  refused after a hundred sign-ins in fifteen minutes whatever emails it names, before any password is checked
+  (`LOGINS_PER_ADDRESS`), and a process checks two at a time (`libs.auth.passwords.HASHES_AT_ONCE`).
+
+### Two silent losses in the harvest
+
+- **Accounts confirmed since 2026-11-19 are read for again** (`TenantRepository.active_configs`). It asked for
+  `User.active`, the pause on alerts, which nothing has set since that day's change, so the harvest kept no
+  country and LinkedIn swept no place for anybody who signed up after it; the tests passed because they make
+  their users with `active=True`. It asks for `status` alone. This had to land before `User.active` is retired:
+  after that prune the list would have been empty.
+- **A company's board is given up only when its ATS says it is not there** (`sources.ats.gather_ats`, `GONE`).
+  One failed poll (a timeout, a 429, a 5xx, the resolver down) read as an empty board, an empty board as a dead
+  one, and nothing asks a dead board again: 542 of the dev copy's 565 boards had gone that way, Greenhouse 11
+  left of 216. A board that did not answer is asked again next run, and so is one with nothing open today; the
+  log line says how many did not answer. `AtsRepository.revive`, which nothing called, is gone. **Every board
+  given up before today is asked again, once ever**, by the deploy's schema step (`libs.corpus.ats.
+  revive_all_once`): nothing tells the failed from the gone afterwards, and one that is gone says so on the next
+  run at the cost of that request.
+
+### One endless line no longer holds the server
+
+Several patterns that read a person's documents cost the square of a line's length. On one line of 20,000
+characters the email pattern took 1.5 s; at the 300,000 an upload may hold, minutes, on the server's event loop,
+where everybody that worker serves waited. Anybody signed in could upload one.
+
+- `libs.documents.read` gives no pattern a line longer than `MAX_LINE` (1,000): a longer one is read in pieces, cut
+  at a space, nothing left out. The email pattern begins only where a run of its characters begins.
+- `libs.fit.roles` cuts a line into its parts only if it is one (`_ROLE_CHARS`): a run of 300,000 spaces took the
+  match-score reader 557 s. A change to a pattern there that looked the same was dropped: over 300,000 random
+  strings it cut one differently.
+- `POST /documents` is no longer `async`: a file is read off the event loop.
+- **Measured** on twelve shapes of one 300,000-character line: the CV reader 5 to 187 ms, the match-score reader
+  1.1 to 1.6 s (what any document that size costs it), a 15,000-character posting 31 ms at most.
+
+### An alert's link reads its one job
+
+`/feed?job=<id>`, where every alert lands, read and counted the whole list to show one job: 380 ms on the dev
+copy's 42,358 postings, 14.5 ms asked of that job alone (`libs.matching._read(only=)`, median of five, in process).
+It also finds a job older than the newest matches a page reads, which opened as "not yours" from its own alert.
+
+### The Admin page
+
+The owner: "admins page is slow". Timed in process on the dev copy (42,358 postings, two accounts), the last commit
+and this one back to back, median of five.
+
+- **Every tab draws as soon as its own read is back.** All of them waited for the health read and the whole
+  account list, whichever was asked for. The account list is the Accounts tab's own now (`AccountsTab`).
+- **Accounts come a page at a time, and an address finds one** (`GET /admin/users?q=&offset=`, `USERS_PAGE` 50).
+  Every account was read whole on each open, 19 KB each with its profile, and all of them drawn: 1.9 s and
+  196 MB at ten thousand, on a copy made of the dev accounts. A page is read without the profile (`LIGHT`), in
+  the order of a new index (`users.joined`); the Subscriptions tab reads every account the same lighter way.
+- **An account's page is counted by the database** (`_usage`, on `libs.matching.page`), as the Jobs page's own
+  counts are. Every match was brought to Python to be counted, 5,884 postings: 454 ms, now 414, which is what
+  the Jobs page's "Any time" read costs and is the feed read's to shorten (below). The page was also asked for
+  by every row of the table the pointer crossed; it is asked for once the pointer has rested on one (`REST_MS`).
+- **The Corpus tab's page**: 119 ms to 57. No index gave its order, so every posting of the thirty days was
+  sorted to show fifty; it is listed by the number each was stored under, which is the order they were found
+  in. "Usable" is `described_at`, the platform's own rule, where the tab had a rule of its own (400
+  characters).
+- **The live Pipeline no longer holds the server's event loop**: each frame's counts ran on it, once a second,
+  78 ms in which that process answered nobody. They run on a worker thread; the stream is held only while the
+  tab is looked at, and is opened again when a session runs out between two streams (it said "reconnecting"
+  for good). **"Text read" counts jobs whose whole text was stored** (`described_at`), from the text queue's
+  index: it counted every page fetched, one that gave too little among them, by reading every posting (35 ms).
+- **The health answer is what the Health tab shows**: 13 ms to 8. It also carried every active account's
+  address, the alerts a second time as one text, and a figure of the Latency tab's, worked out on each read
+  (`pipeline_latency`, gone). The health check reads only the accounts an alert names, from a new index
+  (`users.by_status`), where it read every active account whole, every fifteen minutes.
+- **Admin is read ahead when the pointer reaches its link**, three reads. Eight were made on every page an
+  admin loaded, the heaviest two for tabs not being opened. And a read already on its way is shared
+  (`kept.ts`): a page and the read-ahead of the same address, or two parts of one page, each sent their own.
+- The Pipeline tab's link to an account opened the API's raw answer (`/admin/users/…` with no `#`).
+
+Not done here: Outcomes still reads every CV made and every application to count them, Latency every posting
+of its window, and Subscriptions lists the first 500 without saying so. None is slow at today's size.
+
+### Hardening
+
+- **A session that was ended is refused at once** (`services.api.deps.current_user`,
+  `libs.auth.sessions.session_is_live`). The access token alone was enough, so signing out, a new password, a
+  replayed refresh token and deleting the account each left it good for its fifteen minutes: for the billing
+  portal and their documents, and an account that was gone answered 500 to most pages. Each request asks
+  whether its session was ended, one read by the session's id. Refreshing refuses an account that is
+  suspended or gone, where a browser signed in before a suspension stayed signed in for good. The tests sign
+  in with a real session (`tests.conftest.access_cookie`), where 32 of them minted a token for a session
+  that did not exist.
+- **One wrapper round every request and every answer** (`services/api/guard.py`). A body is refused past
+  2 MB, an upload past 11 MB, by its stated length before it is read or as it arrives: any size was read
+  into memory before anybody was asked who they were. Every answer says the site is HTTPS for a year, may
+  not be framed, and that a file is the type it says; what holds somebody's data is kept by no browser or
+  proxy; the site's own files say how long they may be kept (those named by their content for good, the
+  page that names them asked for again each time). `/openapi.json`, which listed every route to anybody, is
+  not served. **Not here**: a policy on scripts and styles. A wrong one stops the payment form, and it
+  needs trying against Stripe in a browser first.
+- **One count for every process** (`deps.rate_limit`, `rate_counts`). Each of the four kept its own in memory,
+  so every limit was four times what it said and began again at each restart. The count is the database's,
+  under a hash, so no email or address is kept for it, and gone with its window.
+- **A job somebody wrote in is theirs by its number too** (`libs.tenant.filters.theirs_to_open`). No list
+  shows it to anybody else, but jobs are numbered in order, and the number alone read its text to any
+  account, bookmarked it and had a CV made from it.
+- **A job is LinkedIn's only on LinkedIn's own site** (`libs.corpus.postings._LINKEDIN_ID`, `_NOFLUFF_SLUG`). A
+  page anywhere with `/jobs/view/<number>` in its address was read from LinkedIn and kept as LinkedIn's under
+  that address: a card saying "Apply on LinkedIn" that led elsewhere, on everybody's list whose words it had.
+- **The password is asked for ten times in fifteen minutes** by the two routes that ask for it again (change
+  it, delete the account): with no limit, a session somebody else held could guess at it.
+- **A Word file may unpack to ten times the largest upload** and no more (`MAX_UNPACKED_BYTES`): only its
+  packed size was looked at, and 10 MB of zeros is gigabytes.
+- **The browser that returns from Discord is the one that asked.** The state alone named the account, so a
+  link one person asked for, opened by another, moved that one's Discord account and their plan's role.
+- **Chrome is started without the platform's keys** (`pdf.CHROME_ENVIRONMENT`): it inherited the database's
+  address and the key to every stored credential, in a browser run without its sandbox.
+- **Where no email can be sent, none is printed** except on somebody's own computer: with SMTP left out of
+  the server's settings, every link that signs somebody in was written to its log.
+- **What is read only for a while is dropped by the database after it**: sessions and one-time links when
+  they run out, mail and AI counts after a week, finished queue jobs after a month (`DONE_KEEP_DAYS`, in
+  place of an index no query could use). None ever left. Two indexes on `users` serve the health check, the
+  harvest's account list and Admin's (`by_status`, `joined`).
+- **The backup**: started with the database's address and nothing else (`env -i`), where its unit said the
+  credentials' key was absent and gave it all of `server.env`; written for its own account alone to read;
+  and old copies of the corpus archive go with the old backups, the newest never (a whole copy a night was
+  kept for good). A guard that read a setting nothing sets is gone. Run here on a scratch database with
+  that environment; the unit's syntax checked with `systemd-analyze`.
+
+**Not done, and why.** They change the server's images, which cannot be built on this computer (no Docker),
+and a wrong one stops a service at its start:
+
+- The images still run as root (the sign-in broker apart). Each needs a `USER` whose id owns the mounted
+  `logs/` and `archive/`, as the broker's does (`BROKER_UID`).
+- Runtime dependencies are still floors (`>=`), `cloudflared` is `latest` and the base images are tags: one
+  constraints file from a build that passed, and a pinned tunnel image.
+- The backup is still not encrypted, which needs a key pair and `age` on the server.
+- ChatGPT's CVs still run Codex with its tools on (`libs.llm.cli`): turning them off changes what Codex is
+  told, so it is the bench's to measure first (§3b), and it is the "lean" path already planned.
+
+### Reads and runs that grew with the corpus
+
+Timed in process on the dev copy, the last commit and this one back to back, twice, median of five each time.
+The machine was busy, so read each pair against its own "before".
+
+| What | Before | After |
+|---|---|---|
+| Jobs, 24 hours | 83, 99 ms | 53, 57 ms |
+| Jobs, 7 days | 96, 117 ms | 109, 126 ms: did not move |
+| Jobs, "Any time" | 399, 459 ms | 343, 360 ms |
+| The every-minute count, "Any time" | 398, 439 ms | 273, 287 ms |
+| The every-minute count, 24 hours | 63, 68 ms | 31, 36 ms |
+| An account's page in Admin | 770, 773 ms | 306, 314 ms |
+
+- **A person's list is read from the words index, and that question comes first** (`libs.matching._read`,
+  `WORDS_INDEX`). Left to choose, the database chose between that index and the newest postings from one run
+  to the next, and by the second read every open posting to find a person's: 42,192 for 5,883 matches. The
+  words question could not be told how to be read while it was the second half of a union. Read alone,
+  alternating fifteen times: 237 ms told the index and 239 untold with the new order, where the other plan
+  was 290 to 325; at 24 hours and 7 days it makes no difference (18 and 61 ms either way). "Any time" is
+  still over the 300 ms the Jobs page is held to: what is left is fetching 13,870 postings of 6 KB each.
+- **The every-minute count asks for the numbers** (`/feed?counts=true`, `page(counts=)`). It was asked as a
+  page of one job: that job read with its text and documents, the list scored, and every filter's counts
+  made, to read two numbers.
+- **The harvest's text pass stops when the run's time is spent** (`run_cycle`): it had no bound, and two hundred
+  pages at their 25 s each is 83 minutes against the 14 the run is killed at, with every stage after it
+  never reached. **Links the last run stored are asked about once**, not one each
+  (`CorpusRepository.stored_urls`; 744 ms a thousand against 12). **Finding no posting behind on its match
+  features reads none** (`corpus.fit_queue`): it read every posting after every run, 128 ms of 42,377; on a
+  scratch copy of 60,000, 102 ms to 1.
+- **A queue job that keeps losing its worker goes dead after its five attempts** (`sweep_expired`). Killed for
+  memory, or by a deploy with a document half written, it never reached the place attempts were counted,
+  and was claimed again without end: on the docgen lane, a document on the person's own AI plan each time.
+- **Telegram messages are a second apart** (`DEFAULT_SEND_GAP_SECONDS`), the rule for a person's own chat,
+  which every chat here is. It was 4, the rule for a channel, slept by the notifier's one worker before each
+  message: a hundred people with five alerts each was 2,000 s in which nobody else's were sent. The admin's
+  choices begin at 1.
+
+### Gates, and what did not pass
+
+Run in CLAUDE.md §7's order on the whole tree, the owner's work in progress with it: the numbers are in the
+session's report. Two browser tests fail on the order of the tabs, which is the owner's change to
+`web/src/places.tsx` in progress and not part of this.
+
+### Left, in the order it is worth doing
+
+- **Each page still asks who it is for several times.** `/feed` puts 19 questions to the database, the plan
+  asked three to five times and the settings four, and the session check adds one. One read of the account
+  and its plan a request would halve it.
+- **The page load**: eighteen reads go out before the Jobs list's own; each linked AI sign-in makes the server
+  ask Anthropic or ChatGPT for its limits on every load; the landing page waits for two refusals before it
+  draws; and the site is one 469 KB file for everybody.
+- **The harvest**: gathering has no deadline of its own, the nine company-board adapters run one after
+  another, new links are stored one at a time, and a new word is searched for on its own.
+- **The notifier** reads whole accounts every ten seconds, and a Telegram failure sends the push again.
+- **Documents** are written one at a time (the owner's decision of 2026-11-14), so a second person waits a
+  minute; an account on an API key could be written beside one on a sign-in.
+- The front end's own defects from the review: an earlier answer drawn over a later one on Jobs, a page that
+  keeps the last account's data when the address changes, and the scroll kept between pages.
+
+### For the owner to decide (CLAUDE.md §5)
+
+- **Numbers that now decide behaviour and sit in code**: `ROTATION_GRACE` (10 s), `HASHES_AT_ONCE` (2, from the
+  container's 1 GiB and four processes), `LOGINS_PER_ADDRESS` (100 in 15 minutes), `SIGNUPS_PER_EMAIL` (3 an
+  hour), `MAX_LINE` (1,000), `MAX_BODY_BYTES` (2 MB), `MAX_UNPACKED_BYTES` (100 MB), `USERS_PAGE` (50),
+  `REST_MS` (150), `DONE_KEEP_DAYS` (30), `MAIL_COUNT_KEEP_DAYS` (7). None is one an operator has needed
+  to change yet; say which belong in Admin.
+- **What the deploy does once**: every company board given up before today is asked again
+  (`revive_all_once`), and the new indexes are built, the old ones dropped by the prune.
+- `OLD_REFRESH_PATH` and its two uses go after 2026-12-21.
+- `/auth/logout-everywhere` works now and no page calls it: a "Sign out everywhere" button, or the route goes.
+- `users.processed_at` is neither written nor read (`KNOWN_UNWRITTEN`): retiring it deletes a date from every
+  account copied from Postgres.
+- The sign-up race that is left (above): asking for the password after the link is opened closes it.
+- A job somebody brings by its link is still everybody's (owner, 2026-11-03). With a membership, anybody can
+  put a page of their own on every list whose words it has: keep such jobs to the person, as a typed one is,
+  or to the boards the platform knows.
+- Five attempts on the docgen lane are five documents on a person's plan when the fault is ours:
+  `fail(max_attempts=)` takes fewer and nothing passes it.
+
+---
+
 ## 2026-11-19 — Each alert is set up inside itself, and its switch is the only on and off
 
 The owner: "its confusing so lets remove the button 'turn off/on notifications' instead add this property to the

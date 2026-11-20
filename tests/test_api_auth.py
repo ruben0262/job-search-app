@@ -1,9 +1,11 @@
 """The auth endpoints, through the real app."""
 from __future__ import annotations
 
+import hashlib
 import os
 import uuid
 from dataclasses import fields
+from datetime import timedelta
 
 import pytest
 
@@ -13,7 +15,8 @@ pytest.importorskip("jwt")
 
 from fastapi.testclient import TestClient
 
-from libs.db import find_one
+from libs.auth.sessions import ROTATION_GRACE
+from libs.db import find_one, insert, now
 from libs.db.models import AuthToken, User, UserSession
 from libs.legal import LEGAL_VERSION
 from libs.mail import ConsoleSender
@@ -64,6 +67,52 @@ def _link(mailer: ConsoleSender) -> str:
 
 def _link_token(mailer: ConsoleSender) -> str:
     return _link(mailer).split("token=")[1].split("&")[0]
+
+
+def _browser() -> TestClient:
+    """Another browser on the same site, holding no cookies: a second device, or a stranger's."""
+    from services.api.app import app
+    return TestClient(app, base_url="https://testserver")
+
+
+def _refresh_token(http) -> str:
+    """The refresh token this browser holds: one, under whichever path its cookie is scoped to."""
+    [cookie] = [each for each in http.cookies.jar if each.name == "refresh_token"]
+    return cookie.value
+
+
+def _presenting(token: str) -> dict:
+    """What a browser holding this refresh token sends with a request, as the header itself."""
+    return {"headers": {"cookie": f"refresh_token={token}"}}
+
+
+def _spent_long_ago(db, token: str) -> None:
+    """As if this refresh token had been spent longer ago than two tabs or a lost answer explain."""
+    aged = db[UserSession.COLLECTION].update_one(
+        {"refresh_hash": hashlib.sha256(token.encode()).hexdigest(), "rotated_at": {"$ne": None}},
+        {"$set": {"rotated_at": now() - ROTATION_GRACE - timedelta(seconds=1)}})
+    assert aged.matched_count == 1, "the premise: this token was spent"
+
+
+def _set_cookies(response) -> dict[tuple[str, str], str]:
+    """Each cookie a response sets, by name and path, as its whole header in lower case."""
+    found = {}
+    for header in response.headers.get_list("set-cookie"):
+        name, _, _ = header.partition("=")
+        path = next((part.split("=", 1)[1] for part in header.split("; ")
+                     if part.lower().startswith("path=")), "/")
+        found[name, path] = header.lower()
+    return found
+
+
+@pytest.fixture()
+def limited(client, monkeypatch):
+    """The same app with its rate limits on, each counting from nothing, and the clock they count by stood
+    still: a test that ran across the end of a window would see its count begin again."""
+    from services.api import deps
+    monkeypatch.delenv("DISABLE_RATE_LIMIT")
+    monkeypatch.setattr(deps, "_clock", lambda: 1_800_000_000.0, raising=False)
+    return client
 
 
 # ── the account-existence oracle ──────────────────────────────────────────────────────────────
@@ -273,17 +322,21 @@ def _logged_in(http, mailer):
     return email, http.post("/auth/login", json={"email": email, "password": PASSWORD})
 
 
-def test_the_refresh_cookie_is_scoped_to_the_refresh_path(client):
-    """The detail most implementations miss (`AUTH_REUSE.md` §3)."""
+def test_the_refresh_cookie_goes_to_the_session_routes_and_nowhere_else(client):
+    """Scoped to `/auth`, where refresh and both sign-outs are, and sent with no other request the site makes.
+    It was scoped to `/auth/refresh` alone, so signing out never received the token it was to end
+    (2026-11-20)."""
     http, _db, mailer = client
     _, response = _logged_in(http, mailer)
     assert response.status_code == 200
 
-    # Compared case-insensitively throughout.
-    cookies = "; ".join(response.headers.get_list("set-cookie")).lower()
-    assert "refresh_token=" in cookies
-    assert "path=/auth/refresh" in cookies
-    assert "samesite=strict" in cookies
+    cookies = _set_cookies(response)
+    refresh = cookies["refresh_token", "/auth"]
+    assert "samesite=strict" in refresh and "max-age=0" not in refresh
+    assert ("access_token", "/") in cookies
+    # A browser that signed in before 2026-11-20 holds its token under the old path: taken away as the new
+    # one is given, or it would send both, and the spent one would be read as a theft.
+    assert "max-age=0" in cookies["refresh_token", "/auth/refresh"]
 
 
 def test_both_cookies_are_httponly_and_secure(client):
@@ -300,32 +353,59 @@ def test_both_cookies_are_httponly_and_secure(client):
 def test_refresh_rotates_the_token(client):
     http, _db, mailer = client
     _logged_in(http, mailer)
-    before = http.cookies.get("refresh_token", path="/auth/refresh")
+    before = _refresh_token(http)
 
     response = http.post("/auth/refresh")
     assert response.status_code == 200
-    assert http.cookies.get("refresh_token", path="/auth/refresh") != before
+    assert _refresh_token(http) != before
 
 
 def test_a_replayed_refresh_token_ends_the_session_and_clears_the_cookies(client):
-    """Either the client is buggy or the token was stolen."""
+    """Either the client is buggy or the token was stolen: one spent longer ago than two tabs refreshing
+    together, or an answer lost on the way, explain (`ROTATION_GRACE`)."""
+    http, db, mailer = client
+    _logged_in(http, mailer)
+    stolen = _refresh_token(http)
+    assert http.post("/auth/refresh").status_code == 200
+    _spent_long_ago(db, stolen)
+
+    replay = _browser().post("/auth/refresh", **_presenting(stolen))
+    assert replay.status_code == 401
+    cleared = _set_cookies(replay)
+    assert "max-age=0" in cleared["refresh_token", "/auth"] and "max-age=0" in cleared["access_token", "/"]
+    assert http.post("/auth/refresh").status_code == 401, "every session of theirs ended with it"
+
+
+def test_two_tabs_refreshing_with_one_token_both_stay_signed_in(client):
+    """Two tabs whose access token ran out together both present the refresh token one of them has just
+    spent, as a laptop waking with two tabs open does. The second was read as a theft: every session ended,
+    on every device, and the cookies were cleared (2026-11-20)."""
     http, _db, mailer = client
     _logged_in(http, mailer)
-    stolen = http.cookies.get("refresh_token", path="/auth/refresh")
+    shared = _refresh_token(http)
+    other_tab = _browser()
 
-    http.post("/auth/refresh")
+    assert http.post("/auth/refresh").status_code == 200
+    second = other_tab.post("/auth/refresh", **_presenting(shared))
 
-    replay = http.post("/auth/refresh", cookies={"refresh_token": stolen})
-    assert replay.status_code == 401
-    cleared = [h.lower() for h in replay.headers.get_list("set-cookie")]
-    assert any("refresh_token=" in h and "max-age=0" in h for h in cleared)
+    assert second.status_code == 200
+    assert "max-age=0" not in _set_cookies(second)["refresh_token", "/auth"]
+    for tab in (http, other_tab):
+        assert tab.get("/account").status_code == 200
+        assert tab.post("/auth/refresh").status_code == 200, "and each goes on refreshing"
 
 
 def test_logout_ends_the_session(client):
+    """On the server, not only in this browser: a copy of the refresh token is refused afterwards. Its cookie
+    was scoped to `/auth/refresh`, so sign-out never received it and ended nothing, and this test passed
+    because the browser had dropped its cookie (2026-11-20)."""
     http, _db, mailer = client
     _logged_in(http, mailer)
+    copied = _refresh_token(http)
 
     assert http.post("/auth/logout").status_code == 200
+
+    assert _browser().post("/auth/refresh", **_presenting(copied)).status_code == 401
     assert http.post("/auth/refresh").status_code == 401
 
 
@@ -335,6 +415,195 @@ def test_logging_out_twice_is_not_an_error(client):
     _logged_in(http, mailer)
     http.post("/auth/logout")
     assert http.post("/auth/logout").status_code == 200
+
+
+def test_logging_out_everywhere_ends_every_session(client):
+    """This browser's and every other's. It answered 401 to everybody: the cookie it reads was never sent
+    to it (2026-11-20)."""
+    http, db, mailer = client
+    email, _ = _logged_in(http, mailer)
+    phone = _browser()
+    assert phone.post("/auth/login", json={"email": email, "password": PASSWORD}).status_code == 200
+
+    assert http.post("/auth/logout-everywhere").status_code == 200
+
+    assert phone.post("/auth/refresh").status_code == 401
+    assert http.post("/auth/refresh").status_code == 401
+    assert db[UserSession.COLLECTION].count_documents({"revoked_at": None}) == 0
+
+
+def _access_token(http) -> str:
+    """The access token this browser holds, as a copy of it would be."""
+    [cookie] = [each for each in http.cookies.jar if each.name == "access_token"]
+    return cookie.value
+
+
+def _holding(token: str) -> dict:
+    """What a request carrying a copy of this access token sends, as the header itself."""
+    return {"headers": {"cookie": f"access_token={token}"}}
+
+
+def test_a_session_that_was_ended_is_refused_at_once_not_fifteen_minutes_later(client):
+    """Signing out, a new password and deleting the account each end the session; the access token it was
+    given was good for its fifteen minutes regardless, for the billing portal and their documents, and an
+    account that was gone answered 500 to most pages (2026-11-20). Every request asks whether its session
+    was ended."""
+    http, _db, mailer = client
+    email, _ = _logged_in(http, mailer)
+    phone = _browser()
+    assert phone.post("/auth/login", json={"email": email, "password": PASSWORD}).status_code == 200
+    on_the_laptop, on_the_phone = _access_token(http), _access_token(phone)
+
+    def opens(token: str) -> int:
+        return _browser().get("/account", **_holding(token)).status_code
+
+    assert (opens(on_the_laptop), opens(on_the_phone)) == (200, 200), "the premise: both are signed in"
+
+    assert http.post("/auth/logout").status_code == 200
+    assert (opens(on_the_laptop), opens(on_the_phone)) == (401, 200), "signing out ends this browser's alone"
+
+    changed = phone.put("/account/password", json={"current_password": PASSWORD,
+                                                   "new_password": "another-perfectly-fine-passphrase"})
+    assert changed.status_code == 200
+    assert opens(on_the_phone) == 401, "a new password ends every session there was"
+
+
+def test_a_deleted_account_is_signed_out_not_an_error(client):
+    """Its sessions go with it, so the token a browser still holds is answered 401, as any ended session is.
+    It was answered 500: the pages read an account that was not there."""
+    http, _db, mailer = client
+    _logged_in(http, mailer)
+    held = _access_token(http)
+
+    assert http.request("DELETE", "/account", json={"password": PASSWORD}).status_code == 200
+
+    for page in ("/account", "/dashboard", "/feed", "/billing"):
+        assert _browser().get(page, **_holding(held)).status_code == 401, page
+
+
+def test_a_suspended_account_cannot_keep_its_session_by_refreshing(client):
+    """The refusal login gives. Refreshing never looked at the account, so a browser signed in before the
+    suspension stayed signed in for as long as it kept refreshing."""
+    http, db, mailer = client
+    email, _ = _logged_in(http, mailer)
+    db[User.COLLECTION].update_one({"email": email}, {"$set": {"status": "suspended"}})
+
+    refused = http.post("/auth/refresh")
+
+    assert refused.status_code == 401
+    assert "max-age=0" in _set_cookies(refused)["refresh_token", "/auth"]
+    assert db[UserSession.COLLECTION].count_documents({"revoked_at": None}) == 0
+
+
+# ── an address somebody else signed up with first ─────────────────────────────────────────────
+
+def test_an_unconfirmed_address_is_whoever_signs_up_for_it_last_and_a_confirmed_one_stays_theirs(client):
+    """Signing up with somebody else's address and waiting was a way into their account: their own sign-up
+    was dropped without a word, the link they asked for again confirmed the stranger's password, and the
+    stranger signed in with it (2026-11-20). Now the later sign-up is the one that counts, and is mailed a
+    link of its own. Once the address is confirmed, no sign-up changes anything."""
+    http, _db, mailer = client
+    email, strangers = _email(), "the-password-a-stranger-chose"
+    assert _signup(_browser(), email, strangers).status_code == 202
+    first_link = _link_token(mailer)
+
+    assert _signup(http, email, PASSWORD).status_code == 202
+    assert len(mailer.sent) == 2, "the person signing up now is mailed a link"
+    assert http.post("/auth/verify", json={"token": first_link}).status_code == 400, "only the newest opens"
+    assert http.post("/auth/verify", json={"token": _link_token(mailer)}).status_code == 200
+
+    def signs_in(password: str) -> int:
+        return _browser().post("/auth/login", json={"email": email, "password": password}).status_code
+
+    assert (signs_in(strangers), signs_in(PASSWORD)) == (401, 200)
+
+    assert _signup(_browser(), email, strangers).status_code == 202
+    assert len(mailer.sent) == 2, "nothing is mailed about an address that is somebody's"
+    assert (signs_in(strangers), signs_in(PASSWORD)) == (401, 200)
+
+
+def test_signing_up_for_one_address_is_limited_the_same_with_an_account_or_without(limited):
+    """Each sign-up for an unconfirmed address mails it a link, so one address is asked for only so often;
+    and the limit answers alike for an address with an account and one with none, or it would say which."""
+    from services.api.auth_routes import SIGNUPS_PER_EMAIL
+
+    http, db, _ = limited
+    theirs = insert(db, User(email=_email(), password_hash="x", status="active")).email
+    for email in (theirs, _email()):
+        answers = [_signup(http, email).status_code for _ in range(SIGNUPS_PER_EMAIL + 1)]
+        assert answers == [202] * SIGNUPS_PER_EMAIL + [429]
+
+
+def test_a_confirmed_account_is_one_the_harvester_reads_for(client):
+    """An account made by signing up and opening the link, with its search saved, is among the accounts the
+    harvest reads the countries and places of. It asked for a field only an older sign-up set, so nobody
+    confirmed after 2026-11-19 was (`TenantRepository.active_configs`)."""
+    from libs.tenant.repository import TenantRepository
+
+    http, db, mailer = client
+    email = _email()
+    _signup(http, email)
+    assert http.post("/auth/verify", json={"token": _link_token(mailer)}).status_code == 200
+    user = find_one(db, User, {"email": email})
+    TenantRepository(db).save_config(user.id, {"keywords": ["python"]})
+
+    assert user.id in TenantRepository(db).active_configs()
+
+
+# ── one address, many passwords ───────────────────────────────────────────────────────────────
+
+def test_a_limit_is_one_count_for_every_process_the_site_runs_as(limited, monkeypatch):
+    """Each of the API's four processes counted in its own memory, so every limit was four times what it
+    said, and began again at each restart (2026-11-20). The count is the database's, under a name that keeps
+    nobody's email or address."""
+    from services.api import auth_routes, deps
+
+    http, db, _ = limited
+    monkeypatch.setattr(auth_routes, "verify_password", lambda *_args: False)
+    email = _email()
+
+    def tries() -> int:
+        return http.post("/auth/login", json={"email": email, "password": PASSWORD}).status_code
+
+    assert [tries() for _ in range(auth_routes.LOGINS_PER_EMAIL)] == [401] * auth_routes.LOGINS_PER_EMAIL
+    # Another of the processes, which has nothing of this one's memory.
+    monkeypatch.setattr(deps, "_WINDOWS", {}, raising=False)
+
+    assert tries() == 429
+    kept = [str(row["_id"]) for row in db.rate_counts.find()]
+    assert kept and not any(email in name or "testclient" in name for name in kept)
+
+
+def test_the_password_is_asked_for_only_so_often_once_signed_in(limited):
+    """Changing the password and deleting the account each ask for the password again, with no limit on
+    asking: a session somebody else got hold of could guess at it for as long as it lasted (2026-11-20)."""
+    http, _db, mailer = limited
+    _logged_in(http, mailer)
+
+    def guess(at: int) -> int:
+        asks = ((http.put, "/account/password", {"current_password": "not-it", "new_password": "x" * 12}),
+                (http.request, "/account", {"password": "not-it"}))
+        ask, path, body = asks[at % 2]
+        return (ask(path, json=body) if ask == http.put else ask("DELETE", path, json=body)).status_code
+
+    assert [guess(at) for at in range(11)] == [401] * 10 + [429]
+
+
+def test_one_address_cannot_have_passwords_checked_without_end_by_changing_the_email(limited, monkeypatch):
+    """Checking a password takes 64 MiB and a thirtieth of a second by design. The only limit counted each
+    email apart, so a different email each time was never limited, and a flood of them could take the
+    server's memory (2026-11-20). An address past its limit is refused before any password is checked."""
+    from services.api import auth_routes
+
+    http, _db, _ = limited
+    checked = []
+    monkeypatch.setattr(auth_routes, "verify_password", lambda *_args: checked.append(1) and False)
+
+    answers = [http.post("/auth/login", json={"email": _email(), "password": PASSWORD}).status_code
+               for _ in range(auth_routes.LOGINS_PER_ADDRESS + 1)]
+
+    assert answers == [401] * auth_routes.LOGINS_PER_ADDRESS + [429]
+    assert len(checked) == auth_routes.LOGINS_PER_ADDRESS
 
 
 # ── the sending cap ───────────────────────────────────────────────────────────────────────────

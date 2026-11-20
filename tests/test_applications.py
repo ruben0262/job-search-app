@@ -22,15 +22,15 @@ def api(db, monkeypatch):
 
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
                            subscription_status="active", status="active",
                            active=True, onboarding_completed_at=now()))
     job = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer"))
     with TestClient(app, base_url="https://testserver") as http:
-        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        http.cookies.set("access_token", access_cookie(db, user.id), path="/")
         yield http, db, user, job
 
 

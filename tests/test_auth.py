@@ -1,7 +1,9 @@
 """Auth: the policy decisions from `AUTH_REUSE.md` §3, and the two that must not be got wrong."""
 from __future__ import annotations
 
+import threading
 import uuid
+from datetime import timedelta
 
 import pytest
 
@@ -16,13 +18,15 @@ from libs.auth import (
     issue_session,
     issue_token,
     password_problems,
+    passwords,
     revoke_all,
     revoke_session,
     rotate_session,
     token_owner,
     verify_password,
 )
-from libs.db import get, insert
+from libs.auth.sessions import ROTATION_GRACE
+from libs.db import get, insert, now
 from libs.db.models import AuthToken, User, UserSession
 from tests.conftest import needs_db
 
@@ -69,6 +73,35 @@ def test_the_minimum_is_nine_and_the_boundary_holds():
 
 def _user(db) -> User:
     return insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x"))
+
+
+def test_only_so_many_passwords_are_checked_at_once(monkeypatch):
+    """Each check takes 64 MiB by design, and the API's container has a ceiling: nothing bounded how many ran
+    together, so a flood of sign-ins could take all of it (2026-11-20). The rest wait their turn."""
+    waiting, release, inside = threading.Condition(), threading.Event(), [0]
+
+    class Slow:
+        def verify(self, *_args) -> bool:
+            with waiting:
+                inside[0] += 1
+                waiting.notify_all()
+            return release.wait(10)
+
+    monkeypatch.setattr(passwords, "_HASHER", Slow())
+    threads = [threading.Thread(target=verify_password, args=("stored", "typed"), daemon=True)
+               for _ in range(passwords.HASHES_AT_ONCE + 4)]
+    for thread in threads:
+        thread.start()
+    try:
+        with waiting:
+            # Every thread is started: without a bound all of them are inside within the moment allowed.
+            crowded = waiting.wait_for(lambda: inside[0] > passwords.HASHES_AT_ONCE, timeout=1)
+            assert not crowded and inside[0] == passwords.HASHES_AT_ONCE
+    finally:
+        release.set()
+        for thread in threads:
+            thread.join(10)
+    assert inside[0] == len(threads), "and every one of them was checked in its turn"
 
 
 @needs_db
@@ -136,18 +169,45 @@ def test_a_refresh_token_is_stored_hashed_and_rotates_on_use(db):
     assert second.refresh_token != first.refresh_token
 
 
+def _spent(db, issued, ago: timedelta) -> None:
+    """As if this session's refresh token had been spent that long ago."""
+    db[UserSession.COLLECTION].update_one({"_id": issued.session_id}, {"$set": {"rotated_at": now() - ago}})
+
+
 @needs_db
 def test_replaying_a_rotated_refresh_token_revokes_every_session(db):
     """Either the client is buggy or the token was stolen."""
     user = _user(db)
     first = issue_session(db, user.id)
     second = rotate_session(db, first.refresh_token)
+    _spent(db, first, ROTATION_GRACE + timedelta(seconds=1))
 
     with pytest.raises(SessionExpired, match="replayed"):
         rotate_session(db, first.refresh_token)
 
     with pytest.raises(SessionExpired):
         rotate_session(db, second.refresh_token)
+
+
+@needs_db
+def test_a_refresh_token_spent_a_moment_ago_is_two_tabs_not_a_theft(db):
+    """Two tabs refreshing together, or a browser that never got the answer and asks again: each gets a
+    session, and nothing is revoked. Read as a theft, it signed the person out on every device
+    (2026-11-20). Not for a token of a session that was ended meanwhile."""
+    user = _user(db)
+    first = issue_session(db, user.id)
+    one = rotate_session(db, first.refresh_token)
+    _spent(db, first, ROTATION_GRACE - timedelta(seconds=1))
+
+    other = rotate_session(db, first.refresh_token)
+
+    assert other.session_id != one.session_id
+    assert rotate_session(db, one.refresh_token) is not None, "the first tab's session was not ended"
+    assert rotate_session(db, other.refresh_token) is not None
+
+    assert revoke_all(db, user.id) >= 1
+    with pytest.raises(SessionExpired):
+        rotate_session(db, first.refresh_token)
 
 
 @needs_db

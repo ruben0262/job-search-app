@@ -89,7 +89,10 @@ def pipeline(db: Database, *, hours: int = 24) -> dict:
               "each run for the other boards, and everybody's words found in it in the same write. Newest "
               "first; a job too old for anybody's Jobs page leaves the queue and is never read. A job is on "
               "Jobs pages only from here.",
-              entered=_count(db, {"description_fetched_at": {"$gte": since}}),
+              # Its whole text stored, which is when a job is on Jobs pages: counted from the text queue's
+              # own index. It counted every page fetched, one that gave too little among them, by reading
+              # every posting (35 ms of 42,377, 2026-11-20).
+              entered=_count(db, {"described_at": {"$gte": since}}),
               **text, missed=_count(db, missed), **_limits("found_to_described")),
         # Shown on Jobs pages is decided when a page is read (`libs.matching`), so it is no queue a job
         # can wait in; the step after it is an alert.

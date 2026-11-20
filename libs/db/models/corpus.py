@@ -12,6 +12,10 @@ from libs.db import Document, now
 WORKPLACES = ("remote", "hybrid", "onsite")
 
 
+# The index a person's list is read from, by its name: the read names it to the database (`libs.matching`).
+WORDS_INDEX = "open_terms_newest"
+
+
 @dataclass(kw_only=True)
 class CorpusJob(Document):
     """One public posting. Its integer id is what the site, the alerts and Telegram's buttons carry."""
@@ -39,12 +43,16 @@ class CorpusJob(Document):
                           partialFilterExpression={"closed_at": None}, name="open_newest_first"),
                IndexModel("describe_failures", partialFilterExpression={"describe_failures": {"$gt": 0}},
                           name="describe_failures"),
+               # The postings whose match features are behind (`libs.fit.catch_up`), asked for after every
+               # harvest run and almost always none: without it, finding none read every posting, 128 ms of
+               # 42,377 and as much again for each as many more. With it, one index key (2026-11-20).
+               IndexModel("fit_version", name="fit_queue"),
                # A person's jobs: the postings in their countries that have one of their words
                # (`libs.corpus.terms`), newest first in the order the match sorts by, so it reads the
                # newest and stops, rather than every posting with the word, in every country, and then
                # sorts them (`libs.matching`, `filters._fresh_enough`).
                IndexModel([("terms", 1), ("country", 1), ("first_seen_at", DESCENDING), ("_id", DESCENDING)],
-                          partialFilterExpression={"closed_at": None}, name="open_terms_newest"),
+                          partialFilterExpression={"closed_at": None}, name=WORDS_INDEX),
                # The postings whose words are still to be found, which matching reads the slow way: newest
                # first too, so the two halves of a match merge in order.
                IndexModel([("terms_at", 1), ("first_seen_at", DESCENDING), ("_id", DESCENDING)],

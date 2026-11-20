@@ -49,8 +49,23 @@ def test_a_dead_board_stops_being_polled_but_is_not_forgotten(r):
     assert r.add_tokens([(name, "globex")]) == 0
     assert r.live_tokens(name) == ["acme"]
 
-    r.revive(name, "globex")
+
+def test_boards_given_up_before_a_failure_was_told_from_a_missing_board_are_asked_again_once(db, r):
+    """Until 2026-11-20 a board that failed to answer once was marked dead with the ones that are gone, and
+    nothing tells them apart afterwards. So every one is asked again, once ever (the deploy's schema step):
+    a board that is gone answers so on the next run and is given up again, and stays so."""
+    from libs.corpus.ats import revive_all_once
+
+    name = _ats_name()
+    r.add_tokens([(name, "acme"), (name, "globex")])
+    r.mark_dead(name, "globex")
+
+    assert revive_all_once(db) == 1
     assert sorted(r.live_tokens(name)) == ["acme", "globex"]
+
+    r.mark_dead(name, "globex")
+    assert revive_all_once(db) == 0
+    assert r.live_tokens(name) == ["acme"]
 
 
 def test_one_board_is_one_document_whoever_writes_it(db):

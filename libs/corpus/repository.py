@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import secrets
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -104,6 +105,14 @@ class CorpusRepository:
         return row["_id"] if row else None
 
     # ── dedup ────────────────────────────────────────────────────────────────────────────────
+
+    def stored_urls(self, urls: Iterable[str]) -> set[str]:
+        """Which of these addresses a posting is already stored under: the first of `find_duplicate`'s four
+        questions, asked once for all of a run's links. Most of a run's links are ones the last run stored
+        (824 of 972 in the log), and each was asked about on its own: 744 ms a thousand against 12
+        (2026-11-20)."""
+        asked = list(dict.fromkeys(url for url in urls if url))
+        return {row["url"] for row in self._corpus.find({"url": {"$in": asked}}, {"_id": 0, "url": 1})}
 
     def find_duplicate(self, url: str, title: str = "", company: str = "", location: str = "",
                        application_url: str | None = None) -> DuplicateMatch | None:

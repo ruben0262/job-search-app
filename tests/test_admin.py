@@ -24,8 +24,8 @@ def api(db, monkeypatch):
 
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     operator = insert(db, User(email=ADMIN, password_hash="x", subscription_status="active", status="active",
                                **agreed()))
@@ -33,7 +33,7 @@ def api(db, monkeypatch):
                                subscription_status="active", status="active", **agreed()))
 
     def sign_in(http, user):
-        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        http.cookies.set("access_token", access_cookie(db, user.id), path="/")
 
     with TestClient(app, base_url="https://testserver") as http:
         yield http, db, operator, ordinary, sign_in
@@ -48,8 +48,34 @@ def test_an_operator_sees_the_platform_and_its_alerts(api):
     sign_in(http, operator)
 
     body = http.get("/admin/health").json()
-    assert {"lanes", "corpus_rows", "alerts", "summary"} <= set(body)
+    assert {"lanes", "corpus_rows", "alerts", "users_total", "users_active", "checked_at"} <= set(body)
     assert isinstance(body["alerts"], list)
+    # And nothing the page does not show. Every active account's address went out with it, the alerts a
+    # second time as one text, and a figure of the Latency tab's worked out on each read (2026-11-20).
+    assert not {"users", "summary", "latency"} & set(body)
+
+
+def test_the_account_list_comes_a_page_at_a_time_and_finds_an_account_by_its_address(api):
+    """Every account was read whole on each open of Admin, 19 KB each with its profile, and all of them drawn:
+    1.9 s and 196 MB at ten thousand, on a copy made of the dev accounts (2026-11-20). A page of them is read,
+    the first to join first, with how many there are; and an address typed finds its account on any page."""
+    from services.api.admin_routes import USERS_PAGE
+
+    http, db, operator, ordinary, sign_in = api
+    sign_in(http, operator)
+    later = [insert(db, User(email=f"member{at:03}@example.org", password_hash="x", status="active",
+                             created_at=now() + timedelta(seconds=at + 1))).email for at in range(USERS_PAGE)]
+
+    first = http.get("/admin/users").json()
+    rest = http.get(f"/admin/users?offset={USERS_PAGE}").json()
+
+    assert (first["total"], first["page_size"]) == (USERS_PAGE + 2, USERS_PAGE)
+    assert len(first["users"]) == USERS_PAGE
+    assert {row["email"] for row in first["users"]} == {operator.email, ordinary.email, *later[:-2]}
+    assert [row["email"] for row in rest["users"]] == later[-2:]
+
+    found = http.get("/admin/users?q=MEMBER007").json()
+    assert ([row["email"] for row in found["users"]], found["total"]) == (["member007@example.org"], 1)
 
 
 def test_an_account_page_says_what_they_do_with_the_site_and_nothing_of_the_setup_files(api):
@@ -102,6 +128,24 @@ def test_an_account_page_says_what_they_do_with_the_site_and_nothing_of_the_setu
     assert usage["cv_look"] and usage["cover_look"]
     assert usage["last_applied_at"] and usage["last_alert_at"] and usage["last_made_at"] is None
     assert db[UserConfig.COLLECTION].count_documents({"user_id": ordinary.id}) == 1
+
+
+def test_an_account_page_has_its_list_counted_where_the_jobs_page_has(api, monkeypatch):
+    """By the database, as the Jobs page's own counts are (`libs.matching.page`), and never by bringing every
+    match here to count it: 5,884 postings and 675 ms for one account on the dev copy, and again for each row
+    of the Accounts table the pointer crossed (2026-11-20)."""
+    from libs.tenant.repository import TenantRepository
+
+    http, db, operator, ordinary, sign_in = api
+    sign_in(http, operator)
+    TenantRepository(db).save_config(ordinary.id, {"sections": [{"platform": "all", "keywords": ["nurse"]}]})
+
+    def every_match(*_args, **_kwargs):
+        raise AssertionError("the account page read every match to count them")
+
+    monkeypatch.setattr("libs.matching.matching_jobs", every_match)
+
+    assert http.get(f"/admin/users/{ordinary.id}").status_code == 200
 
 
 def test_the_subscriptions_tab_counts_every_account_once_and_lists_the_subscriptions(api):
@@ -553,6 +597,56 @@ def test_the_corpus_browser_reports_what_is_actually_in_there(api):
     searched = http.get("/admin/corpus?q=mechanical").json()
     assert searched["total"] == 3
     assert all("Mechanical" in job["title"] for job in searched["jobs"])
+
+
+def test_the_corpus_browser_lists_the_newest_first_and_says_which_have_their_text(api):
+    """A job has its text when the platform says so (`described_at`), the one rule its Jobs pages go by. The
+    browser had a rule of its own, 400 characters, so a job on people's lists read as waiting for its text."""
+    from libs.db.models import CorpusJob
+
+    http, db, operator, _ordinary, sign_in = api
+    sign_in(http, operator)
+    for title, text, read in (("Waiting", None, None), ("Read", "We build ledgers. " * 14, now())):
+        insert(db, CorpusJob(title=title, source="test", url=f"https://example.com/{title}", description=text,
+                             described_at=read, first_seen_at=now()))
+
+    listed = http.get("/admin/corpus").json()["jobs"]
+
+    assert [(job["title"], job["described"]) for job in listed] == [("Read", True), ("Waiting", False)]
+
+
+def test_the_site_goes_on_answering_while_the_live_pipeline_is_counted(api, monkeypatch):
+    """Each frame's counts ran on the server's event loop, once a second for as long as a Pipeline tab was
+    open: 78 ms of every second in which that worker answered nobody (2026-11-20)."""
+    import threading
+
+    from services.api import admin_routes
+
+    http, _db, operator, _, sign_in = api
+    sign_in(http, operator)
+    counting, release, count = threading.Event(), threading.Event(), admin_routes.pipeline
+
+    def held(*args, **kwargs):
+        counting.set()
+        release.wait(30)
+        return count(*args, **kwargs)
+
+    monkeypatch.setattr(admin_routes, "pipeline", held)
+    # The stream ends by itself, a moment after the frame is let go.
+    monkeypatch.setattr(admin_routes, "STREAM_MAX_SECONDS", 0.2)
+    monkeypatch.setattr(admin_routes, "STREAM_INTERVAL_SECONDS", 0.01)
+    stream = threading.Thread(target=http.get, args=("/admin/pipeline/stream",), daemon=True)
+    stream.start()
+    try:
+        assert counting.wait(10), "the premise: the stream got as far as counting a frame"
+        answered: list[int] = []
+        other = threading.Thread(target=lambda: answered.append(http.get("/health").status_code), daemon=True)
+        other.start()
+        other.join(5)
+        assert answered == [200]
+    finally:
+        release.set()
+        stream.join(30)
 
 
 # ── discarding dead letters (ROADMAP 6af) ─────────────────────────────────────────────────────

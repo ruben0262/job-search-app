@@ -39,6 +39,7 @@ from libs.llm import own
 from libs.membership import has
 from libs.obs import audit
 from libs.queue import enqueue
+from libs.tenant.filters import theirs_to_open
 from services.api.deps import current_user, get_db, rate_limit
 
 logger = logging.getLogger(__name__)
@@ -103,16 +104,18 @@ def _documents_changed(db: Database, user_id: _uuid.UUID) -> None:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=StoredDocument)
-async def upload(request: Request, kind: str = Form(...), file: UploadFile = File(...),
-                 db: Database = Depends(get_db),
-                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Store one document: the text read out of it, and the file to download again."""
+def upload(request: Request, kind: str = Form(...), file: UploadFile = File(...),
+           db: Database = Depends(get_db),
+           user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Store one document: the text read out of it, and the file to download again. Not `async`: reading a
+    file and the database are work that waits, and on the event loop everybody that worker serves waited
+    with it (350 ms for an ordinary CV, 2026-11-20)."""
     if kind not in DOCUMENT_KINDS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail=f"unknown document kind {kind!r}")
     rate_limit(request, f"upload:{user_id}", limit=60, per_seconds=3600)
 
-    data = await file.read(MAX_FILE_BYTES + 1)
+    data = file.file.read(MAX_FILE_BYTES + 1)
     try:
         extracted = extract_text(file.filename or "upload", data)
     except UnsupportedDocument as exc:
@@ -268,7 +271,7 @@ def build_document(body: BuildRequest, db: Database = Depends(get_db),
         notify.notify(db, user_id, notify.NEEDS_MEMBERSHIP)
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED,
                             detail="Making CVs and cover letters comes with a membership.")
-    if not db[CorpusJob.COLLECTION].count_documents({"_id": body.job_id}, limit=1):
+    if not theirs_to_open(db, user_id, body.job_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="that job is no longer here")
     key = f"{body.mode}:{body.kind}:{body.job_id}"
     build_id = _waiting(db, user_id, key)

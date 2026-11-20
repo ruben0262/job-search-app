@@ -3,12 +3,16 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import zipfile
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 # 10 MB is a generous CV and a large scanned reference. Above it, something else is going on.
 MAX_FILE_BYTES = 10 * 1024 * 1024
+# And what a Word file, which is a zip, may unpack to. Only the packed size was looked at: 10 MB of zeros
+# unpacks to gigabytes, in a container of 1 GiB, for anybody signed in (2026-11-20).
+MAX_UNPACKED_BYTES = 10 * MAX_FILE_BYTES
 
 # **The one ceiling on how much of a person's own writing this platform holds, and therefore reads.**
 # Roughly 90 pages of prose. Raised from 200,000 on 2026-08-13 together with the removal of a second,
@@ -116,6 +120,10 @@ def _docx(data: bytes) -> str:
     import docx  # noqa: PLC0415
     from docx.opc.constants import RELATIONSHIP_TYPE  # noqa: PLC0415
 
+    with zipfile.ZipFile(io.BytesIO(data)) as packed:
+        if sum(part.file_size for part in packed.infolist()) > MAX_UNPACKED_BYTES:
+            raise UnsupportedDocument("this file unpacks to more than a document holds — save it again from "
+                                      "Word, or as a PDF")
     document = docx.Document(io.BytesIO(data))
     section = document.sections[0]
     parts = [section.first_page_header] if section.different_first_page_header_footer else []

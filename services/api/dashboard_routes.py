@@ -28,6 +28,7 @@ from libs.obs import audit
 from libs.onboarding import onboarding_state
 from libs.settings import HARVEST_SOURCES
 from libs.tenant import applications
+from libs.tenant.filters import theirs_to_open
 from services.api.deps import current_user, get_db
 from services.api.onboarding_routes import OnboardingSteps
 from services.api.saved_routes import JobDocument, job_document
@@ -331,6 +332,7 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
          min_fit: int | None = Query(None, ge=1, le=10),
          background: BackgroundTasks,
          found_after: datetime | None = None,
+         counts: bool = False,
          sort: Literal["best", "newest", "arrived"] = "best") -> Feed:
     """This person's matches, a page at a time: the most of their words first, the newest posted
     first, or the ones that arrived here last first:
@@ -343,7 +345,9 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
 
     Counted on the whole list, not instead of it: the jobs that left meanwhile, past their shelf life,
     are the difference between the two lengths. Asked for the new ones alone, the page said "100 new
-    jobs" and a refresh made the list 15 longer (owner, 2026-11-06).
+    jobs" and a refresh made the list 15 longer (owner, 2026-11-06). `counts` is that question and nothing
+    else, as the page asks it every minute: `total` and `arrived`, with no job, no score and none of what the
+    filters offer. It was asked as a whole page of one job, scored and counted every way, to read two numbers.
 
     A job they skipped or applied to is gone from it for good: Applied lists the second."""
     # An account on a plan that waits sees a job that long after a member does (`libs.membership`), so a
@@ -368,7 +372,6 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
             "input": {"$concat": ["$title", " ", {"$ifNull": ["$company", ""]}, " ", "$url"]},
             "regex": re.escape(q or ""), "options": "i"}}}),
         (remote is not None, {"is_remote": True} if remote else {"is_remote": {"$ne": True}}),
-        (job is not None, {"_id": job}),
         (source is not None, {"source": source}),
         (country is not None, {"country": country}),
         (city is not None, {"city": city}),
@@ -388,16 +391,16 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
         wanted.append(fit.at_least(mine, kept, min_fit))
     found = page(db, user, since=cutoff, scan=scan_for(since_hours or longest),
                  wanted={"$and": wanted} if wanted else {}, order=sort, offset=offset, limit=limit,
-                 found_after=since, fit=None if mine is None else fit.scored(mine),
-                 unkept=None if kept is None else fit.unkept(kept))
-    if mine is not None and (found.live or not fit.any_kept(db, user_id, mine)):
+                 found_after=since, fit=None if mine is None or counts else fit.scored(mine),
+                 unkept=None if kept is None else fit.unkept(kept), only=job, counts=counts)
+    if mine is not None and not counts and (found.live or not fit.any_kept(db, user_id, mine)):
         background.add_task(fit.fill, db, user_id)
     ids = [match.job.id for match in found.matches]
-    # The text of the page's jobs only: matching never brings it back.
+    # The text of the page's jobs only: matching never brings it back. Nothing is asked about no jobs.
     texts = {row["_id"]: row.get("description") for row in db[CorpusJob.COLLECTION].find(
-        {"_id": {"$in": ids}}, {"description": 1})}
-    documents = for_jobs(db, user_id, ids)
-    kept = bookmarked(db, user_id, ids)
+        {"_id": {"$in": ids}}, {"description": 1})} if ids else {}
+    documents = for_jobs(db, user_id, ids) if ids else {}
+    kept = bookmarked(db, user_id, ids) if ids else set()
     return Feed(total=found.total, arrived=found.arrived,
                 jobs=[feed_row(match, texts.get(match.job.id), documents.get(match.job.id, []),
                                bookmarked=match.job.id in kept) for match in found.matches],
@@ -453,7 +456,8 @@ def job_description(job_id: int, db: Database = Depends(get_db),
     if (behind := jobs_as_of(db, get(db, User, user_id))) is not None:
         # Not the text of a job a waiting account's list does not show yet, asked for by its number.
         where["$or"] = [{"source": TYPED}, {"described_at": {"$lte": behind}}]
-    found = db[CorpusJob.COLLECTION].find_one(where, {"description": 1})
+    found = theirs_to_open(db, user_id, job_id) and db[CorpusJob.COLLECTION].find_one(
+        where, {"description": 1})
     if not found or not found.get("description"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no description for that job")
     return JobDescription(text=paragraphs(found["description"]))
@@ -545,7 +549,7 @@ def mark_job(job_id: int, mark: Literal["applied", "hidden", "bookmarked"], requ
     if request.method == "PUT" and (behind := jobs_as_of(db, get(db, User, user_id))) is not None:
         # A waiting account marks only what its list shows: Applied would show the rest of a newer job.
         where["$or"] = [{"source": TYPED}, {"described_at": {"$lte": behind}}]
-    if not db[CorpusJob.COLLECTION].count_documents(where, limit=1):
+    if not (theirs_to_open(db, user_id, job_id) and db[CorpusJob.COLLECTION].count_documents(where, limit=1)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such job")
     state = record_state(db, user_id, job_id, **{_MARKS[mark]: now() if request.method == "PUT" else None})
     audit(logger, "job.marked", user=user_id, job=job_id, mark=mark, on=request.method == "PUT")

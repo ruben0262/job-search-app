@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
+from services.api import deps
 from services.api.deps import rate_limit
 
 # The tunnel's container, the peer of every request that reaches the API on the server.
@@ -21,10 +22,12 @@ def _from(visitor: str) -> Request:
                     "headers": [(b"cf-connecting-ip", visitor.encode())]})
 
 
-def test_each_visitor_is_counted_apart_behind_the_tunnel(monkeypatch):
+def test_each_visitor_is_counted_apart_behind_the_tunnel(db, monkeypatch):
     """Keyed on the peer, every visitor shared the tunnel's one count: five sign-ups an hour for the whole
-    site, and a sixth person was told to wait (found 2026-11-17)."""
+    site, and a sixth person was told to wait (found 2026-11-17). Counted in the database since 2026-11-20,
+    and here with the clock stood still, so the window cannot end between two of these."""
     monkeypatch.delenv("DISABLE_RATE_LIMIT", raising=False)
+    monkeypatch.setattr(deps, "_clock", lambda: 1_800_000_000.0)
     key = f"test-{uuid.uuid4()}"
     for _ in range(2):
         rate_limit(_from("203.0.113.7"), key, limit=2, per_seconds=60)

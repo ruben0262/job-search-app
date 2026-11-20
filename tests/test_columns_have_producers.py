@@ -34,6 +34,10 @@ KNOWN_UNWRITTEN = {
     # uploads replaced them (owner, 2026-11-10), and since then neither written nor read. Deleting them is
     # the owner's call.
     "filled",
+    # When the switched-off model last read their documents. Its "producer" until 2026-11-20 was the key of
+    # the same name in Admin's account list, which sent it to a page that never showed it. Neither written
+    # nor read now: retiring it deletes a date from every account copied from Postgres, the owner's call.
+    "processed_at",
 }
 
 

@@ -88,7 +88,9 @@ def lane_health(db: Database) -> list[LaneHealth]:
 
 
 def user_health(db: Database) -> list[UserHealth]:
-    """Per-account state, for the alerts that name a user.
+    """The accounts an alert names: the active ones whose Telegram stopped taking messages
+    (`libs.ops.alerts`). Every active account was read for it until 2026-11-20, whole, and sent to the
+    Admin page, which shows none of them.
 
     **Asked for the whole platform at once.** This was a loop of about seven queries an account; at
     fifty accounts and 2.65M state rows that measured 18.8 seconds against `health.service`'s
@@ -97,7 +99,7 @@ def user_health(db: Database) -> list[UserHealth]:
     """
     return [UserHealth(user_id=str(user["_id"]), email=user["email"],
                        telegram_status=user["telegram_status"])
-            for user in db[User.COLLECTION].find({"status": "active"},
+            for user in db[User.COLLECTION].find({"status": "active", "telegram_status": "broken"},
                                                  {"email": 1, "telegram_status": 1}, sort=[("email", 1)])]
 
 
@@ -107,7 +109,7 @@ def platform_health(db: Database, *, include_users: bool = True) -> PlatformHeal
     return PlatformHealth(
         checked_at=datetime.now(UTC).isoformat(),
         lanes=lane_health(db),
-        users_total=db[User.COLLECTION].count_documents({}),
+        users_total=db[User.COLLECTION].estimated_document_count(),
         users_active=db[User.COLLECTION].count_documents({"status": "active"}),
         corpus_rows=db[CorpusJob.COLLECTION].estimated_document_count(),
         archive_overdue=overdue(db),

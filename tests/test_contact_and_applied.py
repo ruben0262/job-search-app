@@ -32,11 +32,11 @@ def api(db, monkeypatch):
 
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from libs.db import insert
     from libs.db.models import User
     from services.api import deps
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
                            subscription_status="active", status="active"))
@@ -44,7 +44,7 @@ def api(db, monkeypatch):
     app.dependency_overrides[deps.get_mailer] = lambda: inbox
 
     def as_user(person):
-        http.cookies.set("access_token", issue_access_token(person.id, uuid.uuid4()), path="/")
+        http.cookies.set("access_token", access_cookie(db, person.id), path="/")
 
     with TestClient(app, base_url="https://testserver") as http:
         as_user(user)

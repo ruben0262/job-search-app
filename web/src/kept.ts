@@ -10,6 +10,18 @@ const kept = new Map<string, unknown>();
 // Told when a path is read again, so every page drawing it draws the new answer: a plan's limits read
 // as a document is ready show in Settings too (owner, 2026-11-19).
 const fresh = new EventTarget();
+// The reads on their way, by address: whoever asks for one of them gets its answer, not a request of their
+// own. A page's read and the read-ahead of the same address went out side by side, and an account's page
+// once for every time the pointer came back to its row.
+const asking = new Map<string, Promise<unknown>>();
+
+function ask<T>(path: string): Promise<T> {
+  const underWay = asking.get(path) as Promise<T> | undefined;
+  if (underWay) return underWay;
+  const answer = api.get<T>(path).finally(() => asking.delete(path));
+  asking.set(path, answer);
+  return answer;
+}
 
 /** The last answer from `path`, if there is one. */
 export function peek<T>(path: string): T | null {
@@ -26,7 +38,8 @@ export function keep<T>(path: string, value: T): void {
 export function useKept<T>(path: string, first?: () => Promise<unknown>) {
   const [data, setData] = useState<T | null>(() => peek<T>(path));
   const [failed, setFailed] = useState(false);
-  const reload = useCallback(() => Promise.resolve(first?.()).then(() => api.get<T>(path)).then((answer) => {
+  // After `first`, the answer is asked for afresh: one already on its way was asked before `first` arrived.
+  const reload = useCallback(() => (first ? first().then(() => api.get<T>(path)) : ask<T>(path)).then((answer) => {
     kept.set(path, answer);
     setFailed(false);
     fresh.dispatchEvent(new Event(path));
@@ -51,7 +64,7 @@ export function useKept<T>(path: string, first?: () => Promise<unknown>) {
  * as the next. */
 export function readAhead(paths: string[]): void {
   for (const path of paths) {
-    if (!kept.has(path)) api.get(path).then((answer) => kept.set(path, answer)).catch(() => undefined);
+    if (!kept.has(path)) ask(path).then((answer) => kept.set(path, answer)).catch(() => undefined);
   }
 }
 

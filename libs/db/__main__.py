@@ -12,13 +12,15 @@ once done. Then every account from before memberships began is given free access
 (`libs.membership.free_for_existing`), and every account from before alerts were named its "My search" alert,
 once ever (`libs.alerts.alerts_for_existing`): before the prune, which removes the switch it reads. And every
 alert of an account that had paused them all is switched off, once ever (`libs.alerts.paused_for_existing`),
-the pause having gone.
+the pause having gone. And every company board given up before a failed poll was told from a missing board is
+asked again, once ever (`libs.corpus.ats.revive_all_once`).
 """
 from __future__ import annotations
 
 import sys
 
 from libs.alerts import alerts_for_existing, paused_for_existing
+from libs.corpus.ats import revive_all_once
 from libs.db import database, ensure_schema
 from libs.db.models import MODELS
 from libs.llm.accounts import settle
@@ -37,6 +39,8 @@ def main() -> int:
         print(f"alerts: {alerted} account(s) given their My search alert")
     if paused := paused_for_existing(db):
         print(f"alerts: every alert switched off for {paused} account(s) that had paused them")
+    if revived := revive_all_once(db):
+        print(f"ats_tokens: {revived} board(s) given up before 2026-11-20 are asked again")
     ensure_schema(db, prune="--prune" in sys.argv[1:])
     for model in MODELS:
         indexes = len(list(db[model.COLLECTION].list_indexes()))

@@ -7,6 +7,9 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 from typing import Protocol
+from urllib.parse import urlparse
+
+from libs.notify import site_url
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +55,14 @@ class SmtpSender:
             raise MailError(f"could not send to {to}: {type(exc).__name__}") from exc
 
 
+# Where the site is somebody's own computer, and an email printed in its terminal is how they read it.
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+
+
 class ConsoleSender:
-    """Prints instead of sending."""
+    """Prints instead of sending, on somebody's own computer. Anywhere else it says the email was not sent
+    and prints none of it: a link that signs somebody in, or sets their password, was written to the
+    server's log whenever SMTP was left out of its settings (2026-11-20)."""
 
     def __init__(self) -> None:
         self.sent: list[tuple[str, str, str]] = []
@@ -61,6 +70,9 @@ class ConsoleSender:
     def send(self, to: str, subject: str, body: str, *, reply_to: str | None = None,
              html: str | None = None) -> None:
         self.sent.append((to, subject, body))
+        if urlparse(site_url()).hostname not in LOCAL_HOSTS:
+            logger.error("email to %s was not sent, and SMTP is not configured: %s", to, subject)
+            return
         logger.info("email (not sent) to %s: %s", to, subject)
         print(f"--- email to {to}: {subject} ---\n{body}\n---", flush=True)
 

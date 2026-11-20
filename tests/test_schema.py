@@ -218,3 +218,16 @@ def test_freshness_is_per_source_and_falls_back(db):
     settings.put(db, "source_freshness_hours", {"adzuna": 48})
     assert settings.freshness_hours(db, "adzuna") == 48
     assert settings.freshness_hours(db, "a-source-nobody-configured") == default
+
+
+@needs_db
+@pytest.mark.parametrize("collection, field", [
+    ("user_sessions", "expires_at"), ("auth_tokens", "expires_at"), ("mail_sends", "sent_at"),
+    ("ai_requests", "created_at"), ("jobs", "finished_at")])
+def test_what_is_read_only_for_a_while_is_dropped_by_the_database_after_it(db, collection, field):
+    """A session at every refresh, a token for every link, a row for every email sent, AI request made and
+    job done: each is read for a day or a month and none ever left (385 sessions for the dev copy's two
+    accounts, 2026-11-20). The database drops each by its own date."""
+    ages = [index.get("expireAfterSeconds") for index in db[collection].list_indexes()
+            if list(index["key"]) == [field]]
+    assert ages and ages[0] is not None, f"{collection}.{field} is kept for good"

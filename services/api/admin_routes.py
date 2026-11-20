@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from pymongo.database import Database
@@ -36,7 +37,7 @@ from libs.db.models import (
 from libs.documents.read import LANGUAGE_NAMES
 from libs.limits import all_for, describe, set_limit
 from libs.llm.accounts import listing as ai_listing
-from libs.matching import green_words, norm, scan_for, their_jobs
+from libs.matching import green_words, norm, page, scan_for
 from libs.membership import (
     FREE,
     MEMBER,
@@ -52,13 +53,9 @@ from libs.membership import (
     tier,
 )
 from libs.obs import audit
-from libs.ops import evaluate, platform_health, render
+from libs.ops import evaluate, platform_health
 from libs.ops.countries import RANGES_HOURS, by_country
-from libs.ops.latency import (
-    latency_report,
-    pipeline_latency,
-    stage_detail,
-)
+from libs.ops.latency import latency_report, stage_detail
 from libs.ops.pipeline import pipeline
 from libs.ops.pipeline import sources as found_by_source
 from libs.settings import (
@@ -102,19 +99,17 @@ def require_admin(db: Database = Depends(get_db),
 
 @router.get("/health")
 def health(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
-    """Every number, plus the conditions that currently need a person."""
+    """Every number the Health tab shows, plus the conditions that currently need a person: an account one
+    of them names is in its alert, and the accounts they were read from stay here."""
     state = platform_health(db)
     alerts = evaluate(state)
     audit(logger, "admin.health", user=admin.id, alerts=len(alerts))
     return {
-        **state.as_dict(),
-        # How long a posting takes to reach somebody.
-        "latency": pipeline_latency(db),
+        **{key: value for key, value in state.as_dict().items() if key != "users"},
         "alerts": [
             {"severity": alert.severity, "key": alert.key, "text": alert.text,
              "action": alert.action, "user_email": alert.user_email}
             for alert in alerts],
-        "summary": render(alerts),
     }
 
 
@@ -202,7 +197,7 @@ class Subscriptions(BaseModel):
 def subscriptions(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> Subscriptions:
     """Who is on which plan, what is about to change, and what the membership brings in: Admin's Subscriptions
     tab (owner, 2026-11-12)."""
-    users = find(db, User, {})
+    users = find(db, User, {}, projection=LIGHT)
     kinds = {user.id: _plan_of(user) for user in users}
     soon, month_ago = now() + timedelta(days=7), now() - timedelta(days=30)
     member_ids = set(db[User.COLLECTION].distinct("_id", members()))
@@ -235,12 +230,28 @@ def subscriptions(db: Database = Depends(get_db), admin: User = Depends(require_
               for user in held[:500]])
 
 
+# What makes an account's document heavy, 18 of its 19 KB, and no list of accounts shows: left behind when
+# every account is read (`libs.fit.profile`, `libs.suggestions`).
+LIGHT = {"fit_profile": 0, "suggestions": 0}
+# How many accounts a page of Admin's list holds.
+USERS_PAGE = 50
+
+
 @router.get("/users")
-def users(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
-    """The account list, with no credential material of any kind."""
+def users(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
+          q: str = Query("", max_length=200), offset: int = Query(0, ge=0)) -> dict:
+    """A page of the account list, the first to join first, with no credential material of any kind; `q` finds
+    the accounts whose address has it. Every account was read whole on each open of Admin and all of them
+    drawn: 1.9 s and 196 MB at ten thousand, on a copy made of the dev accounts (2026-11-20)."""
     audit(logger, "admin.users", user=admin.id)
     allowed = admin_emails()
+    accounts = db[User.COLLECTION]
+    # An address is stored in lower case.
+    where = {"email": {"$regex": re.escape(q.strip().lower())}} if q.strip() else {}
     return {
+        "total": accounts.count_documents(where) if where else accounts.estimated_document_count(),
+        "offset": offset,
+        "page_size": USERS_PAGE,
         "users": [
             {
                 "id": str(row.id),
@@ -255,14 +266,14 @@ def users(db: Database = Depends(get_db), admin: User = Depends(require_admin)) 
                 # Whether the flag can be changed here at all.
                 "admin_locked": row.email.lower() in allowed,
                 "onboarded": row.onboarding_completed_at is not None,
-                "processed_at": row.processed_at.isoformat() if row.processed_at else None,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 # The whole of account lifecycle now: an operator reads this and decides whether to
                 # delete. Nothing acts on it automatically (ROADMAP 6c).
                 "last_active_at": (row.last_active_at.isoformat()
                                    if row.last_active_at else None),
             }
-            for row in find(db, User, {}, sort=[("created_at", 1)])],
+            for row in find(db, User, where, projection=LIGHT, sort=[("created_at", 1), ("_id", 1)],
+                            skip=offset, limit=USERS_PAGE)],
     }
 
 
@@ -377,9 +388,12 @@ def user_detail(user_id: _uuid.UUID, db: Database = Depends(get_db),
 
 
 def _usage(db: Database, user: User) -> AdminUsage:
-    # Their list at "Any time", read as far back as the Jobs page reads it (`scan_for`).
-    jobs = their_jobs(db, user, scan=scan_for(shelf_life(platform_windows(db))[1]))
-    since = user.last_active_at
+    # Their list at "Any time", read as far back as the Jobs page reads it (`scan_for`) and counted where
+    # it counts its own: by the database (`libs.matching.page`), the one job it must hand back unread. Every
+    # match was brought here to be counted, 5,884 postings and 675 ms for one account (2026-11-20).
+    jobs = page(db, user, since=None, scan=scan_for(shelf_life(platform_windows(db))[1]), wanted={},
+                order="best", offset=0, limit=1, found_after=user.last_active_at)
+    words, places = dict(jobs.words), dict(jobs.countries)
     config = migrate_config(TenantRepository(db).get_config(user.id) or {})
     sections = config.get("sections") or []
 
@@ -396,7 +410,7 @@ def _usage(db: Database, user: User) -> AdminUsage:
 
     def within(slug: str) -> int:
         """The jobs on their list in a place they picked: a country, or the countries it covers."""
-        return sum(places[code] for code in COUNTRIES[slug].countries) if slug in COUNTRIES else 0
+        return sum(places.get(code, 0) for code in COUNTRIES[slug].countries) if slug in COUNTRIES else 0
 
     documents = list(db[UserDocument.COLLECTION].find({"user_id": user.id}, {"kind": 1, "in_use": 1}))
     cvs = [row for row in documents if row["kind"] == "cv"]
@@ -406,15 +420,12 @@ def _usage(db: Database, user: User) -> AdminUsage:
     alerts = [name for name, on in (("email", emailed),
                                     ("Telegram", user.telegram_status == "connected"),
                                     ("browser", count(PushSubscription.COLLECTION) > 0)) if on]
-    words = Counter(word for match in jobs for word in match.words)
-    places = Counter(match.job.country for match in jobs)
     nothing = dict.fromkeys(("applied", *applications.STAGES, applications.REJECTED), 0)
     reached = next((row for row in applications.outcomes(db, user.id) if row["group"] == applications.ALL),
                    {"group": applications.ALL, **nothing})
     accounts = ai_listing(db, user.id)
     return AdminUsage(
-        jobs=len(jobs),
-        new_jobs=sum(1 for match in jobs if since and (match.job.described_at or since) > since),
+        jobs=jobs.total, new_jobs=jobs.arrived or 0,
         applications=OutcomeRow(**reached),
         skipped=count(UserJobState.COLLECTION, dismissed_at={"$ne": None}),
         delivered=count(UserJobState.COLLECTION, notified_at={"$ne": None}),
@@ -422,13 +433,12 @@ def _usage(db: Database, user: User) -> AdminUsage:
         cv_look=templates.chosen(user, "cv").name, cover_look=templates.chosen(user, "cover").name,
         cvs=len(cvs), cvs_in_use=sum(1 for row in cvs if row.get("in_use", True)),
         cover_letters=sum(1 for row in documents if row["kind"] == "cover_letter"),
-        green_words=[Tally(name=word, jobs=words[norm(word)]) for word in green_words(config)],
+        green_words=[Tally(name=word, jobs=words.get(norm(word), 0)) for word in green_words(config)],
         red_words=each("exclude_keywords"),
         countries=[Tally(name=location_search_name(slug), jobs=within(slug)) for slug in each("locations")],
         workplaces=[WORKPLACE_NAMES.get(way, (way,))[0] for way in each("workplaces")],
         languages=[LANGUAGE_NAMES.get(code, (code,))[0] for code in config.get("languages") or []],
-        sources=[Tally(name=board_name(source), jobs=jobs_from)
-                 for source, jobs_from in Counter(match.job.source for match in jobs).most_common()],
+        sources=[Tally(name=board_name(source), jobs=jobs_from) for source, jobs_from in jobs.sources],
         alerts=alerts,
         ai_accounts=[each.label for each in accounts],
         ai_in_use=next((each.label for each in accounts if each.in_use), None),
@@ -704,7 +714,10 @@ def corpus(db: Database = Depends(get_db), admin: User = Depends(require_admin),
         where["source"] = source.strip()
 
     total = db[CorpusJob.COLLECTION].count_documents(where)
-    rows = find(db, CorpusJob, where, sort=[("first_seen_at", -1), ("_id", -1)],
+    # Newest first by the number each was stored under, the order they were found in, which the database
+    # keeps. By when each was found and then its number, no index gave the order: every posting of the
+    # thirty days was sorted to show fifty, 115 ms of 42,377 (2026-11-20). And without their text.
+    rows = find(db, CorpusJob, where, projection={"description": 0, "fit": 0}, sort=[("_id", -1)],
                 skip=max(offset, 0), limit=CORPUS_PAGE)
     by_source = [(row["_id"], row["count"]) for row in db[CorpusJob.COLLECTION].aggregate([
         {"$match": {"first_seen_at": {"$gte": window}}},
@@ -719,7 +732,8 @@ def corpus(db: Database = Depends(get_db), admin: User = Depends(require_admin),
         "jobs": [
             {"id": row.id, "title": row.title, "company": row.company,
              "location": row.location, "source": row.source, "is_remote": row.is_remote,
-             "described": bool(row.description and len(row.description) > 400),
+             # Its whole text stored: what puts it on Jobs pages (`CorpusRepository.set_description`).
+             "described": row.described_at is not None,
              "url": row.url,
              "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
              "posted_at": row.posted_at.isoformat() if row.posted_at else None}
@@ -783,7 +797,9 @@ async def pipeline_stream(request: Request, db: Database = Depends(get_db),
                 # Ends the response; the browser reopens and is authorised again.
                 return
             try:
-                payload = json.dumps(pipeline(db, hours=window))
+                # Counted on a worker thread: here on the event loop, everybody this process serves waited
+                # for it, 78 ms of every second a Pipeline tab was open (2026-11-20).
+                payload = json.dumps(await run_in_threadpool(pipeline, db, hours=window))
             except Exception as exc:  # noqa: BLE001 - one bad frame must not kill the stream
                 logger.warning("pipeline stream: frame failed, retrying next tick: %s", exc)
                 payload = json.dumps({"error": str(exc)})

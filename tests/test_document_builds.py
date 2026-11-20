@@ -50,12 +50,12 @@ WRITTEN = """<cv><p class="profile">Backend engineer.</p>
 def api(db, monkeypatch):
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from libs.db import insert
     from libs.db.models import CorpusJob, User, UserDocument
     from libs.secrets import KeyRing, SecretStore, generate_key
     from services.api.app import app
     from services.docgen import pdf
+    from tests.conftest import access_cookie
 
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
     kek = f"k1:{generate_key()}"
@@ -85,7 +85,7 @@ def api(db, monkeypatch):
     monkeypatch.setattr("services.docgen.run.refresh_before_build", lambda *a, **k: {})
 
     with TestClient(app, base_url="https://testserver") as http:
-        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        http.cookies.set("access_token", access_cookie(db, user.id), path="/")
         yield SimpleNamespace(http=http, db=db, user=user, job=job, rendered=rendered,
                               store=SecretStore(db, KeyRing.from_env({"SECRETS_KEK": kek})))
 
@@ -259,9 +259,9 @@ def test_a_document_being_made_is_listed_for_its_job_until_it_is_ready_and_says_
 
 
 def test_a_build_is_its_owners_alone(ready):
-    from libs.auth.access import issue_access_token
     from libs.db import insert
     from libs.db.models import User
+    from tests.conftest import access_cookie
 
     api = ready
     build_id = _ask(api).json()["id"]
@@ -269,14 +269,14 @@ def test_a_build_is_its_owners_alone(ready):
     assert api.http.get(f"/documents/build/{build_id}/file").status_code == 200, "the premise"
     stranger = insert(api.db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
                                    subscription_status="active", status="active"))
-    api.http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
+    api.http.cookies.set("access_token", access_cookie(api.db, stranger.id), path="/")
 
     assert api.http.get(f"/documents/build/{build_id}").status_code == 404
     assert api.http.get(f"/documents/build/{build_id}/file").status_code == 404
-    api.http.cookies.set("access_token", issue_access_token(api.user.id, uuid.uuid4()), path="/")
+    api.http.cookies.set("access_token", access_cookie(api.db, api.user.id), path="/")
     _ask(api)
     assert len(api.http.get("/documents/builds").json()) == 1, "the premise: one being made"
-    api.http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
+    api.http.cookies.set("access_token", access_cookie(api.db, stranger.id), path="/")
     assert api.http.get("/documents/builds").json() == [], "nobody else's are listed"
 
 
@@ -425,20 +425,20 @@ def test_the_ones_picked_out_are_deleted_and_the_rest_kept(ready):
 
 def test_a_kept_document_is_its_owners_alone(ready):
     api = ready
-    from libs.auth.access import issue_access_token
     from libs.db import insert
     from libs.db.models import User
+    from tests.conftest import access_cookie
 
     made = _make(api)
     stranger = insert(api.db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
                                    subscription_status="active", status="active"))
-    api.http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
+    api.http.cookies.set("access_token", access_cookie(api.db, stranger.id), path="/")
 
     assert api.http.get(made["download_url"]).status_code == 404
     assert api.http.delete(f"/saved/{made['id']}").status_code == 404
     api.http.delete("/saved", params={"ids": [made["id"]]})
     assert api.http.get("/saved").json()["documents"] == []
-    api.http.cookies.set("access_token", issue_access_token(api.user.id, uuid.uuid4()), path="/")
+    api.http.cookies.set("access_token", access_cookie(api.db, api.user.id), path="/")
     assert api.http.get(made["download_url"]).status_code == 200, "a stranger's pick deletes nothing"
 
 

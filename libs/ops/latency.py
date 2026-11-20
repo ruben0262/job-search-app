@@ -179,11 +179,6 @@ def _hourly(spans: list[tuple[datetime, float]]) -> list[dict]:
             for hour, values in sorted(buckets.items())]
 
 
-def pipeline_latency(db: Database, *, hours: int = WINDOW_HOURS) -> dict:
-    """What the person waited, end to end — the span the health summary judges."""
-    return _delivered(_spans(db, _BY_KEY["found_to_delivered"], hours=hours), hours=hours)
-
-
 def _delivered(spans: list[tuple[datetime, float]], *, hours: int) -> dict:
     found_to_delivered = _judged("found_to_delivered", _measure([minutes for _, minutes in spans]))
     return {"window_hours": hours, "found_to_delivered": found_to_delivered,

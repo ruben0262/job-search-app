@@ -33,13 +33,13 @@ def api(db, monkeypatch):
     monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from libs.credentials import ValidationResult
     from libs.db import insert, now
     from libs.db.models import User
     from libs.secrets import KeyRing, SecretStore, generate_key
     from services.api import deps
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     monkeypatch.setattr("services.api.ai_account_routes.validate_credential",
                         lambda kind, value, **kw: ValidationResult(True))
@@ -50,7 +50,7 @@ def api(db, monkeypatch):
     app.dependency_overrides[deps.get_store] = lambda: store
     try:
         with TestClient(app, base_url="https://testserver") as http:
-            http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+            http.cookies.set("access_token", access_cookie(db, user.id), path="/")
             yield http, db, user, store
     finally:
         app.dependency_overrides.clear()
@@ -145,15 +145,15 @@ def test_removing_one_forgets_it_and_its_secret(api):
 
 @needs_db
 def test_another_persons_account_cannot_be_switched_or_removed(api):
-    from libs.auth.access import issue_access_token
     from libs.db import insert
     from libs.db.models import User
+    from tests.conftest import access_cookie
 
     http, db, _, _ = api
     (account,) = _key(http).json()["accounts"]
     stranger = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
                                subscription_status="active", status="active"))
-    http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
+    http.cookies.set("access_token", access_cookie(db, stranger.id), path="/")
 
     assert http.get("/ai-accounts").json()["accounts"] == []
     assert http.put(f"/ai-accounts/{account['id']}", json={"in_use": False}).status_code == 404

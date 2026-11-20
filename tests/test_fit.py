@@ -352,11 +352,11 @@ def site(db, monkeypatch):
 
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from libs.corpus.repository import CorpusRepository
     from libs.db import insert, now
     from libs.db.models import CorpusJob, User, UserConfig
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
     monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
@@ -371,7 +371,7 @@ def site(db, monkeypatch):
         CorpusRepository(db).set_description(job.id, text)  # the producer: features with the text
         jobs[name] = job.id
     with TestClient(app, base_url="https://testserver") as http:
-        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        http.cookies.set("access_token", access_cookie(db, user.id), path="/")
         yield http, db, user, jobs
 
 
@@ -591,3 +591,59 @@ def test_a_new_cv_changes_the_score_on_the_next_read(site):
     as_backend = _shown(http)
     assert as_sales[jobs["sales"]] > as_sales[jobs["backend"]], as_sales
     assert as_backend[jobs["backend"]] > as_backend[jobs["sales"]], as_backend
+
+
+def test_a_line_that_is_one_endless_run_of_spaces_is_read_in_a_moment():
+    """Cutting a line of a few words into its parts cost the square of the spaces between them: 20,000 took
+    2.4 s, and a file at the size limit nine minutes, on the request that next opened their Jobs page
+    (2026-11-20). Seconds are allowed here where it takes a fraction of one and took ten."""
+    import time
+
+    from libs.fit import person
+
+    started = time.perf_counter()
+    person({"cv": ["Jane Doe\nStaff Nurse" + " " * 40_000 + "St. James's Hospital"]}, "Jane Doe")
+    assert time.perf_counter() - started < 3
+
+
+@needs_db
+def test_finding_no_posting_behind_reads_no_posting(db):
+    """**A relationship, not a stopwatch.** After every harvest run the postings whose match features are
+    behind are asked for, and almost always there are none. Finding none read every posting there is: 128 ms
+    of 42,377 on the dev copy, and as much again for each as many more (2026-11-20). Asked of the database
+    exactly as `catch_up` asks it, the question reads none of them."""
+    import os
+    from time import monotonic
+
+    from pymongo import MongoClient, monitoring
+
+    from libs.db import insert, now
+    from libs.db.models import CorpusJob
+
+    for at in range(30):
+        insert(db, CorpusJob(url=f"https://example.com/{at}", source="test", title="Engineer",
+                             description="We build things. " * 20, described_at=now(),
+                             fit=fit.job("Engineer", "We build things.", "en"), fit_version=fit.VERSION))
+
+    class Asked(monitoring.CommandListener):
+        def __init__(self):
+            self.finds = []
+
+        def started(self, event):
+            if event.command_name == "find" and event.command.get("find") == CorpusJob.COLLECTION:
+                self.finds.append(dict(event.command))
+
+        def succeeded(self, event): ...
+
+        def failed(self, event): ...
+
+    asked = Asked()
+    with MongoClient(os.environ["MONGODB_URI"], uuidRepresentation="standard", tz_aware=True,
+                     event_listeners=[asked]) as client:
+        assert fit.catch_up(client[db.name], deadline=monotonic() + 30) == 0
+    [question] = asked.finds
+    again = {key: question[key] for key in ("find", "filter", "sort", "projection", "limit")
+             if key in question}
+
+    read = db.command("explain", again, verbosity="executionStats")["executionStats"]
+    assert read["totalDocsExamined"] == 0, "it read postings to find that none is behind"

@@ -10,7 +10,7 @@ import { Landing } from "./landing/Landing";
 import { stopped } from "./leave";
 import { forgetMarks } from "./marks";
 import { MEMBERSHIP, backFromStripe } from "./membership";
-import { ADMIN_READS, AdminPage, CORPUS_FIRST, LATENCY_FIRST } from "./pages/AdminPage";
+import { ADMIN_READS, AdminPage } from "./pages/AdminPage";
 import { forgetKept, readAhead } from "./kept";
 import { ADDED, AddJobPage } from "./pages/AddJobPage";
 import { ALERTS, AlertsPage } from "./pages/AlertsPage";
@@ -107,7 +107,6 @@ export function App() {
   const ready = session.state === "in" && session.dashboard.stage === "ready";
   // Whether to ask this phone to install the app (`install.tsx`): here, before any page returns, as a hook is.
   const asked = useAsked(session.state === "in" && session.dashboard.stage === "ready" ? session.dashboard : null);
-  const admin = session.state === "in" && session.dashboard.stage === "ready" && session.dashboard.is_admin;
   useEffect(() => {
     if (ready) {
       readAhead([ADDED, BOOKMARKED, APPLIED, REVIEW, ALERTS, DOCUMENTS, SAVED, HISTORY, IDENTITY, TEMPLATES, ACCOUNT,
@@ -117,11 +116,6 @@ export function App() {
       resumeBuilds();
     }
   }, [ready]);
-  // And Admin's, for whoever sees it: its first open draws at once too.
-  useEffect(() => {
-    if (admin) readAhead([...ADMIN_READS, CORPUS_FIRST, LATENCY_FIRST]);
-  }, [admin]);
-
   // Public, and reachable signed out: signup and the landing page's foot link them before anybody has an account.
   const legal = LEGAL_PAGES.find(([name]) => hash.startsWith(`/${name}`));
   if (legal) return <LegalPage name={legal[0]} />;
@@ -180,6 +174,9 @@ export function App() {
           <div className="places">
             {PLACES.filter(([key]) => key !== "admin" || dashboard.is_admin).map(([key, label, icon, short]) => (
               <a key={key} href={key === "jobs" ? "#/" : `#/${key}`}
+                 // Admin's first reads, as the pointer reaches its link, so it opens drawn. They were asked
+                 // for on every page an admin loaded, whichever page it was.
+                 onPointerEnter={key === "admin" ? () => readAhead(ADMIN_READS) : undefined}
                  className={`${section === key ? "on" : ""}${TABS.includes(key) ? "" : " in-more"}`.trim()}
                  aria-current={section === key ? "page" : undefined}>
                 <svg className="place-icon" viewBox="0 0 24 24" aria-hidden="true">{icon}</svg>

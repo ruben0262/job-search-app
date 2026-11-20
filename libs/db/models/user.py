@@ -25,6 +25,12 @@ class User(Document):
         # How a payment Stripe reports finds its account, and one account to a Stripe customer.
         IndexModel("stripe_customer_id", unique=True, name="one_customer",
                    partialFilterExpression={"stripe_customer_id": {"$type": "string"}}),
+        # How many accounts are active and which of them lost their Telegram, asked by every health check
+        # (`libs.ops.health`), and who the harvest reads for (`TenantRepository.active_configs`): from the
+        # index, where each read every account whole, 19 KB with its profile.
+        IndexModel([("status", 1), ("telegram_status", 1)], name="by_status"),
+        # Admin's account list, the first to join first, a page at a time.
+        IndexModel([("created_at", 1), ("_id", 1)], name="joined"),
     )
     # Whether the person could open the profile files the setup agents wrote: nothing read it once the
     # file tiles left the site, and the admin's switch for it went on 2026-11-04. And when the account's

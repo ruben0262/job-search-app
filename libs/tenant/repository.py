@@ -33,8 +33,10 @@ class TenantRepository:
 
     def active_configs(self) -> dict[_uuid.UUID, dict]:
         """Every active account's config, for the harvester's query-set fold: a free account's too, whose
-        list is the same jobs a week later (`libs.membership.jobs_as_of`), so they must be found."""
-        active = self._db[User.COLLECTION].distinct("_id", {"active": True, "status": "active"})
+        list is the same jobs a week later (`libs.membership.jobs_as_of`), so they must be found. Active
+        by `status` alone: it also asked for `User.active`, the pause on alerts, which nothing has set since
+        2026-11-19, so no account confirmed after that day was read for (2026-11-20)."""
+        active = self._db[User.COLLECTION].distinct("_id", {"status": "active"})
         return {row["user_id"]: row["config"] for row in self._db[UserConfig.COLLECTION].find(
             {"user_id": {"$in": active}}, {"user_id": 1, "config": 1})}
 

@@ -19,17 +19,17 @@ def api(db, monkeypatch):
 
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from libs.auth.passwords import hash_password
     from libs.db import insert
     from libs.db.models import User
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash=hash_password(PASSWORD),
                            status="active", full_name="Alice Example"))
 
     with TestClient(app, base_url="https://testserver") as http:
-        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        http.cookies.set("access_token", access_cookie(db, user.id), path="/")
         yield http, db, user
 
 

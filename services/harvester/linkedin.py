@@ -280,8 +280,10 @@ def _swept(db, corpus: CorpusRepository, report: LinkedInReport, *, now: datetim
 def _ingest(corpus: CorpusRepository, links) -> int:
     """Dedup and upsert, the same four layers the shared cycle applies."""
     new = 0
+    links = list(links)
+    stored = corpus.stored_urls(link.url for link in links)
     for link in links:
-        if not link.url:
+        if not link.url or link.url in stored:
             continue
         if corpus.find_duplicate(link.url, link.title, link.company, link.location,
                                  application_url=link.application_url) is not None:

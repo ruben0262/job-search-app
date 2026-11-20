@@ -246,8 +246,10 @@ def test_a_region_is_read_as_its_countries_each_once(db, site):
 
 
 def test_only_active_peoples_countries_are_read(db, site):
+    """Active by its status: an account suspended, or never confirmed. Until 2026-11-20 this asked for
+    `User.active`, the pause on alerts that went the day before, so it read for nobody who signed up since."""
     linkedin_site = site({"Germany": GERMANY, "Ireland": ["Nurse"]})
-    _user(db, _config("nurse", "carer", "midwife", places=("ireland",)), active=False)
+    _user(db, _config("nurse", "carer", "midwife", places=("ireland",)), status="suspended")
 
     _pass(db)
 

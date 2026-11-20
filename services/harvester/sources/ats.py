@@ -55,12 +55,26 @@ def _load_etags(repo: AtsRepository, ats: str) -> dict[str, str]:
     return repo.etags(ats)
 
 
+# What a fetcher answers for a board its ATS says is not there (a 404, a tenant that gates its API): no jobs,
+# to a caller that reads only the jobs, and to the poll the one answer that gives a board up. Told from a
+# board with nothing open today, which has jobs another day, by being this very list.
+GONE: list[JobLink] = []
+# What the poll notes for a board that did not answer at all.
+_FAILED = object()
+
+
 # ── generic gather: poll the companies, keep what is recent, dedup ────────────────────
 
 def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
                fetch_company: Callable[[str, str | None], tuple[list[JobLink] | None, str | None]]
                ) -> list[JobLink]:
-    """Poll every known company board for one ATS, conditionally where the board supports ETags."""
+    """Poll every known company board for one ATS, conditionally where the board supports ETags.
+
+    A board is given up (`AtsRepository.record_poll`) only when its ATS says it is not there (`GONE`). One
+    that did not answer (a timeout, a 429, a 5xx, the resolver down) says nothing about itself, and one
+    with nothing open today has jobs another day: both are asked again next run. Either used to read as an
+    empty board, an empty board as a dead one, and nothing asks a dead board again: 542 of the dev copy's 565
+    had gone that way (2026-11-20)."""
     seed = [str(t).strip().lower() for t in (cfg.get("companies") or []) if str(t).strip()]
     companies = list(dict.fromkeys(
         seed + (load_harvested(repo, ats) if cfg.get("use_harvested", True) else [])))
@@ -77,26 +91,28 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
     # its address written as words.
     names = repo.names(ats)
 
-    def _one(token: str) -> tuple[str, list[JobLink] | None, str | None]:
+    def _one(token: str) -> tuple[str, Any, str | None]:
         try:
             jobs, etag = fetch_company(token, etags.get(token) if use_cond else None)
             return token, jobs, etag
         except Exception as exc:
             logger.warning("%s: %s failed: %s", ats, token, exc)
-            return token, [], None
+            return token, _FAILED, None
 
     out: list[JobLink] = []
     seen: set[str] = set()
-    unchanged = 0
+    unchanged = failed = 0
     # Per-board outcomes, applied to the repository after the pool drains.
     outcomes: list[tuple[str, str | None, bool]] = []
     # Per-ATS worker cap: some boards (Recruitee) answer 429 to a burst, so `concurrency` goes lower.
     workers = int(cfg.get("concurrency", 30))
     with ThreadPoolExecutor(max_workers=max(1, min(len(companies), workers))) as pool:
         for token, jobs, etag in pool.map(_one, companies):
+            if jobs is _FAILED:                   # no answer: nothing learnt about the board
+                failed += 1
+                continue
             if use_cond:
-                # `jobs == []` is a dead board: forget its validator so it is fetched in full if it returns.
-                outcomes.append((token, etag, jobs != []))
+                outcomes.append((token, etag, jobs is not GONE))
             if jobs is None:                      # 304 Not Modified -> nothing new to ingest
                 unchanged += 1
                 continue
@@ -108,12 +124,13 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
     if use_cond:
         for token, etag, alive in outcomes:
             repo.record_poll(ats, token, etag=etag, alive=alive)
-    logger.info("%s: polled %d companies (%d unchanged/304) -> %d relevant recent jobs",
-                ats, len(companies), unchanged, len(out))
+    logger.info("%s: polled %d companies (%d unchanged/304, %d did not answer) -> %d relevant recent jobs",
+                ats, len(companies), unchanged, failed, len(out))
     return out
 
 # ── per-ATS fetch: (token, prev_etag) -> (jobs|None, new_etag) ────────────
-# None means 304 Not Modified (board unchanged, skip); [] means a dead token or an empty board.
+# None means 304 Not Modified (board unchanged, skip); `GONE` a board that is not there; [] one with nothing
+# open; and an answer that is none of those is raised, for the caller to count.
 def _conditional_get(url: str, etag: str | None,
                      timeout: float = _TIMEOUT) -> tuple[httpx.Response | None, str | None, str]:
     """Returns (response|None, new_etag, status). status in {'ok','304','dead'}."""
@@ -130,7 +147,7 @@ def _conditional_get(url: str, etag: str | None,
 def fetch_greenhouse(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
     r, new_etag, status = _conditional_get(f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs", etag)
     if status != "ok":
-        return (None if status == "304" else []), new_etag
+        return (None if status == "304" else GONE), new_etag
     out = []
     for j in (r.json().get("jobs") or []):
         url = (j.get("absolute_url") or "").strip()
@@ -147,7 +164,7 @@ def fetch_greenhouse(token: str, etag: str | None = None) -> tuple[list[JobLink]
 def fetch_ashby(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
     r, new_etag, status = _conditional_get(f"https://api.ashbyhq.com/posting-api/job-board/{token}", etag)
     if status != "ok":
-        return (None if status == "304" else []), new_etag
+        return (None if status == "304" else GONE), new_etag
     out = []
     for j in (r.json().get("jobs") or []):
         url = (j.get("jobUrl") or j.get("applyUrl") or "").strip()
@@ -168,7 +185,7 @@ def fetch_lever(token: str, etag: str | None = None) -> tuple[list[JobLink] | No
     r, new_etag, status = _conditional_get(f"https://api.lever.co/v0/postings/{token}?mode=json", etag,
                                            timeout=LEVER_TIMEOUT)
     if status != "ok":
-        return (None if status == "304" else []), new_etag
+        return (None if status == "304" else GONE), new_etag
     out = []
     for j in (r.json() or []):
         url = (j.get("hostedUrl") or j.get("applyUrl") or "").strip()
@@ -197,7 +214,7 @@ def fetch_smartrecruiters(token: str, etag: str | None = None) -> tuple[list[Job
     r, new_etag, status = _conditional_get(
         f"https://api.smartrecruiters.com/v1/companies/{token}/postings?limit=100", etag)
     if status != "ok":
-        return (None if status == "304" else []), new_etag
+        return (None if status == "304" else GONE), new_etag
     out = []
     for j in (r.json().get("content") or []):
         ident = ((j.get("company") or {}).get("identifier") or token).strip()
@@ -219,7 +236,7 @@ def fetch_smartrecruiters(token: str, etag: str | None = None) -> tuple[list[Job
 def fetch_recruitee(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
     r, new_etag, status = _conditional_get(f"https://{token}.recruitee.com/api/offers/", etag)
     if status != "ok":
-        return (None if status == "304" else []), new_etag
+        return (None if status == "304" else GONE), new_etag
     out = []
     for j in (r.json().get("offers") or []):
         url = (j.get("careers_url") or "").strip()
@@ -239,7 +256,7 @@ def fetch_recruitee(token: str, etag: str | None = None) -> tuple[list[JobLink] 
 def fetch_breezy(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
     r, new_etag, status = _conditional_get(f"https://{token}.breezy.hr/json", etag)
     if status != "ok":
-        return (None if status == "304" else []), new_etag
+        return (None if status == "304" else GONE), new_etag
     out = []
     for j in (r.json() or []):
         url = (j.get("url") or "").strip()
@@ -282,7 +299,7 @@ def fetch_workday(token: str, etag: str | None = None, *,
     try:
         tenant, wd, site = token.split(":", 2)
     except ValueError:
-        return [], None    # malformed harvested token -> dead
+        return GONE, None    # malformed harvested token -> dead
     api = f"https://{tenant}.{wd}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs"
     base = f"https://{tenant}.{wd}.myworkdayjobs.com/{site}"
     today = datetime.now(timezone.utc).date()
@@ -292,7 +309,7 @@ def fetch_workday(token: str, etag: str | None = None, *,
                                     "offset": page * 20, "searchText": ""})
         # 401/403 = tenant gates the API; 404/422 = tenant or site segment doesn't exist.
         if r.status_code in (401, 403, 404, 422):
-            return [], None
+            return GONE, None
         if r.status_code != 200:
             raise RuntimeError(f"HTTP {r.status_code}")
         postings = r.json().get("jobPostings") or []
@@ -319,7 +336,7 @@ def fetch_personio(token: str, etag: str | None = None) -> tuple[list[JobLink] |
     """Public XML feed, ETag-capable. The .de host mirrors .com accounts, so one host serves all."""
     r, new_etag, status = _conditional_get(f"https://{token}.jobs.personio.de/xml", etag)
     if status != "ok":
-        return (None if status == "304" else []), new_etag
+        return (None if status == "304" else GONE), new_etag
     try:
         root = ET.fromstring(r.content)
     except ET.ParseError:
@@ -350,7 +367,7 @@ def fetch_workable(token: str, etag: str | None = None) -> tuple[list[JobLink] |
     r, new_etag, status = _conditional_get(
         f"https://apply.workable.com/api/v1/widget/accounts/{token}", etag)
     if status != "ok":
-        return (None if status == "304" else []), new_etag
+        return (None if status == "304" else GONE), new_etag
     d = r.json()
     company = (d.get("name") or token).strip()
     out = []

@@ -32,8 +32,11 @@ class Limit:
     minimum: int = 1
 
 
-# Telegram's Bot FAQ: 1/second to a chat, 20/minute to a channel, ~30/second across chats.
-DEFAULT_SEND_GAP_SECONDS = 4
+# Telegram's Bot FAQ: 1/second to a chat, 20/minute to a channel, ~30/second across chats. Every chat here
+# is a person's own, with their own bot (`libs.telegram.started_chat` takes no other), so the first is the
+# rule. It was 4, the channel's, and the notifier's one worker slept that long before each message: a
+# hundred people with five alerts each was 2,000 s in which nobody else's were sent (2026-11-20).
+DEFAULT_SEND_GAP_SECONDS = 1
 
 LIMITS: tuple[Limit, ...] = (
     Limit("notifications_per_day", "Jobs delivered per day", None, "jobs",
@@ -48,9 +51,9 @@ LIMITS: tuple[Limit, ...] = (
           "at the next cycle.",
           choices=(5, 10, 15, 20, 30, 50)),
     Limit("send_gap_seconds", "Seconds between messages", DEFAULT_SEND_GAP_SECONDS, "seconds",
-          "Telegram allows 20 messages a minute to a channel and answers 429 above it. Four "
-          "seconds is 15 a minute.", allow_unlimited=False,
-          choices=(3, 4, 5, 8, 12, 20)),
+          "Telegram allows one message a second to a person's own chat, which every chat here is, and "
+          "answers 429 above it.", allow_unlimited=False,
+          choices=(1, 2, 3, 4, 5, 8)),
     # About a hundred documents: a CV is 25–70 KB (measured 2026-11-01). Every account's
     # takes room on the database's disk (Admin → Health), which is why it is not larger.
     Limit("document_storage_mb", "Saved CVs and cover letters", 5, "MB",

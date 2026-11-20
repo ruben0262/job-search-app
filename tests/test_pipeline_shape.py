@@ -166,6 +166,21 @@ def test_each_step_counts_exactly_what_went_through_it_in_the_window(db):
     assert entered == {"gather": 4, "describe": 1, "deliver": 0}
 
 
+def test_a_page_that_gave_too_little_is_not_a_job_whose_text_was_read(db):
+    """"Text read" is the step a job is on Jobs pages from: its whole text stored (`described_at`). It counted
+    every page fetched, a job left without its text among them, and scanned every posting to do it
+    (35 ms of each second a Pipeline tab was open, 2026-11-20)."""
+    from libs.ops.pipeline import pipeline
+
+    moment = datetime.now(UTC)
+    _job(db, first_seen_at=moment - timedelta(hours=3), description="We build things. " * 40,
+         description_fetched_at=moment - timedelta(hours=2))
+    _job(db, first_seen_at=moment - timedelta(hours=3), description="Apply on our site.",
+         description_fetched_at=moment - timedelta(hours=2))
+
+    assert stage(pipeline(db, hours=24), "describe")["entered"] == 1
+
+
 def test_a_job_too_old_to_be_shown_leaves_the_text_queue_and_is_counted_once_as_missed(db):
     """The owner: a job past the window is dropped from describing, not left to pile up (2026-11-05). The
     page says how many were dropped untaken in the window, so a describer falling behind is seen."""

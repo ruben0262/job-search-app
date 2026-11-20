@@ -5,7 +5,7 @@ import logging
 import uuid as _uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from pymongo.database import Database
 
@@ -19,7 +19,7 @@ from libs.legal.documents import render
 from libs.obs import audit
 from services.api.auth_routes import _clear_session_cookies
 from services.api.billing_routes import _stripe_answers, end_membership
-from services.api.deps import current_user, get_db
+from services.api.deps import current_user, get_db, rate_limit
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["account"])
@@ -47,9 +47,10 @@ class PasswordChange(BaseModel):
 
 
 @router.put("/account/password")
-def change_password(body: PasswordChange, response: Response, db: Database = Depends(get_db),
-                    user_id: _uuid.UUID = Depends(current_user)) -> dict:
+def change_password(body: PasswordChange, request: Request, response: Response,
+                    db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Change the password."""
+    _password_asked(request, user_id)
     user = get(db, User, user_id)
     if not verify_password(user.password_hash, body.current_password):
         # Deliberately the same shape as a failed login: no oracle, no timing shortcut.
@@ -79,9 +80,10 @@ class DeleteBody(BaseModel):
 
 
 @router.delete("/account")
-def delete_account(body: DeleteBody, db: Database = Depends(get_db),
+def delete_account(body: DeleteBody, request: Request, db: Database = Depends(get_db),
                    user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Erase the account."""
+    _password_asked(request, user_id)
     user = get(db, User, user_id)
     if not verify_password(user.password_hash, body.password):
         # Deliberately the same shape as a failed login: no oracle, no timing shortcut.
@@ -94,6 +96,12 @@ def delete_account(body: DeleteBody, db: Database = Depends(get_db),
     erase_account(db, user_id)
     audit(logger, "account.deleted", user=user_id)
     return {"status": "deleted"}
+
+
+def _password_asked(request: Request, user_id: _uuid.UUID) -> None:
+    """The limit sign-in puts on guessing one account's password, for the two routes that ask for it again:
+    without one, a session somebody else got hold of could try passwords for as long as it lasted."""
+    rate_limit(request, f"password:{user_id}", limit=10, per_seconds=900)
 
 
 def _set(db: Database, user_id: _uuid.UUID, **fields) -> None:

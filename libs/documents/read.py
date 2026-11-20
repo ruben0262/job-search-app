@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
@@ -70,7 +70,9 @@ _DURATION = re.compile(r"(?i)\(\s*(?:\d+\s*(?:years?|yrs?|months?|mos?)\s*)+\)")
 _STATED_YEARS = re.compile(r"(?i)\b(\d{1,2})\s*\+?\s*(?:years?|yrs)\b")
 
 # An email address. Public so the one other pattern for it, in `services/docgen/pdf.py`, can import it.
-EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# Begun only where a run of its characters begins: it finds the same addresses, and no longer tries again
+# from every character of a long run that holds none.
+EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _PHONE = re.compile(r"(?<![\w+])(?:\+|00|\()?\d[\d ()./-]{7,}\d(?!\w)")
 _PHONE_LABEL = re.compile(r"(?i)\b(?:phone|tel|mobile|mob|cell|telefon)\b")
 _LINK = re.compile(r"(?i)(?<![@\w.])(?:https?://|www\.|(?:[\w-]+\.)?(?:linkedin|github|gitlab|behance|"
@@ -203,8 +205,30 @@ class Facts:
 
 # ── the structure ────────────────────────────────────────────────────────────────────────────
 
+# The longest line any pattern here is given. Several cost the square of a line's length, which nobody saw
+# while a line was a line: 20,000 characters with no line break took the email pattern 1.5 s, the heading's
+# 2.8 s and the entry's 4.2 s, so a file at the size limit held the server for minutes, and anybody signed in
+# could upload one (2026-11-20). At this length the worst of them takes milliseconds.
+MAX_LINE = 1_000
+
+
+def _split(text: str) -> Iterator[str]:
+    """The text's lines, none longer than `MAX_LINE`: a longer one in pieces, cut at a space where it has
+    one, so nothing of it is left out. An extractor can hand a whole CV over as one line."""
+    for line in text.splitlines():
+        rest = line
+        while len(rest) > MAX_LINE:
+            cut = rest.rfind(" ", 1, MAX_LINE + 1)
+            cut = cut if cut > 0 else MAX_LINE
+            yield rest[:cut]
+            rest = rest[cut:].lstrip()
+        yield rest
+
+
 def heading_kind(line: str) -> str | None:
     """The kind of section a line opens, if it is a heading. "Langues / Languages" counts."""
+    if len(line) > 5 * 40:  # its words are forty characters at most (below): the rest would be decoration
+        return None
     text = re.sub(r"\s+", " ", re.sub(r"^[\W_]+|[\W_]+$", "", line)).casefold().replace(" & ", " and ")
     if not text or len(text) > 40 or any(char.isdigit() for char in text):
         return None
@@ -225,9 +249,10 @@ def _lines(text: str) -> list[tuple[str, bool]]:
     out: list[tuple[str, bool]] = []
     # Somebody who types in lower case starts every line so, and none of them is a wrapped line: read as
     # such, a warehouse operative's whole CV was four lines with no name and no sections (2026-11-14).
-    starts = [raw.strip()[:1] for raw in text.splitlines() if raw.strip()]
+    rows = list(_split(text))
+    starts = [raw.strip()[:1] for raw in rows if raw.strip()]
     typed_lower = sum(start.islower() for start in starts) > len(starts) / 2
-    for raw in text.splitlines():
+    for raw in rows:
         line = _unspace(raw.strip())
         glyph = _BULLET.match(line)
         if glyph:
@@ -235,7 +260,7 @@ def _lines(text: str) -> list[tuple[str, bool]]:
         if not line or re.fullmatch(r"(?i)page \d+ of \d+", line):
             continue
         # A wrapped line starts with a lowercase word; an email address or a link does not count.
-        if (not glyph and out and not typed_lower
+        if (not glyph and out and not typed_lower and len(out[-1][0]) + len(line) < MAX_LINE
                 and re.match(r"[a-z][a-z'’-]*(?:[\s,;:)]|$)", line)  # noqa: RUF001
                 and "@" not in line and not _LINK.search(line) and not heading_kind(out[-1][0])):
             out[-1] = (f"{out[-1][0]} {line}", out[-1][1])
@@ -421,7 +446,7 @@ def read(documents: Mapping[str, str | Sequence[str]], *, today: date | None = N
     local = fold((email or "@").split("@")[0])
     names = _names(cv)
     prose = texts(documents, "cover_letter", "history")
-    prose_lines = [line for text in prose for line in text.splitlines()]
+    prose_lines = [line for text in prose for line in _split(text)]
 
     inline = {kind: [match.group(2) for line, _ in flat
                      if (match := re.match(r"^(.{2,30}?)\s*:\s*(.+)$", line))

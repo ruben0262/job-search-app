@@ -126,12 +126,10 @@ def test_the_api_registers_its_routers():
     import os
 
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
-    from fastapi.testclient import TestClient
-
     from services.api.app import app
 
-    with TestClient(app) as http:
-        paths = http.get("/openapi.json").json()["paths"]
+    # Asked of the app: the list of its routes is not served to anybody (`services.api.app`).
+    paths = app.openapi()["paths"]
 
     for prefix in ("/account", "/admin", "/auth", "/ai-accounts", "/dashboard",
                    "/documents", "/feed", "/legal", "/onboarding", "/push", "/telegram"):

@@ -5,7 +5,6 @@ kept."""
 from __future__ import annotations
 
 import os
-import uuid
 
 import pytest
 
@@ -34,8 +33,9 @@ def _person(db, email: str) -> User:
 
 
 def _sign_in(http, user: User) -> None:
-    from libs.auth.access import issue_access_token
-    http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+    from libs.db import database
+    from tests.conftest import access_cookie
+    http.cookies.set("access_token", access_cookie(database(), user.id), path="/")
 
 
 def test_the_discord_is_there_for_anybody_and_the_admin_changes_or_hides_it(db, http):

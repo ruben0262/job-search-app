@@ -96,15 +96,26 @@ def terminate(db: Database, job: QueueJob, reason: str) -> None:
 
 
 def sweep_expired(db: Database, lane: str | None = None) -> int:
-    """Return claims older than the lane's visibility timeout to `ready`."""
+    """Return claims older than the lane's visibility timeout to `ready`; how many. One that has had its
+    attempts is dead instead. A job whose worker stops under it (killed for memory, or by a deploy with a
+    document half written) never reaches `fail`, the only place attempts were counted: it was claimed
+    again without end, and each claim on the docgen lane writes a document on the person's own AI plan
+    (2026-11-20)."""
     lanes: Sequence[str] = (lane,) if lane else LANES
     recovered = 0
     for name in lanes:
         _check_lane(name)
+        expired = {"lane": name, "state": "claimed",
+                   "claimed_at": {"$lt": now() - timedelta(minutes=CLAIM_TIMEOUT_MIN[name])}}
+        spent = db[QueueJob.COLLECTION].update_many(
+            {**expired, "attempts": {"$gte": MAX_ATTEMPTS}},
+            {"$set": {"state": "dead", "finished_at": now(),
+                      "last_error": f"its worker stopped under it {MAX_ATTEMPTS} times"}}).modified_count
+        if spent:
+            logger.error("queue: %d %s job(s) dead after their worker stopped under them %d times", spent,
+                         name, MAX_ATTEMPTS)
         recovered += db[QueueJob.COLLECTION].update_many(
-            {"lane": name, "state": "claimed",
-             "claimed_at": {"$lt": now() - timedelta(minutes=CLAIM_TIMEOUT_MIN[name])}},
-            {"$set": {"state": "ready", "claimed_at": None, "claimed_by": None}}).modified_count
+            expired, {"$set": {"state": "ready", "claimed_at": None, "claimed_by": None}}).modified_count
     return recovered
 
 

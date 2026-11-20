@@ -192,8 +192,28 @@ def test_health_reads_a_live_database_without_scanning_it(db):
     assert lanes["notify"].ready == 1 and lanes["notify"].oldest_ready_min >= 59
     assert (state.users_total, state.users_active, state.corpus_rows) == (1, 1, 1)
     assert state.database_bytes > 0
-    assert any(row.email == account.email for row in state.users)
     assert {"dead_letter:docgen", "stalled:notify"} <= keys(evaluate(state))
+
+
+def test_the_health_check_reads_only_the_accounts_an_alert_names(db):
+    """An alert names an account when its Telegram stopped taking messages, and for nothing else. Every
+    active account was read for it, on each health check and each open of Admin, and sent to the page
+    (2026-11-20)."""
+    from libs.db.models import User
+    from libs.ops import platform_health
+
+    def account(**fields) -> str:
+        return insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", **fields)).email
+
+    account(status="active", telegram_status="connected")
+    account(status="suspended", telegram_status="broken")
+    stopped = account(status="active", telegram_status="broken")
+
+    state = platform_health(db)
+
+    assert [row.email for row in state.users] == [stopped]
+    assert [alert.user_email for alert in evaluate(state) if alert.key == "telegram_broken"] == [stopped]
+    assert (state.users_total, state.users_active) == (3, 2)
 
 
 
@@ -211,7 +231,7 @@ def test_the_health_check_asks_only_what_an_apps_own_login_may(db):
     from pymongo import MongoClient, monitoring
 
     from libs.ops.health import platform_health
-    from libs.ops.latency import pipeline_latency
+    from libs.ops.latency import latency_report
 
     granted = {action for role in ("readWrite", "dbAdmin")
                for privilege in db.command("rolesInfo", {"role": role, "db": db.name},
@@ -235,7 +255,7 @@ def test_the_health_check_asks_only_what_an_apps_own_login_may(db):
     with MongoClient(os.environ["MONGODB_URI"], uuidRepresentation="standard", tz_aware=True,
                      event_listeners=[sent]) as client:
         platform_health(client[db.name])
-        pipeline_latency(client[db.name])
+        latency_report(client[db.name])
     # Reading a collection is the action `find`, whichever command does it; a cursor's next page and
     # the end of the client's sessions need none. The rest are named for their action.
     reads = {"aggregate": "find", "count": "find", "distinct": "find"}

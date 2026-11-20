@@ -561,13 +561,13 @@ def http(db, user, monkeypatch):
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
     monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
     with TestClient(app, base_url="https://testserver") as client:
-        client.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        client.cookies.set("access_token", access_cookie(db, user.id), path="/")
         yield client
 
 

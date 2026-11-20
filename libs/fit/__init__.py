@@ -327,10 +327,11 @@ def fill(db: Database, user_id: _uuid.UUID) -> None:
         made = None if user is None else profile(db, user)
         skipped, applied = marks(db, user_id)
         _, longest = shelf_life(platform_windows(db))
-        stages = None if made is None else _read(db, user, scan=scan_for(longest), fit=True,
-                                                 skip=skipped | set(applied))
-        if stages is None:
+        read = None if made is None else _read(db, user, scan=scan_for(longest), fit=True,
+                                               skip=skipped | set(applied))
+        if read is None:
             return
+        stages, how = read
         have = sorted(kept(db, user_id, made))
         kept_for = corpus_retention_days(db) * 86_400_000  # in milliseconds, as dates are added
         db[CorpusJob.COLLECTION].aggregate([
@@ -343,7 +344,7 @@ def fill(db: Database, user_id: _uuid.UUID) -> None:
             {"$match": {"fit": {"$ne": None}}},
             {"$merge": {"into": FitScore.COLLECTION, "on": ["user_id", "job_id"], "whenNotMatched": "insert",
                         "whenMatched": [{"$set": {"fit": "$$new.fit", "key": "$$new.key",
-                                                  "expires_at": "$$new.expires_at"}}]}}])
+                                                  "expires_at": "$$new.expires_at"}}]}}], **how)
         logger.info("fit: the list of %s kept in %d ms (%d had a score)", user_id,
                     (monotonic() - clock) * 1000, len(have))
     except Exception:

@@ -163,9 +163,9 @@ def api(db, monkeypatch):
 
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from services.api import link_routes
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     pages: dict[str, httpx.Response] = {}
 
@@ -179,7 +179,7 @@ def api(db, monkeypatch):
                            subscription_status="active", status="active",
                            active=True, onboarding_completed_at=now()))
     with TestClient(app, base_url="https://testserver") as http:
-        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        http.cookies.set("access_token", access_cookie(db, user.id), path="/")
         yield http, db, user, pages
 
 
@@ -205,7 +205,7 @@ def test_a_job_already_here_is_found_by_its_link_without_reading_its_page(api):
 @needs_db
 def test_a_new_job_is_read_kept_for_everyone_and_shown_to_whoever_has_its_words(api):
     """The point of keeping it in the corpus: a job one person found reaches the next one it suits."""
-    from libs.auth.access import issue_access_token
+    from tests.conftest import access_cookie
 
     http, db, _user, pages = api
     url = "https://jobs.example.com/platform-engineer"
@@ -225,7 +225,7 @@ def test_a_new_job_is_read_kept_for_everyone_and_shown_to_whoever_has_its_words(
                             active=True, onboarding_completed_at=now()))
     insert(db, UserConfig(user_id=other.id, schema_version=2,
                           config={"sections": [{"platform": "all", "keywords": ["backend engineer"]}]}))
-    http.cookies.set("access_token", issue_access_token(other.id, uuid.uuid4()), path="/")
+    http.cookies.set("access_token", access_cookie(db, other.id), path="/")
     assert job.id in [row["id"] for row in http.get("/feed").json()["jobs"]]
 
 
@@ -271,8 +271,8 @@ def test_a_page_that_says_part_of_it_is_finished_by_the_person_and_then_kept(api
 def test_a_job_written_in_is_theirs_alone_and_stands_in_for_no_real_posting(api):
     """Nobody checked a typed job (owner, 2026-11-03): it reaches nobody else, whatever their words,
     and the harvest storing the real posting at that address is not stopped by it."""
-    from libs.auth.access import issue_access_token
     from libs.corpus.repository import CorpusRepository
+    from tests.conftest import access_cookie
 
     http, db, _user, pages = api
     url = "https://careers.initech.com/backend-engineer"
@@ -287,7 +287,7 @@ def test_a_job_written_in_is_theirs_alone_and_stands_in_for_no_real_posting(api)
                             active=True, onboarding_completed_at=now()))
     insert(db, UserConfig(user_id=other.id, schema_version=2,
                           config={"sections": [{"platform": "all", "keywords": ["backend engineer"]}]}))
-    http.cookies.set("access_token", issue_access_token(other.id, uuid.uuid4()), path="/")
+    http.cookies.set("access_token", access_cookie(db, other.id), path="/")
     assert mine not in [row["id"] for row in http.get("/feed").json()["jobs"]], "not in their jobs"
     pages[url] = html(NO_JSONLD)
     assert http.post("/jobs/link", json={"url": url}).json()["outcome"] == "draft", "nor found by its link"
@@ -296,6 +296,55 @@ def test_a_job_written_in_is_theirs_alone_and_stands_in_for_no_real_posting(api)
     assert corpus.find_duplicate(url, "Backend Engineer", "Initech", "Berlin") is None
     assert corpus.add(url=url, source="greenhouse", title="Backend Engineer", company="Initech",
                       location="Berlin") is not None, "the real posting is stored when the harvest finds it"
+
+
+@needs_db
+def test_a_job_written_in_is_not_anybody_elses_by_its_number_either(api):
+    """No list shows it to anybody else, but jobs are numbered in order, and the number alone read its text
+    to any account, bookmarked it, and had a CV made from it (2026-11-20). To its owner it is a job like any
+    other."""
+    from tests.conftest import access_cookie
+
+    http, db, user, _pages = api
+    mine = http.post("/jobs/link/save", json={
+        "url": "https://careers.initech.com/backend-engineer", "title": "Backend Engineer",
+        "company": "Initech", "location": "Berlin", "description": TEXT}).json()["job"]["id"]
+    public = insert(db, CorpusJob(url="https://example.com/public", source="greenhouse", title="Engineer",
+                                  description=TEXT, described_at=now())).id
+    other = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                            subscription_status="active", status="active", onboarding_completed_at=now()))
+
+    def asked(job: int) -> tuple[int, int, int]:
+        return (http.get(f"/jobs/{job}/description").status_code,
+                http.put(f"/jobs/{job}/bookmarked").status_code,
+                http.post("/documents/build", json={"job_id": job, "kind": "cv", "mode": "ai"}).status_code)
+
+    assert asked(mine)[:2] == (200, 200), "their own"
+    http.cookies.set("access_token", access_cookie(db, other.id), path="/")
+    assert asked(mine) == (404, 404, 404)
+    assert asked(public)[:2] == (200, 200), "the premise: a posting everybody has is theirs to open"
+    assert http.get("/jobs/bookmarked").json()[0]["id"] == public
+    http.cookies.set("access_token", access_cookie(db, user.id), path="/")
+
+
+@needs_db
+def test_a_job_is_linkedins_only_on_linkedins_own_site(api):
+    """A page anywhere with `/jobs/view/<number>` in its address was read from LinkedIn and kept as
+    LinkedIn's under that address: its card said "Apply on LinkedIn" and led to the other site, on the
+    list of everybody whose words it had (2026-11-20). It is a page like any other: read from where it is,
+    and here one that says nothing, so the person is asked to fill it in."""
+    from libs.corpus.postings import linkedin_id
+
+    http, db, _user, pages = api
+    lookalike = "https://jobs.example.com/jobs/view/4465730645"
+    pages[lookalike] = html(NO_JSONLD)
+
+    answer = http.post("/jobs/link", json={"url": lookalike}).json()
+
+    assert answer["outcome"] == "draft" and answer["draft"]["url"] == lookalike
+    assert db[CorpusJob.COLLECTION].count_documents({"source": "linkedin"}) == 0
+    assert linkedin_id(lookalike) is None
+    assert linkedin_id("https://de.linkedin.com/jobs/view/4465730645") == "4465730645"
 
 
 @needs_db

@@ -9,6 +9,7 @@ from libs.contracts.config import migrate_config
 from libs.corpus.freshness import PlatformWindows, platform_windows, showable
 from libs.corpus.geo import wanted_countries
 from libs.corpus.repository import TYPED
+from libs.db.models import CorpusJob, UserJobState
 from libs.db.models.corpus import WORKPLACES
 from libs.limits import limit_default
 
@@ -148,3 +149,15 @@ def _their_own(filters: UserFilters) -> list[dict]:
         # The stored code, detected once when the text was stored, never per reader.
         asked.append({"language": {"$in": [None, *sorted(filters.languages)]}})
     return asked
+
+
+def theirs_to_open(db, user_id, job_id: int) -> bool:
+    """Whether this job is one this account may read, mark or have a document made for: any posting the
+    platform keeps for everybody, or one they wrote in themselves, which is theirs alone
+    (`candidate_conditions`). Asked wherever a job is named by its number: no list shows somebody else's, but
+    the numbers run in order, and the next one read its text to anybody (2026-11-20)."""
+    job = db[CorpusJob.COLLECTION].find_one({"_id": job_id}, {"source": 1})
+    if job is None or job.get("source") != TYPED:
+        return job is not None
+    return db[UserJobState.COLLECTION].count_documents(
+        {"user_id": user_id, "job_id": job_id, "added_at": {"$ne": None}}, limit=1) > 0

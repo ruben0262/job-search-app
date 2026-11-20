@@ -14,6 +14,9 @@ JOB_STATES = ("ready", "claimed", "done", "dead")
 # How long a claim may stand before another worker may take the job, per lane.
 CLAIM_TIMEOUT_MIN = {"notify": 2, "docgen": 10}
 MAX_ATTEMPTS = 5
+# How long a finished job is kept. The longest look back at one is Latency's week (`libs.ops.latency`); a
+# month is past any of them. None ever left, and every count of the queue read all there had ever been.
+DONE_KEEP_DAYS = 30
 
 
 @dataclass(kw_only=True)
@@ -29,8 +32,9 @@ class QueueJob(Document):
                                             "dedup_key": {"$type": "string"}}),
         IndexModel([("lane", 1), ("state", 1), ("run_after", 1)], name="claimable"),
         IndexModel("claimed_at", partialFilterExpression={"state": "claimed"}, name="claimed"),
-        IndexModel([("lane", 1), ("user_id", 1), ("finished_at", 1)],
-                   partialFilterExpression={"state": "done"}, name="done_by_user"))
+        # In place of `done_by_user`, which no query could use.
+        IndexModel("finished_at", expireAfterSeconds=DONE_KEEP_DAYS * 86400,
+                   partialFilterExpression={"state": "done"}, name="done_expires"))
 
     id: int | None = None
     lane: str

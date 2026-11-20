@@ -53,9 +53,12 @@ TERMINAL_STATUSES = frozenset({400, 404, 410})
 # Trust a source's own snippet at this length rather than spending a fetch.
 MIN_SNIPPET = 200
 
-_LINKEDIN_ID = re.compile(r"/jobs/view/(\d+)")
+# On LinkedIn's own site, and No Fluff Jobs' on its. Looked for anywhere in an address, a page on any site
+# with `/jobs/view/<number>` in its path was read from LinkedIn and kept as LinkedIn's with that site's
+# address, so a card said "Apply on LinkedIn" and led elsewhere (2026-11-20).
+_LINKEDIN_ID = re.compile(r"^https?://(?:[\w-]+\.)*linkedin\.com/jobs/view/(\d+)")
 # A No Fluff Jobs posting's slug, which its API answers for.
-_NOFLUFF_SLUG = re.compile(r"nofluffjobs\.com/(?:[a-z]{2}/)?job/([^/?#]+)")
+_NOFLUFF_SLUG = re.compile(r"^https?://(?:www\.)?nofluffjobs\.com/(?:[a-z]{2}/)?job/([^/?#]+)")
 _LINKEDIN_HOSTS = {"linkedin.com", "www.linkedin.com"}
 
 _APPLICANTS = re.compile(r"num-applicants__caption[^>]*>\s*([^<]+)<")
@@ -350,7 +353,7 @@ def parse_application_url(html_text: str, client: httpx.Client) -> str | None:
 
 def linkedin_id(url: str) -> str | None:
     """The numeric job id in a LinkedIn URL, or None for anything else."""
-    match = _LINKEDIN_ID.search(url or "")
+    match = _LINKEDIN_ID.match((url or "").strip())
     return match.group(1) if match else None
 
 

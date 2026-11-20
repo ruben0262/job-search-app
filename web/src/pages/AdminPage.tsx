@@ -41,6 +41,9 @@ type Health = {
   };
 };
 
+/** A page of the account list (`GET /admin/users`). */
+type UsersPage = { users: AdminUser[]; total: number; offset: number; page_size: number };
+
 type AdminUser = {
   id: string;
   email: string;
@@ -280,9 +283,11 @@ function lastActive(iso: string | null): string {
   return days === 1 ? "1 day" : `${days} days`;
 }
 
-/** What Admin reads on arrival, as `kept.ts` keeps it, and read ahead for an admin once signed in. */
-export const ADMIN_READS = ["/admin/health", "/admin/users", "/admin/settings", "/admin/sources",
-                            "/admin/outcomes", "/admin/contact"];
+/** What Admin reads as it opens, as `kept.ts` keeps it: read ahead when an admin's pointer reaches its link
+ * (`App.tsx`), so it opens drawn. Each tab reads its own when it is opened. All of it, with the Corpus and
+ * Latency tabs' first pages, was read on every page an admin loaded: eight reads, the heaviest two for tabs
+ * not being opened (2026-11-20). */
+export const ADMIN_READS = ["/admin/health", "/admin/settings", "/admin/sources"];
 
 /** `tab` is the part of the address after `#/admin/`: each tab has its own address, so an account's page
  * goes back to Accounts and a reload stays where it was. */
@@ -291,27 +296,21 @@ export function AdminPage({ tab: asked }: { tab: string }) {
   // the page waited for all four, the slowest 2.7 s (2026-11-03).
   const kept = {
     health: useKept<Health>("/admin/health"),
-    users: useKept<{ users: AdminUser[] }>("/admin/users"),
     settings: useKept<{ settings: Settings }>("/admin/settings"),
     sources: useKept<{ sources: Source[]; ats: AtsInfo }>("/admin/sources"),
   };
   const health = kept.health.data;
-  const users = kept.users.data?.users ?? null;
   const settings = kept.settings.data?.settings ?? null;
   const sources = kept.sources.data?.sources ?? null;
   const ats = kept.sources.data?.ats ?? null;
   const setHealth = (next: Health) => kept.health.set(() => next);
-  const setUsers = (next: AdminUser[]) => kept.users.set(() => ({ users: next }));
   const setSettings = (next: Settings) => kept.settings.set(() => ({ settings: next }));
   const setSources = (change: (rows: Source[] | null) => Source[] | null) =>
     kept.sources.set((now) => now && { ...now, sources: change(now.sources) ?? now.sources });
   const setAts = (change: (row: AtsInfo | null) => AtsInfo | null) =>
     kept.sources.set((now) => now && { ...now, ats: change(now.ats) ?? now.ats });
-  // The account being deleted, held until the typed address matches. `null` closes the dialog.
-  const [doomed, setDoomed] = useState<AdminUser | null>(null);
-  const [typed, setTyped] = useState("");
   const tab = TABS.find(([key]) => key === asked)?.[0] ?? "health";
-  const failed = (kept.health.failed && !health) || (kept.users.failed && !users);
+  const failed = kept.health.failed && !health;
 
   // One source, one number.
   const savePlatform = useAction(async (key: string, value: number) => {
@@ -401,20 +400,6 @@ export function AdminPage({ tab: asked }: { tab: string }) {
     setHealth(fresh);
   });
 
-  const toggleAdmin = useAction(async (user: AdminUser) => {
-    await api.put(`/admin/users/${user.id}/admin`, { is_admin: !user.is_admin });
-    const fresh = await api.get<{ users: AdminUser[] }>("/admin/users");
-    setUsers(fresh.users);
-  });
-
-  const removeUser = useAction(async (user: AdminUser, email: string) => {
-    await api.del(`/admin/users/${user.id}`, { email });
-    const fresh = await api.get<{ users: AdminUser[] }>("/admin/users");
-    setUsers(fresh.users);
-    setDoomed(null);
-    setTyped("");
-  });
-
   // One provider's model, saved when the field is left.
   const saveModel = useAction(async (provider: string, model: string) => {
     if (!model || model === settings?.document_models[provider]) return;
@@ -430,21 +415,17 @@ export function AdminPage({ tab: asked }: { tab: string }) {
     setSettings(body.settings);
   });
 
-  // The account opens as its own page, at its own address.
-  const openUser = useAction(async (id: string) => {
-    window.location.hash = `/admin/users/${id}`;
-  });
-
-  if (failed) return <p className="error">Could not read the platform state.</p>;
-  if (!health || !users) return <p className="muted">Loading…</p>;
-
+  // Each tab draws as soon as its own read is back. Every one of them waited for the health read and the
+  // whole account list, the two slowest, whichever tab was asked for (2026-11-20).
   return (
     <>
       <div className="spread">
         <h1>Platform</h1>
-        <span className="small muted">
-          checked {new Date(health.checked_at).toLocaleTimeString()}
-        </span>
+        {health ? (
+          <span className="small muted">
+            checked {new Date(health.checked_at).toLocaleTimeString()}
+          </span>
+        ) : null}
       </div>
 
       {/* Tabs, because this page had six stacked sections and no shape. */}
@@ -458,14 +439,16 @@ export function AdminPage({ tab: asked }: { tab: string }) {
             onClick={() => window.location.replace(`#/admin/${key}`)}
           >
             {label}
-            {key === "health" && health.alerts.length > 0 ? (
+            {key === "health" && health && health.alerts.length > 0 ? (
               <span className="tab-count">{health.alerts.length}</span>
             ) : null}
           </button>
         ))}
       </nav>
 
-      {tab === "health" ? (
+      {tab !== "health" ? null : !health ? (
+        <p className={failed ? "error" : "muted"}>{failed ? "Could not read the platform state." : "Loading…"}</p>
+      ) : (
         <>
       {/* What needs a person. */}
       {health.alerts.length === 0 ? (
@@ -534,7 +517,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
         </tbody>
       </table></div>
         </>
-      ) : null}
+      )}
 
       {tab === "settings" ? <>      {/* **What the operator owns.** Freshness and cadence stopped being user preferences on
           2026-08-01: the product streams the newest postings, so both are properties of what it is
@@ -853,63 +836,149 @@ export function AdminPage({ tab: asked }: { tab: string }) {
       {tab === "outcomes" ? <OutcomesTab /> : null}
       {tab === "messages" ? <MessagesTab /> : null}
 
-      {tab === "accounts" ? <>      <h2 style={{ marginTop: "2.5rem" }}>Accounts</h2>
-      <div className="table-scroll"><table>
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Status</th>
-            <th>Telegram</th>
-            <th>Onboarded</th>
-            <th>Membership</th>
-            <th>Last active</th>
-            <th>Access</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((user) => (
-            // The whole row opens the account.
-            // Its page is read while the pointer rests on the row, so it opens drawn.
-            <tr key={user.id} className="row-link" onClick={() => void openUser.run(user.id)}
-                onPointerEnter={() => readAhead([`/admin/users/${user.id}`, "/admin/limits"])}>
-              <td>{user.email}</td>
-              <td className="job-sub">
-                {user.status}
-              </td>
-              <td className="job-sub">{user.telegram}</td>
-              <td className="job-sub">{user.onboarded ? "yes" : "no"}</td>
-              <td className="job-sub">{standingWord(user.membership, user.free_access, user.is_admin)[0]}</td>
-              <td className="job-sub">{lastActive(user.last_active_at)}</td>
-              {/* Both controls stop the click reaching the row, or granting access would also navigate. */}
-              <td onClick={(event) => event.stopPropagation()}>
-                <label className="switch" title="Operator access">
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    checked={user.is_admin}
-                    disabled={toggleAdmin.busy}
-                    onChange={() => void toggleAdmin.run(user)}
-                  />
-                  <span>admin</span>
-                </label>
-              </td>
-              <td onClick={(event) => event.stopPropagation()}>
-                <button
-                  type="button"
-                  className="bell-act danger"
-                  aria-label={`Delete ${user.email}`}
-                  title="Delete this account"
-                  onClick={() => { setDoomed(user); setTyped(""); }}
-                >
-                  <BinIcon />
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table></div>
-      </> : null}
+      {tab === "accounts" ? <AccountsTab /> : null}
+    </>
+  );
+}
+
+/** The Accounts tab as it opens: the first page, nothing searched for (`kept.ts`). */
+const USERS_FIRST = `/admin/users?${new URLSearchParams({ q: "", offset: "0" })}`;
+/** How long the pointer rests on an account's row before its page is read ahead. Read the moment the pointer
+ * entered, every row it crossed on its way down the table asked for an account's whole list of jobs. */
+const REST_MS = 150;
+
+/** The accounts, a page at a time, the first to join first; an address typed finds its account. */
+function AccountsTab() {
+  const [page, setPage] = useState<UsersPage | null>(() => peek<UsersPage>(USERS_FIRST));
+  const [q, setQ] = useState("");
+  const [failed, setFailed] = useState(false);
+  // The account being deleted, held until the typed address matches. `null` closes the dialog.
+  const [doomed, setDoomed] = useState<AdminUser | null>(null);
+  const [typed, setTyped] = useState("");
+  // The read asked for last: the answer to an earlier one is not drawn over it.
+  const asked = useRef(0);
+  const resting = useRef<number | undefined>(undefined);
+
+  const load = async (offset: number, search: string) => {
+    const mine = ++asked.current;
+    const path = `/admin/users?${new URLSearchParams({ q: search.trim(), offset: String(offset) })}`;
+    try {
+      const body = await api.get<UsersPage>(path);
+      if (mine !== asked.current) return;
+      if (path === USERS_FIRST) keep(path, body);
+      setPage(body);
+      setFailed(false);
+    } catch {
+      if (mine === asked.current) setFailed(true);
+    }
+  };
+  // As the tab opens, and a moment after the last letter of a search.
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(0, q), q ? 300 : 0);
+    return () => window.clearTimeout(timer);
+  }, [q]);
+  useEffect(() => () => window.clearTimeout(resting.current), []);
+  const again = () => load(page?.offset ?? 0, q);
+
+  const toggleAdmin = useAction(async (user: AdminUser) => {
+    await api.put(`/admin/users/${user.id}/admin`, { is_admin: !user.is_admin });
+    await again();
+  });
+
+  const removeUser = useAction(async (user: AdminUser, email: string) => {
+    await api.del(`/admin/users/${user.id}`, { email });
+    await again();
+    setDoomed(null);
+    setTyped("");
+  });
+
+  return (
+    <>
+      <h2 style={{ marginTop: "2.5rem" }}>Accounts</h2>
+      <div className="row" style={{ margin: "1rem 0" }}>
+        <input type="search" value={q} placeholder="Email address" aria-label="Find an account by its email address"
+               onChange={(event) => setQ(event.target.value)} style={{ maxWidth: "18rem" }} />
+      </div>
+      {failed ? <p className="error">Could not read the accounts.</p> : null}
+      {!page ? (failed ? null : <p className="muted">Loading…</p>) : (
+        <>
+          <p className="facts">
+            {page.total.toLocaleString()} {page.total === 1 ? "account" : "accounts"}
+            {q.trim() ? " with this in their address" : ""}.
+          </p>
+          <div className="table-scroll"><table>
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Telegram</th>
+                <th>Onboarded</th>
+                <th>Membership</th>
+                <th>Last active</th>
+                <th>Access</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {page.users.map((user) => (
+                // The whole row opens the account, as its own page at its own address. Its page is read once
+                // the pointer has rested on the row, so it opens drawn.
+                <tr key={user.id} className="row-link"
+                    onClick={() => { window.location.hash = `/admin/users/${user.id}`; }}
+                    onPointerEnter={() => {
+                      window.clearTimeout(resting.current);
+                      resting.current = window.setTimeout(
+                        () => readAhead([`/admin/users/${user.id}`, "/admin/limits"]), REST_MS);
+                    }}
+                    onPointerLeave={() => window.clearTimeout(resting.current)}>
+                  <td>{user.email}</td>
+                  <td className="job-sub">{user.status}</td>
+                  <td className="job-sub">{user.telegram}</td>
+                  <td className="job-sub">{user.onboarded ? "yes" : "no"}</td>
+                  <td className="job-sub">{standingWord(user.membership, user.free_access, user.is_admin)[0]}</td>
+                  <td className="job-sub">{lastActive(user.last_active_at)}</td>
+                  {/* Both controls stop the click reaching the row, or granting access would also navigate. */}
+                  <td onClick={(event) => event.stopPropagation()}>
+                    <label className="switch" title="Operator access">
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={user.is_admin}
+                        disabled={toggleAdmin.busy}
+                        onChange={() => void toggleAdmin.run(user)}
+                      />
+                      <span>admin</span>
+                    </label>
+                  </td>
+                  <td onClick={(event) => event.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="bell-act danger"
+                      aria-label={`Delete ${user.email}`}
+                      title="Delete this account"
+                      onClick={() => { setDoomed(user); setTyped(""); }}
+                    >
+                      <BinIcon />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+          {page.total > page.page_size ? (
+            <div className="row" style={{ marginTop: "0.8rem" }}>
+              <button className="secondary" disabled={page.offset === 0}
+                      onClick={() => void load(Math.max(page.offset - page.page_size, 0), q)}>
+                Previous
+              </button>
+              <button className="secondary" disabled={page.offset + page.page_size >= page.total}
+                      onClick={() => void load(page.offset + page.page_size, q)}>
+                Next
+              </button>
+            </div>
+          ) : null}
+        </>
+      )}
 
       {/* The address has to be typed, and the server checks it too. */}
       {doomed ? (
@@ -945,7 +1014,6 @@ export function AdminPage({ tab: asked }: { tab: string }) {
     </>
   );
 }
-
 
 function Stat({ value, label }: { value: string; label: string }) {
   return (
@@ -1020,7 +1088,7 @@ function MessagesTab() {
 }
 
 /** The corpus tab as it opens: no search, the last 30 days, the first page. */
-export const CORPUS_FIRST = `/admin/corpus?${new URLSearchParams({ q: "", source: "", days: "30", offset: "0" })}`;
+const CORPUS_FIRST = `/admin/corpus?${new URLSearchParams({ q: "", source: "", days: "30", offset: "0" })}`;
 
 function CorpusTab() {
   // The unsearched first page, and the terms, drawn from last time at once (`kept.ts`).
@@ -1161,26 +1229,54 @@ function PipelineTab() {
         .then((body) => setSources(body.sources))
         .catch(() => undefined);
     void read();
-    const every = window.setInterval(read, 60_000);
+    const every = window.setInterval(() => { if (document.visibilityState === "visible") void read(); }, 60_000);
     return () => window.clearInterval(every);
   }, []);
 
+  // Open only while the tab is looked at: the server counts every frame, once a second, for as long as the
+  // stream is held, and it was held for as long as the tab existed.
   useEffect(() => {
-    const source = new EventSource("/admin/pipeline/stream");
-    source.onmessage = (event) => {
-      const data = JSON.parse(event.data) as PipelineReport & { error?: string };
-      if (data.error) return; // one bad frame; the next is a second away
-      setReport((was) => {
-        if (was) {
-          previous.current = Object.fromEntries(was.stages.map((s) => [s.key, s.waiting]));
-        }
-        return data;
-      });
-      setConnected(true);
+    let source: EventSource | null = null;
+    const open = () => {
+      const stream = new EventSource("/admin/pipeline/stream");
+      source = stream;
+      stream.onmessage = (event) => {
+        const data = JSON.parse(event.data) as PipelineReport & { error?: string };
+        if (data.error) return; // one bad frame; the next is a second away
+        setReport((was) => {
+          if (was) {
+            previous.current = Object.fromEntries(was.stages.map((s) => [s.key, s.waiting]));
+          }
+          return data;
+        });
+        setConnected(true);
+      };
+      stream.onerror = () => {
+        setConnected(false);
+        // `EventSource` reconnects by itself, except when the server refuses it: the stream ends every five
+        // minutes, and a session's fifteen can run out before the next one opens. Any read through `request`
+        // renews the session; then it is opened again.
+        if (stream.readyState !== EventSource.CLOSED || source !== stream) return;
+        source = null;
+        void api.get("/admin/pipeline/sources").then(watch).catch(() => undefined);
+      };
     };
-    // `EventSource` reconnects by itself.
-    source.onerror = () => setConnected(false);
-    return () => source.close();
+    const watch = () => {
+      if (document.visibilityState === "visible") {
+        if (!source) open();
+      } else {
+        source?.close();
+        source = null;
+        setConnected(false);
+      }
+    };
+    watch();
+    document.addEventListener("visibilitychange", watch);
+    return () => {
+      document.removeEventListener("visibilitychange", watch);
+      source?.close();
+      source = null;
+    };
   }, []);
 
   if (!report) return <p className="muted">Opening the live pipeline…</p>;
@@ -1337,7 +1433,7 @@ function PipelineTab() {
               <tr key={`${row.lane}:${row.user_id}`}>
                 <td><strong>{row.lane}</strong></td>
                 <td>
-                  <a href={`/admin/users/${row.user_id}`}>{row.email}</a>
+                  <a href={`#/admin/users/${row.user_id}`}>{row.email}</a>
                   {/* The error is the whole reason to look, so it is not behind a click. */}
                   {row.last_error ? <div className="hint">{row.last_error}</div> : null}
                 </td>
@@ -1355,7 +1451,7 @@ function PipelineTab() {
 }
 
 /** The latency tab as it opens: the last 24 hours. */
-export const LATENCY_FIRST = "/admin/latency?hours=24";
+const LATENCY_FIRST = "/admin/latency?hours=24";
 
 function LatencyTab() {
   const [hours, setHours] = useState(24);

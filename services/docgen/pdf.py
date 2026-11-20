@@ -25,6 +25,12 @@ from libs.documents.read import EMAIL
 
 logger = logging.getLogger(__name__)
 
+# What Chrome is started with of this process's environment: where programs, its files and its fonts are, and
+# the language and clock. Everything else stays behind. It inherited all of it, the database's address and the
+# key to every stored credential with the rest, into a browser run without its sandbox (2026-11-20).
+CHROME_ENVIRONMENT = ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR", "FONTCONFIG_FILE", "FONTCONFIG_PATH",
+                      "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR")
+
 # Chrome's own flags.
 CHROME_FLAGS = ("--headless=old", "--no-sandbox", "--disable-gpu",
                 "--disable-extensions", "--disable-background-networking",
@@ -117,7 +123,8 @@ class Chrome:
         self.process = subprocess.Popen(  # noqa: S603 - the binary is ours, the arguments literals
             ["/bin/bash", "-c", f'exec "$0" "$@" 3<&{to_chrome} 4>&{from_chrome}{closes}', chrome_binary(),
              *CHROME_FLAGS, "--remote-debugging-pipe", "about:blank"],
-            pass_fds=(to_chrome, from_chrome), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            pass_fds=(to_chrome, from_chrome), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            env={name: os.environ[name] for name in CHROME_ENVIRONMENT if name in os.environ})
         os.close(to_chrome)
         os.close(from_chrome)
         self._buffer, self._last = b"", 0

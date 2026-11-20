@@ -256,3 +256,23 @@ def test_text_the_reader_cannot_follow_gives_no_facts_rather_than_an_error(text)
 def test_every_language_the_platform_offers_has_a_name():
     """The review page labels languages from this table, so a code without a name is a blank box."""
     assert set(LANGUAGE_NAMES) == {language.value for language in Language}
+
+
+# ── a document that is one endless line (2026-11-20) ──────────────────────────────────────────
+
+@pytest.mark.parametrize("line", ["a" * 40_000, "a" + "." * 40_000 + "a", "a" + " " * 40_000 + "b",
+                                  "1 " * 20_000 + "x"],
+                         ids=["letters", "full stops", "spaces", "digits"])
+def test_a_document_that_is_one_endless_line_is_read_in_a_moment_and_whole(line):
+    """What it cost grew with the square of a line's length: 20,000 characters with no line break took the
+    email pattern 1.5 s, the heading's 2.8 s and the entry's 4.2 s, so a file at the size limit held the
+    server for minutes, and anybody signed in could upload one (2026-11-20). No pattern is given a line
+    longer than `MAX_LINE`: a longer one is read in pieces, cut at a space, and nothing of it left out, for
+    an extractor can hand a whole CV over as one line. Seconds are allowed here where it takes milliseconds
+    and took ten."""
+    import time
+
+    started = time.perf_counter()
+    facts = read({"cv": f"Jane Doe\nExperience\n{line} jane.doe@example.com {line}", "history": line})
+    assert time.perf_counter() - started < 3
+    assert facts.email == "jane.doe@example.com"

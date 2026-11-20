@@ -15,7 +15,9 @@ from libs.db import Document, now
 class AiRequest(Document):
     COLLECTION = "ai_requests"
     BACKED_UP = False
-    INDEXES = (IndexModel([("user_id", 1), ("created_at", 1)], name="by_user_day"),)
+    # Counted since midnight and never after (`libs.llm.providers`): gone in a week.
+    INDEXES = (IndexModel([("user_id", 1), ("created_at", 1)], name="by_user_day"),
+               IndexModel("created_at", expireAfterSeconds=7 * 86400, name="expires"))
 
     id: ObjectId = field(default_factory=ObjectId)
     user_id: uuid.UUID

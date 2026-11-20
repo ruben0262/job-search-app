@@ -630,3 +630,73 @@ def test_with_no_site_proxy_every_board_but_linkedin_is_harvested(ctx, monkeypat
 
     passed = linkedin.run_pass(s, sweep=no_request)
     assert (passed.swept_places, passed.swept) == (0, 0)
+
+
+# ── the run's time (2026-11-20) ───────────────────────────────────────────────────────────────
+
+def test_the_text_pass_reads_no_page_once_the_runs_time_is_spent(db, monkeypatch):
+    """The boards' texts were read one page after another with no bound of their own: two hundred at their
+    25 s each is 83 minutes, and the run is killed at 14, with every stage after this one never reached. A
+    job not read in what is left of the run waits for the next one."""
+    from libs.corpus.repository import CorpusRepository
+    from tests.test_describe import FakeClient
+
+    class Pages(FakeClient):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_failure):
+            return False
+
+    def thin_job() -> int:
+        return CorpusRepository(db).add(url=f"https://boards.greenhouse.io/acme/jobs/{uuid.uuid4().hex}",
+                                        source="greenhouse", title="Engineer", company="Acme")
+
+    def run(pages: Pages):
+        monkeypatch.setattr(cycle, "make_shared_client", lambda: pages)
+        return run_cycle(db, source_configs={}, run_source=lambda *_args: [])
+
+    first = thin_job()
+    in_time = Pages()
+    assert run(in_time).described == 1, "the premise: with time left it is read"
+    assert len(in_time.requested) == 1
+    assert db[CorpusJob.COLLECTION].find_one({"_id": first})["described_at"] is not None
+
+    thin_job()
+    began = iter([1000.0])  # the run begins, and gathering took all the time it has
+    monkeypatch.setattr(cycle, "monotonic",
+                        lambda: next(began, 1000.0 + cycle.HARVEST_CYCLE_BUDGET_SECONDS + 1))
+    too_late = Pages()
+
+    assert run(too_late).described == 0
+    assert too_late.requested == []
+
+
+def test_links_the_last_run_stored_are_found_in_one_question_not_one_each(db):
+    """**A relationship, not a stopwatch.** Most of a run's links are ones the run before stored (824 of 972
+    in the log), and each was asked about on its own: 744 ms for a thousand against 12 for all of them at
+    once (2026-11-20). However many of a run's links are stored already, the database is asked the same
+    number of times."""
+    from libs.corpus.repository import CorpusRepository
+    from services.harvester.cycle import CycleReport, _ingest
+
+    class Counted:
+        """The corpus's collection, counting every question put to it."""
+
+        def __init__(self, collection):
+            self.collection, self.asked = collection, 0
+
+        def __getattr__(self, method):
+            self.asked += 1
+            return getattr(self.collection, method)
+
+    def asked_for(stored: int) -> int:
+        links = [_link() for _ in range(stored)]
+        assert _ingest(CorpusRepository(db), links, CycleReport()) == stored, "the premise: all new"
+        corpus = CorpusRepository(db)
+        corpus._corpus = Counted(corpus._corpus)
+        report = CycleReport()
+        assert _ingest(corpus, links, report) == 0 and report.duplicates == {"url": stored}
+        return corpus._corpus.asked
+
+    assert asked_for(3) == asked_for(30)

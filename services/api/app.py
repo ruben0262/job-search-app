@@ -27,6 +27,7 @@ from services.api.contact_routes import router as contact_router
 from services.api.dashboard_routes import router as dashboard_router
 from services.api.discord_routes import router as discord_router
 from services.api.document_routes import router as document_router
+from services.api.guard import Guard
 from services.api.link_routes import router as link_router
 from services.api.notification_routes import router as notification_router
 from services.api.onboarding_routes import router as onboarding_router
@@ -55,7 +56,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="job-search platform", docs_url=None, redoc_url=None, lifespan=lifespan)
+# No `/openapi.json`: it listed every route there is, the admin's among them, to anybody who asked. The
+# contract the site is built against is written from the app itself (`web/scripts/dump_openapi.py`).
+app = FastAPI(title="job-search platform", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app.add_middleware(Guard)
 app.include_router(auth_router)
 app.include_router(billing_router)
 app.include_router(contact_router)

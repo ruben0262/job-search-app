@@ -3,7 +3,9 @@
 # **SECRETS_KEK is deliberately absent from the environment here.** The dump must not contain it and
 # this script has no use for it — a backup beside its key is a credential breach in one file, and
 # the surest way to keep them apart is for the process that writes one to be unable to read the
-# other (OPERATIONS_PLAN.md §7).
+# other (OPERATIONS_PLAN.md §7). So the script is started with the database's address and nothing
+# else of the server's settings (`env -i`): until 2026-11-20 it was given all of `server.env`, the
+# key with it, under this very comment.
 [Unit]
 Description=job-search-app nightly MongoDB backup (one-shot)
 # The database is Atlas, off this box: the network, not Docker, is what this needs.
@@ -17,6 +19,6 @@ Type=oneshot
 User=@USER@
 WorkingDirectory=@REPO@
 EnvironmentFile=@REPO@/certificates/server.env
-ExecStart=@REPO@/.venv/bin/python deploy/scripts/backup.py --out @HOME@/backups --archive @REPO@/archive
+ExecStart=/usr/bin/env -i PATH=/usr/bin:/bin MONGODB_URI=${MONGODB_URI} MONGODB_DB=${MONGODB_DB} @REPO@/.venv/bin/python deploy/scripts/backup.py --out @HOME@/backups --archive @REPO@/archive
 # A backup that cannot finish in fifteen minutes at this size is a symptom, not a slow link.
 TimeoutStartSec=15min

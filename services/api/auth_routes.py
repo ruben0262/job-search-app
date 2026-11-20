@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import uuid as _uuid
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
@@ -31,7 +30,7 @@ from libs.auth.access import issue_access_token
 from libs.auth.sessions import ACCESS_COOKIE, ACCESS_TTL, REFRESH_COOKIE, REFRESH_TTL, session_owner
 from libs.auth.tokens import RESET_TTL, VERIFICATION_TTL
 from libs.db import find_one, get, insert, now
-from libs.db.models import User, UserSession
+from libs.db.models import User
 from libs.legal import LEGAL_VERSION
 from libs.mail import EmailSender, MailError, reset_email, send_within_cap, verification_email
 from libs.notify import site_url
@@ -41,7 +40,24 @@ from services.api.deps import get_db, get_mailer, rate_limit
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-REFRESH_PATH = "/auth/refresh"
+# Where the refresh cookie is sent: the routes that end or renew a session, all under `/auth`, and no other
+# request the site makes. It was `/auth/refresh` alone, so sign-out never received the token it was to end:
+# the session lived on at the server for its thirty days, and "log out everywhere" answered 401 to everybody
+# (2026-11-20).
+REFRESH_PATH = "/auth"
+# The path it had until then. A browser signed in before holds its token there for up to `REFRESH_TTL`, and
+# would send it beside the new one, the spent beside the live: taken away whenever the cookies are set or
+# cleared. Nothing holds one after 2026-12-21; this and its two uses go then.
+OLD_REFRESH_PATH = "/auth/refresh"
+# Sign-ins one address may try in fifteen minutes, whatever emails it names, counted before a password is
+# checked: each check takes 64 MiB (`libs.auth.passwords`), and the limit by email alone never stopped an
+# address that changed the email each time. A hundred lets a classroom behind one address sign in together.
+LOGINS_PER_ADDRESS = 100
+# And for one email from one address, in the same fifteen minutes.
+LOGINS_PER_EMAIL = 10
+# Sign-ups for one email in an hour. Each for an unconfirmed address mails it a link, as `/auth/resend` does
+# with the same limit; counted for every email alike, so the limit does not say which have an account.
+SIGNUPS_PER_EMAIL = 3
 
 # The response every signup and every failed login gets, whatever actually happened.
 OPAQUE_SIGNUP = {"status": "check your email"}
@@ -73,22 +89,34 @@ def _set_session_cookies(response: Response, access: str, refresh: str) -> None:
     response.set_cookie(
         ACCESS_COOKIE, access, httponly=True, secure=True, samesite="lax",
         max_age=int(ACCESS_TTL.total_seconds()), path="/")
-    # Strict, and scoped to the one path that consumes it.
+    # Strict, and scoped to the routes that consume it.
     response.set_cookie(
         REFRESH_COOKIE, refresh, httponly=True, secure=True, samesite="strict",
         max_age=int(REFRESH_TTL.total_seconds()), path=REFRESH_PATH)
+    _forget_old_refresh_cookie(response)
 
 
 def _clear_session_cookies(response: Response) -> None:
     response.delete_cookie(ACCESS_COOKIE, path="/")
     response.delete_cookie(REFRESH_COOKIE, path=REFRESH_PATH)
+    _forget_old_refresh_cookie(response)
+
+
+def _forget_old_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(REFRESH_COOKIE, path=OLD_REFRESH_PATH, httponly=True, secure=True,
+                           samesite="strict")
 
 
 @router.post("/signup", status_code=status.HTTP_202_ACCEPTED)
 def signup(body: SignupRequest, request: Request, background: BackgroundTasks,
            db: Database = Depends(get_db),
            mailer: EmailSender = Depends(get_mailer)) -> dict:
-    """Create an unverified account and email a link, once the answer has gone."""
+    """Create an unverified account and email a link, once the answer has gone.
+
+    An address nobody has confirmed is whoever signs up for it last: their password, and a link of their own
+    that spends the earlier ones. It used to stay the first one's, so a stranger who signed up with somebody's
+    address before them kept a password to the account that person then confirmed (2026-11-20). An address
+    that is confirmed is left exactly as it is, and mailed nothing."""
     # Per address, and an address is often shared: a campus, an office, a phone network. Twenty an hour lets a
     # class sign up together and still stops one machine making accounts by the hundred (2026-11-17; it was
     # five, which behind the tunnel was five for the whole site).
@@ -106,17 +134,27 @@ def signup(body: SignupRequest, request: Request, background: BackgroundTasks,
                             detail={"password": problems})
 
     email = body.email.lower()
+    rate_limit(request, f"signup:{email}", limit=SIGNUPS_PER_EMAIL, per_seconds=3600)
+    password_hash = hash_password(body.password)
     try:
-        user = insert(db, User(email=email, password_hash=hash_password(body.password),
-                               status="pending_verification",
-                               processing_consent_at=now(), processing_consent_version=LEGAL_VERSION))
+        user_id = insert(db, User(email=email, password_hash=password_hash, status="pending_verification",
+                                  processing_consent_at=now(), processing_consent_version=LEGAL_VERSION)).id
     except DuplicateKeyError:
-        logger.info("signup for an existing address; answering opaquely")
-        return OPAQUE_SIGNUP
-    # Their Jobs list, as it fills: the alert every account starts with, waiting for a plan that has alerts.
-    first_alert(db, user.id)
+        # One write, so an address confirmed a moment ago is not given a new password by it.
+        waiting = db[User.COLLECTION].find_one_and_update(
+            {"email": email, "status": "pending_verification"},
+            {"$set": {"password_hash": password_hash, "processing_consent_at": now(),
+                      "processing_consent_version": LEGAL_VERSION, "updated_at": now()}}, {"_id": 1})
+        if waiting is None:
+            logger.info("signup for an address that has an account; answering opaquely")
+            return OPAQUE_SIGNUP
+        user_id = waiting["_id"]
+    else:
+        # Their Jobs list, as it fills: the alert every account starts with, waiting for a plan that has
+        # alerts.
+        first_alert(db, user_id)
 
-    token = issue_token(db, user.id, "verify_email")
+    token = issue_token(db, user_id, "verify_email")
     background.add_task(_send_verification, db, mailer, email, token, body.plan)
     return OPAQUE_SIGNUP
 
@@ -225,7 +263,8 @@ def reset(body: ResetRequest, request: Request, db: Database = Depends(get_db)) 
 def login(body: LoginRequest, request: Request, response: Response,
           db: Database = Depends(get_db)) -> dict:
     """Exchange a password for a session. Sets both cookies."""
-    rate_limit(request, f"login:{body.email.lower()}", limit=10, per_seconds=900)
+    rate_limit(request, "login", limit=LOGINS_PER_ADDRESS, per_seconds=900)
+    rate_limit(request, f"login:{body.email.lower()}", limit=LOGINS_PER_EMAIL, per_seconds=900)
 
     user = find_one(db, User, {"email": body.email.lower()})
     # The hash is verified even when the user does not exist, so timing reveals no addresses.
@@ -281,14 +320,24 @@ def refresh(request: Request, response: Response,
         _clear_session_cookies(failure)
         return failure
 
-    _set_session_cookies(response, issue_access_token(_owner(db, rotated.session_id), rotated.session_id),
+    # The same refusal login gives. A session outlived its account's suspension for as long as it kept
+    # refreshing, which is for good.
+    user = get(db, User, rotated.user_id)
+    if user is None or user.status != "active":
+        revoke_all(db, rotated.user_id)
+        failure = JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED,
+                               content={"detail": "this account is not active"})
+        _clear_session_cookies(failure)
+        return failure
+
+    _set_session_cookies(response, issue_access_token(rotated.user_id, rotated.session_id),
                          rotated.refresh_token)
     return {"status": "ok"}
 
 
 @router.post("/logout")
 def logout(request: Request, response: Response, db: Database = Depends(get_db)) -> dict:
-    """End this session. Always answers 200 — logging out twice is not an error."""
+    """End this session, here and at the server. Always answers 200 — logging out twice is not an error."""
     presented = request.cookies.get(REFRESH_COOKIE)
     if presented:
         revoke_session(db, presented)
@@ -338,10 +387,6 @@ def _send_reset(db: Database, mailer: EmailSender, email: str, token: str) -> No
             send_within_cap(db, mailer, email, subject, body, purpose="reset_password", html=html)
         except MailError:
             logger.warning("reset email failed; the user can ask again", exc_info=True)
-
-
-def _owner(db: Database, session_id: _uuid.UUID) -> _uuid.UUID:
-    return get(db, UserSession, session_id).user_id
 
 
 # A real argon2 hash of a value nobody has.

@@ -32,7 +32,8 @@ def _secret(env: dict[str, str] | None = None) -> str:
 def issue_access_token(user_id: _uuid.UUID, session_id: _uuid.UUID, *,
                        ttl: timedelta = ACCESS_TTL,
                        env: dict[str, str] | None = None) -> str:
-    """Mint one. `sid` is carried so a future revocation list has something to key on."""
+    """Mint one. `sid` names the session it was issued for: a request is refused once that session has been
+    ended (`libs.auth.sessions.session_is_live`), not fifteen minutes after."""
     now = datetime.now(UTC)
     return jwt.encode(
         {"sub": str(user_id), "sid": str(session_id), "iss": ISSUER,

@@ -28,9 +28,9 @@ def api(db, monkeypatch):
 
     from fastapi.testclient import TestClient
 
-    from libs.auth.access import issue_access_token
     from libs.db.models import UserConfig
     from services.api.app import app
+    from tests.conftest import access_cookie
 
     user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
                            subscription_status="active", status="active",
@@ -43,7 +43,7 @@ def api(db, monkeypatch):
             for title in ("Backend Engineer", "Senior Backend Engineer", "Registered Nurse")]
 
     with TestClient(app, base_url="https://testserver") as http:
-        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        http.cookies.set("access_token", access_cookie(db, user.id), path="/")
         yield http, db, user, jobs
 
 
@@ -323,12 +323,29 @@ def test_the_new_jobs_count_is_what_a_refresh_adds_less_the_jobs_that_left_meanw
     db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id},
                                         {"$set": {"first_seen_at": now() - timedelta(days=30)}})
 
-    poll = http.get("/feed", params={"found_after": first["as_of"], "limit": 1}).json()
+    poll = http.get("/feed", params={"found_after": first["as_of"], "counts": True}).json()
     after = http.get("/feed").json()
 
     assert poll["arrived"] == 2, "theirs alone: the nurse has none of their words"
     assert poll["total"] == after["total"] == first["total"] + 2 - 1, "what a refresh shows, the one gone"
     assert jobs[0].id not in _ids(after)
+
+
+def test_the_minutes_count_of_new_jobs_brings_the_numbers_and_no_job(api, monkeypatch):
+    """Every open Jobs page asks once a minute how many jobs are new. It was asked as a page of one job: the
+    job read with its text and documents, every job of the list scored, and each filter's counts made, to
+    read two numbers (2026-11-20). Asked for the numbers, nothing else is worked out."""
+    http, _db, _user, _jobs = api
+    first = http.get("/feed").json()
+
+    def a_card(*_args, **_kwargs):
+        raise AssertionError("a job was read to count the list")
+
+    monkeypatch.setattr("services.api.dashboard_routes.feed_row", a_card)
+    poll = http.get("/feed", params={"found_after": first["as_of"], "counts": True}).json()
+
+    assert (poll["total"], poll["arrived"], poll["jobs"]) == (first["total"], 0, [])
+    assert (poll["sources"], poll["words"], poll["countries"]) == ([], [], [])
 
 
 def test_the_page_says_how_long_a_job_stays_and_shows_exactly_that(api):
@@ -537,6 +554,20 @@ def test_an_alerts_link_finds_its_job_while_it_is_still_theirs(api):
 
     http.put(f"/jobs/{jobs[1].id}/hidden")
     assert http.get(f"/feed?job={jobs[1].id}").json()["total"] == 0, "hidden is not in their list"
+
+
+def test_an_alerts_link_opens_its_job_however_long_their_list_is(api, monkeypatch):
+    """The job was looked for among the matches a page reads, the newest so many (`scan_for`): one older than
+    that many of their matches opened as "not yours" from its own alert. And all of them were read and counted
+    to show one job, 380 ms where the job alone takes 4 (2026-11-20). Here a page reads one match."""
+    http, db, _user, jobs = api
+    older, newer = jobs[0], jobs[1]
+    db[CorpusJob.COLLECTION].update_one({"_id": older.id},
+                                        {"$set": {"first_seen_at": now() - timedelta(hours=1)}})
+    monkeypatch.setattr("services.api.dashboard_routes.scan_for", lambda _hours: 1)
+    assert _ids(http.get("/feed").json()) == [newer.id], "the premise: the list as read stops at the newest"
+
+    assert _ids(http.get(f"/feed?job={older.id}").json()) == [older.id]
 
 
 def test_i_applied_counts_takes_the_job_off_the_jobs_page_and_can_be_taken_back(api):

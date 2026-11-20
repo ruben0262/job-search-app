@@ -1,12 +1,21 @@
 """argon2id, with FlowSolutions' production parameters."""
 from __future__ import annotations
 
+import threading
+
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 # time=1, memory=64 MiB, threads=4, keylen=64, salt=32 bytes — verbatim from production.
 _HASHER = PasswordHasher(time_cost=1, memory_cost=65536, parallelism=4,
                          hash_len=64, salt_len=32)
+
+# How many passwords one process hashes or checks at a time; the rest wait their turn, a thirtieth of a second
+# each. Every one takes the 64 MiB above, and nothing bounded how many ran together, so a flood of sign-ins
+# could take all the memory the API's container has (1 GiB, four processes: `deploy/compose.yml`,
+# `Dockerfile.api`). Two a process is half of it at the very worst, and sixty sign-ins a second each.
+HASHES_AT_ONCE = 2
+_TURN = threading.BoundedSemaphore(HASHES_AT_ONCE)
 
 MIN_PASSWORD_LENGTH = 9
 MAX_PASSWORD_LENGTH = 256
@@ -22,13 +31,15 @@ _OBVIOUS = frozenset({
 
 def hash_password(password: str) -> str:
     """Hash for storage. The result carries its own parameters, so a future tuning is migratable."""
-    return _HASHER.hash(password)
+    with _TURN:
+        return _HASHER.hash(password)
 
 
 def verify_password(stored: str, password: str) -> bool:
     """Constant-time verify."""
     try:
-        return _HASHER.verify(stored, password)
+        with _TURN:
+            return _HASHER.verify(stored, password)
     except (VerifyMismatchError, InvalidHashError, ValueError):
         return False
 

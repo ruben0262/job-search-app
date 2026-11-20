@@ -5861,7 +5861,7 @@
     },
     "/admin/health": {
       "get": {
-        "description": "Every number, plus the conditions that currently need a person.",
+        "description": "Every number the Health tab shows, plus the conditions that currently need a person: an account one\nof them names is in its alert, and the accounts they were read from stay here.",
         "operationId": "health_admin_health_get",
         "responses": {
           "200": {
@@ -6451,8 +6451,32 @@
     },
     "/admin/users": {
       "get": {
-        "description": "The account list, with no credential material of any kind.",
+        "description": "A page of the account list, the first to join first, with no credential material of any kind; `q` finds\nthe accounts whose address has it. Every account was read whole on each open of Admin and all of them\ndrawn: 1.9 s and 196 MB at ten thousand, on a copy made of the dev accounts (2026-11-20).",
         "operationId": "users_admin_users_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -6465,6 +6489,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Users",
@@ -7420,7 +7454,7 @@
     },
     "/auth/logout": {
       "post": {
-        "description": "End this session. Always answers 200 \u2014 logging out twice is not an error.",
+        "description": "End this session, here and at the server. Always answers 200 \u2014 logging out twice is not an error.",
         "operationId": "logout_auth_logout_post",
         "responses": {
           "200": {
@@ -7574,7 +7608,7 @@
     },
     "/auth/signup": {
       "post": {
-        "description": "Create an unverified account and email a link, once the answer has gone.",
+        "description": "Create an unverified account and email a link, once the answer has gone.\n\nAn address nobody has confirmed is whoever signs up for it last: their password, and a link of their own\nthat spends the earlier ones. It used to stay the first one's, so a stranger who signed up with somebody's\naddress before them kept a password to the account that person then confirmed (2026-11-20). An address\nthat is confirmed is left exactly as it is, and mailed nothing.",
         "operationId": "signup_auth_signup_post",
         "requestBody": {
           "content": {
@@ -8007,7 +8041,7 @@
         ]
       },
       "post": {
-        "description": "Store one document: the text read out of it, and the file to download again.",
+        "description": "Store one document: the text read out of it, and the file to download again. Not `async`: reading a\nfile and the database are work that waits, and on the event loop everybody that worker serves waited\nwith it (350 ms for an ordinary CV, 2026-11-20).",
         "operationId": "upload_documents_post",
         "requestBody": {
           "content": {
@@ -8334,7 +8368,7 @@
     },
     "/feed": {
       "get": {
-        "description": "This person's matches, a page at a time: the most of their words first, the newest posted\nfirst, or the ones that arrived here last first:\nsearched, remote only, posted lately, from one board, in one country or one city, with a document\nmade or not, having every word picked, or at least so many of their words \u2014 or one job, the one\nan alert's link names, which is either still in their list or not. `found_after` counts the jobs\nthat reached the list since it was read (`arrived`), which is how the page learns how many new ones\nthere are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn\njob found before the list was read and read after it is new to them.\n\nCounted on the whole list, not instead of it: the jobs that left meanwhile, past their shelf life,\nare the difference between the two lengths. Asked for the new ones alone, the page said \"100 new\njobs\" and a refresh made the list 15 longer (owner, 2026-11-06).\n\nA job they skipped or applied to is gone from it for good: Applied lists the second.",
+        "description": "This person's matches, a page at a time: the most of their words first, the newest posted\nfirst, or the ones that arrived here last first:\nsearched, remote only, posted lately, from one board, in one country or one city, with a document\nmade or not, having every word picked, or at least so many of their words \u2014 or one job, the one\nan alert's link names, which is either still in their list or not. `found_after` counts the jobs\nthat reached the list since it was read (`arrived`), which is how the page learns how many new ones\nthere are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn\njob found before the list was read and read after it is new to them.\n\nCounted on the whole list, not instead of it: the jobs that left meanwhile, past their shelf life,\nare the difference between the two lengths. Asked for the new ones alone, the page said \"100 new\njobs\" and a refresh made the list 15 longer (owner, 2026-11-06). `counts` is that question and nothing\nelse, as the page asks it every minute: `total` and `arrived`, with no job, no score and none of what the\nfilters offer. It was asked as a whole page of one job, scored and counted every way, to read two numbers.\n\nA job they skipped or applied to is gone from it for good: Applied lists the second.",
         "operationId": "feed_feed_get",
         "parameters": [
           {
@@ -8553,6 +8587,16 @@
                 }
               ],
               "title": "Found After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "counts",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Counts",
+              "type": "boolean"
             }
           },
           {

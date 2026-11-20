@@ -685,3 +685,39 @@ def test_adzuna_is_asked_each_countrys_newest_with_no_word_two_countries_a_run(m
     assert not [url for url in asked if "what" in url.params], "no word is asked"
     assert sorted(url.path.split("/")[4] for url in asked) == ["de", "es", "fr"], "two, then the third"
     assert {url.params["sort_by"] for url in asked} == {"date"}
+
+
+# ── a board that did not answer, one with nothing open, one that is gone (2026-11-20) ─────────
+
+def test_a_board_is_given_up_only_when_its_ats_says_it_is_not_there(db, monkeypatch):
+    """One failed poll marked a company's board dead for good: a timeout, a 429, a 5xx or the resolver down
+    read as an empty board, an empty board as a dead one, and nothing asks a dead board again. 542 of the
+    dev copy's 565 boards had gone that way (2026-11-20). A board that did not answer says nothing about
+    itself, and one with nothing open today has jobs another day: both are asked again."""
+    from datetime import UTC, datetime
+
+    from libs.corpus.ats import AtsRepository
+    from services.harvester.sources import ats
+
+    open_job = {"absolute_url": "https://boards.greenhouse.io/busy/jobs/1", "title": "Engineer",
+                "first_published": datetime.now(UTC).isoformat()}
+    answers = {"busy": (200, {"jobs": [open_job]}), "quiet": (200, {"jobs": []}),
+               "refused": (429, {}), "broken": (502, {}), "gone": (404, {})}
+
+    def board(request: httpx.Request) -> httpx.Response:
+        token = request.url.path.split("/")[3]
+        if token == "silent":
+            raise httpx.ReadTimeout("no answer", request=request)
+        status, body = answers[token]
+        return httpx.Response(status, json=body)
+
+    monkeypatch.setattr(ats, "_CLIENT", httpx.Client(transport=httpx.MockTransport(board)))
+    repo = AtsRepository(db)
+    repo.add_tokens(("greenhouse", token) for token in [*answers, "silent"])
+
+    for _ in range(2):  # the second run asks every board the first left
+        links = ats.gather_ats({"posted_within_hours": 72, "concurrency": 2}, logging.getLogger("test"),
+                               ats="greenhouse", repo=repo, fetch_company=ats.fetch_greenhouse)
+
+    assert sorted(repo.live_tokens("greenhouse")) == ["broken", "busy", "quiet", "refused", "silent"]
+    assert [link.url for link in links] == [open_job["absolute_url"]]

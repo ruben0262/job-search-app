@@ -92,14 +92,24 @@ def link(request: Request, user_id: _uuid.UUID = Depends(current_user)) -> LinkP
 
 
 @router.get("/callback", include_in_schema=False)
-def callback(code: str | None = None, state: str | None = None, error: str | None = None,
+def callback(request: Request, code: str | None = None, state: str | None = None, error: str | None = None,
              db: Database = Depends(get_db)) -> RedirectResponse:
     """Discord sending them back: their account linked, and them on Settings, told how it went. The account is
-    the one the `state` names, signed here when they asked, not whoever's cookie comes back."""
+    the one the `state` names, signed here when they asked, and the browser coming back is signed in as it.
+    The state alone was enough, so a link one person asked for and sent to another, opened there, moved that
+    person's Discord account onto the first one's and took their plan's role with it (2026-11-20)."""
     try:
         user_id = signed_by(state or "", PURPOSE)
     except InvalidAccessToken as exc:
         logger.warning("discord: a return from Discord whose state does not check out (%s)", exc)
+        return _back("failed")
+    try:
+        back_as = current_user(request, db)
+    except HTTPException:
+        back_as = None
+    if back_as != user_id:
+        logger.warning("discord: a return for %s in a browser signed in as %s; nothing linked", user_id,
+                       back_as)
         return _back("failed")
     if error or not code:
         logger.info("discord: %s did not link an account (%s)", user_id, error or "no code")

@@ -21,6 +21,7 @@ from libs.corpus.freshness import platform_windows
 from libs.corpus.words import norm
 from libs.db import find
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState, Word
+from libs.db.models.corpus import WORDS_INDEX
 from libs.membership import FREE, MEMBER, STARTER, jobs_as_of, members, starters, wait_hours
 from libs.tenant.filters import UserFilters, candidate_conditions, filters_for
 from libs.tenant.repository import TenantRepository
@@ -143,7 +144,8 @@ def _asked(config: dict | None, filters: UserFilters,
 
 def _read(db: Database, user: User, *, described_since: datetime | None = None,
           since: datetime | None = None, scan: int = SCAN, text: bool = False, fit: bool = False,
-          skip: set[int] | frozenset[int] = frozenset()) -> list[dict] | None:
+          skip: set[int] | frozenset[int] = frozenset(),
+          only: int | None = None) -> tuple[list[dict], dict] | None:
     """The stages that read this person's matches, the newest `scan` of them, each with `words` and
     `in_title`: the one question behind the Jobs page and the alerts (CLAUDE.md §1). None when they have
     no words.
@@ -151,7 +153,9 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
     A job is one once its whole text is read (`candidate_conditions`), so `described_since` keeps those that
     became one since: what alerts send. `since` is the oldest the caller will show, so the budget is spent
     inside it: a posting found a day before it can still have been posted inside it, by a board whose clock
-    runs ahead of ours. `skip` is jobs never to read: those they skipped or applied to.
+    runs ahead of ours. `skip` is jobs never to read: those they skipped or applied to. `only` is the one job
+    to read, if it is a match of theirs: where an alert's link lands, asked of that job alone and not found
+    among the newest `scan`, which read every match to show one and missed a job older than they reach.
 
     Each posting says which of everyone's words it has (`libs.corpus.terms`), so a match is an index lookup.
     A posting not yet searched, and a word nobody's postings have been searched for yet, are read with a
@@ -164,7 +168,13 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
     A free account's are the jobs a member's list had `free_delay_hours` ago and still has
     (`libs.membership.jobs_as_of`), so a job reaches it a week late and leaves it when it leaves everybody's.
     A minimum salary is the top of a posting's stated pay (`libs.corpus.pay`), stored with its text: unknown
-    is never underpaid."""
+    is never underpaid.
+
+    With the stages comes how the database is to run them (`aggregate(stages, **how)`): the words question
+    first, read from the words index by name. Left to choose, it chose between that index and the newest
+    postings from one run to the next, and by the second read every open posting to find a person's: 42,192
+    of them for 5,883 matches, where the index reads 13,870 (215 ms against 119, 2026-11-20). Not for one job
+    or for the jobs read since a moment ago, which are found faster by what names them."""
     config = TenantRepository(db).get_config(user.id)
     asked = _asked(config, filters_for(db, user, config=config), jobs_as_of(db, user))
     if asked is None:
@@ -176,6 +186,8 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
         where.append({"first_seen_at": {"$gte": since - timedelta(days=1)}})
     if skip:
         where.append({"_id": {"$nin": sorted(skip)}})
+    if only is not None:
+        where.append({"_id": only})
     indexed = sorted(db[Word.COLLECTION].distinct("_id", {"_id": {"$in": mine}, "indexed_at": {"$ne": None}}))
     pending = {word for word in mine if word not in indexed}
 
@@ -186,8 +198,12 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
     found_there = [_words(mine, pending), {"$match": {"words.0": {"$exists": True}}},
                    *([{"$unset": left}] if left else [])]
     searches = [[{"$match": {"$and": [*where, {"terms_at": None, **has_any(mine)}]}}, *newest, *found_there]]
+    how: dict = {}
     if indexed:
-        searches.append([{"$match": {"$and": [*where, {"terms": {"$in": indexed}}]}}, *newest, *found_there])
+        # First: what the database is told about how to read applies to the question it begins with.
+        searches.insert(0, [{"$match": {"$and": [*where, {"terms": {"$in": indexed}}]}}, *newest,
+                            *found_there])
+        how = {} if only is not None or described_since is not None else {"hint": WORDS_INDEX}
     if pending:
         # A word not searched for yet, read in the newest candidates' text meanwhile. Only that word: when
         # every word was read this way, adding one cut a list from ~1,500 jobs to 458 (2026-11-04).
@@ -198,7 +214,7 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
     once = [{"$group": {"_id": "$_id", "row": {"$first": "$$ROOT"}}}, {"$replaceRoot": {"newRoot": "$row"}}]
     return [*first, *joined, *(once if rest else []), *newest,
             {"$addFields": {"nwords": {"$size": "$words"}, "ntitle": {"$size": "$in_title"},
-                            "when": {"$ifNull": ["$posted_at", "$first_seen_at"]}}}]
+                            "when": {"$ifNull": ["$posted_at", "$first_seen_at"]}}}], how
 
 
 def _match(row: dict) -> Match:
@@ -213,10 +229,11 @@ def matching_jobs(db: Database, user: User, *, described_since: datetime | None 
     """This person's matches, the most of their words first, then newest first (`_read`). Only the words
     come back, unless `text` asks for the description too, for a caller that shows it (an alert's salary
     line)."""
-    stages = _read(db, user, described_since=described_since, since=since, scan=scan, text=text, skip=skip)
-    if stages is None:
+    read = _read(db, user, described_since=described_since, since=since, scan=scan, text=text, skip=skip)
+    if read is None:
         return Matches()
-    rows = list(db[CorpusJob.COLLECTION].aggregate([*stages, {"$sort": ORDERS["best"]}]))
+    stages, how = read
+    rows = list(db[CorpusJob.COLLECTION].aggregate([*stages, {"$sort": ORDERS["best"]}], **how))
     if described_since and len(rows) == scan:
         # The caller's watermark will pass every older match this never reached.
         logger.warning("matching: %s has at least %d new matches; only the newest %d were read, so older "
@@ -247,7 +264,7 @@ class Page:
 
 def page(db: Database, user: User, *, since: datetime | None, scan: int, wanted: dict, order: str,
          offset: int, limit: int, found_after: datetime | None = None, fit: list[dict] | None = None,
-         unkept: dict | None = None) -> Page:
+         unkept: dict | None = None, only: int | None = None, counts: bool = False) -> Page:
     """A page of this person's Jobs list, as the database makes it: their matches (`_read`, less a job they
     skipped or applied to), those shown in the time asked (`since`, by when a job was posted, else found),
     narrowed by the page's own filters (`wanted`, a condition on a match, its `words` and `nwords`
@@ -256,11 +273,15 @@ def page(db: Database, user: User, *, since: datetime | None, scan: int, wanted:
     of it did: 1,025 ms at 15,554 jobs (2026-11-15).
 
     `fit` scores the page's jobs for this person, after the page is cut (`libs.fit.scored`); `unkept` counts
-    the jobs of the list with no score kept for them (`live`)."""
+    the jobs of the list with no score kept for them (`live`). `only` makes the list one job, if it is theirs
+    (`_read`): 4 ms where finding it in the whole list took 380 (2026-11-20). `counts` asks for how many there
+    are and nothing else: no page, and none of what the filters offer."""
     skipped, applied = marks(db, user.id)
-    stages = _read(db, user, since=since, scan=scan, fit=fit is not None, skip=skipped | set(applied))
-    if stages is None:
+    read = _read(db, user, since=since, scan=scan, fit=fit is not None, skip=skipped | set(applied),
+                 only=only)
+    if read is None:
         return Page([], 0, None if found_after is None else 0, [], [], [], [], cut=False)
+    stages, how = read
     shown = {"_visible": True}
     counted = [{"$sort": {"count": -1, "_id": 1}}]
     facets = {
@@ -275,6 +296,8 @@ def page(db: Database, user: User, *, since: datetime | None, scan: int, wanted:
         "page": [{"$match": {"$and": [shown, wanted]}}, {"$sort": ORDERS[order]}, {"$skip": offset},
                  {"$limit": limit}, *(fit or [])],
     }
+    if counts:
+        facets = {name: facets[name] for name in ("read", "oldest", "total")}
     if unkept is not None:
         facets["live"] = [{"$match": unkept}, {"$count": "n"}]
     if found_after is not None:
@@ -282,13 +305,14 @@ def page(db: Database, user: User, *, since: datetime | None, scan: int, wanted:
                              {"$count": "n"}]
     visible = True if since is None else {"$gte": ["$when", since]}
     [made] = db[CorpusJob.COLLECTION].aggregate([*stages, {"$addFields": {"_visible": visible}},
-                                                 {"$facet": facets}])
+                                                 {"$facet": facets}], **how)
     count = {name: made[name][0]["n"] if made[name] else 0
              for name in ("read", "total", "arrived", "live") if name in made}
     oldest = made["oldest"][0]["first_seen_at"] if made["oldest"] else None
     return Page(
-        matches=[_match(row) for row in made["page"]], total=count["total"], arrived=count.get("arrived"),
-        **{name: [(row["_id"], row["count"]) for row in made[name]]
+        matches=[_match(row) for row in made.get("page", [])], total=count["total"],
+        arrived=count.get("arrived"),
+        **{name: [(row["_id"], row["count"]) for row in made.get(name, [])]
            for name in ("sources", "words", "countries", "cities")},
         cut=count["read"] >= scan and oldest is not None and (since is None or oldest >= since),
         live=count.get("live", 0))

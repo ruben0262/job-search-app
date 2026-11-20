@@ -120,7 +120,8 @@ export interface paths {
         };
         /**
          * Health
-         * @description Every number, plus the conditions that currently need a person.
+         * @description Every number the Health tab shows, plus the conditions that currently need a person: an account one
+         *     of them names is in its alert, and the accounts they were read from stay here.
          */
         get: operations["health_admin_health_get"];
         put?: never;
@@ -432,7 +433,9 @@ export interface paths {
         };
         /**
          * Users
-         * @description The account list, with no credential material of any kind.
+         * @description A page of the account list, the first to join first, with no credential material of any kind; `q` finds
+         *     the accounts whose address has it. Every account was read whole on each open of Admin and all of them
+         *     drawn: 1.9 s and 196 MB at ten thousand, on a copy made of the dev accounts (2026-11-20).
          */
         get: operations["users_admin_users_get"];
         put?: never;
@@ -814,7 +817,7 @@ export interface paths {
         put?: never;
         /**
          * Logout
-         * @description End this session. Always answers 200 — logging out twice is not an error.
+         * @description End this session, here and at the server. Always answers 200 — logging out twice is not an error.
          */
         post: operations["logout_auth_logout_post"];
         delete?: never;
@@ -915,6 +918,11 @@ export interface paths {
         /**
          * Signup
          * @description Create an unverified account and email a link, once the answer has gone.
+         *
+         *     An address nobody has confirmed is whoever signs up for it last: their password, and a link of their own
+         *     that spends the earlier ones. It used to stay the first one's, so a stranger who signed up with somebody's
+         *     address before them kept a password to the account that person then confirmed (2026-11-20). An address
+         *     that is confirmed is left exactly as it is, and mailed nothing.
          */
         post: operations["signup_auth_signup_post"];
         delete?: never;
@@ -1173,7 +1181,9 @@ export interface paths {
         put?: never;
         /**
          * Upload
-         * @description Store one document: the text read out of it, and the file to download again.
+         * @description Store one document: the text read out of it, and the file to download again. Not `async`: reading a
+         *     file and the database are work that waits, and on the event loop everybody that worker serves waited
+         *     with it (350 ms for an ordinary CV, 2026-11-20).
          */
         post: operations["upload_documents_post"];
         delete?: never;
@@ -1333,7 +1343,9 @@ export interface paths {
          *
          *     Counted on the whole list, not instead of it: the jobs that left meanwhile, past their shelf life,
          *     are the difference between the two lengths. Asked for the new ones alone, the page said "100 new
-         *     jobs" and a refresh made the list 15 longer (owner, 2026-11-06).
+         *     jobs" and a refresh made the list 15 longer (owner, 2026-11-06). `counts` is that question and nothing
+         *     else, as the page asks it every minute: `total` and `arrived`, with no job, no score and none of what the
+         *     filters offer. It was asked as a whole page of one job, scored and counted every way, to read two numbers.
          *
          *     A job they skipped or applied to is gone from it for good: Applied lists the second.
          */
@@ -4643,7 +4655,10 @@ export interface operations {
     };
     users_admin_users_get: {
         parameters: {
-            query?: never;
+            query?: {
+                q?: string;
+                offset?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4659,6 +4674,15 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -6086,6 +6110,7 @@ export interface operations {
                 min_words?: number;
                 min_fit?: number | null;
                 found_after?: string | null;
+                counts?: boolean;
                 sort?: "best" | "newest" | "arrived";
             };
             header?: never;

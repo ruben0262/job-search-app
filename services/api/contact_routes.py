@@ -80,7 +80,7 @@ def contact(body: ContactRequest, request: Request, db: Database = Depends(get_d
             mailer: EmailSender = Depends(get_mailer)) -> ContactReceipt:
     """Send a message to support, signed in or with an address to reply to."""
     try:
-        user_id: _uuid.UUID | None = current_user(request)
+        user_id: _uuid.UUID | None = current_user(request, db)
     except HTTPException:
         # Not signed in: a visitor on the landing page, who says where the reply goes. Without that, the 401.
         if body.email is None:
