@@ -87,3 +87,46 @@ def test_the_sites_files_say_how_long_they_may_be_kept(tmp_path):
     assert site.get("/").headers["cache-control"] == "no-cache"
     assert site.get("/sw.js").headers["cache-control"] == "no-cache"
     assert "immutable" not in site.get("/assets/gone.js").headers.get("cache-control", "")
+
+
+def _allowed(directive: str) -> list[str]:
+    from services.api.guard import POLICY
+
+    [found] = [part.split()[1:] for part in POLICY.split("; ") if part.split()[0] == directive]
+    return found
+
+
+def test_a_page_runs_no_script_that_is_not_a_file_of_the_site_or_stripes():
+    """What makes somebody else's text on a page unable to run as a script: nothing written into a page
+    runs, and nothing is built from a string. So the page itself writes none: its one script that was, the
+    theme's, is a file now (`web/public/theme.js`). An inline script added to `index.html` would be refused
+    by every browser, silently, in production alone; it fails here first."""
+    import pathlib
+    import re
+
+    scripts = _allowed("script-src")
+    assert "'self'" in scripts
+    assert not {"'unsafe-inline'", "'unsafe-eval'", "*", "https:", "data:"} & set(scripts)
+
+    shell = (pathlib.Path(__file__).resolve().parents[1] / "web" / "index.html").read_text()
+    written_in = [tag for tag in re.findall(r"<script\b[^>]*>", shell) if "src=" not in tag]
+    assert not written_in, f"index.html writes a script into the page: {written_in}"
+    assert not re.search(r"\son\w+\s*=", shell), "index.html has a handler written into a tag"
+
+
+def test_the_payment_form_is_allowed_everything_stripe_says_it_needs():
+    """The origins Stripe lists for Stripe.js, Checkout and Link (docs.stripe.com/security/guide, read
+    2026-11-20), each under the directive it lists it for. One left out stops the payment form, and only for
+    somebody about to pay."""
+    needs = {
+        "script-src": ["https://js.stripe.com", "https://*.js.stripe.com", "https://checkout.stripe.com"],
+        "frame-src": ["https://js.stripe.com", "https://*.js.stripe.com", "https://hooks.stripe.com",
+                      "https://checkout.stripe.com", "https://link.com", "https://*.link.com"],
+        "connect-src": ["https://api.stripe.com", "https://checkout.stripe.com", "https://link.com",
+                        "https://*.link.com"],
+        "img-src": ["https://*.stripe.com", "https://*.link.com"],
+    }
+    for directive, origins in needs.items():
+        assert not [origin for origin in origins if origin not in _allowed(directive)], directive
+    assert _allowed("frame-ancestors") == ["'none'"] and _allowed("object-src") == ["'none'"]
+

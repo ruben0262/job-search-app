@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import os
 import pkgutil
 import threading
 import uuid
@@ -68,6 +69,52 @@ def test_the_schema_is_applied_twice_without_complaint_and_enforces_its_rules(db
     # Jobs with no key never collide with each other.
     insert(db, QueueJob(lane="docgen", user_id=user.id))
     insert(db, QueueJob(lane="docgen", user_id=user.id))
+
+
+@needs_db
+def test_a_start_writes_no_rules_to_a_database_that_already_holds_them(db):
+    """**A relationship, not a stopwatch.** Every service runs `ensure_schema` as it starts, the harvester
+    every fifteen minutes, and each run wrote every collection's rules again: thirty-odd writes to the
+    catalogue for nothing changed (2026-11-20). A database as the code declares it is written to by none.
+    One whose rules or their strictness somebody changed is put back, that collection alone, and a value the
+    rules refuse is refused again."""
+    from pymongo import MongoClient, monitoring
+    from pymongo.errors import WriteError
+
+    from libs.db import ensure_schema
+    from libs.db.models import QueueJob, User
+
+    written: list[str] = []
+
+    class Rules(monitoring.CommandListener):
+        def started(self, event):
+            if event.command_name == "collMod":
+                written.append(event.command["collMod"])
+
+        def succeeded(self, event): ...
+
+        def failed(self, event): ...
+
+    # A client of its own, made with the counter: a listener registered later never sees an existing one.
+    counted = MongoClient(os.environ["MONGODB_URI"], uuidRepresentation="standard", tz_aware=True,
+                          event_listeners=[Rules()])[db.name]
+    try:
+        ensure_schema(db)
+        ensure_schema(counted)
+        assert written == []
+
+        db.command("collMod", User.COLLECTION, validator={})
+        db.command("collMod", QueueJob.COLLECTION, validationLevel="moderate")
+        db[User.COLLECTION].insert_one({"_id": uuid.uuid4(), "email": "loose@example.com",
+                                        "status": "no such"})
+        ensure_schema(counted)
+    finally:
+        counted.client.close()
+
+    assert sorted(written) == sorted([User.COLLECTION, QueueJob.COLLECTION])
+    with pytest.raises(WriteError):
+        db[User.COLLECTION].insert_one({"_id": uuid.uuid4(), "email": "strict@example.com",
+                                        "status": "no such"})
 
 
 @needs_db

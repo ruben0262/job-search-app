@@ -711,9 +711,10 @@ out with it.
 
 ### 6d — the cheap operational debts
 
-- **Security headers and `allowed_hosts`** (`AUTH_REUSE.md` §5). No CSP, HSTS, `X-Frame-Options` or
-  `TrustedHostMiddleware`. The tunnel being the only way in is why nothing has broken, which is not
-  the same as having decided.
+- **Security headers and `allowed_hosts`** (`AUTH_REUSE.md` §5). ~~No CSP, HSTS, `X-Frame-Options`~~ **Done
+  2026-11-20** (`services/api/guard.py`: HSTS, `nosniff`, `X-Frame-Options`, and a content policy that allows
+  no inline script; CHANGELOG that day, twice). Still open: no `TrustedHostMiddleware`. The tunnel being the
+  only way in is why nothing has broken, which is not the same as having decided.
 - **Runbooks** (`OPERATIONS_PLAN.md` §9), still unwritten.
 - **Five dead-lettered jobs** on the box — 3 `train`, 1 `label`, 1 `process` — nobody has read.
 - **Cover letters have no trigger.** The prompt is ready; nothing says when a posting wants one.

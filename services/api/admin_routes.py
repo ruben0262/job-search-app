@@ -34,6 +34,7 @@ from libs.db.models import (
     UserDocument,
     UserJobState,
 )
+from libs.db.models.user import LIGHT
 from libs.documents.read import LANGUAGE_NAMES
 from libs.limits import all_for, describe, set_limit
 from libs.llm.accounts import listing as ai_listing
@@ -230,9 +231,6 @@ def subscriptions(db: Database = Depends(get_db), admin: User = Depends(require_
               for user in held[:500]])
 
 
-# What makes an account's document heavy, 18 of its 19 KB, and no list of accounts shows: left behind when
-# every account is read (`libs.fit.profile`, `libs.suggestions`).
-LIGHT = {"fit_profile": 0, "suggestions": 0}
 # How many accounts a page of Admin's list holds.
 USERS_PAGE = 50
 

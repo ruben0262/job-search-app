@@ -17,20 +17,10 @@
     <!-- The wheel, in the purple (`src/wheel.tsx` draws the same mark). -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <script>
-      // Before first paint, deliberately. A React effect runs after the first frame, so a
-      // dark-mode viewer would see one white flash on every single load.
-      (function () {
-        try {
-          // Dark is the default; light is a choice, kept under the same key `theme.tsx` writes.
-          var choice = localStorage.getItem("theme");
-          if (choice !== "light" && choice !== "dark") choice = "dark";
-          document.documentElement.setAttribute("data-theme", choice);
-        } catch (e) {
-          /* Private mode, or storage disabled. The CSS default is dark anyway. */
-        }
-      })();
-    </script>
+    <!-- The theme, before first paint, deliberately: a React effect runs after the first frame, so a
+         dark-mode viewer would see one white flash on every single load. A file of its own, not written
+         here: the site allows no script that is not one of its files (`services/api/guard.py`). -->
+    <script src="/theme.js"></script>
   </head>
   <body>
     <div id="root"></div>

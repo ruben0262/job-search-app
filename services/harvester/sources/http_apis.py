@@ -79,7 +79,7 @@ def gather_himalayas(cfg: dict[str, Any], logger) -> list[JobLink]:
         for page in range(int(cfg.get("max_pages", 1))):
             try:
                 jobs = client.get(endpoint, params={"limit": HIMALAYAS_PAGE, "offset": page * HIMALAYAS_PAGE}
-                                  ).json().get("jobs", [])
+                                  ).raise_for_status().json().get("jobs", [])
             except Exception as exc:
                 logger.warning("himalayas page %d failed: %s", page, exc)
                 break
@@ -172,7 +172,7 @@ def gather_nofluffjobs(cfg: dict[str, Any], logger) -> list[JobLink]:
             try:
                 batch = client.post(endpoint, params={"page": page, "salaryCurrency": cfg.get("currency", "PLN"),
                                                       "salaryPeriod": "month", "region": "pl"},
-                                    json={"criteriaSearch": criteria, "page": page}).json().get("postings") or []
+                                    json={"criteriaSearch": criteria, "page": page}).raise_for_status().json().get("postings") or []
             except Exception as exc:
                 logger.warning("%s page %d failed: %s", label, page, exc)
                 break
@@ -262,7 +262,7 @@ def gather_workingnomads(cfg: dict[str, Any], logger) -> list[JobLink]:
     out: list[JobLink] = []
     try:
         with make_shared_client() as client:
-            data = client.get(endpoint).json()
+            data = client.get(endpoint).raise_for_status().json()
     except Exception as exc:
         logger.warning("workingnomads fetch failed: %s", exc)
         return out
@@ -310,7 +310,7 @@ def gather_jobicy(cfg: dict[str, Any], logger) -> list[JobLink]:
             if tag:
                 params["tag"] = tag
             try:
-                jobs = client.get(endpoint, params=params).json().get("jobs", [])
+                jobs = client.get(endpoint, params=params).raise_for_status().json().get("jobs", [])
             except Exception as exc:
                 logger.warning("jobicy tag %r failed: %s", tag, exc)
                 continue
@@ -365,7 +365,7 @@ def gather_themuse(cfg: dict[str, Any], logger) -> list[JobLink]:
         params += [("category", c) for c in categories]
         params += [("location", loc) for loc in locations]
         try:
-            return client.get(endpoint, params=params).json()
+            return client.get(endpoint, params=params).raise_for_status().json()
         except Exception as exc:
             logger.warning("themuse page %d failed: %s", page, exc)
             return {}
@@ -415,7 +415,7 @@ def gather_findwork(cfg: dict[str, Any], logger) -> list[JobLink]:
     with make_shared_client(headers=headers, follow_redirects=True) as client:
         for page in range(1, int(cfg.get("max_pages", 1)) + 1):
             try:
-                results = client.get(endpoint, params={"sort_by": "date", "page": page}).json().get("results", [])
+                results = client.get(endpoint, params={"sort_by": "date", "page": page}).raise_for_status().json().get("results", [])
             except Exception as exc:
                 logger.warning("findwork page %d failed: %s", page, exc)
                 break
@@ -485,7 +485,7 @@ def gather_adzuna(cfg: dict[str, Any], logger) -> list[JobLink]:
                       "max_days_old": max_days, "sort_by": "date", "content-type": "application/json"}
             try:
                 results = client.get(f"https://api.adzuna.com/v1/api/jobs/{country}/search/1",
-                                     params=params).json().get("results", [])
+                                     params=params).raise_for_status().json().get("results", [])
             except Exception as exc:
                 logger.warning("adzuna %s failed: %s", country, exc)
                 continue
@@ -504,65 +504,6 @@ def gather_adzuna(cfg: dict[str, Any], logger) -> list[JobLink]:
                     source="adzuna", date_posted=iso,
                     snippet=_striptags(j.get("description")), is_remote=None,
                 ))
-    return out
-
-
-# ── Hacker News "Who is Hiring" ───────────────────────────────────────
-
-_HN_ALGOLIA = "https://hn.algolia.com/api/v1"
-
-
-def gather_hn_hiring(cfg: dict[str, Any], logger) -> list[JobLink]:
-    """Hacker News monthly 'Ask HN: Who is hiring?' thread, via the public Algolia API — unique
-    startup/company-direct roles that never hit the job boards. Each top-level comment is one
-    posting; the HN convention is a first line like 'Company | Role | Location | REMOTE | stack'.
-
-    We keep only comments that mention remote, and gate on the comment's
-    own created_at (a fresh comment = a fresh posting), so this behaves as a fresh-catcher on the
-    same 24h window as everything else. url is the comment permalink (the apply detail is in the
-    text — surfaced to the scorer/human)."""
-    max_age = cfg.get("max_age_hours", 24)
-    out: list[JobLink] = []
-    with make_shared_client() as client:
-        # 1. Find the latest "Who is hiring?" story (exclude "who wants to be hired").
-        try:
-            hits = client.get(f"{_HN_ALGOLIA}/search_by_date", params={
-                "tags": "story,author_whoishiring", "query": "who is hiring",
-                "hitsPerPage": 5}).json().get("hits", [])
-        except Exception as exc:
-            logger.warning("hn_hiring thread search failed: %s", exc)
-            return []
-        thread_id = next((h.get("objectID") for h in hits
-                          if "who is hiring" in (h.get("title") or "").lower()
-                          and "hired" not in (h.get("title") or "").lower()), None)
-        if not thread_id:
-            logger.info("hn_hiring: no current 'Who is hiring' thread found")
-            return []
-        # 2. Pull its top-level comments (each is a posting).
-        try:
-            children = client.get(f"{_HN_ALGOLIA}/items/{thread_id}").json().get("children", [])
-        except Exception as exc:
-            logger.warning("hn_hiring items fetch failed: %s", exc)
-            return []
-        for c in children:
-            text = _striptags(c.get("text"))
-            if not text or c.get("author") is None:
-                continue
-            iso = c.get("created_at")
-            if not is_within_hours(iso, max_age):
-                continue
-            low = text.lower()
-            if "remote" not in low:
-                continue
-            # First segment before '|' or newline is usually the company; the next is the role.
-            head = re.split(r"\||\n|–|—| - ", text, maxsplit=2)
-            company = head[0].strip()[:80] if head else ""
-            title = head[1].strip()[:120] if len(head) > 1 else (company or "HN: role")
-            out.append(JobLink(
-                url=f"https://news.ycombinator.com/item?id={c.get('id')}",
-                title=title, company=company, location="Remote", source="hn_hiring",
-                date_posted=iso, snippet=text, is_remote=True,
-            ))
     return out
 
 

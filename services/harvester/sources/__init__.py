@@ -2,73 +2,54 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from enum import StrEnum
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 from services.harvester.sources import ats, http_apis
 from services.harvester.sources.base import JobLink
 
 
-class Tier(StrEnum):
-    """Who pays for a fetch, and therefore which loop may run it. LinkedIn is its own pass
-    (`services.harvester.linkedin`), not a source here."""
-
-    SHARED = "shared"
-
-
 class Source(NamedTuple):
     key: str
     adapter: Callable[..., list[JobLink]]
-    tier: Tier
     needs_ats_repo: bool = False
 
 
-# Ordered as in the reference, so a diff against it stays readable.
+# Every board the shared run can read, each with its adapter: the ones on `libs.settings.HARVEST_SOURCES`, the
+# one list that says which are read. LinkedIn is a pass of its own (`services.harvester.linkedin`), through
+# the site proxy, and not a board here.
 REGISTRY: dict[str, Source] = {
     s.key: s for s in (
         # Direct company ATS boards: unproxied, and the only family reading harvested tokens and ETags.
-        Source("greenhouse", ats.gather_greenhouse, Tier.SHARED, needs_ats_repo=True),
-        Source("ashby", ats.gather_ashby, Tier.SHARED, needs_ats_repo=True),
-        Source("lever", ats.gather_lever, Tier.SHARED, needs_ats_repo=True),
-        Source("smartrecruiters", ats.gather_smartrecruiters, Tier.SHARED, needs_ats_repo=True),
-        Source("recruitee", ats.gather_recruitee, Tier.SHARED, needs_ats_repo=True),
-        Source("breezy", ats.gather_breezy, Tier.SHARED, needs_ats_repo=True),
-        Source("workday", ats.gather_workday, Tier.SHARED, needs_ats_repo=True),
-        Source("personio", ats.gather_personio, Tier.SHARED, needs_ats_repo=True),
-        Source("workable", ats.gather_workable, Tier.SHARED, needs_ats_repo=True),
+        Source("greenhouse", ats.gather_greenhouse, needs_ats_repo=True),
+        Source("ashby", ats.gather_ashby, needs_ats_repo=True),
+        Source("lever", ats.gather_lever, needs_ats_repo=True),
+        Source("smartrecruiters", ats.gather_smartrecruiters, needs_ats_repo=True),
+        Source("recruitee", ats.gather_recruitee, needs_ats_repo=True),
+        Source("breezy", ats.gather_breezy, needs_ats_repo=True),
+        Source("workday", ats.gather_workday, needs_ats_repo=True),
+        Source("personio", ats.gather_personio, needs_ats_repo=True),
+        Source("workable", ats.gather_workable, needs_ats_repo=True),
 
         # Board APIs — feed-shaped, so they need no query set at all (HARVESTER_PLAN.md §1).
-        Source("nofluffjobs", http_apis.gather_nofluffjobs, Tier.SHARED),
-        Source("nofluffjobs_hu", http_apis.gather_nofluffjobs, Tier.SHARED),
-        Source("profession", http_apis.gather_profession, Tier.SHARED),
-        Source("justjoinit", http_apis.gather_justjoinit, Tier.SHARED),
-        Source("himalayas", http_apis.gather_himalayas, Tier.SHARED),
-        Source("workingnomads", http_apis.gather_workingnomads, Tier.SHARED),
-        Source("jobicy", http_apis.gather_jobicy, Tier.SHARED),
-        Source("themuse", http_apis.gather_themuse, Tier.SHARED),
-        Source("findwork", http_apis.gather_findwork, Tier.SHARED),
-        Source("adzuna", http_apis.gather_adzuna, Tier.SHARED),
-        Source("hn_hiring", http_apis.gather_hn_hiring, Tier.SHARED),
+        Source("nofluffjobs", http_apis.gather_nofluffjobs),
+        Source("profession", http_apis.gather_profession),
+        Source("justjoinit", http_apis.gather_justjoinit),
+        Source("himalayas", http_apis.gather_himalayas),
+        Source("workingnomads", http_apis.gather_workingnomads),
+        Source("jobicy", http_apis.gather_jobicy),
+        Source("themuse", http_apis.gather_themuse),
+        Source("findwork", http_apis.gather_findwork),
+        Source("adzuna", http_apis.gather_adzuna),
     )
 }
-
-SHARED_SOURCES = tuple(s.key for s in REGISTRY.values() if s.tier is Tier.SHARED)
 
 # Outer fan-out cap, carried over from the 2026-07-24 CHANGELOG fix.
 OUTER_CONCURRENCY = 8
 
 
-def sources_for(tier: Tier) -> list[Source]:
-    """Every source belonging to one tier."""
-    return [s for s in REGISTRY.values() if s.tier is tier]
-
-
 __all__ = [
     "OUTER_CONCURRENCY",
     "REGISTRY",
-    "SHARED_SOURCES",
     "JobLink",
     "Source",
-    "Tier",
-    "sources_for",
 ]

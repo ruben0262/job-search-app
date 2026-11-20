@@ -150,6 +150,10 @@ STORED = (
            purpose="A Skip or Mark as applied you pressed while the connection was lost, until it reaches "
                    "us.",
            kept="Until it is sent"),
+    Stored(name="signed-in", kind="Browser storage", by="Mahoraga",
+           purpose="That this browser is signed in, and since when, so the site opens on the right page at "
+                   "once and your other tabs follow when you sign in or out.",
+           kept="Until you sign out or clear it"),
     Stored(name="install-later", kind="Browser storage (this tab)", by="Mahoraga",
            purpose="That you tapped Later on Get the app, so this visit does not ask again.",
            kept="Until you close the tab"),

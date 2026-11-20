@@ -19,31 +19,6 @@ PROXIED_HOSTS = ("linkedin.com",)
 DEFAULT_TIMEOUT = 25
 
 
-class MeteredClient(httpx.Client):
-    """An `httpx.Client` that counts what it has downloaded, for the log."""
-
-    def __init__(self, **kwargs: Any):
-        super().__init__(**kwargs)
-        self.bytes_downloaded = 0
-
-    @property
-    def megabytes_downloaded(self) -> float:
-        return self.bytes_downloaded / (1024 * 1024)
-
-    def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
-        """Meter every response, because the proxy bills on the wire rather than on success."""
-        response = super().send(request, **kwargs)
-        self.bytes_downloaded += _response_bytes(response)
-        return response
-
-
-def _response_bytes(response: httpx.Response) -> int:
-    """Bytes a response actually cost, headers included."""
-    body = getattr(response, "num_bytes_downloaded", 0) or len(response.content or b"")
-    headers = sum(len(k) + len(v) + 4 for k, v in response.headers.raw)
-    return int(body) + headers
-
-
 def _mounts(proxy_url: str,
             direct: httpx.BaseTransport | None = None) -> dict[str, httpx.BaseTransport]:
     """Route only `PROXIED_HOSTS` through the proxy; everything else via `direct`.
@@ -71,17 +46,17 @@ def _options(kwargs: dict[str, Any]) -> dict[str, Any]:
             "headers": headers}
 
 
-def make_shared_client(**kwargs: Any) -> MeteredClient:
+def make_shared_client(**kwargs: Any) -> httpx.Client:
     """The boards' client: every request direct."""
-    return MeteredClient(**_options(kwargs))
+    return httpx.Client(**_options(kwargs))
 
 
-def make_site_client(proxy_url: str, **kwargs: Any) -> MeteredClient:
+def make_site_client(proxy_url: str, **kwargs: Any) -> httpx.Client:
     """A client with the site proxy for `PROXIED_HOSTS` and every other host direct: describing the
     LinkedIn postings the searches stored."""
     opts = _options(kwargs)
     direct = opts.pop("transport", None)
-    return MeteredClient(mounts=_mounts(proxy_url, direct), **opts)
+    return httpx.Client(mounts=_mounts(proxy_url, direct), **opts)
 
 
 def is_proxied(url: str) -> bool:

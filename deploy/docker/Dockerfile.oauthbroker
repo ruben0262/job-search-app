@@ -48,8 +48,8 @@ COPY services/oauthbroker /app/services/oauthbroker
 #
 # Set by `deploy/compose.sh` to the uid that owns the checkout. `--non-unique`, so it may share a uid
 # with an account the base image already has.
-ARG BROKER_UID=1001
-RUN useradd --non-unique --create-home --uid ${BROKER_UID} broker && chown -R broker /app /home/broker
+ARG APP_UID=1001
+RUN useradd --non-unique --create-home --uid ${APP_UID} broker && chown -R broker /app /home/broker
 USER broker
 ENV HOME=/home/broker
 

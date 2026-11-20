@@ -35,7 +35,7 @@ from services.harvester.describe import SHARED_LIMIT as DESCRIBE_PER_CYCLE_DEFAU
 from services.harvester.describe import describe_pending
 from services.harvester.fetch import make_shared_client
 from services.harvester.source_config import ATS_SOURCES, union_locations
-from services.harvester.sources import OUTER_CONCURRENCY, JobLink, Source, Tier, sources_for
+from services.harvester.sources import OUTER_CONCURRENCY, REGISTRY, JobLink, Source
 from services.harvester.sources.ats import FETCHERS, spellings
 
 logger = logging.getLogger(__name__)
@@ -206,7 +206,7 @@ def _warn_if_near_budget(elapsed: float, report: CycleReport) -> None:
 def _gather(source_configs: dict[str, dict], ats: AtsRepository,
             run_source: Callable[..., list[JobLink]], report: CycleReport) -> list[JobLink]:
     """Run every enabled shared source concurrently."""
-    shared = [s for s in sources_for(Tier.SHARED) if source_configs.get(s.key, {}).get("enabled")]
+    shared = [s for s in REGISTRY.values() if source_configs.get(s.key, {}).get("enabled")]
     links: list[JobLink] = []
     if not shared:
         # Every source disabled looks exactly like every source finding nothing.

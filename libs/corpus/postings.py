@@ -700,6 +700,13 @@ def fetch_meta(url: str, *, client: httpx.Client, stats: dict | None = None) -> 
             out["application_url"] = parse_application_url(response.text, client)
             tally("li_ok")
             return out
+        if response.status_code in TERMINAL_STATUSES:
+            # Gone, as the harvest's own read takes these answers (`_fetch_linkedin`): no other address
+            # brings it back. It was asked for six times, two seconds apart, with the person waiting for
+            # their CV, and the CV then written for a job that is not there (2026-11-20).
+            out["accepting"] = False
+            tally(f"li_http_{response.status_code}")
+            return out
         tally(f"li_http_{response.status_code}" if response.status_code != 200 else "li_empty")
         time.sleep(LI_BACKOFF)
 

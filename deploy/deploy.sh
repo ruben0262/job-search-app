@@ -52,6 +52,16 @@ say "Building"
 # shellcheck disable=SC2086
 $COMPOSE build $SERVICES api
 
+# The services ran as root until 2026-11-20, and what they wrote to logs/ and archive/ is root's: the
+# account they run as now could not add to it. Handed over by a container, as root there, since that account
+# cannot take a file of root's itself. Only when something in them is somebody else's.
+OWNER=$(stat -c %u .)
+if [ -n "$(find logs archive ! -user "$OWNER" -print -quit)" ]; then
+  say "Ownership of logs/ and archive/"
+  $COMPOSE run --rm --no-deps --user root --entrypoint chown harvester \
+    -R "$OWNER" /var/log/jobsearch /var/lib/jobsearch/archive
+fi
+
 say "Schema"
 # In the image just built, against MongoDB, **before anything restarts**: a rule or index the database
 # refuses stops the deploy here instead of a service at start-up (`libs/db/__main__.py`).

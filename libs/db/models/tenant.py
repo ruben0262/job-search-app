@@ -27,6 +27,9 @@ class UserJobState(Document):
     alerted_at: datetime | None = None
     alerts: list[int] = field(default_factory=list)
     notified_at: datetime | None = None
+    # When it went to the bell and their phones, for a job that goes to Telegram as well: Telegram is the
+    # one that can fail, the job is then sent again, and what went the first time is not (`deliver._send`).
+    pushed_at: datetime | None = None
     applied_at: datetime | None = None
     cover_built: bool = False
     dismissed_at: datetime | None = None

@@ -2,7 +2,7 @@
  * once, as it was, and is brought up to date behind that. Without it every tab drew empty and filled a
  * moment later (owner, 2026-11-03). The one cache in the site, keyed by address, and forgotten on
  * sign-out, or the next account would see this one's. */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "./api";
 
@@ -14,6 +14,9 @@ const fresh = new EventTarget();
 // own. A page's read and the read-ahead of the same address went out side by side, and an account's page
 // once for every time the pointer came back to its row.
 const asking = new Map<string, Promise<unknown>>();
+// How many times a page changed each address's answer itself (`set`): an answer asked for before a change is
+// older than the change, and is dropped when it comes.
+const changes = new Map<string, number>();
 
 function ask<T>(path: string): Promise<T> {
   const underWay = asking.get(path) as Promise<T> | undefined;
@@ -36,27 +39,38 @@ export function keep<T>(path: string, value: T): void {
  * what is kept, for a page that changed it itself; `reload` asks again. `first` is what must reach the
  * server before the answer is asked for, so the answer already has it. */
 export function useKept<T>(path: string, first?: () => Promise<unknown>) {
-  const [data, setData] = useState<T | null>(() => peek<T>(path));
-  const [failed, setFailed] = useState(false);
+  // What is drawn, with the address it was read from. Asked for another address, what is drawn is that
+  // address's own last answer, never the one before's: an account's page drew the last account under the next
+  // one's address, with switches that acted on the next one, until its read landed.
+  const [held, setHeld] = useState(() => ({ path, data: peek<T>(path), failed: false }));
+  const { data, failed } = held.path === path ? held : { data: peek<T>(path), failed: false };
+  const drawn = useRef(data);
+  drawn.current = data;
   // After `first`, the answer is asked for afresh: one already on its way was asked before `first` arrived.
-  const reload = useCallback(() => (first ? first().then(() => api.get<T>(path)) : ask<T>(path)).then((answer) => {
-    kept.set(path, answer);
-    setFailed(false);
-    fresh.dispatchEvent(new Event(path));
-  }).catch(() => setFailed(true)), [path, first]);
+  const reload = useCallback(() => {
+    const before = changes.get(path);
+    return (first ? first().then(() => api.get<T>(path)) : ask<T>(path)).then((answer) => {
+      if (changes.get(path) !== before) return;
+      kept.set(path, answer);
+      fresh.dispatchEvent(new Event(path));
+    }).catch(() => setHeld({ path, data: peek<T>(path), failed: true }));
+  }, [path, first]);
   useEffect(() => {
-    const again = () => setData(peek<T>(path));
+    const again = () => setHeld({ path, data: peek<T>(path), failed: false });
     fresh.addEventListener(path, again);
     return () => fresh.removeEventListener(path, again);
   }, [path]);
   useEffect(() => {
     void reload();
   }, [reload]);
-  const set = useCallback((next: (now: T | null) => T | null) => setData((now) => {
-    const value = next(now);
-    kept.set(path, value);
-    return value;
-  }), [path]);
+  // Every page drawing this address draws the change, this one among them: one page's change stayed its own,
+  // and another part of the same screen went on showing what was there before.
+  const set = useCallback((next: (now: T | null) => T | null) => {
+    drawn.current = next(drawn.current);
+    kept.set(path, drawn.current);
+    changes.set(path, (changes.get(path) ?? 0) + 1);
+    fresh.dispatchEvent(new Event(path));
+  }, [path]);
   return { data, set, reload, failed };
 }
 
@@ -70,4 +84,5 @@ export function readAhead(paths: string[]): void {
 
 export function forgetKept(): void {
   kept.clear();
+  changes.clear();
 }

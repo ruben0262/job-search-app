@@ -25,6 +25,10 @@ type Ask = Schema<"BuildRequest">;
 
 /** How often a document being made is asked about. Under a second, so "ready" shows as it happens. */
 const POLL_MS = 800;
+/** And how often once it has been asked about for longer than any document takes to make (a CV is done in
+ * under 20 s): one stuck in the queue was asked about every 800 ms for as long as a tab stayed open. */
+const SLOW_AFTER_MS = 60_000;
+const SLOW_POLL_MS = 10_000;
 
 const NAME: Record<Ask["kind"], string> = { cv: "CV", cover: "cover letter" };
 
@@ -42,10 +46,13 @@ const subscribe = (listener: () => void) => {
   return () => void listeners.delete(listener);
 };
 const keyOf = (jobId: number, kind: Ask["kind"]) => `${jobId}:${kind}`;
+/** When the builds being made now were first asked about; 0 while none is. */
+let since = 0;
 const making = (build: Build | null | undefined) => build?.state === "queued" || build?.state === "building";
 
 function changed(next: Map<string, Build>): void {
   builds = next;
+  if (![...next.values()].some(making)) since = 0;
   listeners.forEach((listener) => listener());
 }
 
@@ -58,10 +65,12 @@ function put(build: Build): void {
   else if (making(was) && was?.id === build.id) finished(build);
 }
 
-/** One timer asks about every build being made, until none is. */
+/** One timer asks about every build being made, until none is: while the tab is looked at, and again as it
+ * is looked at again. A tab in the background asks nothing, and hears what happened when it comes back. */
 let timer = 0;
 function poll(): void {
-  if (timer) return;
+  if (timer || document.visibilityState !== "visible" || ![...builds.values()].some(making)) return;
+  since ||= Date.now();
   timer = window.setTimeout(() => {
     timer = 0;
     for (const build of builds.values()) {
@@ -72,8 +81,9 @@ function poll(): void {
         else poll();
       });
     }
-  }, POLL_MS);
+  }, Date.now() - since < SLOW_AFTER_MS ? POLL_MS : SLOW_POLL_MS);
 }
+document.addEventListener("visibilitychange", poll);
 
 function finished(build: Build): void {
   // Refused, or kept with no room for it: the server says so in the bell as well.

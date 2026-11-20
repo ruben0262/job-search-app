@@ -55,7 +55,6 @@ class LinkedIn:
         self.refuse_every, self.connections = refuse_every, 0
         self.asked: list[dict] = []
         self.opened: list[str] = []
-        self.megabytes_downloaded = 0.0
 
     def __call__(self, _proxy):
         return self

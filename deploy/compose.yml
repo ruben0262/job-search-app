@@ -17,6 +17,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.harvester
+      args:
+        APP_UID: ${APP_UID:-1001}
     profiles: ["tools"]
     environment:
       MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
@@ -63,6 +65,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.harvester
+      args:
+        APP_UID: ${APP_UID:-1001}
     entrypoint: ["python", "-m", "services.harvester.describer"]
     profiles: ["full"]
     restart: always
@@ -85,6 +89,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.seed-ats
+      args:
+        APP_UID: ${APP_UID:-1001}
     profiles: ["tools"]
     environment:
       MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
@@ -119,6 +125,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.docgen
+      args:
+        APP_UID: ${APP_UID:-1001}
     profiles: ["full"]
     environment:
       MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
@@ -132,6 +140,14 @@ services:
       WORKER_NAME: docgen-1
     volumes:
       - ../logs:/var/log/jobsearch
+    # Where a person's AI sign-in is unpacked for the call that uses it (`libs.llm.cli`): in memory, so a
+    # worker killed mid-call leaves none of it on a disk that the restarted container would still hold.
+    tmpfs:
+      - /tmp
+    # A document takes a minute or more and the call writing it up to four (`libs.llm`): stopped at
+    # Docker's ten seconds, a deploy threw away a draft the person's own AI plan had paid for, and the
+    # retry paid again. The worker finishes the job in hand and stops (`libs.queue.worker`).
+    stop_grace_period: 5m
     restart: always
     mem_limit: 1500m
     cpus: 2
@@ -142,6 +158,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.notifier
+      args:
+        APP_UID: ${APP_UID:-1001}
     profiles: ["full"]
     environment:
       MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
@@ -174,6 +192,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.api
+      args:
+        APP_UID: ${APP_UID:-1001}
     profiles: ["full"]
     networks:
       default:
@@ -200,9 +220,12 @@ services:
       ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       SMTP_HOST: ${SMTP_HOST:-}
+      # As the notifier is given them: a port or a cap changed in `server.env` reached one of the two.
+      SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_DAILY_CAP: ${MAIL_DAILY_CAP:-400}
       # **Every emailed link is built from this.** Absent, `_base_url` falls back to
       # `http://localhost:8000` and every verification and reset mail sends the user to their own
       # machine — which is what happened in production until 2026-07-30: the variable was in
@@ -244,8 +267,9 @@ services:
       context: ..
       dockerfile: deploy/docker/Dockerfile.oauthbroker
       args:
-        # The account that owns logs/, so the broker's audit lines are written (deploy/compose.sh).
-        BROKER_UID: ${BROKER_UID:-1001}
+        # The account that owns logs/, so the broker's audit lines are written (deploy/compose.sh): the
+        # account every service here runs as.
+        APP_UID: ${APP_UID:-1001}
     profiles: ["full"]
     environment:
       LOG_DIR: /var/log/jobsearch
@@ -266,7 +290,9 @@ services:
   # the Cloudflare dashboard rather than in a file here. That split is worth knowing when something
   # is unreachable — half the configuration is not in this repository.
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    # A version, not `latest`: it holds the tunnel's token, and `latest` was whatever had been published
+    # by the day the server last pulled. To move it, name the new release here and deploy.
+    image: cloudflare/cloudflared:2026.11.1
     command: tunnel --no-autoupdate run
     profiles: ["full"]
     environment:

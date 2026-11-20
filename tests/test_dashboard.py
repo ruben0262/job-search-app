@@ -331,6 +331,49 @@ def test_the_new_jobs_count_is_what_a_refresh_adds_less_the_jobs_that_left_meanw
     assert jobs[0].id not in _ids(after)
 
 
+def test_a_page_asks_for_the_account_its_plan_and_the_platforms_windows_once_each(api):
+    """**A relationship, not a stopwatch.** The Jobs page asked what plan the account is on three times over
+    and the platform's windows twice, and the front page read the account twice and its plan three times: 18
+    and 9 questions for what 13 and 6 answer (2026-11-20). However a page is built, the account is read once,
+    its plan once (two questions, a member and which), and the windows once (two settings)."""
+    from collections import Counter
+
+    from pymongo import MongoClient, monitoring
+
+    from services.api.app import app
+    from services.api.deps import get_db
+
+    http, db, _user, _jobs = api
+    asked: Counter = Counter()
+
+    class Reads(monitoring.CommandListener):
+        def started(self, event):
+            if event.command_name in ("find", "aggregate", "count", "distinct"):
+                asked[str(event.command.get(event.command_name))] += 1
+
+        def succeeded(self, event): ...
+
+        def failed(self, event): ...
+
+    # A client of its own, made with the counter: a listener registered later never sees an existing one.
+    counted = MongoClient(os.environ["MONGODB_URI"], uuidRepresentation="standard", tz_aware=True,
+                          event_listeners=[Reads()])[db.name]
+    app.dependency_overrides[get_db] = lambda: counted
+    try:
+        assert http.get("/feed").status_code == 200
+        feed = Counter(asked)
+        asked.clear()
+        assert http.get("/dashboard").status_code == 200
+        front = Counter(asked)
+    finally:
+        app.dependency_overrides.pop(get_db)
+        counted.client.close()
+
+    assert feed["corpus"] > 0, "the premise: the counter sees the page's questions"
+    assert (feed["users"], feed["platform_settings"]) == (3, 2)
+    assert front["users"] == 3
+
+
 def test_the_minutes_count_of_new_jobs_brings_the_numbers_and_no_job(api, monkeypatch):
     """Every open Jobs page asks once a minute how many jobs are new. It was asked as a page of one job: the
     job read with its text and documents, every job of the list scored, and each filter's counts made, to

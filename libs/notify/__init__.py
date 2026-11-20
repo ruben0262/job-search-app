@@ -73,8 +73,8 @@ def sent_today(db: Database, user_id: _uuid.UUID) -> int:
 
 def owed(db: Database, user_id: _uuid.UUID) -> list[dict]:
     """What their alerts caught (`libs.alerts.route`) and the notifier has not sent yet, in the order it was
-    caught, which is the order it is sent in: `{"job_id": ..., "alerts": [...]}` each. One definition, read
-    by the notifier."""
+    caught, which is the order it is sent in: `{"job_id": ..., "alerts": [...]}` each, and `pushed_at` where
+    part of it went already. One definition, read by the notifier."""
     return list(db[UserJobState.COLLECTION].find(
         {"user_id": user_id, "alerted_at": {"$ne": None}, "notified_at": None},
-        {"_id": 0, "job_id": 1, "alerts": 1}, sort=[("alerted_at", 1), ("job_id", 1)]))
+        {"_id": 0, "job_id": 1, "alerts": 1, "pushed_at": 1}, sort=[("alerted_at", 1), ("job_id", 1)]))

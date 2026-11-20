@@ -16,8 +16,9 @@ if [ ! -r "$ENV_FILE" ]; then
   exit 1
 fi
 
-# The Claude sign-in broker runs as the account that owns the checkout, so it can write to logs/
-# (Dockerfile.oauthbroker). Read off the directory, so it is right under sudo and systemd too.
-export BROKER_UID="${BROKER_UID:-$(stat -c %u "$ROOT")}"
+# Every service runs as the account that owns the checkout, so it can write to logs/ and archive/ and to
+# nothing else of the server's (the Dockerfiles' `APP_UID`). Read off the directory, so it is right under
+# sudo and systemd too.
+export APP_UID="${APP_UID:-$(stat -c %u "$ROOT")}"
 
 exec docker compose --env-file "$ENV_FILE" -f "$ROOT/deploy/compose.yml" -p job-search-platform "$@"

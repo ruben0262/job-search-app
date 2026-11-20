@@ -41,7 +41,9 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 
 # Dependencies first, so a code change does not re-resolve them.
 COPY services/docgen/requirements.txt /app/services/docgen/requirements.txt
-RUN pip install --no-cache-dir -r /app/services/docgen/requirements.txt
+# At the versions the gates ran on (`scripts/pin_runtime.py`), not whatever is newest today.
+COPY deploy/docker/constraints.txt /tmp/constraints.txt
+RUN pip install --no-cache-dir -c /tmp/constraints.txt -r /app/services/docgen/requirements.txt
 
 # libs/ AND services/docgen/, because the boundary rule is services -> libs. The CV template and the
 # SACRED prompts arrive with libs/, which is what keeps one copy of them on the platform.
@@ -50,6 +52,14 @@ COPY services/__init__.py /app/services/__init__.py
 COPY services/docgen /app/services/docgen
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+# Not as root: whatever goes wrong in here is the account that owns the checkout's logs, and no more. Its id
+# is that account's (`deploy/compose.sh`), so what it writes to the folders the server lends it is the
+# owner's to read. The code stays root's, which this account can read and not change.
+ARG APP_UID=1001
+RUN useradd --non-unique --create-home --uid ${APP_UID} app
+USER app
+ENV HOME=/home/app
 
 # A generated document never touches this container's disk (D9): Chrome is handed the HTML and hands
 # back the PDF over its DevTools pipe, and the bytes wait in MongoDB for their download.

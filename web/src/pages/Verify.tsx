@@ -24,7 +24,9 @@ export function Verify({ onDone }: { onDone: () => void | Promise<void> }) {
       // The session first, then the route, exactly as signing in does: straight into the app.
       .then(async () => {
         await onDone();
-        window.location.hash = planAsked() === "free" ? "/" : `/?plan=${planAsked()}`;
+        // In the link's place, not after it: the token works once, and Back led to it again, to say "That
+        // link did not work" to somebody it had just signed in.
+        window.location.replace(planAsked() === "free" ? "#/" : `#/?plan=${planAsked()}`);
       })
       .catch((error: unknown) => {
         setFailed(error instanceof ApiError ? error.detail : "That link did not work.");

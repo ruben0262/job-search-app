@@ -1042,6 +1042,74 @@ def test_the_admin_chart_counts_every_job_board_at_first_and_only_those_ticked(s
         browser.close()
 
 
+def test_no_page_of_the_site_asks_for_anything_its_own_policy_refuses(site, capsys):
+    """The site tells every browser what a page of it may load and run (`services/api/guard.py`), and a
+    browser refuses the rest without a word to anybody but its console: a script the page wrote into itself,
+    a picture from somewhere not named. Every place is walked, signed out and in, a look's picture drawn and
+    an admin's tabs opened, and no browser was given cause to refuse anything (2026-11-20)."""
+    from libs.db import database
+
+    base, email, _ = site
+    refused: list[str] = []
+    asking: set = set()
+
+    def heard(message) -> None:
+        if "Content Security Policy" in message.text or "Refused to" in message.text:
+            refused.append(message.text)
+
+    def asked(request) -> None:
+        # Not the Pipeline tab's stream, which is held open for as long as the tab is.
+        if not request.url.endswith("/admin/pipeline/stream"):
+            asking.add(request)
+
+    def answered(request) -> None:
+        asking.discard(request)
+
+    def left(frame) -> None:
+        if frame.parent_frame is None:
+            asking.clear()
+
+    def drawn(page) -> None:
+        """Until the page has asked for everything it is going to and has had it: nothing on its way, three
+        looks running, a twentieth of a second apart. At most ten seconds, which fails here and not later."""
+        quiet = 0
+        for _ in range(200):
+            page.wait_for_timeout(50)
+            quiet = 0 if asking else quiet + 1
+            if quiet == 3:
+                return
+        raise AssertionError(f"still waiting on {sorted(request.url for request in asking)}")
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        page.on("console", heard)
+        page.on("request", asked)
+        page.on("requestfinished", answered)
+        page.on("requestfailed", answered)
+        # A page loaded again drops what the last one was waiting for, and nothing says so of each.
+        page.on("framenavigated", left)
+        page.goto(f"{base}/")
+        expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+        for place in ("signin", "privacy", "terms"):
+            page.goto(f"{base}/#/{place}")
+            drawn(page)
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
+        page.reload()
+        for place in ("", "applied", "words", "alerts", "documents", "settings", "upgrade", "add",
+                      "bookmarks", "admin/health", "admin/settings", "admin/corpus", "admin/latency",
+                      "admin/accounts", "admin/subscriptions", "admin/outcomes", "admin/messages",
+                      "admin/pipeline"):
+            page.goto(f"{base}/#/{place}")
+            drawn(page)
+        expect(page.get_by_text("Found and stored")).to_be_visible()
+        browser.close()
+
+    assert refused == []
+
+
 def test_admins_accounts_come_a_page_at_a_time_and_an_address_finds_one(site, capsys):
     """Every account was read and drawn on each open of Admin, whichever tab was asked for. The Accounts tab
     reads a page of them, says how many there are, and finds one by a piece of its address (2026-11-20)."""
@@ -3038,3 +3106,468 @@ def _notifications_asked_by_the_alert(page, mine, form, monkeypatch) -> None:
 def _fits(page) -> None:
     """Nothing wider than the screen: a phone scrolls down, never across."""
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "the page scrolls sideways"
+
+
+# ── what the review of 2026-11-20 found in the pages themselves ─────────────────────────────────────────────
+
+def _path(url: str) -> str:
+    return urlparse(url).path
+
+
+def _drawn(page) -> None:
+    """Two frames on: whatever an answer changed has been drawn."""
+    page.evaluate("() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))")
+
+
+def _someone(playwright, site, capsys, *, width: int = 1280, height: int = 900):
+    """Somebody new, set up and on their Jobs page, in a browser of their own."""
+    base, email, _ = site
+    browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+    context = browser.new_context(viewport={"width": width, "height": height})
+    page = context.new_page()
+    _sign_up(page, base, email, capsys)
+    _onboard(page)
+    expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+    return browser, context, page
+
+
+def _holding(held: list):
+    """A request kept unanswered, to be answered when the test says. A function of our own: the browser's
+    driver refuses a builtin (`list.append`) as a handler."""
+    def hold(route) -> None:
+        held.append(route)
+    return hold
+
+
+def _card(page, title: str):
+    return page.locator("article.job-card").filter(has=page.get_by_role("button", name=title, exact=True))
+
+
+def _skip(page, title: str) -> None:
+    _card(page, title).get_by_role("button", name="Skip").click()
+    page.get_by_role("dialog", name="Skip this job?").get_by_role("button", name="Skip it").click()
+
+
+def test_a_visitor_is_shown_the_landing_page_before_the_server_has_said_a_word(site):
+    """The page that sells was drawn only after two answers in a row, `/dashboard` refused and then the
+    sign-in renewed and refused: two round trips of "Loading…" for somebody who has never signed in. A browser
+    nobody was signed in on is shown it at once, and the server is asked behind it (`session.ts`)."""
+    base, _, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_page()
+        held = []
+        page.route("**/dashboard", _holding(held))
+
+        page.goto(base)
+
+        expect(page.locator(".landing")).to_be_visible()
+        assert held, "the premise: the server was asked who this is, and has not answered"
+        browser.close()
+
+
+def test_a_session_that_cannot_be_renewed_just_now_is_not_read_as_signed_out(site, capsys):
+    """Only the server's own "no" is signed out. With the connection gone as the 15-minute pass ran out, the
+    renewal failed, the failure was read as that "no", and somebody signed in was shown the landing page,
+    their marks kept for a lost connection thrown away with the session. It is said as what it is, and tried
+    again.
+    And while the server has not answered, somebody who was signed in is not shown the landing page."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser, context, page = _someone(playwright, site, capsys)
+        page.goto(f"{base}/#/settings")
+        expect(page.get_by_text(email)).to_be_visible()
+
+        context.clear_cookies(name="access_token")
+        page.route("**/auth/refresh", lambda route: route.abort())
+        page.reload()
+
+        expect(page.get_by_text("Mahoraga can't be reached right now.")).to_be_visible()
+        expect(page.locator(".landing")).to_have_count(0)
+
+        page.unroute("**/auth/refresh")
+        page.get_by_role("button", name="Try again").click()
+        expect(page.get_by_text(email)).to_be_visible()
+
+        held = []
+        page.route("**/dashboard", _holding(held))
+        page.reload()
+        expect(page.get_by_text("Loading…")).to_be_visible()
+        assert held, "the premise: the server has not answered"
+        expect(page.locator(".landing")).to_have_count(0)
+        browser.close()
+
+
+def test_a_tab_follows_whoever_is_signed_in_from_another_tab(site, capsys):
+    """One browser, two tabs. Signing out in one left the other drawing the account's pages, and signing in as
+    somebody else left it drawing the first account's, from what it had kept, until it was next looked at and
+    then for a moment more. A tab is told when another signs out or in, forgets what it kept, and asks the
+    server who it is for now. This one is never touched after it opens."""
+    base, email, _ = site
+    other = f"sam.{uuid.uuid4().hex[:8]}@example.com"
+    with sync_api.sync_playwright() as playwright:
+        browser, context, first = _someone(playwright, site, capsys)
+        first.goto(f"{base}/#/settings")
+        expect(first.get_by_text(email)).to_be_visible()
+
+        second = context.new_page()
+        second.goto(f"{base}/#/settings")
+        second.get_by_role("button", name="Sign out").click()
+        expect(second.locator(".landing")).to_be_visible()
+
+        expect(first.locator(".landing")).to_be_visible()
+        expect(first.get_by_text(email)).to_have_count(0)
+
+        second.goto(f"{base}/#/signup")
+        _fill_sign_up(second, other)
+        second.goto(_emailed(capsys, "verify"))
+        expect(second.get_by_role("heading", name="Choose your plan")).to_be_visible()
+
+        expect(first.get_by_role("heading", name="Choose your plan")).to_be_visible()
+        browser.close()
+
+
+def test_a_slow_answer_to_an_earlier_search_is_not_drawn_over_a_newer_one(site, capsys):
+    """Two reads under way, and whichever answered last was drawn: the list of the search before, under the
+    words of the search now, with its count. The newest read is the one drawn, however late an older one
+    answers."""
+    with sync_api.sync_playwright() as playwright:
+        browser, _, page = _someone(playwright, site, capsys)
+        held = []
+        page.route(lambda url: _path(url) == "/feed" and "q=nurse" in url, _holding(held))
+        search = page.get_by_label("Search your jobs")
+
+        with page.expect_request(lambda request: "q=nurse" in request.url):
+            search.fill("nurse")
+        with page.expect_response(lambda response: "q=senior" in response.url):
+            search.fill("senior")
+        expect(page.locator("article.job-card")).to_have_count(1)
+        expect(_card(page, TITLES[1])).to_be_visible()
+
+        assert held, "the premise: the earlier search is still unanswered"
+        with page.expect_response(lambda response: "q=nurse" in response.url):
+            held[0].continue_()
+        _drawn(page)
+
+        expect(_card(page, TITLES[1])).to_be_visible()
+        expect(page.locator("article.job-card")).to_have_count(1)
+        browser.close()
+
+
+def test_a_job_skipped_is_not_drawn_again_from_the_list_read_before_it_was(site, capsys):
+    """Jobs draws at once from what it read last, and that list still had the job just skipped: back on Jobs
+    it was there again until a fresh answer came, and with no connection for good. Marked, a job leaves the
+    kept list too. The server is kept from answering here, so what is drawn is what was kept."""
+    base, _, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser, _, page = _someone(playwright, site, capsys)
+        with page.expect_response(lambda response: "/hidden" in response.url):
+            _skip(page, TITLES[1])
+        expect(page.locator("article.job-card")).to_have_count(1)
+        held = []
+        page.route(lambda url: _path(url) == "/feed", _holding(held))
+
+        page.goto(f"{base}/#/settings")
+        expect(page.get_by_role("button", name="Sign out")).to_be_visible()
+        page.goto(f"{base}/#/")
+
+        expect(_card(page, TITLES[0])).to_be_visible()
+        assert held, "the premise: the list on the page is the one kept, the server has not answered"
+        expect(_card(page, TITLES[1])).to_have_count(0)
+        expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()
+        browser.close()
+
+
+def test_another_page_opens_at_its_top_and_back_returns_to_where_the_last_one_was(site, capsys):
+    """An address here names a page, not a part of one, so the browser left a new page scrolled as far down
+    as the last one was: Settings opened at its middle. Another page starts at its top. Going back is the
+    browser's own to put right, and is left to it."""
+    with sync_api.sync_playwright() as playwright:
+        browser, _, page = _someone(playwright, site, capsys, width=1280, height=420)
+        page.evaluate("window.scrollTo(0, 260)")
+        assert page.evaluate("scrollY") == 260, "the premise: Jobs is long enough to be scrolled"
+
+        page.locator("nav .places a", has_text="Settings").click()
+        expect(page.get_by_role("button", name="Sign out")).to_be_attached()
+        page.wait_for_function("scrollY === 0", timeout=5000)
+
+        page.go_back()
+        expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+        page.wait_for_function("scrollY === 260", timeout=5000)
+        browser.close()
+
+
+def test_the_other_tabs_are_read_ahead_after_the_jobs_list_has_its_answer(site, capsys):
+    """Jobs is where everybody lands, and its list was the last of some eighteen requests to leave, behind
+    reads that open a hundred postings or parse a CV. What the other tabs read ahead waits for the list's
+    first answer, and is still all there: each tab is drawn whole the moment it is opened."""
+    with sync_api.sync_playwright() as playwright:
+        browser, _, page = _someone(playwright, site, capsys)
+        sent: list[str] = []
+        ahead = {"/applied", "/alerts", "/documents", "/templates", "/account", "/jobs/bookmarked"}
+        page.on("request", lambda request: sent.append(_path(request.url)))
+        held = []
+        page.route(lambda url: _path(url) == "/feed", _holding(held))
+
+        with page.expect_response(lambda response: _path(response.url) == "/notifications"):
+            page.reload()
+        _drawn(page)
+        assert held, "the premise: the list has been asked for and not answered"
+        assert not ahead & set(sent), sorted(ahead & set(sent))
+
+        with page.expect_response(lambda response: _path(response.url) == "/templates"):
+            for route in held:
+                route.continue_()
+        assert ahead <= set(sent), sorted(ahead - set(sent))
+        browser.close()
+
+
+def test_a_link_from_an_email_is_out_of_the_address_once_it_is_used(site, capsys):
+    """Both links work once. The confirmation link stayed in the history, so Back led to it again and told
+    somebody it had just signed in "That link did not work"; the reset link stayed in the address bar after
+    the password was set, for a bookmark or a shared screen to keep."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_page()
+        page.goto(f"{base}/#/signup")
+        _fill_sign_up(page, email)
+        page.goto(_emailed(capsys, "verify"))
+        expect(page.get_by_role("heading", name="Choose your plan")).to_be_visible()
+        assert "token=" not in page.url
+
+        page.go_back()
+        _drawn(page)
+        assert "token=" not in page.url
+        expect(page.get_by_role("heading", name="That link did not work")).to_have_count(0)
+
+        page.goto(f"{base}/#/forgot")
+        page.get_by_label("Email").fill(email)
+        page.get_by_role("button", name="Send reset link").click()
+        page.goto(_emailed(capsys, "reset"))
+        page.get_by_label(re.compile(r"^New password")).fill("a-new-pass-phrase-7")
+        page.get_by_label("Confirm new password").fill("a-new-pass-phrase-7")
+        page.get_by_role("button", name="Set password").click()
+        expect(page.get_by_role("heading", name="Password reset")).to_be_visible()
+        assert "token=" not in page.url
+        browser.close()
+
+
+# A browser that will not store: what a private window may be.
+REFUSES_TO_STORE = ("Storage.prototype.setItem = () => "
+                    "{ throw new DOMException('refused', 'QuotaExceededError'); };")
+
+
+def test_a_browser_that_will_not_store_anything_still_sends_a_skipped_job(site, capsys):
+    """A private window can refuse to store. A skipped job was put in storage and sent from storage, so there
+    it was never sent at all, and the job came back with the next read. It is sent all the same, and kept for
+    as long as the tab is."""
+    with sync_api.sync_playwright() as playwright:
+        browser, context, page = _someone(playwright, site, capsys)
+        context.add_init_script(REFUSES_TO_STORE)
+        page.reload()
+        expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+
+        with page.expect_response(lambda response: "/hidden" in response.url, timeout=5000) as sent:
+            _skip(page, TITLES[1])
+        assert sent.value.ok
+        page.reload()
+        expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()
+        browser.close()
+
+
+def test_a_browser_that_will_not_store_anything_still_switches_the_theme(site):
+    """And the theme: storing the choice threw in the middle of the switch, which stopped half made, the page
+    in the new theme and its button still offering it. It is switched for the visit."""
+    base, _, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        context = browser.new_context(viewport={"width": 1280, "height": 900})
+        context.add_init_script(REFUSES_TO_STORE)
+        page = context.new_page()
+        page.goto(base)
+
+        page.get_by_role("button", name="Switch to light mode").first.click()
+
+        expect(page.locator("html")).to_have_attribute("data-theme", "light")
+        expect(page.get_by_role("button", name="Switch to dark mode").first).to_be_visible()
+        browser.close()
+
+
+def test_a_tab_nobody_is_looking_at_asks_the_server_nothing(site, capsys):
+    """The bell asked every minute and a document being made every 800 ms, in every tab left open, looked at
+    or not, all day. Neither asks while its tab is hidden, and each asks at once when it is looked at again.
+    The clock is the test's, so five minutes pass in a moment and none is waited for."""
+    from libs.db import database, insert, now
+    from libs.db.models import QueueJob
+
+    _, email, ids = site
+    with sync_api.sync_playwright() as playwright:
+        browser, _, page = _someone(playwright, site, capsys)
+        db = database()
+        user = db.users.find_one({"email": email})["_id"]
+        # A CV being written, as a worker elsewhere holds it: this test's own worker leaves it be.
+        job = ids[TITLES[0]]
+        insert(db, QueueJob(lane="docgen", user_id=user, dedup_key=f"ai:cv:{job}", state="claimed",
+                            payload={"job_id": job, "kind": "cv", "mode": "ai"}, claimed_at=now(),
+                            claimed_by="elsewhere"))
+        page.clock.install()
+        page.reload()
+        expect(page.locator(".making-now")).to_be_visible()
+        with page.expect_request(lambda request: "/documents/build/" in request.url):
+            page.clock.run_for(1000)
+
+        page.evaluate("""() => {
+          Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+          document.dispatchEvent(new Event("visibilitychange"));
+        }""")
+        page.clock.run_for(2000)  # whatever was already on its way is answered and done with
+        asked: list[str] = []
+        page.on("request", lambda request: asked.append(_path(request.url)))
+        page.clock.run_for(5 * 60 * 1000)
+        _drawn(page)
+        assert not [path for path in asked if path == "/notifications" or "/documents/build/" in path], asked
+
+        with page.expect_request(lambda request: _path(request.url) == "/notifications"):
+            page.evaluate("""() => {
+              delete document.visibilityState;
+              document.dispatchEvent(new Event("visibilitychange"));
+            }""")
+        with page.expect_request(lambda request: "/documents/build/" in request.url):
+            page.clock.run_for(1000)
+        browser.close()
+
+
+def test_a_look_just_picked_is_not_undone_by_an_answer_asked_for_before_it(site, capsys):
+    """A page asks for its read as it opens and may be changed before the answer comes. The answer, older than
+    the change, was drawn over it: the look just picked went back to the one before, though it was saved."""
+    base, _, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser, _, page = _someone(playwright, site, capsys)
+        # Read ahead first, so the page below draws from it while its own read is held.
+        with page.expect_response(lambda response: _path(response.url) == "/templates"):
+            page.reload()
+        # The page's own read is answered by the server at once and the answer kept from the page: what comes
+        # late is what the server said before the change, not after it.
+        held = []
+
+        def late(route) -> None:
+            if route.request.method == "GET":
+                held.append((route, route.fetch()))
+            else:
+                route.continue_()
+
+        page.route(lambda url: _path(url) == "/templates", late)
+        page.goto(f"{base}/#/documents")
+        looks = page.locator("section.card").filter(
+            has=page.get_by_role("heading", name="How your CVs and cover letters look"))
+        expect(looks.locator(".look-name")).to_have_text(["Meridian", "Meridian"])
+        assert held, "the premise: the page's own read is under way"
+
+        looks.get_by_role("button", name="Change").first.click()
+        sheet = page.get_by_role("dialog", name="Pick how your CVs look")
+        finance = sheet.get_by_role("region", name="Finance and accounting")
+        finance.get_by_role("button", name="Ledger").click()
+        expect(looks.locator(".look-name").first).to_have_text("Ledger")
+
+        with page.expect_response(
+                lambda response: _path(response.url) == "/templates" and response.request.method == "GET"):
+            for route, answer in held:
+                route.fulfill(response=answer)
+        _drawn(page)
+        expect(looks.locator(".look-name").first).to_have_text("Ledger")
+        browser.close()
+
+
+def test_admins_reply_link_is_to_the_whole_address_a_visitor_gave(site, capsys):
+    """A visitor's address goes into Admin's Reply link as it was typed, and `?`, `&` and `=` are allowed in
+    one: `a?cc=boss@…` addressed the reply to `a` and copied in whoever the visitor named."""
+    from urllib.parse import unquote
+
+    from libs.db import database, insert
+    from libs.db.models import ContactMessage
+
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser, _, page = _someone(playwright, site, capsys)
+        db = database()
+        db.users.update_one({"email": email}, {"$set": {"is_admin": True}})
+        sender = "a?cc=boss@example.com"
+        insert(db, ContactMessage(user_id=None, email=sender, subject="Hello", message="A question."))
+
+        page.goto(f"{base}/#/admin/messages")
+        page.reload()
+        page.get_by_text("Hello").click()
+        link = page.get_by_role("link", name=f"Reply to {sender}").get_attribute("href")
+
+        to = urlsplit(link)
+        assert (to.scheme, unquote(to.path)) == ("mailto", sender), link
+        assert set(parse_qs(to.query)) == {"subject"}, link
+        browser.close()
+
+
+def test_an_account_page_asked_for_another_account_never_draws_the_one_before(site, capsys):
+    """The page of one account, asked for another, went on drawing the first under the second's address, with
+    switches that acted on the second, until its read landed. The second's read is kept from landing here, so
+    what is drawn is what the page had."""
+    from libs.db import database, insert
+    from libs.db.models import User
+
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser, _, page = _someone(playwright, site, capsys)
+        db = database()
+        db.users.update_one({"email": email}, {"$set": {"is_admin": True}})
+        mine = db.users.find_one({"email": email})["_id"]
+        theirs = insert(db, User(email=f"other.{uuid.uuid4().hex[:8]}@example.com", password_hash="x",
+                                 status="active"))
+        page.goto(f"{base}/#/admin/users/{mine}")
+        page.reload()
+        expect(page.get_by_role("heading", name="Jordan Ellery")).to_be_visible()
+        held = []
+        page.route(lambda url: _path(url) == f"/admin/users/{theirs.id}", _holding(held))
+
+        page.goto(f"{base}/#/admin/users/{theirs.id}")
+
+        expect(page.get_by_text("Loading…")).to_be_visible()
+        assert held, "the premise: the second account has not been read yet"
+        expect(page.get_by_role("heading", name="Jordan Ellery")).to_have_count(0)
+        browser.close()
+
+
+def test_admins_pages_are_sent_only_to_somebody_who_opens_admin(site, capsys):
+    """Everybody downloaded Admin: a sixth of the site's script, 24 kB of 144 zipped, for pages a visitor or a
+    member has no way into. It is a file of its own, asked for when an admin opens Admin, or has the pointer
+    on its link, and by nobody else; and Admin still opens."""
+    from libs.db import database
+
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser, _, page = _someone(playwright, site, capsys)
+        scripts: list[str] = []
+        page.on("request", lambda request: scripts.append(_path(request.url)))
+        page.reload()
+        for place in ("settings", "documents", "applied", ""):
+            page.goto(f"{base}/#/{place}")
+        expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+        members = {path for path in scripts if path.endswith(".js")}
+        assert members, "the premise: the site's script was asked for"
+
+        database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
+        page.goto(f"{base}/#/admin")
+        page.reload()
+        expect(page.locator(".tab.on")).to_be_visible()
+        assert {path for path in scripts if path.endswith(".js")} - members, "Admin is in everybody's file"
+        browser.close()
+
+
+def test_the_built_site_holds_no_review_nobody_wrote(built):
+    """The stand-in reviews are for the development site. On the built one they were never shown and were all
+    there, in the file every visitor downloads: words nobody wrote, under names, one view-source away."""
+    source = (built.parent / "src" / "landing" / "reviews.ts").read_text(encoding="utf-8")
+    names = re.findall(r'\{ name: "([^"]+)", role: "[^"]+", stars: \d, sample: true', source)
+    assert len(names) > 5, "the premise: the stand-ins are still written in the source"
+
+    shipped = "".join(path.read_text(encoding="utf-8") for path in (built / "assets").glob("*.js"))
+
+    assert not [name for name in names if name in shipped]

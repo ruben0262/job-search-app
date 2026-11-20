@@ -7,12 +7,22 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY services/notifier/requirements.txt /app/services/notifier/requirements.txt
-RUN pip install --no-cache-dir -r /app/services/notifier/requirements.txt
+# At the versions the gates ran on (`scripts/pin_runtime.py`), not whatever is newest today.
+COPY deploy/docker/constraints.txt /tmp/constraints.txt
+RUN pip install --no-cache-dir -c /tmp/constraints.txt -r /app/services/notifier/requirements.txt
 
 COPY libs /app/libs
 COPY services/__init__.py /app/services/__init__.py
 COPY services/notifier /app/services/notifier
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+# Not as root: whatever goes wrong in here is the account that owns the checkout's logs, and no more. Its id
+# is that account's (`deploy/compose.sh`), so what it writes to the folders the server lends it is the
+# owner's to read. The code stays root's, which this account can read and not change.
+ARG APP_UID=1001
+RUN useradd --non-unique --create-home --uid ${APP_UID} app
+USER app
+ENV HOME=/home/app
 
 ENTRYPOINT ["python", "-m", "services.notifier"]

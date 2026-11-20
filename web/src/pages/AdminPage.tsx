@@ -1078,7 +1078,7 @@ function MessagesTab() {
             </span>
           </summary>
           <p style={{ whiteSpace: "pre-wrap" }}>{row.message}</p>
-          <a className="small" href={`mailto:${row.email}?subject=${encodeURIComponent(`Re: ${row.subject} (${row.reference})`)}`}>
+          <a className="small" href={`mailto:${row.email.split("@").map(encodeURIComponent).join("@")}?subject=${encodeURIComponent(`Re: ${row.subject} (${row.reference})`)}`}>
             Reply to {row.email}
           </a>
         </details>
@@ -1097,12 +1097,15 @@ function CorpusTab() {
   const [source, setSource] = useState("");
   const [failed, setFailed] = useState<string | null>(null);
 
+  // The newest read is the one drawn: a slow answer to an earlier search landed over a later one's.
+  const newest = useRef(0);
   const load = async (offset = 0) => {
+    const mine = ++newest.current;
     const query = new URLSearchParams({ q, source, days: "30", offset: String(offset) });
     const path = `/admin/corpus?${query}`;
     const body = await api.get<CorpusPage>(path);
     if (path === CORPUS_FIRST) keep(path, body);
-    setPage(body);
+    if (mine === newest.current) setPage(body);
   };
   useEffect(() => {
     void load().catch(() => setFailed("Could not read the corpus."));
@@ -1468,13 +1471,18 @@ function LatencyTab() {
     setReport(peek<LatencyReport>(path));
     setDetails({});
     setOpen(null);
+    // Drawn only while this window is still the one picked: 7 days' answer landed over 24 hours'.
+    let picked = true;
     void api
       .get<LatencyReport>(path)
       .then((body) => {
         keep(path, body);
-        setReport(body);
+        if (picked) setReport(body);
       })
       .catch(() => setFailed("Could not read the pipeline timings."));
+    return () => {
+      picked = false;
+    };
   }, [hours]);
 
   const toggle = (key: string) => {

@@ -51,9 +51,9 @@ class OnboardingState:
         }
 
 
-def onboarding_state(db: Database, user_id: _uuid.UUID) -> OnboardingState:
-    """The two pages before done, in order."""
-    user = get(db, User, user_id)
+def onboarding_state(db: Database, user_id: _uuid.UUID, user: User | None = None) -> OnboardingState:
+    """The two pages before done, in order. `user` is the account, for a caller that has it in hand."""
+    user = user or get(db, User, user_id)
     if user is None:
         raise LookupError(f"no such user {user_id}")
 

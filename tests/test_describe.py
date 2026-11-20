@@ -219,6 +219,21 @@ def test_a_failed_fetch_never_reads_as_a_closed_job(repo):
     assert refresh_before_build(session, job, FakeMetaClient("", 429))["accepting"] is None
 
 
+@pytest.mark.parametrize("gone", [404, 410, 400])
+def test_a_posting_that_is_gone_stops_the_build_at_its_first_answer(repo, gone):
+    """LinkedIn's answer for a job that is not there, which the harvest's own read takes as final. The check
+    before a document asked six times, two seconds apart, with the person waiting, read no answer as "open
+    as far as we know", and the CV was written for a job that was gone (2026-11-20)."""
+    from services.docgen.refresh import PostingClosed, refresh_before_build
+
+    session, job = _posting(repo)
+    asked = FakeMetaClient("", gone)
+
+    with pytest.raises(PostingClosed):
+        refresh_before_build(session, job, asked)
+    assert len(asked.requested) == 1
+
+
 def test_the_refreshed_metadata_goes_back_to_the_shared_corpus(repo):
     """The user paid for the request. Everyone gets the applicant count."""
     from services.docgen.refresh import refresh_before_build

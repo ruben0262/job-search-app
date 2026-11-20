@@ -66,6 +66,8 @@ export function ResetPassword({ onDone }: { onDone: () => void }) {
     const query = window.location.hash.split("?")[1] ?? "";
     const token = new URLSearchParams(query).get("token") ?? "";
     await api.post("/auth/reset", { token, new_password: chosen.check() });
+    // The token is spent: out of the address, and so out of the history, a bookmark, a screen shared.
+    window.history.replaceState(null, "", "#/reset");
     setDone(true);
     // The reset revoked every session, so any signed-in state this app still holds is stale.
     onDone();

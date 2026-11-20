@@ -607,12 +607,12 @@ def test_with_no_site_proxy_every_board_but_linkedin_is_harvested(ctx, monkeypat
     """The site proxy is what LinkedIn needs and nothing else does: unset, LinkedIn is skipped and no
     other board loses anything."""
     from services.harvester import linkedin
-    from services.harvester.sources import Tier, sources_for
+    from services.harvester.sources import REGISTRY
 
     monkeypatch.delenv("HARVEST_PROXY", raising=False)
     s = ctx
     _active_user(s, keywords=["welder"])
-    shared = {source.key for source in sources_for(Tier.SHARED)}
+    shared = set(REGISTRY)
     asked: set[str] = set()
 
     def board(source, cfg, repo):

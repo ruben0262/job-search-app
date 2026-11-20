@@ -9,7 +9,12 @@ type Waiting = { job: number; mark: Mark | "bookmarked"; on: boolean };
 
 const KEY = "job-marks";
 
+/** The marks a browser would not store (a private window), held here: sent all the same, and lost only with
+ * the tab. `send` read only what was stored, so in such a window no mark ever reached the server. */
+let unstored: Waiting[] | null = null;
+
 function waiting(): Waiting[] {
+  if (unstored) return unstored;
   try {
     return JSON.parse(localStorage.getItem(KEY) ?? "[]") as Waiting[];
   } catch {
@@ -20,8 +25,9 @@ function waiting(): Waiting[] {
 function keep(marks: Waiting[]): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(marks));
+    unstored = null;
   } catch {
-    // Storage refused (a private window): the mark is still sent now, only not kept for later.
+    unstored = marks;
   }
 }
 

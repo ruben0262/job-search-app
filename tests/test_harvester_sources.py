@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import os
 import re
 import uuid
 from pathlib import Path
@@ -13,12 +14,10 @@ import pytest
 from services.harvester.sources import (
     OUTER_CONCURRENCY,
     REGISTRY,
-    SHARED_SOURCES,
     Source,
-    Tier,
-    sources_for,
 )
 from services.harvester.sources.base import JobLink
+from tests.conftest import needs_db
 
 HARVESTER = Path(__file__).resolve().parents[1] / "services" / "harvester"
 ADAPTERS = sorted((HARVESTER / "sources").glob("*.py"))
@@ -27,10 +26,10 @@ ADAPTERS = sorted((HARVESTER / "sources").glob("*.py"))
 # ── the one-factory rule ──────────────────────────────────────────────────────────────────────
 
 def test_no_adapter_builds_its_own_http_client():
-    """The rule the whole fetch layer rests on."""
+    """The rule the whole fetch layer rests on: `fetch.py` builds every client, and nothing else does."""
     offenders = [
         f"{path.relative_to(HARVESTER)}:{i}"
-        for path in HARVESTER.rglob("*.py")
+        for path in HARVESTER.rglob("*.py") if path != HARVESTER / "fetch.py"
         for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
         if re.search(r"\bhttpx\.Client\(", line)
     ]
@@ -101,10 +100,16 @@ def test_the_check_above_would_actually_catch_one():
 def test_linkedin_is_not_a_board_the_shared_loop_can_be_handed():
     """LinkedIn is read by its own pass, through the site proxy (`services.harvester.linkedin`); a board
     here goes out direct, so LinkedIn listed here would be read from the server's own address."""
-    assert set(SHARED_SOURCES) == set(REGISTRY)
-    assert not [key for key in REGISTRY if "linkedin" in key]
-    shared = sources_for(Tier.SHARED)
-    assert shared and all(s.tier is Tier.SHARED for s in shared)
+    assert REGISTRY and not [key for key in REGISTRY if "linkedin" in key]
+
+
+def test_every_board_with_an_adapter_is_one_a_run_can_be_told_to_read():
+    """A board is read when it is on the one list (`HARVEST_SOURCES`) and has an adapter here. Two had an
+    adapter and a place on no list, Hacker News' hiring thread and No Fluff Jobs' Hungarian site: code that
+    read as live and that no setting could ever switch on (2026-11-20)."""
+    from libs.settings import HARVEST_SOURCES
+
+    assert set(REGISTRY) <= set(HARVEST_SOURCES)
 
 
 def test_only_the_ats_family_needs_the_token_and_etag_repository():
@@ -119,7 +124,6 @@ def test_every_registry_entry_is_callable_and_well_formed():
         assert isinstance(source, Source)
         assert source.key == key, "the registry key and the Source key must agree"
         assert callable(source.adapter)
-        assert isinstance(source.tier, Tier)
 
 
 def test_the_outer_concurrency_cap_is_not_raised():
@@ -721,3 +725,72 @@ def test_a_board_is_given_up_only_when_its_ats_says_it_is_not_there(db, monkeypa
 
     assert sorted(repo.live_tokens("greenhouse")) == ["broken", "busy", "quiet", "refused", "silent"]
     assert [link.url for link in links] == [open_job["absolute_url"]]
+
+
+@pytest.mark.parametrize(("board", "cfg"), [
+    ("himalayas", {}), ("justjoinit", {}), ("nofluffjobs", {}), ("workingnomads", {}), ("jobicy", {}),
+    ("themuse", {}), ("findwork", {"api_key": "k"}),
+    ("adzuna", {"app_id": "a", "app_key": "k", "countries": ["gb"]}),
+])
+def test_a_board_that_refuses_says_so_instead_of_having_no_jobs_today(board, cfg, monkeypatch, caplog):
+    """A board that answers 403 or 429 with a body of its own (`{"error": ...}`) was read as a board with no
+    jobs: the body has no `jobs`, so the list came back empty and not a line was logged, which is the silent
+    kind of failure this project loses days to (CLAUDE.md §8). A refusal is logged by its status."""
+    from services.harvester.sources import http_apis
+
+    asked: list[str] = []
+
+    def refuses(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url.host)
+        return httpx.Response(403, json={"error": "forbidden", "jobs": None})
+
+    monkeypatch.setattr(http_apis, "make_shared_client",
+                        lambda **_: httpx.Client(transport=httpx.MockTransport(refuses)))
+    logger = logging.getLogger(f"test.boards.{board}")
+
+    with caplog.at_level(logging.WARNING, logger=logger.name):
+        assert getattr(http_apis, f"gather_{board}")(cfg, logger) == []
+
+    assert asked, "the premise: the board was asked"
+    said = [record.getMessage() for record in caplog.records if record.name == logger.name]
+    assert any("403" in line for line in said), said
+
+
+@needs_db
+def test_a_run_reads_the_platforms_settings_once_for_every_board(db):
+    """**A relationship, not a stopwatch.** What each board is asked this cycle comes from five settings, and
+    each board asked the database for each of them itself: about 115 questions a run for what one answers
+    (2026-11-20). However many boards there are, the settings are read once, and what the operator stored
+    still reaches the board it was stored for."""
+    from collections import Counter
+
+    from pymongo import MongoClient, monitoring
+
+    from libs import settings
+    from services.harvester.__main__ import source_configs_for
+
+    settings.put(db, "source_freshness_hours", {"himalayas": 7})
+    settings.put(db, "source_pages_per_cycle", {"himalayas": 3})
+    asked: Counter = Counter()
+
+    class Reads(monitoring.CommandListener):
+        def started(self, event):
+            if event.command_name in ("find", "aggregate", "count", "distinct"):
+                asked[str(event.command.get(event.command_name))] += 1
+
+        def succeeded(self, event): ...
+
+        def failed(self, event): ...
+
+    # A client of its own, made with the counter: a listener registered later never sees an existing one.
+    counted = MongoClient(os.environ["MONGODB_URI"], uuidRepresentation="standard", tz_aware=True,
+                          event_listeners=[Reads()])[db.name]
+    try:
+        configs = source_configs_for(counted)
+    finally:
+        counted.client.close()
+
+    assert len(configs) > 5, "the premise: a run asks many boards"
+    assert asked["platform_settings"] == 1
+    assert (configs["himalayas"]["max_age_hours"], configs["himalayas"]["max_pages"]) == (7, 3)
+    assert configs["jobicy"]["max_age_hours"] != 7, "and only that board"

@@ -22,8 +22,8 @@ from libs.db import get, now
 from libs.db.models import AtsToken, BuiltDocument, CorpusJob, CountryCount, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
-from libs.matching import Match, marks, norm, page, scan_for
-from libs.membership import areas_of, choosing, delay_hours, has, is_admin, is_member, jobs_as_of
+from libs.matching import Match, norm, page, scan_for
+from libs.membership import FREE, PLANS, choosing, is_admin, jobs_as_of, tier, wait_hours
 from libs.obs import audit
 from libs.onboarding import onboarding_state
 from libs.settings import HARVEST_SOURCES
@@ -208,21 +208,24 @@ def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curr
         {"_id": user_id, "$or": [{"last_active_at": None},
                                  {"last_active_at": {"$lt": now() - timedelta(minutes=1)}}]},
         {"$set": {"last_active_at": now()}})
-    member = is_member(db, user_id)
+    # Their plan, asked once: what it gives and how long it waits are read off it (`libs.membership.PLANS`).
+    # The page asked three times over, and read the account twice (2026-11-20).
+    plan = tier(db, user_id)
+    member, areas = plan != FREE, list(PLANS[plan])
     if choosing(user, member):
         return PlanDashboard(stage="plan", is_admin=is_admin(user), member=member)
-    state = onboarding_state(db, user_id)
+    state = onboarding_state(db, user_id, user)
     # Finished once is not enough: a search saved before the minimums (owner, 2026-11-04) is finished on
     # its page, since without a country no job comes in for it.
     unfinished = {page.key for page in state.pages if not page.complete}
     if user.onboarding_completed_at is None or "review" in unfinished:
         # Nothing below is meaningful yet, and empty panels read as a broken product.
         return OnboardingDashboard(stage="onboarding", is_admin=is_admin(user), member=member,
-                                   areas=areas_of(db, user_id), onboarding=OnboardingSteps(**state.as_dict()))
+                                   areas=areas, onboarding=OnboardingSteps(**state.as_dict()))
 
-    _, applied = marks(db, user_id)
-    return ReadyDashboard(stage="ready", is_admin=is_admin(user), member=member, areas=areas_of(db, user_id),
-                          applied=len(applied), banners=_banners(db, user, member),
+    applied = db[UserJobState.COLLECTION].count_documents({"user_id": user_id, "applied_at": {"$ne": None}})
+    return ReadyDashboard(stage="ready", is_admin=is_admin(user), member=member, areas=areas,
+                          applied=applied, banners=_banners(db, user, plan),
                           job_filters=_job_filters(user))
 
 
@@ -298,15 +301,15 @@ def _span(hours: int) -> str:
     return f"{hours} hours" if hours < 48 or hours % 24 else f"{hours // 24} days"
 
 
-def _banners(db: Database, user: User, member: bool) -> list[DashboardBanner]:
+def _banners(db: Database, user: User, plan: str) -> list[DashboardBanner]:
     """What the jobs page says above the list, one thing at a time: a Telegram that stopped, never an offer to
     turn alerts on, which a member's are from the start, to the bell at least (owner, 2026-11-18), and each
     with its own switch (2026-11-19). A free account is told first what it is looking at, and what a
     membership adds."""
-    if not member:
+    if plan == FREE:
         # How long they wait is said under the page's title, beside how long a job stays (`JobsPage`).
         text = "Alerts, match scores, CVs and cover letters come with a membership."
-        if delay_hours(db, user):
+        if wait_hours(db, plan):
             text = "Members see new jobs right away, and can apply among the first."
         return [DashboardBanner(level="info", key="free", text=text)]
     if user.telegram_status == "broken":
@@ -353,12 +356,14 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     # An account on a plan that waits sees a job that long after a member does (`libs.membership`), so a
     # "Posted" shorter than that would be empty: it is all of their list instead, as the page shows it.
     # New jobs are counted from when its list stands, the newest a job in it can have arrived.
-    delay = delay_hours(db, user := get(db, User, user_id))
+    user, plan = get(db, User, user_id), tier(db, user_id)
+    delay = wait_hours(db, plan)
     behind = jobs_as_of(db, user, delay)
     if since_hours and since_hours <= delay:
         since_hours = None
     as_of = behind or now()
-    shortest, longest = shelf_life(platform_windows(db))
+    windows = platform_windows(db)
+    shortest, longest = shelf_life(windows)
     cutoff = now() - timedelta(hours=since_hours) if since_hours else None
     # Made by the database, the page and the counts beside the filters alike (`libs.matching.page`): only the
     # page leaves it. Reading the whole list here took 1,025 ms at 15,554 jobs and grew with the list
@@ -385,14 +390,15 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     # is, worked out there and then for a job with none (`libs.fit.at_least`). So it is right the moment their
     # documents change. With nothing kept for their profile, or a filter that found jobs not kept, their list
     # is kept after this answer (`fill`), which makes the next filter quick.
-    mine = fit.profile(db, user) if has(db, user.id, "match_scores") else None
+    mine = fit.profile(db, user) if "match_scores" in PLANS[plan] else None
     kept = fit.kept(db, user_id, mine) if mine is not None and min_fit is not None else None
     if kept is not None:
         wanted.append(fit.at_least(mine, kept, min_fit))
     found = page(db, user, since=cutoff, scan=scan_for(since_hours or longest),
                  wanted={"$and": wanted} if wanted else {}, order=sort, offset=offset, limit=limit,
                  found_after=since, fit=None if mine is None or counts else fit.scored(mine),
-                 unkept=None if kept is None else fit.unkept(kept), only=job, counts=counts)
+                 unkept=None if kept is None else fit.unkept(kept), only=job, counts=counts, delay=delay,
+                 windows=windows)
     if mine is not None and not counts and (found.live or not fit.any_kept(db, user_id, mine)):
         background.add_task(fit.fill, db, user_id)
     ids = [match.job.id for match in found.matches]

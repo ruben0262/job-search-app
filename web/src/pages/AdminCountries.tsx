@@ -18,7 +18,6 @@ type CountryChart = Schema<"CountryChart">;
 type Country = CountryChart["countries"][number];
 type Source = CountryChart["sources"][number];
 type Series = { key: string; name: string; color: string; values: number[]; area?: boolean };
-type Hover = { at: number; chart: string } | null;
 
 /** The ranges offered, in hours (`libs.ops.countries.RANGES_HOURS`), and everything counted. */
 const RANGES = [[1, "1 hour"], [2, "2 hours"], [4, "4 hours"], [8, "8 hours"], [12, "12 hours"],
@@ -52,7 +51,6 @@ export function JobsByCountry() {
   const [slots, setSlots] = useState<Record<string, number> | null>(null);
   // Every country together, as its own line.
   const [together, setTogether] = useState(true);
-  const [hover, setHover] = useState<Hover>(null);
 
   useEffect(() => {
     let live = true;
@@ -270,8 +268,7 @@ export function JobsByCountry() {
                       <li key={each.key}><i className="line-key" style={{ background: each.color }} />{each.name}</li>
                     ))}
                   </ul>
-                  <LineChart id="countries" label="Jobs found" endLabels log={log} step={step}
-                             starts={starts} series={lines} hover={hover} onHover={setHover} />
+                  <LineChart label="Jobs found" endLabels log={log} step={step} starts={starts} series={lines} />
                 </>
               ) : <p className="muted small">No line is ticked.</p>}
 
@@ -337,19 +334,19 @@ function Dropdown({ label, value, children }: { label: string; value: string; ch
 }
 
 /** One or more series against time, one axis, with a crosshair and every series' value under the pointer
- * or the arrow keys. `hover` is shared, so both charts mark the same hour. On a log scale (`log`) each
- * step up the axis is ten times the one below, so a country of tens moves as visibly as one of thousands. */
-function LineChart({ id, label, series, starts, step, log = false, endLabels = false, hover, onHover }: {
-  id: string;
+ * or the arrow keys. Which point that is, is the chart's own: kept by the page for a second chart that is
+ * gone, it drew the whole section again, its tables and every row of its numbers, on each move of the pointer.
+ * On a log scale (`log`) each step up the axis is ten times the one below, so a country of tens moves as
+ * visibly as one of thousands. */
+function LineChart({ label, series, starts, step, log = false, endLabels = false }: {
   label: string;
   series: Series[];
   starts: string[];
   step: number;
   log?: boolean;
   endLabels?: boolean;
-  hover: Hover;
-  onHover: (hover: Hover) => void;
 }) {
+  const [hover, setHover] = useState<number | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(720);
   useLayoutEffect(() => {
@@ -376,7 +373,7 @@ function LineChart({ id, label, series, starts, step, log = false, endLabels = f
   const y = (value: number) => top + plotHeight - share(value) * plotHeight;
   const tickName = (tick: number) =>
     ((log ? tick >= 1000 : ceiling >= 10_000) ? `${tick / 1000}K` : tick.toLocaleString());
-  const at = hover && hover.at < n ? hover.at : null;
+  const at = hover !== null && hover < n ? hover : null;
   // The last hour or day is still being counted, so the lines end at the one before it, and it is a faint
   // open dot: drawn on, its drop read as one.
   const last = Math.max(n - 2, 0);
@@ -386,13 +383,13 @@ function LineChart({ id, label, series, starts, step, log = false, endLabels = f
   const point = (clientX: number) => {
     const rect = box.current!.getBoundingClientRect();
     const index = n <= 1 ? 0 : Math.round(((clientX - rect.left - left) / plotWidth) * (n - 1));
-    onHover({ at: Math.min(Math.max(index, 0), n - 1), chart: id });
+    setHover(Math.min(Math.max(index, 0), n - 1));
   };
   const keys = (event: KeyboardEvent) => {
     const now = at ?? n - 1;
-    if (event.key === "ArrowLeft") onHover({ at: Math.max(now - 1, 0), chart: id });
-    else if (event.key === "ArrowRight") onHover({ at: Math.min(now + 1, n - 1), chart: id });
-    else if (event.key === "Escape") onHover(null);
+    if (event.key === "ArrowLeft") setHover(Math.max(now - 1, 0));
+    else if (event.key === "ArrowRight") setHover(Math.min(now + 1, n - 1));
+    else if (event.key === "Escape") setHover(null);
     else return;
     event.preventDefault();
   };
@@ -415,8 +412,8 @@ function LineChart({ id, label, series, starts, step, log = false, endLabels = f
   return (
     <div ref={box} className="trend-chart" tabIndex={0}
          aria-label={`${label}, new jobs per ${unitName(step)}: arrow keys read each in turn`}
-         onPointerMove={(event) => point(event.clientX)} onPointerLeave={() => onHover(null)}
-         onFocus={() => onHover({ at: at ?? n - 1, chart: id })} onBlur={() => onHover(null)} onKeyDown={keys}>
+         onPointerMove={(event) => point(event.clientX)} onPointerLeave={() => setHover(null)}
+         onFocus={() => setHover(at ?? n - 1)} onBlur={() => setHover(null)} onKeyDown={keys}>
       <svg width={width} height={height} role="img"
            aria-label={`${label}: new jobs per ${unitName(step)}${log ? ", on a log scale" : ""}`}>
         {ticks.map((tick) => (
@@ -467,7 +464,7 @@ function LineChart({ id, label, series, starts, step, log = false, endLabels = f
           </g>
         ) : null}
       </svg>
-      {at !== null && hover?.chart === id ? (
+      {at !== null ? (
         <div className="trend-tip" role="status"
              style={x(at) > width - 210 ? { right: width - x(at) + 14 } : { left: x(at) + 14 }}>
           <div className="when">{when(starts[at]!, step)}{at === n - 1 ? ", so far" : ""}</div>

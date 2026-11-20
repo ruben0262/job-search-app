@@ -18,7 +18,9 @@ export type Review = {
   sample?: true;
 };
 
-const REVIEWS: Review[] = [
+/** The stand-ins, inside the condition so the built site's file does not hold them: left out only as the page
+ * ran, their words were in what every visitor downloaded, against "never on the built one" above. */
+const SAMPLES: Review[] = import.meta.env.DEV ? [
   { name: "Aoife M.", role: "Staff nurse, Leeds", stars: 5, sample: true, result: "Interview in 9 days",
     text: "I used to check five sites every evening. Now the jobs are just there in the morning, and the CV for each one is already about that ward." },
   { name: "Marek K.", role: "HGV driver, Wrocław", stars: 5, sample: true,
@@ -55,7 +57,10 @@ const REVIEWS: Review[] = [
     text: "I liked that I still apply on the company's own site. It only makes me faster and better prepared." },
   { name: "Ben H.", role: "Kitchen porter, Belfast", stars: 4, sample: true,
     text: "The free plan was enough to see it works. I upgraded when I saw how many jobs I had been missing." },
-];
+] : [];
+
+/** A person's own words go first here, with `sample` left off. */
+const REVIEWS: Review[] = [...SAMPLES];
 
 /** The reviews a visitor is shown: every one on the development site, never a sample on the built one. */
 export const reviews: Review[] = import.meta.env.DEV ? REVIEWS : REVIEWS.filter((review) => !review.sample);

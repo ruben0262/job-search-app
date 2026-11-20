@@ -21,6 +21,7 @@ from libs.settings import (
     pages_per_cycle,
     queries_per_cycle,
     results_per_query,
+    snapshot,
 )
 from libs.tenant.repository import TenantRepository
 from services.harvester.cycle import harvest_lock, run_cycle
@@ -38,16 +39,19 @@ def _configure_logging(verbose: bool) -> None:
 def source_configs_for(db) -> dict[str, dict]:
     """What every board is asked this cycle, from the union of active users' configs (never from one
     person's) and the operator's per-board settings. Also what `check_sources.py` asks them."""
+    # Read once and asked of that: each of these asked the database for itself, a board at a time, about
+    # 115 questions a run for what one answers (as `/admin/sources` found on 2026-11-03).
+    stored = snapshot(db)
     return build_source_configs(
         TenantRepository(db).active_configs(),
-        freshness={name: freshness_hours(db, name) for name in HARVEST_SOURCES},
-        results={name: results_per_query(db, name) for name in HARVEST_SOURCES
-                 if results_per_query(db, name)},
-        pages={name: pages_per_cycle(db, name) for name in HARVEST_SOURCES
-               if pages_per_cycle(db, name)},
+        freshness={name: freshness_hours(stored, name) for name in HARVEST_SOURCES},
+        results={name: results_per_query(stored, name) for name in HARVEST_SOURCES
+                 if results_per_query(stored, name)},
+        pages={name: pages_per_cycle(stored, name) for name in HARVEST_SOURCES
+               if pages_per_cycle(stored, name)},
         # Adzuna's calls a run, the one source metered by the call.
-        queries={name: calls for name in HARVEST_SOURCES if (calls := queries_per_cycle(db, name))},
-        ats_companies=ats_companies_per_cycle(db))
+        queries={name: calls for name in HARVEST_SOURCES if (calls := queries_per_cycle(stored, name))},
+        ats_companies=ats_companies_per_cycle(stored))
 
 
 def main(argv: list[str] | None = None) -> int:

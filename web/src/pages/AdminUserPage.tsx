@@ -84,14 +84,19 @@ export function AdminUserPage({ userId }: { userId: string }) {
   };
 
   // The catalogue drives the form, so adding a ceiling is one entry in `libs.limits` rather than an entry.
+  const [limitError, setLimitError] = useState<string | null>(null);
   const save = async (key: string, raw: string) => {
     setSaving(key);
+    setLimitError(null);
     try {
       const body = await api.put<{ limits: Record<string, number | null> }>(
         `/admin/users/${userId}/limits/${key}`,
         { value: raw === "unlimited" ? null : Number(raw) },
       );
       setDetail((current) => (current ? { ...current, limits: body.limits } : current));
+    } catch (caught) {
+      // Said: a limit the server refused left the box as it was, with not a word about why.
+      setLimitError(caught instanceof ApiError ? caught.detail : "That didn't save. Try again.");
     } finally {
       setSaving(null);
     }
@@ -347,6 +352,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
           Blank means the platform default. Sending is paced at the gap below, so an unlimited daily
           ceiling drains a backlog slowly rather than getting the bot restricted.
         </p>
+        {limitError ? <p className="error">{limitError}</p> : null}
         <div className="limits">
           {specs.map((spec) => {
             const current = detail.limits[spec.key];

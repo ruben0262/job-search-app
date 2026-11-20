@@ -38,10 +38,17 @@ export function NotificationBell() {
   useEffect(() => {
     load();
     bells.add(load);
-    const timer = window.setInterval(load, POLL_MS);
+    // While the tab is looked at, and once as it is looked at again: a tab left open in the background asked
+    // every minute all day, and was the second asker when two tabs renewed a session at the same moment.
+    const look = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    const timer = window.setInterval(look, POLL_MS);
+    document.addEventListener("visibilitychange", look);
     return () => {
       bells.delete(load);
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", look);
     };
   }, [load]);
 

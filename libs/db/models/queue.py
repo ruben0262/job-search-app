@@ -30,7 +30,9 @@ class QueueJob(Document):
         IndexModel([("lane", 1), ("user_id", 1), ("dedup_key", 1)], unique=True, name="pending_dedup",
                    partialFilterExpression={"state": {"$in": ["ready", "claimed"]},
                                             "dedup_key": {"$type": "string"}}),
-        IndexModel([("lane", 1), ("state", 1), ("run_after", 1)], name="claimable"),
+        # With the id, the order a claim takes them in (`libs.queue.claim`): without it every claim sorted
+        # the lane's ready jobs to take one.
+        IndexModel([("lane", 1), ("state", 1), ("run_after", 1), ("_id", 1)], name="claimable"),
         IndexModel("claimed_at", partialFilterExpression={"state": "claimed"}, name="claimed"),
         # In place of `done_by_user`, which no query could use.
         IndexModel("finished_at", expireAfterSeconds=DONE_KEEP_DAYS * 86400,

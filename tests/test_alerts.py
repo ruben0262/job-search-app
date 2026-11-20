@@ -370,6 +370,48 @@ def test_on_lists_says_what_each_persons_jobs_page_lists(db):
 
 
 @needs_db
+def test_what_is_read_of_everybody_at_once_leaves_each_persons_profile_in_the_database(db):
+    """**A relationship, not a stopwatch.** A person's match profile and their suggestions are most of their
+    account, 19 KB of it on the dev copy, and neither the daily email's sweep, ten seconds apart, nor the
+    alerts' question of everybody looks at either (2026-11-20). Read off what the database sent back, not off
+    how it was asked: both read the account, and neither is sent those two."""
+    from pymongo import MongoClient, monitoring
+
+    from libs.matching import on_lists
+    from libs.queue.queue import dispatch_due_digests
+
+    user, word = _person(db, alert=False, fit_profile={"version": 1, "skills": ["welding"] * 200},
+                         suggestions={"green": ["welder"], "red": [], "dismissed": []})
+    _alert(db, user, channels=["email"])
+    job = _posting(db, word)
+    sent: list[dict] = []
+
+    class Accounts(monitoring.CommandListener):
+        def started(self, event): ...
+
+        def succeeded(self, event):
+            cursor = event.reply.get("cursor") or {}
+            if event.command_name == "find" and cursor.get("ns", "").endswith(".users"):
+                sent.extend(cursor["firstBatch"])
+
+        def failed(self, event): ...
+
+    # A client of its own, made with the listener: one registered later never sees an existing client.
+    counted = MongoClient(os.environ["MONGODB_URI"], uuidRepresentation="standard", tz_aware=True,
+                          event_listeners=[Accounts()])[db.name]
+    try:
+        assert on_lists(counted, {user.id: [job.id]}) == {user.id: {job.id}}
+        dispatch_due_digests(counted)
+    finally:
+        counted.client.close()
+
+    mine = [row for row in sent if row["_id"] == user.id]
+    assert len(mine) == 2, "the premise: each of the two read this account"
+    assert all("email" in row for row in mine), "and read the account itself"
+    assert not [key for row in mine for key in ("fit_profile", "suggestions") if key in row]
+
+
+@needs_db
 def test_a_match_score_needs_the_documents_it_is_made_from(db, monkeypatch):
     """A minimum score is read from the person's documents (`libs.fit`): without them it catches nothing, and
     with them a job at or above it is caught."""
@@ -639,6 +681,32 @@ def test_a_telegram_outage_is_retried_rather_than_disconnecting(db):
         run(db, user, Outbox(), telegram=down)
     assert _account(db, user).telegram_status == "connected"
     assert _notified(db, user) == set()
+
+
+@needs_db
+def test_a_job_telegram_failed_on_is_sent_to_a_phone_once_and_to_telegram_when_it_answers(db):
+    """The phone and the bell had the job before Telegram was tried, and the whole job was tried again when
+    Telegram failed: a bad minute there pushed one job to a phone up to five times (2026-11-20). What went
+    the first time is not sent again; Telegram is."""
+    from libs.db.models import UserNotification
+
+    user, word = _person(db, browsers=1)
+    job = _posting(db, word)
+    outbox = Outbox()
+
+    def down(chat, text, keyboard):
+        raise RuntimeError("Telegram answered 3 server error(s) in a row")
+
+    with pytest.raises(RuntimeError):
+        run(db, user, outbox, telegram=down)
+    assert len(outbox.browsers) == 1 and _notified(db, user) == set(), "the premise: pushed, and owed still"
+    bell = db[UserNotification.COLLECTION].count_documents({"user_id": user.id})
+
+    assert run(db, user, outbox) == 1
+
+    assert (len(outbox.browsers), len(outbox.telegram)) == (1, 1)
+    assert db[UserNotification.COLLECTION].count_documents({"user_id": user.id}) == bell
+    assert _notified(db, user) == {job.id}
 
 
 @needs_db

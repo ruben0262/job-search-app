@@ -22,7 +22,12 @@ export function useTheme() {
   const toggle = (event: MouseEvent<HTMLElement>) => {
     const apply = () => {
       document.documentElement.dataset.theme = next;
-      localStorage.setItem(KEY, next);
+      try {
+        localStorage.setItem(KEY, next);
+      } catch {
+        // Storage refused (a private window): switched for this visit. It threw here, and the switch stopped
+        // half made, the page in the new theme and its button still offering it.
+      }
       flushSync(() => drawers.forEach((drawn) => drawn()));
       paintBars();
     };

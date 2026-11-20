@@ -18,8 +18,16 @@ let refreshing: Promise<boolean> | null = null;
 
 async function refresh(): Promise<boolean> {
   refreshing ??= fetch("/auth/refresh", { method: "POST", credentials: "same-origin" })
-    .then((response) => response.ok)
-    .catch(() => false)
+    .then((response) => {
+      // Read to its end, though nothing in it is used: an answer left unread keeps its request open, and a
+      // browser never counted the page as done loading.
+      void response.text().catch(() => undefined);
+      // Only the server's own "no" is signed out. A server that is down, or no connection at all, says nothing
+      // about the session: read as signed out, either one showed the landing page to somebody signed in and
+      // threw away the marks kept for exactly a lost connection (`marks.ts`).
+      if (!response.ok && response.status !== 401) throw new ApiError(response.status, response.statusText);
+      return response.ok;
+    })
     .finally(() => {
       refreshing = null;
     });
@@ -48,14 +56,16 @@ export async function request<T>(path: string, options: Options = {}): Promise<T
     body: form ?? (body === undefined ? undefined : JSON.stringify(body)),
   });
 
+  if (response.status === 204) return undefined as T;
+
+  // Read before anything else is decided: an answer left unread, as a 401's was when the request was asked
+  // again, keeps its request open.
+  const payload = await response.json().catch(() => null);
   if (response.status === 401 && !retry && !path.startsWith("/auth/")) {
     // An expired 15-minute access token is the ordinary case, not an error worth showing anybody.
     if (await refresh()) return request<T>(path, { ...options, retry: true });
   }
 
-  if (response.status === 204) return undefined as T;
-
-  const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = payload?.detail;
     throw new ApiError(

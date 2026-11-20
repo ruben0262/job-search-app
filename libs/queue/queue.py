@@ -14,6 +14,7 @@ from libs import settings
 from libs.db import find, next_ids, now
 from libs.db.models import Alert, LanePause, QueueJob, User
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, LANES, MAX_ATTEMPTS
+from libs.db.models.user import LIGHT
 from libs.membership import having
 from libs.notify.digest import due
 
@@ -126,8 +127,10 @@ def dispatch_due_digests(db: Database) -> int:
     hour = settings.get(db, "email_digest_hour")
     emailed = db[Alert.COLLECTION].distinct("user_id", {"on": True, "channels": "email"})
     enqueued = 0
+    # Without their profiles: every account with an emailing alert was read whole on each sweep, ten
+    # seconds apart, 19 KB each to look at two fields.
     for user in find(db, User, {"$and": [{"_id": {"$in": emailed}, "status": "active"},
-                                         having("alerts")]}):
+                                         having("alerts")]}, projection=LIGHT):
         if due(db, user, hour) and enqueue(db, "notify", user.id, payload={"digest": True},
                                            dedup_key="digest") is not None:
             enqueued += 1

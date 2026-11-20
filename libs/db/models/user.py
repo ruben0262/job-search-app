@@ -15,6 +15,12 @@ USER_STATUSES = ("pending_verification", "active", "suspended", "deleted")
 TELEGRAM_STATUSES = ("unconfigured", "waiting", "connected", "broken")
 
 
+# What makes an account's document heavy, 18 of its 19 KB, and nothing that reads many accounts at once
+# looks at: left behind by those reads (Admin's lists, the notifier's sweeps). `libs.fit.profile` and
+# `libs.suggestions` read them, of one account.
+LIGHT = {"fit_profile": 0, "suggestions": 0}
+
+
 @dataclass(kw_only=True)
 class User(Document):
     COLLECTION = "users"

@@ -157,13 +157,18 @@ def ensure_schema(db: Database | None = None, *, prune: bool = False) -> None:
     from libs.db.models import MODELS  # noqa: PLC0415 - the models import this module
 
     db = database() if db is None else db
-    existing = set(db.list_collection_names())
+    existing = {info["name"]: info.get("options", {}) for info in db.list_collections()}
     for model in MODELS:
         rules = {"$jsonSchema": {"bsonType": "object", "properties": {
             name: {"enum": list(values)} for name, values in model.CHOICES.items()}}}
         if model.COLLECTION not in existing:
             _create(db, model.COLLECTION, rules)
-        db.command("collMod", model.COLLECTION, validator=rules, validationLevel="strict")
+        # Only where the rules differ from what the database holds. Each collection's were written again at
+        # every start of every service, the harvester's every fifteen minutes among them: a write to the
+        # catalogue thirty-odd times for nothing changed.
+        held = existing.get(model.COLLECTION, {})
+        if held.get("validator") != rules or held.get("validationLevel", "strict") != "strict":
+            db.command("collMod", model.COLLECTION, validator=rules, validationLevel="strict")
         collection = db[model.COLLECTION]
         declared = {_ensure_index(collection, index, prune=prune) for index in model.INDEXES}
         for index in collection.list_indexes():

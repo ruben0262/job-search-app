@@ -14,6 +14,176 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-20, night — The review's unfinished list: services that are not root, a content policy, pages that ask once, and the pages' own bugs
+
+The owner, after the review's fixes were committed (`5c737fd`): "commit your work, and complete the not done work
+as well please except the backup". This is that list. As before, every fix has a test that fails on the code before
+it, each run against the last commit in a scratch checkout with its own build of the site; none waits on a clock.
+**What was looked at and not built is at the end, with the number that decided it**, and so is what is the owner's
+to decide.
+
+### The services
+
+- **No service runs as root** (`deploy/docker/Dockerfile.*`, `APP_UID`). Every one but the sign-in broker did, the
+  worker that drives a browser without its sandbox and three AI tools among them, beside the key to every stored
+  credential. Each runs as an account with the id of the checkout's owner, read once by `deploy/compose.sh` and
+  given to every build, so it can write to `logs/` and `archive/` and to nothing else of the server's. What the
+  services wrote as root is root's, so `deploy/deploy.sh` hands those two folders over before the schema step,
+  from a container, only when something in them is somebody else's.
+- **An image gets the versions the gates ran on** (`deploy/docker/constraints.txt`, written by
+  `scripts/pin_runtime.py`, 59 packages). Each build took whatever was newest that day. To move a pin: install
+  the version here, run the gates, run the script. `anthropic` is not installed in this environment, so it stays
+  as its service states it; the file says so.
+- **The tunnel is a version somebody chose** (`cloudflare/cloudflared:2026.11.1`, checked to exist), not `latest`.
+- **A deploy lets the document being written finish** (`docgen`'s `stop_grace_period: 5m`). Stopped at Docker's
+  ten seconds, a deploy threw away a draft a person's own AI plan had paid for, and the retry paid again. The
+  grace is held longer than the longest call by a test (`libs.llm.client.TIMEOUT_SEC`, 240 s), not by two numbers
+  agreeing. The worker's `/tmp`, where a person's AI sign-in is unpacked for the call, is memory (`tmpfs`).
+- The API is given `SMTP_PORT` and `MAIL_DAILY_CAP` as the notifier is: changed in `server.env`, they reached one
+  of the two.
+
+**Not built here: this machine has no Docker.** The Dockerfiles, the compose file and the deploy script are
+checked by reading (`tests/test_deploy_config.py`, 17 tests); the first deploy is the first build. What to watch
+on it: the ownership step printing once, then `logs/` filling, and a `pip` that refuses a constraint.
+
+### What a browser is allowed to load
+
+- **A content policy with no inline script** (`services/api/guard.py`, `POLICY`). Scripts from the site and from
+  Stripe; no `unsafe-inline`, no `eval`; frames, connections and pictures from the origins Stripe's own guide
+  lists, Checkout and Link among them; nothing may frame the site. The one inline script, the theme set before
+  the first paint, is a file (`web/public/theme.js`). Styles keep `unsafe-inline`: the looks' pictures are the
+  templates' own `<style>` blocks. `test_no_page_of_the_site_asks_for_anything_its_own_policy_refuses` walks
+  every page signed out and in, and Admin's tabs, with the policy on. It found that an answer nobody read kept
+  its request open (`web/src/api.ts`): a 401's body is read before the request is asked again.
+  ROADMAP 6d says what is left there: no `TrustedHostMiddleware`.
+
+### Pages that ask once
+
+- **A page asks who the account is, its plan and the platform's windows once each** (`dashboard_routes`,
+  `libs.matching`, `libs.onboarding.state`). The Jobs page read the account six times and the settings four for
+  what three and two answer: 18 questions to 13, and the front page 9 to 6.
+- **A start writes no rules to a database that already holds them** (`libs.db.ensure_schema`). Every service
+  wrote every collection's rules again as it started, the harvester every fifteen minutes: 33 writes to the
+  catalogue for nothing changed, now none. One whose rules or strictness differ is put back, that collection.
+- **A run reads the platform's settings once for every board** (`services/harvester/__main__.py`): 86 questions
+  here, one now.
+- **What is read of everybody at once leaves their profile in the database** (`libs.db.models.user.LIGHT`): the
+  daily email's sweep, ten seconds apart, and the alerts' question of everybody each read every account whole,
+  19 KB of it on the dev copy, to look at two fields. Admin's list used the same projection from a copy of its own;
+  one definition now.
+- **A claim finds its job by the index** (`QueueJob`'s `claimable`, with the id): every claim sorted the lane's
+  ready jobs to take one. The index changes shape under its name, so a service starting leaves it and says so,
+  and the deploy's prune rebuilds it (2026-11-18).
+
+### Three things that were wrong
+
+- **A job Telegram failed on is not sent to the phone again** (`services/notifier/deliver.py`,
+  `UserJobState.pushed_at`). Each try sent all of it, so a bad minute at Telegram pushed one job to a phone, and
+  into the bell, up to five times. What went the first time is recorded, and only Telegram is tried again.
+- **A posting that is gone stops the build at its first answer** (`libs.corpus.postings.fetch_meta`). A 404, 410
+  or 400 was asked for six times, two seconds apart, with the person waiting for their CV, and the CV then written
+  for a job that is not there.
+- **A board that refuses says so** (`services/harvester/sources/http_apis.py`, seven adapters). A 403 or 429 with
+  a body of its own (`{"error": …}`) has no `jobs`, so it read as a board with no jobs today and not a line was
+  logged. The status is checked first, and the warning names it.
+
+### Removed, with what showed it was dead
+
+- `gather_hn_hiring` and the registry's `hn_hiring` and `nofluffjobs_hu`: each had an adapter and a place on no
+  list. A board is read only if it is on `libs.settings.HARVEST_SOURCES`, and neither was (`nofluffjobs_hu` is
+  in `DEFERRED_SOURCES`, removed 2026-08-04). `test_every_board_with_an_adapter_is_one_a_run_can_be_told_to_read`
+  holds the two lists together from here.
+- `Tier`, `Source.tier`, `SHARED_SOURCES`, `sources_for`: an enum of one value since LinkedIn became a pass of
+  its own. The cycle reads `REGISTRY`.
+- `MeteredClient`: it counted the bytes each client downloaded "for the log", and nothing logged or read the
+  count (`bytes_downloaded`, `megabytes_downloaded`: no reader outside its own three tests) since the limit it
+  fed went (owner, 2026-11-01: no LinkedIn MB limit). The clients are plain `httpx.Client`s, still made only in
+  `fetch.py`.
+- `libs.ops.health.since`: no caller.
+- Three CSS rules no element has the class for (`.how`, `.how li`, `.channel.stacked`).
+
+### The pages
+
+- **A visitor is shown the landing page at once** (`web/src/session.ts`, `App.tsx`). It was drawn only after two
+  answers in a row, `/dashboard` refused and then the renewal refused. A browser nobody was signed in on is shown
+  it straight away and the server asked behind it; one that will not say (a private window) is asked the long
+  way; a server that never answers still gets "can't be reached". Somebody signed in before today sees the
+  landing page for a moment on their first load after this, once. The flag is a key in the browser's storage
+  (`signed-in`, the moment it was set), so the Cookie Policy's table names it (`libs.legal.disclosure.STORED`,
+  which `tests/test_legal.py` holds to what the site writes). **The legal version is left as it is**: whether a
+  new row for something the site needs is a change people are told of is the owner's to say.
+- **A tab follows whoever is signed in from another tab.** Signing out in one left the other drawing the account's
+  pages, and signing in as somebody else left it drawing the first account's, from what it had kept. A tab is told
+  (the browser's `storage` event on the same flag), forgets what it kept and its unsent marks, and asks the server
+  who it is for. A confirmation link opened where another account was signed in forgets the same.
+- **A session that cannot be renewed just now is not read as signed out** (`api.ts`). Only the server's 401 is.
+  A lost connection or a 5xx during the renewal showed the landing page to somebody signed in, and threw away the
+  marks kept for exactly a lost connection.
+- **The newest read is the one drawn** (Jobs, Admin's Corpus and Latency). Two reads under way, and whichever
+  answered last was drawn: the list of the search before under the words of the search now.
+- **A job skipped or marked applied leaves the kept list too** (`JobsPage.onMark`): back on Jobs it was drawn
+  again from what was read before the mark, until a fresh answer came, and with no connection for good.
+- **A kept read keeps to its address, and to what the page changed** (`kept.ts`). An account's page, asked for
+  another account, drew the first under the second's address until its read landed; and an answer asked for
+  before a change was drawn over the change (a look just picked went back to the one before, though it was
+  saved). A change also reaches every part of a page drawing that address now; no page showed that difference
+  today, so that one has no test of its own.
+- **The other tabs are read ahead after the Jobs list has its answer**, not beside it: the list was the last of
+  some eighteen requests to leave. They are still all read, so each tab still opens drawn; the AI plan's limits
+  with them (see the end).
+- **Another page opens at its top.** The browser left it scrolled as far down as the last one was. Going back is
+  left to the browser, which puts the page where it was.
+- **A tab nobody is looking at asks nothing**: the bell asked every minute and a document being made every
+  800 ms, in every open tab. Both stop while the tab is hidden and ask at once when it is looked at again. A
+  document asked about for longer than a minute is asked about every ten seconds (`SLOW_AFTER_MS`,
+  `SLOW_POLL_MS`).
+- **A link from an email leaves the address once it is used**: Back from the first page led to the confirmation
+  link again, to say "That link did not work"; the reset link stayed in the address bar.
+- **A browser that will not store still works**: there a skipped job was never sent at all (`marks.ts` sent only
+  what it had stored), and the theme stopped half switched.
+- **Admin**: the Reply link is to the whole address a visitor gave (`a?cc=boss@…` addressed the reply to `a` and
+  copied in whoever was named); a limit the server refuses is said; the chart keeps its own hovered point, which
+  the page kept for a second chart that is gone, drawing the whole section again on every move of the pointer
+  (fewer lines; not timed).
+- **A tap on a notification opens a page of this site and no other** (`web/public/sw.js`), whatever the message
+  names. The server writes every address today; nothing should be able to.
+- **Admin's pages are a file of their own**, sent to somebody who opens Admin. The site's script is 120.1 kB
+  zipped where it was 143.5 kB, for every visitor and member; Admin's 24.4 kB is fetched as an admin's page
+  settles or their pointer reaches the link, so it still opens drawn.
+- **The built site holds no review nobody wrote** (`landing/reviews.ts`): the stand-ins were never shown there and
+  were all in the file every visitor downloads.
+
+### Looked at and not built
+
+- **Jobs' "Any time" under 300 ms**: it stands at 343 to 360 ms on the dev copy after the first commit. Of the
+  13,876 postings the index hands over, a person's languages keep 68.9% and their red words 67.8%, read from the
+  posting itself. Adding the language to the index passes the 200 scans a sorted merge is allowed; an index that
+  holds all of it would be about 1.6 GB at 1.5 million postings. What would do it is keeping a posting's text and
+  match features out of the document the list reads. A change of its own.
+- **Company boards read at the same time, and a deadline on the gather.** The nine families share one pool of 60
+  connections at 30 at a time each, so together they would wait on each other and time out. The gather takes 5
+  to 15 s and a run 9 to 84 s of its 660 (twelve runs here, 2026-11-20): nothing is near the budget.
+- **New postings stored in batches.** Storing one costs 31 ms, of which the database's thirteen questions are
+  4.4 ms; the rest is reading the posting once for everybody (its language, its match features).
+- **New words looked for together.** Ten words took 9.1 to 10.0 s one at a time and 6.1 to 6.2 s together: a
+  third less, once per new word, inside a 90 s budget, against a cursor per word.
+- **The landing page as a file of its own**: it would cost a visitor a second request on the page that sells.
+- **The AI plan's limits off the load path**: the owner asked for them to be there at once (2026-11-19). They are
+  read after the list now, not beside it. Keeping the provider's answer at the server for some minutes is the
+  other way, and a second clock.
+- Not started, each small and none measured: memoised job cards, Admin's hand-written response types against
+  response models on its handlers, "100 bookmarked jobs" said as a total where it is a ceiling
+  (`MARKED_SHOWN`), helpers written more than once (`ago`, `PLAN_NAMES`), the kept reads growing for as long as
+  a tab is open, the blur under the phone's tab bar, fonts preloaded.
+
+### The owner's to decide
+
+- **ChatGPT writes with its tools on** (`libs/llm/cli.py`). Not changed: switching them off changes what the
+  model is told, which is a change to what a CV says (CLAUDE.md §3b), measured on the bench with the owner's
+  ChatGPT plan, in a file being worked on today. What was done instead is around it: the worker is not root and
+  its `/tmp` is memory.
+- **The backup is not encrypted**, left out of this list by the owner.
+
 ## 2026-11-20 — The review's fixes: an account's password is its owner's, sign-out ends the session, and two silent losses in the harvest
 
 The owner asked for a full review of the code and its history ("do a full code review and flag parts that can be

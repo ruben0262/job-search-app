@@ -24,7 +24,10 @@ self.addEventListener("push", (event) => {
 // installed app when there is one.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = new URL(event.notification.data?.url || "/", self.location.origin).href;
+  // A page of this site and nothing else, whatever the message says: the server writes every address today,
+  // and an address from anywhere else would open, in the installed app, on the strength of our name.
+  const asked = new URL(event.notification.data?.url || "/", self.location.origin);
+  const url = asked.origin === self.location.origin ? asked.href : `${self.location.origin}/`;
   event.waitUntil(
     self.clients.matchAll({ type: "window" }).then((tabs) => {
       const tab = tabs.find((client) => "focus" in client);

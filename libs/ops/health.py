@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from pymongo.database import Database
 
@@ -118,8 +118,3 @@ def platform_health(db: Database, *, include_users: bool = True) -> PlatformHeal
         disk_total_bytes=int(size.get("fsTotalSize", 0)),
         users=user_health(db) if include_users else [],
     )
-
-
-def since(moment: datetime | None) -> timedelta | None:
-    """Small helper, exported because both callers of this module want the same rounding."""
-    return None if moment is None else datetime.now(UTC) - moment

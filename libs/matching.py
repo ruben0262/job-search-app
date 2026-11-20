@@ -17,11 +17,12 @@ from pymongo.database import Database
 
 from libs.contracts.config import migrate_config
 from libs.corpus import pay
-from libs.corpus.freshness import platform_windows
+from libs.corpus.freshness import PlatformWindows, platform_windows
 from libs.corpus.words import norm
 from libs.db import find
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState, Word
 from libs.db.models.corpus import WORDS_INDEX
+from libs.db.models.user import LIGHT
 from libs.membership import FREE, MEMBER, STARTER, jobs_as_of, members, starters, wait_hours
 from libs.tenant.filters import UserFilters, candidate_conditions, filters_for
 from libs.tenant.repository import TenantRepository
@@ -144,8 +145,8 @@ def _asked(config: dict | None, filters: UserFilters,
 
 def _read(db: Database, user: User, *, described_since: datetime | None = None,
           since: datetime | None = None, scan: int = SCAN, text: bool = False, fit: bool = False,
-          skip: set[int] | frozenset[int] = frozenset(),
-          only: int | None = None) -> tuple[list[dict], dict] | None:
+          skip: set[int] | frozenset[int] = frozenset(), only: int | None = None,
+          delay: int | None = None, windows: PlatformWindows | None = None) -> tuple[list[dict], dict] | None:
     """The stages that read this person's matches, the newest `scan` of them, each with `words` and
     `in_title`: the one question behind the Jobs page and the alerts (CLAUDE.md §1). None when they have
     no words.
@@ -174,9 +175,14 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
     first, read from the words index by name. Left to choose, it chose between that index and the newest
     postings from one run to the next, and by the second read every open posting to find a person's: 42,192
     of them for 5,883 matches, where the index reads 13,870 (215 ms against 119, 2026-11-20). Not for one job
-    or for the jobs read since a moment ago, which are found faster by what names them."""
+    or for the jobs read since a moment ago, which are found faster by what names them.
+
+    `delay` and `windows` are their plan's wait and the platform's windows, for a caller that has read them
+    already (`libs.membership.wait_hours`, `platform_windows`): a page asked for the plan three times and
+    the windows twice (2026-11-20)."""
     config = TenantRepository(db).get_config(user.id)
-    asked = _asked(config, filters_for(db, user, config=config), jobs_as_of(db, user))
+    asked = _asked(config, filters_for(db, user, windows=windows, config=config),
+                   jobs_as_of(db, user, delay))
     if asked is None:
         return None
     mine, where = asked
@@ -264,7 +270,8 @@ class Page:
 
 def page(db: Database, user: User, *, since: datetime | None, scan: int, wanted: dict, order: str,
          offset: int, limit: int, found_after: datetime | None = None, fit: list[dict] | None = None,
-         unkept: dict | None = None, only: int | None = None, counts: bool = False) -> Page:
+         unkept: dict | None = None, only: int | None = None, counts: bool = False,
+         delay: int | None = None, windows: PlatformWindows | None = None) -> Page:
     """A page of this person's Jobs list, as the database makes it: their matches (`_read`, less a job they
     skipped or applied to), those shown in the time asked (`since`, by when a job was posted, else found),
     narrowed by the page's own filters (`wanted`, a condition on a match, its `words` and `nwords`
@@ -278,7 +285,7 @@ def page(db: Database, user: User, *, since: datetime | None, scan: int, wanted:
     are and nothing else: no page, and none of what the filters offer."""
     skipped, applied = marks(db, user.id)
     read = _read(db, user, since=since, scan=scan, fit=fit is not None, skip=skipped | set(applied),
-                 only=only)
+                 only=only, delay=delay, windows=windows)
     if read is None:
         return Page([], 0, None if found_after is None else 0, [], [], [], [], cut=False)
     stages, how = read
@@ -360,7 +367,7 @@ def on_lists(db: Database, wanted: dict[_uuid.UUID, list[int]]) -> dict[_uuid.UU
         {"user_id": 1, "job_id": 1})}
     indexed = set(db[Word.COLLECTION].distinct("_id", {"indexed_at": {"$ne": None}}))
     facets = {}
-    for user in find(db, User, {"_id": {"$in": people}}):
+    for user in find(db, User, {"_id": {"$in": people}}, projection=LIGHT):
         plan = STARTER if user.id in waiting else MEMBER if user.id in paying else FREE
         config = configs.get(user.id)
         asked = _asked(config, filters_for(db, user, windows=windows, config=config),

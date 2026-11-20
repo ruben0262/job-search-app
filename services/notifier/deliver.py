@@ -85,7 +85,8 @@ def deliver(db: Database, user_id: _uuid.UUID, *,
         # An alert deleted since it caught the job sends nothing more.
         theirs = [alerts[each] for each in row.get("alerts") or () if each in alerts]
         if job is not None and theirs and _send(db, user, job, theirs, mine, browsers=browsers,
-                                                telegram=telegram, push=push, pause=gap if chatted else 0):
+                                                telegram=telegram, push=push, pause=gap if chatted else 0,
+                                                again=row.get("pushed_at") is not None):
             chatted += 1
         # Marked the moment it has gone, one job at a time.
         record_state(db, user_id, row["job_id"], notified_at=now())
@@ -104,18 +105,22 @@ def deliver(db: Database, user_id: _uuid.UUID, *,
 
 def _send(db: Database, user: User, job: CorpusJob, alerts: list[Alert], mine: set[str], *,
           browsers: list[PushSubscription], telegram: Callable[[str, str, dict], None] | None,
-          push: Callable[[PushSubscription, dict], bool], pause: float) -> bool:
+          push: Callable[[PushSubscription, dict], bool], pause: float, again: bool = False) -> bool:
     """One job wherever any of the alerts that caught it sends, headed by their names; whether it went to
-    Telegram, which paces the next."""
+    Telegram, which paces the next. `again` is a job whose bell and phones had it on an earlier try, which
+    Telegram failed: only Telegram is tried again. Each try sent all of it, so a bad minute at Telegram
+    pushed one job to a phone up to five times (2026-11-20)."""
     ways = {way for alert in alerts for way in alert.channels}
     names = [alert.name for alert in alerts]
-    if "push" in ways:
+    if "push" in ways and not again:
         _to_browsers(db, user.id, browsers, job, names=names, push=push)
-    for alert in alerts:
+    for alert in () if again else alerts:
         if "bell" in alert.channels:
             # One line an alert in the bell, brought up to date while it is unread rather than one a job.
             notify(db, user.id, Event(f"alert.{alert.id}", "info", alert.name, f"#/alerts?alert={alert.id}"),
                    " · ".join(filter(None, (job.title, job.company))))
+    if "telegram" in ways and not again and ways & {"push", "bell"}:
+        record_state(db, user.id, job.id, pushed_at=now())
     # Paced: Telegram takes about one message a second into a chat.
     return "telegram" in ways and _to_telegram(db, user, job, names=names, words=_words(job, alerts, mine),
                                                telegram=telegram, pause=pause)

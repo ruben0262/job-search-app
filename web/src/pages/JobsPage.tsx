@@ -150,12 +150,14 @@ export function useJobList(path: string, onChanged: () => void) {
   return { jobs, set, failed, card };
 }
 
-export function JobsPage({ dashboard, focus, onChanged }: {
+export function JobsPage({ dashboard, focus, onChanged, onRead }: {
   dashboard: Ready;
   /** The job an alert's link names, if they arrived from one. */
   focus: number | null;
   /** "Mark as applied" changed the count the dashboard keeps. */
   onChanged: () => void;
+  /** The list has its first answer, or could not get one: what waited behind it may go. */
+  onRead: () => void;
 }) {
   // As they left them, here or on another device (owner, 2026-11-07).
   const [filters, setFilters] = useState<Filters>(() => peek<Filters>(FILTERS) ?? dashboard.job_filters);
@@ -229,11 +231,17 @@ export function JobsPage({ dashboard, focus, onChanged }: {
     return api.get<Feed>(`/feed?${params}`);
   }, [filters]);
 
+  // Which read is the newest: an answer to an older one is dropped. Two filters tapped one after the other
+  // are two reads under way, and whichever answered last was drawn, the first one's list under the second
+  // one's filters when it was the slower.
+  const newest = useRef(0);
   const reload = useCallback(() => {
+    const mine = ++newest.current;
     setBusy(true);
     // Marks this browser still holds go first, so the answer already leaves them out.
     void send().finally(() => read(0).then((body) => {
       keep(`/feed?${asked(filters)}`, body);
+      if (mine !== newest.current) return;
       setBoards(body.sources);
       setWords(body.words);
       setCountries(body.countries);
@@ -243,8 +251,13 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       setGone(unsent());
       setNews({ arrived: 0, total: 0 });
       setFailed(false);
-    }).catch(() => setFailed(true)).finally(() => setBusy(false)));
-  }, [read, filters]);
+    }).catch(() => {
+      if (mine === newest.current) setFailed(true);
+    }).finally(() => {
+      if (mine === newest.current) setBusy(false);
+      onRead();
+    }));
+  }, [read, filters, onRead]);
 
   // Typing does not fire a request per key.
   useEffect(() => {
@@ -296,6 +309,13 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       return next;
     });
     window.clearTimeout(leaving.current.get(job.id));
+    // Off the list kept for next time at once, as `useJobList` does: coming back to Jobs drew the job again,
+    // from what was read before it was marked, until a fresh answer came, and with no connection for good.
+    const path = `/feed?${asked(filters)}`;
+    const before = peek<Feed>(path);
+    if (on && before?.jobs.some((each) => each.id === job.id)) {
+      keep(path, { ...before, total: before.total - 1, jobs: before.jobs.filter((each) => each.id !== job.id) });
+    }
     const leave = () => setGone((now) => new Set([...now, job.id]));
     if (on && kind === "hidden") leave();
     else if (on) leaving.current.set(job.id, window.setTimeout(leave, UNDO_MS));

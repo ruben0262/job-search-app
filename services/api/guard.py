@@ -23,15 +23,37 @@ BODY_LIMITS = {"/documents": MAX_FILE_BYTES + 1024 * 1024}
 # HTTP's answer to a body that is too large.
 TOO_LARGE = 413
 
+# What a page of this site may load and run, told with every answer. Its own files, and Stripe's for the
+# payment form, each origin as Stripe's own list has it (docs.stripe.com/security/guide, read 2026-11-20:
+# Stripe.js, Checkout and Link). No script that is not a file: the one the page wrote into itself is
+# `web/public/theme.js` now. Styles written into a page stay allowed, because a look's picture is drawn from
+# markup that carries its own (`web/src/templates.tsx`). Nobody else's page may frame the site, or point its
+# links or plug-ins elsewhere.
+_STRIPE = "https://js.stripe.com https://*.js.stripe.com"
+_STRIPE_LINK = "https://link.com https://*.link.com"
+POLICY = "; ".join((
+    "default-src 'self'",
+    f"script-src 'self' {_STRIPE} https://checkout.stripe.com",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https://*.stripe.com https://*.link.com",
+    "font-src 'self'",
+    f"connect-src 'self' https://api.stripe.com https://checkout.stripe.com {_STRIPE_LINK}",
+    f"frame-src {_STRIPE} https://hooks.stripe.com https://checkout.stripe.com {_STRIPE_LINK}",
+    "worker-src 'self'",
+    "manifest-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+))
+
 # Told with every answer. The site is reached over HTTPS alone and stays so for a year; a file is the type it
-# says it is; nobody else's page may frame it, or point its links or plug-ins elsewhere; and another site is
-# told where a visitor came from, not which page. Not yet a policy on scripts and styles: one that is wrong
-# stops the payment form, and that needs trying against Stripe in a browser first (ROADMAP 6d).
+# says it is; and another site is told where a visitor came from, not which page.
 HEADERS = (
     (b"strict-transport-security", b"max-age=31536000"),
     (b"x-content-type-options", b"nosniff"),
     (b"x-frame-options", b"DENY"),
-    (b"content-security-policy", b"frame-ancestors 'none'; base-uri 'self'; object-src 'none'"),
+    (b"content-security-policy", POLICY.encode()),
     (b"referrer-policy", b"strict-origin-when-cross-origin"),
 )
 

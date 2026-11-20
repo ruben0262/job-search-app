@@ -1,6 +1,5 @@
 """The site proxy carries LinkedIn and nothing else, a new connection for every request; the boards'
-client carries no proxy at all, not even one from the box's environment; and both count what they
-download.
+client carries no proxy at all, not even one from the box's environment.
 
 There is no per-person client to test any more: the per-person lease went when the LinkedIn search
 was pooled (2026-11-03), the site having had one proxy for everyone since 2026-11-01.
@@ -8,7 +7,6 @@ was pooled (2026-11-03), the site having had one proxy for everyone since 2026-1
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from services.harvester.fetch import (
     PROXIED_HOSTS,
@@ -107,38 +105,3 @@ def test_ambient_proxy_environment_variables_are_ignored(monkeypatch):
     # And the site client's direct route must stay direct too.
     with make_site_client(SITE_PROXY) as client:
         assert not _has_ambient_proxy(client, "https://boards.greenhouse.io/acme/jobs/1")
-
-
-# ── metering ──────────────────────────────────────────────────────────────────────────────────
-
-# Metering lives in `MeteredClient.send` and so applies to every response regardless of route.
-DIRECT_URL = "https://boards.greenhouse.io/acme/jobs/1"
-
-
-def _metered_client(body: bytes, status: int = 200):
-    transport = httpx.MockTransport(
-        lambda request: httpx.Response(status, content=body, headers={"x-test": "1"}))
-    return make_site_client(SITE_PROXY, transport=transport)
-
-
-def test_bytes_are_counted_on_every_response():
-    body = b"x" * 4096
-    with _metered_client(body) as client:
-        client.get(DIRECT_URL)
-        client.get(DIRECT_URL)
-    assert client.bytes_downloaded >= len(body) * 2
-    assert client.megabytes_downloaded == pytest.approx(client.bytes_downloaded / (1024 * 1024))
-
-
-def test_failed_responses_are_metered_too():
-    """The proxy bills on the wire, not on success."""
-    with _metered_client(b"blocked" * 100, status=403) as client:
-        client.get(DIRECT_URL)
-    assert client.bytes_downloaded > 0, "a 403 still cost real bandwidth"
-
-
-def test_headers_are_included_in_the_estimate():
-    """Small per request, not nothing across thousands."""
-    with _metered_client(b"") as client:
-        client.get(DIRECT_URL)
-    assert client.bytes_downloaded > 0

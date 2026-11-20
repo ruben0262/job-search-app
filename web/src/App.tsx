@@ -1,5 +1,5 @@
 /** Routing, and the one decision the whole app hangs off: where a signed-in user belongs. */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api, type Dashboard } from "./api";
 import { DiscordButton, sayBackFromDiscord } from "./discord";
@@ -10,12 +10,10 @@ import { Landing } from "./landing/Landing";
 import { stopped } from "./leave";
 import { forgetMarks } from "./marks";
 import { MEMBERSHIP, backFromStripe } from "./membership";
-import { ADMIN_READS, AdminPage } from "./pages/AdminPage";
 import { forgetKept, readAhead } from "./kept";
 import { ADDED, AddJobPage } from "./pages/AddJobPage";
 import { ALERTS, AlertsPage } from "./pages/AlertsPage";
 import { BOOKMARKED, BookmarksPage } from "./pages/BookmarksPage";
-import { AdminUserPage } from "./pages/AdminUserPage";
 import { APPLIED, AppliedPage } from "./pages/AppliedPage";
 import { DOCUMENTS, DocumentsPage, HISTORY, IDENTITY, SAVED } from "./pages/DocumentsPage";
 import { JobsPage } from "./pages/JobsPage";
@@ -31,16 +29,30 @@ import { REVIEW, WordsPage } from "./pages/WordsPage";
 import { NotificationBell } from "./notifications";
 import { More } from "./more";
 import { PLACES, TABS } from "./places";
+import { markSignedIn, markSignedOut, onSessionChanged, wasSignedIn } from "./session";
 import { readLimitsAhead } from "./aiaccounts";
 import { TEMPLATES } from "./templates";
 import { ThemeToggle } from "./theme";
 import { Toasts } from "./toast";
 import { Brand } from "./wheel";
 
+// Admin's pages come in a file of their own, to somebody who opens Admin and to nobody else: they were a sixth
+// of what every visitor and every member downloaded to see a page they have no way into.
+const admin = () => import("./pages/AdminPage");
+const AdminPage = lazy(() => admin().then((pages) => ({ default: pages.AdminPage })));
+const AdminUserPage = lazy(() => import("./pages/AdminUserPage").then((pages) => ({ default: pages.AdminUserPage })));
+
 function useHash(): string {
   const [hash, setHash] = useState(() => window.location.hash.slice(1) || "/");
   const shown = useRef(hash);
+  // Set by the back and forward buttons, which say so before the address changes (where the browser tells).
+  const returning = useRef(false);
   useEffect(() => {
+    const travel = (event: Event) => {
+      returning.current = (event as Event & { navigationType?: string }).navigationType === "traverse";
+    };
+    const navigation = (window as Window & { navigation?: EventTarget }).navigation;
+    navigation?.addEventListener("navigate", travel);
     const update = () => {
       const next = window.location.hash.slice(1) || "/";
       // The back button, while a page has changes not saved: put back while it asks (`leave.ts`).
@@ -48,13 +60,29 @@ function useHash(): string {
         window.history.replaceState(null, "", `#${shown.current}`);
         return;
       }
+      // Another page starts at its top: the address names no part of a page, so the browser left the new one
+      // scrolled as far down as the old one was. Not when the job in the address changes, on the same page;
+      // and going back, the browser puts the page where it was left by itself.
+      const moved = next.split("?")[0] !== shown.current.split("?")[0];
       shown.current = next;
       setHash(next);
+      if (moved && !returning.current) window.scrollTo(0, 0);
+      returning.current = false;
     };
     window.addEventListener("hashchange", update);
-    return () => window.removeEventListener("hashchange", update);
+    return () => {
+      window.removeEventListener("hashchange", update);
+      navigation?.removeEventListener("navigate", travel);
+    };
   }, []);
   return hash;
+}
+
+/** What the pages kept dies with the session: the next account must not be drawn this one's, or send its marks. */
+function forget(): void {
+  forgetKept();
+  forgetMarks();
+  forgetBuilds();
 }
 
 type Session =
@@ -62,7 +90,14 @@ type Session =
 
 export function App() {
   const hash = useHash();
-  const [session, setSession] = useState<Session>({ state: "loading" });
+  // A browser nobody was signed in on is a visitor's: the landing page at once, and the server asked behind
+  // it. It was drawn only after two answers in a row, the page and then the sign-in refused (`session.ts`).
+  const [session, setSession] = useState<Session>(() => (wasSignedIn() ? { state: "loading" } : { state: "out" }));
+  // The Jobs list has its first answer: what the other tabs read ahead waits for it.
+  const [fed, setFed] = useState(false);
+  const onFed = useCallback(() => setFed(true), []);
+  // Whether the server has said who this is, signed in or not, since the page was opened.
+  const answered = useRef(false);
 
   const reload = useCallback(async () => {
     try {
@@ -70,20 +105,26 @@ export function App() {
       // not when its webhook arrives.
       if (backFromStripe()) await api.post("/billing/refresh").catch(() => undefined);
       sayBackFromDiscord();
-      setSession({ state: "in", dashboard: await api.get<Dashboard>("/dashboard") });
+      const dashboard = await api.get<Dashboard>("/dashboard");
+      answered.current = true;
+      markSignedIn();
+      setSession({ state: "in", dashboard });
     } catch (error) {
       // 401 is the ordinary signed-out case — `request` has already tried a refresh.
       if (error instanceof ApiError && error.status === 401) {
+        answered.current = true;
         // What the pages kept dies with the session.
-        forgetKept();
-        forgetMarks();
-        forgetBuilds();
+        forget();
+        markSignedOut();
+        setFed(false);
         setSession({ state: "out" });
         return;
       }
       // Before the first answer there is nothing else to show, so say so rather than "Loading…" forever.
       const why = error instanceof ApiError ? `The server answered ${error.status}.` : "No connection to the server.";
-      setSession((now) => (now.state === "loading" ? { state: "down", why } : now));
+      // And over the landing page drawn on a guess, when the server has never answered: its buttons would lead
+      // nowhere.
+      setSession((now) => (now.state === "loading" || !answered.current ? { state: "down", why } : now));
       throw error;
     }
   }, []);
@@ -91,6 +132,22 @@ export function App() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // A session that begins here, by signing in or by a confirmation link: whatever this tab kept was somebody
+  // else's, and the other tabs are told. A link opened where another account was signed in drew that account's
+  // pages for the new one.
+  const begin = useCallback(() => {
+    forget();
+    markSignedIn(true);
+    return reload();
+  }, [reload]);
+  // And one that began, ended or changed hands in another tab: nothing kept here is drawn again, and the
+  // server is asked who this is now.
+  useEffect(() => onSessionChanged(() => {
+    forget();
+    setSession({ state: "loading" });
+    void reload().catch(() => undefined);
+  }), [reload]);
 
   // Telegram's Start is pressed outside this tab, so coming back is when the banners change.
   const signedIn = session.state === "in";
@@ -101,25 +158,35 @@ export function App() {
     return () => window.removeEventListener("focus", again);
   }, [signedIn, reload]);
 
-  // Every other tab's first read, once, so the first visit to each draws at once too. Not the jobs
-  // list: Jobs is where everybody lands, and it reads that itself (measured locally: 71 ms, the rest
-  // under 10 ms each).
+  const [path = "/", query = ""] = hash.split("?");
+  const section = ["applied", "words", "alerts", "documents", "admin", "settings"]
+    .find((name) => path.startsWith(`/${name}`)) ?? "jobs";
+  // Every other tab's first read, once, so the first visit to each draws at once too. Not the jobs list: Jobs
+  // is where everybody lands, and it reads that itself. After its first answer, not beside it: the list was the
+  // last of some eighteen requests to leave, behind reads that open a hundred postings or parse a CV.
   const ready = session.state === "in" && session.dashboard.stage === "ready";
+  const listing = section === "jobs" && !["/add", "/bookmarks", "/upgrade"].some((other) => path.startsWith(other));
+  const ahead = ready && (fed || !listing);
+  const isAdmin = session.state === "in" && session.dashboard.stage === "ready" && session.dashboard.is_admin;
   // Whether to ask this phone to install the app (`install.tsx`): here, before any page returns, as a hook is.
   const asked = useAsked(session.state === "in" && session.dashboard.stage === "ready" ? session.dashboard : null);
   useEffect(() => {
-    if (ready) {
+    if (ahead) {
       readAhead([ADDED, BOOKMARKED, APPLIED, REVIEW, ALERTS, DOCUMENTS, SAVED, HISTORY, IDENTITY, TEMPLATES, ACCOUNT,
                  MEMBERSHIP]);
       readLimitsAhead();
-      // A CV still being made when the page was loaded again is said again, wherever they are.
-      resumeBuilds();
+      // An admin's own pages too, so Admin opens as any other tab does.
+      if (isAdmin) void admin();
     }
+  }, [ahead, isAdmin]);
+  useEffect(() => {
+    // A CV still being made when the page was loaded again is said again, wherever they are.
+    if (ready) resumeBuilds();
   }, [ready]);
   // Public, and reachable signed out: signup and the landing page's foot link them before anybody has an account.
   const legal = LEGAL_PAGES.find(([name]) => hash.startsWith(`/${name}`));
   if (legal) return <LegalPage name={legal[0]} />;
-  if (hash.startsWith("/verify")) return <Verify onDone={reload} />;
+  if (hash.startsWith("/verify")) return <Verify onDone={begin} />;
   if (hash.startsWith("/forgot")) return <ForgotPassword />;
   if (hash.startsWith("/reset")) return <ResetPassword onDone={reload} />;
 
@@ -142,7 +209,7 @@ export function App() {
       // Keyed by the address, so the address alone says which: going back from one to the other kept the
       // first one's title on the second one's page.
       const mode = hash.startsWith("/signup") ? "up" : "in";
-      return <SignIn key={mode} onSignedIn={reload} mode={mode} />;
+      return <SignIn key={mode} onSignedIn={begin} mode={mode} />;
     }
     return <Landing />;
   }
@@ -157,9 +224,6 @@ export function App() {
                        scores={dashboard.areas.includes("match_scores")} onChanged={reload} />;
   }
 
-  const [path, query = ""] = hash.split("?");
-  const section = ["applied", "words", "alerts", "documents", "admin", "settings"]
-    .find((name) => path?.startsWith(`/${name}`)) ?? "jobs";
   const focus = Number(new URLSearchParams(query).get("job")) || null;
 
   return (
@@ -176,7 +240,8 @@ export function App() {
               <a key={key} href={key === "jobs" ? "#/" : `#/${key}`}
                  // Admin's first reads, as the pointer reaches its link, so it opens drawn. They were asked
                  // for on every page an admin loaded, whichever page it was.
-                 onPointerEnter={key === "admin" ? () => readAhead(ADMIN_READS) : undefined}
+                 onPointerEnter={key === "admin" ? () => void admin().then((pages) => readAhead(pages.ADMIN_READS))
+                   : undefined}
                  className={`${section === key ? "on" : ""}${TABS.includes(key) ? "" : " in-more"}`.trim()}
                  aria-current={section === key ? "page" : undefined}>
                 <svg className="place-icon" viewBox="0 0 24 24" aria-hidden="true">{icon}</svg>
@@ -198,10 +263,10 @@ export function App() {
             a moment (owner, 2026-11-03). Each page draws at once from what it read last (`kept.ts`). */}
         <main className={section === "admin" ? "admin" : undefined}>
           <Making />
-          {path?.startsWith("/add") ? (
+          {path.startsWith("/add") ? (
             // A tab of Jobs, not a place of its own; and so is the next.
             <AddJobPage onChanged={reload} can={dashboard.areas.includes("add_job")} />
-          ) : path?.startsWith("/bookmarks") ? (
+          ) : path.startsWith("/bookmarks") ? (
             <BookmarksPage onChanged={reload} />
           ) : section === "applied" ? (
             <AppliedPage />
@@ -214,14 +279,16 @@ export function App() {
           ) : section === "settings" ? (
             <SettingsPage dashboard={dashboard} onSignedOut={reload} />
           ) : section === "admin" ? (
-            // `#/admin/users/<id>` is its own page, not a panel that unfolds inside the list.
-            hash.startsWith("/admin/users/") ? (
-              <AdminUserPage userId={hash.slice("/admin/users/".length)} />
-            ) : (
-              <AdminPage tab={path!.slice("/admin/".length)} />
-            )
+            <Suspense fallback={<p className="muted">Loading…</p>}>
+              {/* `#/admin/users/<id>` is its own page, not a panel that unfolds inside the list. */}
+              {hash.startsWith("/admin/users/") ? (
+                <AdminUserPage userId={hash.slice("/admin/users/".length)} />
+              ) : (
+                <AdminPage tab={path.slice("/admin/".length)} />
+              )}
+            </Suspense>
           ) : (
-            <JobsPage dashboard={dashboard} focus={focus} onChanged={reload} />
+            <JobsPage dashboard={dashboard} focus={focus} onChanged={reload} onRead={onFed} />
           )}
         </main>
       </div>

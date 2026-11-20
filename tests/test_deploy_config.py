@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEPLOY = ROOT / "deploy"
 
 # Set by `deploy/compose.sh` itself, from the checkout's owner, rather than written by an operator.
-SET_BY_THE_WRAPPER = {"BROKER_UID"}
+SET_BY_THE_WRAPPER = {"APP_UID"}
 
 
 def test_every_setting_compose_reads_is_in_the_server_template():
@@ -178,3 +178,92 @@ def test_old_copies_of_the_archive_go_with_the_backups_and_the_newest_never_does
 
     left = sorted(path.name for path in tmp_path.iterdir())
     assert left == ["corpus-archive-2.tar.gz", "mahoraga-new.jsonl.gz"]
+
+
+# ── what the images run as, and what they are built from (2026-11-20) ─────────────────────────
+
+DOCKERFILES = sorted((DEPLOY / "docker").glob("Dockerfile.*"))
+
+
+def test_no_image_runs_as_root():
+    """Every service but the sign-in broker ran as root, the one that drives a browser without its sandbox
+    and three AI tools among them: a fault in any of it was root, beside the key to every stored credential.
+    Each runs as an account of its own, the last word its Dockerfile says about who."""
+    for dockerfile in DOCKERFILES:
+        users = re.findall(r"^USER\s+(\S+)", dockerfile.read_text(), flags=re.M)
+        assert users and users[-1] not in ("root", "0"), f"{dockerfile.name} runs as root"
+
+
+def test_every_image_is_built_for_the_account_that_owns_the_servers_folders():
+    """The services write to `logs/` and `archive/`, which the server lends them: so each image's account
+    has the id of the checkout's owner, read once by the wrapper and handed to every build."""
+    import yaml
+
+    compose = yaml.safe_load((DEPLOY / "compose.yml").read_text())
+    built = {name: service["build"] for name, service in compose["services"].items() if "build" in service}
+    assert len(built) >= 7, "the premise: the services built here"
+    for name, build in built.items():
+        assert build.get("args", {}).get("APP_UID") == "${APP_UID:-1001}", name
+        assert "ARG APP_UID" in (ROOT / build["dockerfile"]).read_text(), name
+    assert 'export APP_UID="${APP_UID:-$(stat -c %u "$ROOT")}"' in (DEPLOY / "compose.sh").read_text()
+
+
+def test_a_deploy_lets_the_document_being_written_finish():
+    """**A relationship, not two numbers.** Stopped, a container has Docker's ten seconds unless it is given
+    more, and a call writing a CV may take `libs.llm.client.TIMEOUT_SEC`: a deploy threw away a draft the
+    person's own AI plan had paid for, and the retry paid again. The worker stops after the job in hand
+    (`libs.queue.worker`), so what it is given to stop in is longer than the longest call."""
+    import yaml
+
+    from libs.llm.client import TIMEOUT_SEC
+
+    grace = yaml.safe_load((DEPLOY / "compose.yml").read_text())["services"]["docgen"]["stop_grace_period"]
+    amount, unit = re.fullmatch(r"(\d+)([sm])", grace).groups()
+
+    assert int(amount) * {"s": 1, "m": 60}[unit] > TIMEOUT_SEC
+
+
+def test_the_deploy_hands_the_folders_over_before_anything_writes_to_them():
+    """What the services wrote while they ran as root is root's, and the account they run as now cannot add
+    to it: a log that cannot be opened, an archive that cannot be written. Handed over before the schema
+    step, the first thing a deploy runs in a container."""
+    script = (DEPLOY / "deploy.sh").read_text()
+    handed = script.index("--user root --entrypoint chown harvester")
+    assert "/var/log/jobsearch /var/lib/jobsearch/archive" in script[handed:handed + 200]
+    assert handed < script.index('say "Schema"') < script.index('say "Recreating"')
+
+
+def test_the_images_install_the_versions_the_gates_ran_on():
+    """A build took whatever was newest that day, so an image could differ from the code the gates passed
+    with nothing saying so. Every service's install names the one list of versions
+    (`scripts/pin_runtime.py`), everything a service asks for that is installed here is on it, and what is
+    on it is the version installed here: move a version here without the list, and this fails."""
+    import importlib.util
+    from importlib import metadata
+
+    spec = importlib.util.spec_from_file_location("pin_runtime", ROOT / "scripts" / "pin_runtime.py")
+    pin = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pin)
+
+    pinned = dict(line.strip().split("==") for line in pin.CONSTRAINTS.read_text().splitlines()
+                  if "==" in line and not line.startswith("#"))
+    assert len(pinned) > 20, "the premise: the list is read"
+    for name, version in pinned.items():
+        try:
+            here = metadata.version(name)
+            assert here == version, f"{name} is {here} here and {version} in the list"
+        except metadata.PackageNotFoundError:
+            continue  # not on this machine (another system's package): nothing here to disagree with it
+    asked = [name for name in pin.required() if name not in pin.pins()[1]]
+    assert asked and not [name for name in asked if name not in pinned]
+
+    for service in pin.SERVICES:
+        dockerfile = (DEPLOY / "docker" / f"Dockerfile.{service}").read_text()
+        installs = re.findall(r"^RUN pip install .*$", dockerfile, flags=re.M)
+        assert installs and all("-c /tmp/constraints.txt" in line for line in installs), service
+
+
+def test_the_tunnel_is_a_version_somebody_chose():
+    """It holds the tunnel's token, and `latest` is whatever had been published the day the server pulled."""
+    [image] = re.findall(r"image:\s*(cloudflare/cloudflared\S*)", (DEPLOY / "compose.yml").read_text())
+    assert re.fullmatch(r"cloudflare/cloudflared:\d{4}\.\d+\.\d+", image), image
