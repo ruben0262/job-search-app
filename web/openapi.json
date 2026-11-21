@@ -4471,10 +4471,6 @@
             "title": "Corpus Retention Days",
             "type": "integer"
           },
-          "default_freshness_hours": {
-            "title": "Default Freshness Hours",
-            "type": "integer"
-          },
           "describe_per_cycle": {
             "title": "Describe Per Cycle",
             "type": "integer"
@@ -4597,7 +4593,6 @@
           "job_max_age_hours",
           "source_freshness_hours",
           "source_min_age_hours",
-          "default_freshness_hours",
           "source_queries_per_cycle",
           "source_results_per_query",
           "source_pages_per_cycle",

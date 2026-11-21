@@ -54,11 +54,7 @@ def test_every_setting_has_a_control_in_the_panel():
     panel = "".join(path.read_text(encoding="utf-8")
                     for path in (ROOT / "web" / "src" / "pages").glob("Admin*.tsx"))
 
-    # Known, and the owner's to settle (found 2026-11-21): the window of a board that has none of its own has
-    # no control and never had one. This test had read its name in a type the page kept by hand, and took that
-    # for its control. Its one effect, Findwork's six hours, can be set from Findwork's own row.
-    without = {"default_freshness_hours"}
-    missing = [key for key in DEFAULTS if key not in panel and key not in without]
+    missing = [key for key in DEFAULTS if key not in panel]
     assert not missing, (
         f"these settings have no control in the operator panel: {missing}")
 

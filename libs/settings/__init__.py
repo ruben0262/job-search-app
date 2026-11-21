@@ -39,7 +39,8 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     "recruitee": 72, "breezy": 72, "workday": 168, "personio": 72, "workable": 72,
 }
 
-# Anything not named above.
+# Anything not named above (Findwork). A setting until 2026-11-21, with no control in Admin from the day it
+# was made: a board's own window is set from its row there (`source_freshness_hours`), this one's among them.
 DEFAULT_FRESHNESS_HOURS = 6
 
 # Every source the harvester collects from.
@@ -437,7 +438,6 @@ DEFAULTS: dict[str, object] = {
     # other how long what it returned stays deliverable. Kept in one place so an operator
     # cannot widen the first while an invisible second discards the result.
     "source_min_age_hours": SOURCE_MIN_AGE_HOURS,
-    "default_freshness_hours": DEFAULT_FRESHNESS_HOURS,
     "source_queries_per_cycle": DEFAULT_SOURCE_QUERIES_PER_CYCLE,
     "source_results_per_query": DEFAULT_SOURCE_RESULTS_PER_QUERY,
     "source_pages_per_cycle": DEFAULT_SOURCE_PAGES_PER_CYCLE,
@@ -564,4 +564,4 @@ def freshness_hours(db: Database | Snapshot, source: str) -> int:
         return int(per_source[source])
     if source in DEFAULT_SOURCE_FRESHNESS_HOURS:
         return DEFAULT_SOURCE_FRESHNESS_HOURS[source]
-    return int(get(db, "default_freshness_hours"))
+    return DEFAULT_FRESHNESS_HOURS

@@ -3687,8 +3687,6 @@ export interface components {
             ats_companies_per_cycle: number;
             /** Corpus Retention Days */
             corpus_retention_days: number;
-            /** Default Freshness Hours */
-            default_freshness_hours: number;
             /** Describe Per Cycle */
             describe_per_cycle: number;
             /** Document Keep Hours */
