@@ -530,22 +530,25 @@ def test_just_arrived_first_puts_the_job_read_last_on_top_whatever_date_the_boar
     assert _ids(http.get("/feed?sort=newest").json())[-1] == read_last.id
 
 
-def test_a_card_gets_the_start_of_the_description_and_the_rest_on_request(api):
-    """A summary cut at a word, said to have more; the whole text from its own endpoint, so the list
-    stays light."""
+def test_a_list_carries_none_of_a_jobs_text_and_one_request_brings_the_texts_of_its_jobs(api):
+    """A card showed the start of the description (owner, 2026-11-21: "remove the jobs descriptions, that
+    would make the jobs appear cleaner too ... there should be no waiting to open a job"). The list has none
+    of it, and one request answers with the whole text of every job a page lists, for the page to hold
+    before any is opened. A job with no text, or no such job, is left out; a hundred is the most at once."""
     http, db, _, jobs = api
     long = "We build payment systems.  \n\n" + "Python and Postgres all day. " * 40
     db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {"description": long}})
     db[CorpusJob.COLLECTION].update_one({"_id": jobs[1].id}, {"$set": {"description": "Short and sweet."}})
 
-    rows = {job["id"]: job for job in http.get("/feed").json()["jobs"]}
+    listed = http.get("/feed")
+    texts = http.get("/jobs/descriptions", params={"ids": [jobs[0].id, jobs[1].id, 999_999]})
 
-    summary = rows[jobs[0].id]["summary"]
-    assert summary.startswith("We build payment systems. Python and Postgres") and summary.endswith("…")
-    assert len(summary) <= 281 and " Postgres all day… " not in summary, "cut at a word"
-    assert rows[jobs[0].id]["more"] is True
-    assert (rows[jobs[1].id]["summary"], rows[jobs[1].id]["more"]) == ("Short and sweet.", False)
-    assert http.get(f"/jobs/{jobs[0].id}/description").json()["text"] == long
+    assert {jobs[0].id, jobs[1].id} <= {job["id"] for job in listed.json()["jobs"]}
+    assert "payment systems" not in listed.text and "Short and sweet" not in listed.text
+    assert texts.json()["texts"] == {str(jobs[0].id): long, str(jobs[1].id): "Short and sweet."}
+    assert http.get(f"/jobs/{jobs[0].id}/description").json()["text"] == long, "one job by itself, the same"
+    assert http.get("/jobs/descriptions", params={"ids": list(range(1, 102))}).status_code == 422
+    assert http.get("/jobs/descriptions").status_code == 422
 
 
 def test_a_description_stored_as_one_line_is_shown_in_paragraphs(api):
@@ -583,14 +586,15 @@ def test_a_job_is_on_the_page_only_once_its_text_is_read(api):
     assert job_id not in _ids(http.get("/feed").json()), "a teaser is not its text"
 
     corpus.set_description(job_id, "We build backend systems in Go and Postgres. " * 6)
-    row = next(job for job in http.get("/feed").json()["jobs"] if job["id"] == job_id)
-    assert row["summary"].startswith("We build backend systems")
+    assert job_id in _ids(http.get("/feed").json())
+    assert http.get("/jobs/descriptions", params={"ids": [job_id]}).json()["texts"][str(job_id)].startswith(
+        "We build backend systems")
 
 
 # ── one job, hidden, applied ──────────────────────────────────────────────────────────────────
 
 def test_an_alerts_link_finds_its_job_while_it_is_still_theirs(api):
-    """`#/feed?job=<id>` is where every alert lands: the job while it matches, nothing once it does not."""
+    """`/jobs?job=<id>` is where every alert lands: the job while it matches, nothing once it does not."""
     http, _, _, jobs = api
     assert _ids(http.get(f"/feed?job={jobs[1].id}").json()) == [jobs[1].id]
     assert http.get(f"/feed?job={jobs[2].id}").json()["total"] == 0, "the nurse never matched"
@@ -677,7 +681,7 @@ def test_a_bookmarked_job_stays_on_the_jobs_page_and_is_listed_under_bookmarks_l
     listed = http.get("/jobs/bookmarked").json()
     assert [row["id"] for row in listed] == [nurse.id, first.id]
     assert all(row["bookmarked"] for row in listed)
-    assert {"title", "company", "summary", "apply_on", "documents"} <= set(listed[0]), "a card like any other"
+    assert {"title", "company", "salary", "apply_on", "documents"} <= set(listed[0]), "a card like any other"
     assert [row["words"] for row in listed] == [[], ["backend engineer"]], "and it says why, as it did there"
 
     assert http.delete(f"/jobs/{nurse.id}/bookmarked").json()["bookmarked"] is False

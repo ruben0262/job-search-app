@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
 
 import httpx
+from pymongo.database import Database
 
+from libs.db.models import QueueJob, UserSecret
 from libs.llm.cli import _jwt_claims
 from libs.secrets import redacting
 
@@ -38,6 +40,12 @@ CODEX_WINDOWS = (("primary_window", "five_hour"), ("secondary_window", "seven_da
 LIMITED_KINDS = ("claude_login", "codex_login")
 # A Settings page waits this long for the limits and no longer.
 LIMITS_TIMEOUT_SEC = 8
+# For how long what a provider said is what a page is told (`held`). The site reads a plan's limits ahead on
+# every page it loads, so that Settings shows them at once (owner, 2026-11-19), and every one of those was a
+# call to Anthropic or to ChatGPT with the person's own token, holding a worker for up to the 8 s above. A
+# plan's windows are five hours and a week long: five minutes late is not wrong, and a document made here,
+# which is what moves them from here, ends the wait at once.
+LIMITS_KEEP = timedelta(minutes=5)
 
 
 @dataclass(frozen=True)
@@ -126,3 +134,27 @@ def _when(said: object) -> datetime | None:
         return datetime.fromisoformat(str(said).replace("Z", "+00:00")) if said else None
     except ValueError:
         return None
+
+
+def held(db: Database, user_id, account_id, *, moment: datetime | None = None) -> list[Window] | None:
+    """What this account's limits were last read as, while that still stands: read within `LIMITS_KEEP`, and
+    no document made for its person since. None otherwise, and for an account that is not theirs: the
+    provider is to be asked."""
+    row = db[UserSecret.COLLECTION].find_one({"_id": account_id, "user_id": user_id},
+                                             {"limits": 1, "limits_at": 1})
+    read_at = row and row.get("limits_at")
+    if not read_at or read_at < (moment or datetime.now(UTC)) - LIMITS_KEEP:
+        return None
+    if db[QueueJob.COLLECTION].count_documents(
+            {"lane": "docgen", "user_id": user_id, "finished_at": {"$gte": read_at}}, limit=1):
+        return None
+    return [Window(**each) for each in row["limits"]]
+
+
+def hold(db: Database, user_id, account_id, windows: list[Window]) -> None:
+    """Keep what the provider just said. Not an answer with no window in it: that is a sign-in not used
+    for some hours, which is not asked at all, or a provider that did not answer, which is asked again."""
+    if windows:
+        db[UserSecret.COLLECTION].update_one(
+            {"_id": account_id, "user_id": user_id},
+            {"$set": {"limits": [asdict(each) for each in windows], "limits_at": datetime.now(UTC)}})

@@ -45,7 +45,7 @@ export function More({ admin, section, asked }: {
               </button>
             ) : null}
             {places.map(([key, label, icon]) => (
-              <a key={key} href={`#/${key}`} className="more-row" aria-current={key === section ? "page" : undefined}
+              <a key={key} href={`/${key}`} className="more-row" aria-current={key === section ? "page" : undefined}
                  onClick={() => setOpen(null)}>
                 <svg viewBox="0 0 24 24" aria-hidden="true">{icon}</svg>
                 <span>{label}</span>

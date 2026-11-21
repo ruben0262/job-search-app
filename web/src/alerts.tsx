@@ -198,7 +198,7 @@ export function AlertsForMembers() {
   return (
     <div className="row">
       <span className="small">Alerts come with a membership.</span>
-      <a className="button secondary small" href="#/upgrade">Become a member</a>
+      <a className="button secondary small" href="/upgrade">Become a member</a>
     </div>
   );
 }

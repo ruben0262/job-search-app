@@ -188,7 +188,7 @@ def test_a_new_match_reaches_telegram_and_every_browser_once(db):
     assert text.startswith("🔔 My search\n"), "every alert goes to the one chat, headed by its name"
     assert f"Senior {word}" in text and f"Matches: {word}" in text
     # Plain links, so a tap opens something rather than waiting on a webhook.
-    page = site_url(f"/#/feed?job={match.id}")
+    page = site_url(f"/jobs?job={match.id}")
     assert [(b["text"], b["url"]) for b in keyboard["inline_keyboard"][0]] == [
         ("Apply on Test", match.url), ("See it on the site", page)]
     assert [payload["url"] for _, payload in outbox.browsers] == [page, page]
@@ -553,7 +553,7 @@ def test_each_alert_sends_only_where_it_was_told(db):
     assert outbox.telegram == [] and outbox.browsers == []
     [bell] = db[UserNotification.COLLECTION].find({"user_id": user.id})
     assert (bell["event"], bell["title"], bell["url"]) == (
-        f"alert.{quiet.id}", "Quiet", f"#/alerts?alert={quiet.id}")
+        f"alert.{quiet.id}", "Quiet", f"/alerts?alert={quiet.id}")
 
     loud = _alert(db, user, name="Loud", companies=["Acme"], channels=["telegram"])
     _posting(db, "Engineer")
@@ -779,7 +779,7 @@ def test_the_push_transport_reads_404_and_410_as_gone(monkeypatch):
     from libs.notify import push
 
     browser = SimpleNamespace(endpoint="https://push.example.com/x", p256dh="k", auth="a")
-    alert = {"title": "Backend Engineer", "body": "Acme", "url": "https://jobs.example.com/#/feed?job=1"}
+    alert = {"title": "Backend Engineer", "body": "Acme", "url": "https://jobs.example.com/jobs?job=1"}
     seen = {}
 
     def answering(status):

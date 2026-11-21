@@ -10,7 +10,8 @@ import { createPortal } from "react-dom";
 export type Toast = {
   text: ReactNode;
   /** Where to go about it: "Open Settings", "See them in My search". */
-  links?: { href: string; label: string }[];
+  /** `download`: a file the server hands over, not a page of the site (`route.ts`). */
+  links?: { href: string; label: string; download?: boolean }[];
 };
 
 /** How long one stays: two lines read and a link reached. Paused while it is pointed at or focused. */
@@ -94,7 +95,7 @@ function Item({ notice }: { notice: Shown }) {
       {notice.links?.length ? (
         <div className="row">
           {notice.links.map((link, index) => (
-            <a key={link.href} href={link.href} onClick={() => dismiss(notice.id)}
+            <a key={link.href} href={link.href} download={link.download} onClick={() => dismiss(notice.id)}
                className={index ? "button secondary small" : "button small"}>
               {link.label}
             </a>

@@ -151,13 +151,20 @@ def _their_own(filters: UserFilters) -> list[dict]:
     return asked
 
 
-def theirs_to_open(db, user_id, job_id: int) -> bool:
-    """Whether this job is one this account may read, mark or have a document made for: any posting the
+def theirs_among(db, user_id, job_ids) -> set[int]:
+    """Which of these jobs this account may read, mark or have a document made for: any posting the
     platform keeps for everybody, or one they wrote in themselves, which is theirs alone
     (`candidate_conditions`). Asked wherever a job is named by its number: no list shows somebody else's, but
-    the numbers run in order, and the next one read its text to anybody (2026-11-20)."""
-    job = db[CorpusJob.COLLECTION].find_one({"_id": job_id}, {"source": 1})
-    if job is None or job.get("source") != TYPED:
-        return job is not None
-    return db[UserJobState.COLLECTION].count_documents(
-        {"user_id": user_id, "job_id": job_id, "added_at": {"$ne": None}}, limit=1) > 0
+    the numbers run in order, and the next one read its text to anybody (2026-11-20). Asked of many at once
+    where a page reads the text of every job it lists (`/jobs/descriptions`): two questions, however many."""
+    sources = {job["_id"]: job.get("source") for job in db[CorpusJob.COLLECTION].find(
+        {"_id": {"$in": list(job_ids)}}, {"source": 1})}
+    typed = [job for job, source in sources.items() if source == TYPED]
+    own = set(db[UserJobState.COLLECTION].distinct("job_id", {
+        "user_id": user_id, "job_id": {"$in": typed}, "added_at": {"$ne": None}})) if typed else set()
+    return {job for job, source in sources.items() if source != TYPED or job in own}
+
+
+def theirs_to_open(db, user_id, job_id: int) -> bool:
+    """Whether this one job is theirs to open (`theirs_among`)."""
+    return job_id in theirs_among(db, user_id, [job_id])

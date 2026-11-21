@@ -91,7 +91,7 @@ function finished(build: Build): void {
   const what = `${NAME[build.kind]} for ${build.title ?? "this job"}`;
   if (build.state === "ready" && build.download_url) {
     toast({ text: <>Your {what} is ready.<InUse tokens={build.tokens} /></>,
-            links: [{ href: build.download_url, label: `Download ${NAME[build.kind]}` }] });
+            links: [{ href: build.download_url, label: `Download ${NAME[build.kind]}`, download: true }] });
   } else {
     toast({ text: `We could not make your ${what}. ${build.detail ?? "Try again."}` });
   }
@@ -124,12 +124,12 @@ export function useBuild(jobId: number, kind: Ask["kind"]) {
       const missing = refusal.status === 409 ? (refusal.data as { missing?: string[] } | undefined)?.missing : null;
       if (refusal.status === 402) {
         notificationsChanged();
-        toast({ text: refusal.detail, links: [{ href: "#/upgrade", label: "Become a member" }] });
+        toast({ text: refusal.detail, links: [{ href: "/upgrade", label: "Become a member" }] });
       } else if (missing) {
         notificationsChanged();
         toast({ text: refusal.detail, links: [
-          ...missing.includes("account") ? [{ href: "#/settings", label: "Open Settings" }] : [],
-          ...missing.some((each) => each !== "account") ? [{ href: "#/documents", label: "Open My documents" }] : [],
+          ...missing.includes("account") ? [{ href: "/settings", label: "Open Settings" }] : [],
+          ...missing.some((each) => each !== "account") ? [{ href: "/documents", label: "Open My documents" }] : [],
         ] });
       } else {
         setRefused(refusal);

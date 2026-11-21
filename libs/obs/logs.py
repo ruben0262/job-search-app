@@ -41,6 +41,20 @@ def log_path(service: str, log_dir: Path | str | None = None) -> Path:
 NOISY_LIBRARIES = ("httpx", "httpx2", "httpcore", "urllib3", "asyncio", "pymongo", "stripe")
 
 
+class _NoQuery(logging.Filter):
+    """The web server's own line for each request, with the address cut at its "?". What follows is what
+    somebody typed or was handed: a search, the email an admin looked an account up by, the code a sign-in
+    elsewhere sends them back with. None of it is the log's to keep (CLAUDE.md §8), and every one of them
+    was in it."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        said = record.args
+        # uvicorn's access line: who, the method, the address, the protocol, the answer.
+        if isinstance(said, tuple) and len(said) == 5 and isinstance(said[2], str):
+            record.args = (*said[:2], said[2].split("?", 1)[0], *said[3:])
+        return True
+
+
 def _quieten_libraries() -> None:
     """Raise third-party loggers to WARNING, unless the operator asked for DEBUG."""
     debugging = logging.getLogger().level <= logging.DEBUG
@@ -55,6 +69,9 @@ def configure(service: str, *, level: str | None = None,
     root = logging.getLogger()
     root.setLevel(level or os.environ.get("LOG_LEVEL", "INFO"))
     _quieten_libraries()
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(each, _NoQuery) for each in access.filters):
+        access.addFilter(_NoQuery())
 
     existing = {getattr(handler, "_jobsearch_service", None) for handler in root.handlers}
     if service in existing:

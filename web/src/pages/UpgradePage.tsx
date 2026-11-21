@@ -7,11 +7,12 @@ import { useEffect, useState, type CSSProperties } from "react";
 
 import { api, type Membership } from "../api";
 import { useKept } from "../kept";
-import type { Pricing } from "../landing/Landing";
+import type { Pricing } from "../landing/pricecards";
 import { MEMBERSHIP, PLAN_NAMES, StripeCheckout, openPortal, price, standing } from "../membership";
 import { ThemeToggle } from "../theme";
 import { Error, Explain, useAction } from "../ui";
 import { Brand } from "../wheel";
+import { go } from "../route";
 
 /** Free to member, shown over and over (owner, 2026-11-13: "switch back to free to show differences constantly"):
  * Free with nothing ticked, then Member with each thing it adds ticked in turn, a while to read them, and back.
@@ -77,7 +78,7 @@ function beyondStarter(lines: Pricing["lines"]): Line[] {
 /** Back to the page they came from, or to their jobs when this page was opened on its own. */
 function back(): void {
   if (history.length > 1) history.back();
-  else window.location.hash = "/";
+  else go("/");
 }
 
 export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | void }) {
@@ -108,7 +109,7 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
       <div className="backdrop" aria-hidden="true" />
       <main className="plan-page">
         <header className="shell-top">
-          <Brand href="#/" />
+          <Brand href="/" />
           <ThemeToggle />
         </header>
         {m?.member && m.tier !== "starter" ? null : (
@@ -132,7 +133,7 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
             <div className="upgrade-done">
               <h1>You're a member</h1>
               <p className="lede">{standing(m)}</p>
-              <a className="button main" href="#/">Continue</a>
+              <a className="button main" href="/">Continue</a>
             </div>
           ) : !m.can_start ? (
             <div className="upgrade-done">

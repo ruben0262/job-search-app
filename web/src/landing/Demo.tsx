@@ -108,7 +108,7 @@ export function Demo({ auto = 0 }: { auto?: number }) {
   const slot = (kind: Kind) => made.has(kind) && making !== kind ? (
     <span className="make">
       {/* Theirs to download once they have an account. */}
-      <a className={kind === "cover" ? "button secondary" : "button"} href="#/signup">
+      <a className={kind === "cover" ? "button secondary" : "button"} href="/signup">
         {MORE_PICTURES.download}Download {NAME[kind]}
       </a>
       <button type="button" className="again" disabled={making !== null} onClick={() => make(kind)}>
@@ -142,10 +142,6 @@ export function Demo({ auto = 0 }: { auto?: number }) {
         <span className="tag match" style={{ "--fit": 9 } as CSSProperties}>Match 9/10</span>
         <span className="tag new">New</span>
         <span className="tag">€38–44k a year</span>
-      </p>
-      <p className="summary">
-        Lead a shift of 12 at our Berlin depot: picking, loading and every lorry out on time. Forklift
-        licence needed.
       </p>
       <p className="why">
         Your words: <span className="word green">warehouse</span> <span className="word green">team leader</span>

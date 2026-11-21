@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Schema } from "./api";
 import { ago, useNow } from "./time";
 import { BinIcon } from "./ui";
+import { go } from "./route";
 
 type Feed = Schema<"NotificationList">;
 type Notification = Feed["notifications"][number];
@@ -84,7 +85,7 @@ export function NotificationBell() {
     load();
     if (item.url) {
       setOpen(false);
-      window.location.hash = item.url.replace(/^#/, "");
+      go(item.url);
     }
   };
 

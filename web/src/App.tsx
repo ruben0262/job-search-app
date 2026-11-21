@@ -6,8 +6,6 @@ import { DiscordButton, sayBackFromDiscord } from "./discord";
 import { Making, forgetBuilds, resumeBuilds } from "./documents";
 import { HelpButton } from "./help";
 import { GetAppButton, InstallSheet, useAsked } from "./install";
-import { Landing } from "./landing/Landing";
-import { stopped } from "./leave";
 import { forgetMarks } from "./marks";
 import { MEMBERSHIP, backFromStripe } from "./membership";
 import { forgetKept, readAhead } from "./kept";
@@ -29,6 +27,7 @@ import { REVIEW, WordsPage } from "./pages/WordsPage";
 import { NotificationBell } from "./notifications";
 import { More } from "./more";
 import { PLACES, TABS } from "./places";
+import { useRoute } from "./route";
 import { markSignedIn, markSignedOut, onSessionChanged, wasSignedIn } from "./session";
 import { readLimitsAhead } from "./aiaccounts";
 import { TEMPLATES } from "./templates";
@@ -36,47 +35,30 @@ import { ThemeToggle } from "./theme";
 import { Toasts } from "./toast";
 import { Brand } from "./wheel";
 
+// The landing page is a file of its own, for a visitor: somebody signed in was sent it on every visit, to a
+// site whose pages they already had (owner, 2026-11-21). A browser nobody was signed in on asks for it at
+// once, and sooner still from the page itself (`public/theme.js`), beside the site's script and not after it.
+// Drawn the moment it is here, by hand and not through `lazy`: React holds a page it waited for back for
+// some 300 ms, which the page that sells would have paid on every visit (measured: 3.0 s became 3.5).
+type LandingPage = typeof import("./landing/Landing").Landing;
+let Landing: LandingPage | null = null;
+const landing = () => import("./landing/Landing").then((page) => (Landing = page.Landing));
+if (!wasSignedIn()) void landing();
+
+/** The landing page, once its file is here: nothing until then, which is a moment. */
+function useLanding(wanted: boolean): LandingPage | null {
+  const [page, setPage] = useState<LandingPage | null>(() => Landing);
+  useEffect(() => {
+    if (wanted && !page) void landing().then((loaded) => setPage(() => loaded));
+  }, [wanted, page]);
+  return page;
+}
+
 // Admin's pages come in a file of their own, to somebody who opens Admin and to nobody else: they were a sixth
 // of what every visitor and every member downloaded to see a page they have no way into.
 const admin = () => import("./pages/AdminPage");
 const AdminPage = lazy(() => admin().then((pages) => ({ default: pages.AdminPage })));
 const AdminUserPage = lazy(() => import("./pages/AdminUserPage").then((pages) => ({ default: pages.AdminUserPage })));
-
-function useHash(): string {
-  const [hash, setHash] = useState(() => window.location.hash.slice(1) || "/");
-  const shown = useRef(hash);
-  // Set by the back and forward buttons, which say so before the address changes (where the browser tells).
-  const returning = useRef(false);
-  useEffect(() => {
-    const travel = (event: Event) => {
-      returning.current = (event as Event & { navigationType?: string }).navigationType === "traverse";
-    };
-    const navigation = (window as Window & { navigation?: EventTarget }).navigation;
-    navigation?.addEventListener("navigate", travel);
-    const update = () => {
-      const next = window.location.hash.slice(1) || "/";
-      // The back button, while a page has changes not saved: put back while it asks (`leave.ts`).
-      if (next !== shown.current && stopped(next)) {
-        window.history.replaceState(null, "", `#${shown.current}`);
-        return;
-      }
-      // Another page starts at its top: the address names no part of a page, so the browser left the new one
-      // scrolled as far down as the old one was. Not when the job in the address changes, on the same page;
-      // and going back, the browser puts the page where it was left by itself.
-      const moved = next.split("?")[0] !== shown.current.split("?")[0];
-      shown.current = next;
-      setHash(next);
-      if (moved && !returning.current) window.scrollTo(0, 0);
-      returning.current = false;
-    };
-    window.addEventListener("hashchange", update);
-    return () => {
-      window.removeEventListener("hashchange", update);
-      navigation?.removeEventListener("navigate", travel);
-    };
-  }, []);
-  return hash;
-}
 
 /** What the pages kept dies with the session: the next account must not be drawn this one's, or send its marks. */
 function forget(): void {
@@ -89,7 +71,7 @@ type Session =
   | { state: "loading" } | { state: "down"; why: string } | { state: "out" } | { state: "in"; dashboard: Dashboard };
 
 export function App() {
-  const hash = useHash();
+  const route = useRoute();
   // A browser nobody was signed in on is a visitor's: the landing page at once, and the server asked behind
   // it. It was drawn only after two answers in a row, the page and then the sign-in refused (`session.ts`).
   const [session, setSession] = useState<Session>(() => (wasSignedIn() ? { state: "loading" } : { state: "out" }));
@@ -158,9 +140,11 @@ export function App() {
     return () => window.removeEventListener("focus", again);
   }, [signedIn, reload]);
 
-  const [path = "/", query = ""] = hash.split("?");
+  const Visitors = useLanding(session.state === "out");
+  const [path = "/", query = ""] = route.split("?");
+  // The place the address is in: its first word. `/`, `/jobs` and anything unknown are Jobs.
   const section = ["applied", "words", "alerts", "documents", "admin", "settings"]
-    .find((name) => path.startsWith(`/${name}`)) ?? "jobs";
+    .find((name) => path === `/${name}` || path.startsWith(`/${name}/`)) ?? "jobs";
   // Every other tab's first read, once, so the first visit to each draws at once too. Not the jobs list: Jobs
   // is where everybody lands, and it reads that itself. After its first answer, not beside it: the list was the
   // last of some eighteen requests to leave, behind reads that open a hundred postings or parse a CV.
@@ -184,11 +168,11 @@ export function App() {
     if (ready) resumeBuilds();
   }, [ready]);
   // Public, and reachable signed out: signup and the landing page's foot link them before anybody has an account.
-  const legal = LEGAL_PAGES.find(([name]) => hash.startsWith(`/${name}`));
+  const legal = LEGAL_PAGES.find(([name]) => path === `/${name}`);
   if (legal) return <LegalPage name={legal[0]} />;
-  if (hash.startsWith("/verify")) return <Verify onDone={begin} />;
-  if (hash.startsWith("/forgot")) return <ForgotPassword />;
-  if (hash.startsWith("/reset")) return <ResetPassword onDone={reload} />;
+  if (path === "/verify") return <Verify onDone={begin} />;
+  if (path === "/forgot") return <ForgotPassword />;
+  if (path === "/reset") return <ResetPassword onDone={reload} />;
 
   if (session.state === "loading") return <main className="centered">Loading…</main>;
   if (session.state === "down") {
@@ -205,19 +189,19 @@ export function App() {
 
   if (session.state === "out") {
     // The landing page, for anybody signed out; sign in and sign up behind its buttons.
-    if (hash.startsWith("/signin") || hash.startsWith("/signup")) {
+    if (path === "/signin" || path === "/signup") {
       // Keyed by the address, so the address alone says which: going back from one to the other kept the
       // first one's title on the second one's page.
-      const mode = hash.startsWith("/signup") ? "up" : "in";
+      const mode = path === "/signup" ? "up" : "in";
       return <SignIn key={mode} onSignedIn={begin} mode={mode} />;
     }
-    return <Landing />;
+    return Visitors ? <Visitors /> : null;
   }
 
   const { dashboard } = session;
   // Free or the membership, picked first, whatever the address (owner, 2026-11-12): nothing else until then.
   if (dashboard.stage === "plan") return <PlanPage onChanged={reload} />;
-  if (hash.startsWith("/upgrade")) return <UpgradePage onChanged={reload} />;
+  if (path === "/upgrade") return <UpgradePage onChanged={reload} />;
   if (dashboard.stage === "onboarding") {
     // Deliberately not routable past: a half-configured account produces a bad feed and the user concludes.
     return <Onboarding state={dashboard.onboarding} member={dashboard.areas.includes("alerts")}
@@ -231,13 +215,13 @@ export function App() {
       <div className="backdrop" aria-hidden="true" />
       <div className="app">
         <nav>
-          <Brand href="#/" />
+          <Brand href="/jobs" />
           {/* A row of names up top on a laptop (owner, 2026-11-12). On a phone, an app's tab bar along the
               bottom: the four in `TABS`, each a picture over its short name, and More for the rest, help and the
               theme (owner, 2026-11-17). */}
           <div className="places">
             {PLACES.filter(([key]) => key !== "admin" || dashboard.is_admin).map(([key, label, icon, short]) => (
-              <a key={key} href={key === "jobs" ? "#/" : `#/${key}`}
+              <a key={key} href={`/${key}`}
                  // Admin's first reads, as the pointer reaches its link, so it opens drawn. They were asked
                  // for on every page an admin loaded, whichever page it was.
                  onPointerEnter={key === "admin" ? () => void admin().then((pages) => readAhead(pages.ADMIN_READS))
@@ -280,9 +264,9 @@ export function App() {
             <SettingsPage dashboard={dashboard} onSignedOut={reload} />
           ) : section === "admin" ? (
             <Suspense fallback={<p className="muted">Loading…</p>}>
-              {/* `#/admin/users/<id>` is its own page, not a panel that unfolds inside the list. */}
-              {hash.startsWith("/admin/users/") ? (
-                <AdminUserPage userId={hash.slice("/admin/users/".length)} />
+              {/* `/admin/users/<id>` is its own page, not a panel that unfolds inside the list. */}
+              {path.startsWith("/admin/users/") ? (
+                <AdminUserPage userId={path.slice("/admin/users/".length)} />
               ) : (
                 <AdminPage tab={path.slice("/admin/".length)} />
               )}

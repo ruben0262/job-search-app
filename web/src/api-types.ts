@@ -665,7 +665,8 @@ export interface paths {
         };
         /**
          * Limits
-         * @description Where this account's plan limits stand: the 5-hour window and the weekly one (owner, 2026-11-14).
+         * @description Where this account's plan limits stand: the 5-hour window and the weekly one (owner, 2026-11-14). As
+         *     its provider said within the last few minutes, or as it says now (`libs.llm.limits.held`).
          */
         get: operations["limits_ai_accounts__account_id__limits_get"];
         put?: never;
@@ -1146,6 +1147,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/discord/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Callback
+         * @description Discord sending them back: their account linked, and them on Settings, told how it went. The account is
+         *     the one the `state` names, signed here when they asked, and the browser coming back is signed in as it.
+         *     The state alone was enough, so a link one person asked for and sent to another, opened there, moved that
+         *     person's Discord account onto the first one's and took their plan's role with it (2026-11-20).
+         */
+        get: operations["callback_discord_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/discord/link": {
         parameters: {
             query?: never;
@@ -1442,6 +1466,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/descriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job Descriptions
+         * @description The whole text of the jobs a page lists, asked for once the list is drawn and before any is opened,
+         *     so opening one waits for nothing (owner, 2026-11-21: "there should be no waiting to open a job").
+         */
+        get: operations["job_descriptions_jobs_descriptions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/link": {
         parameters: {
             query?: never;
@@ -1493,8 +1538,7 @@ export interface paths {
         };
         /**
          * Job Description
-         * @description A posting's whole description, for a card that was asked to show it: as stored, or in paragraphs
-         *     if it was stored as one line (`paragraphs`).
+         * @description One posting's whole description (`_texts`).
          */
         get: operations["job_description_jobs__job_id__description_get"];
         put?: never;
@@ -2809,15 +2853,11 @@ export interface components {
             is_remote: boolean | null;
             /** Location */
             location: string | null;
-            /** More */
-            more: boolean;
             /** Posted At */
             posted_at: string | null;
             salary: components["schemas"]["FeedSalary"] | null;
             /** Source */
             source: string;
-            /** Summary */
-            summary: string | null;
             /** Title */
             title: string;
             /** Url */
@@ -3040,6 +3080,13 @@ export interface components {
             hidden: boolean;
             /** Job Id */
             job_id: number;
+        };
+        /** JobTexts */
+        JobTexts: {
+            /** Texts */
+            texts: {
+                [key: string]: string;
+            };
         };
         /** KeyBody */
         KeyBody: {
@@ -5806,6 +5853,37 @@ export interface operations {
             };
         };
     };
+    callback_discord_callback_get: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            303: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     link_discord_link_post: {
         parameters: {
             query?: never;
@@ -6230,6 +6308,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeedJob"][];
+                };
+            };
+        };
+    };
+    job_descriptions_jobs_descriptions_get: {
+        parameters: {
+            query: {
+                ids: number[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobTexts"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -65,10 +65,10 @@ def send_digest(db: Database, mailer: EmailSender, user: User) -> int:
                             where=" · ".join(filter(None, (job.get("company"), job.get("location")))),
                             board=board_name(job.get("source") or ""),
                             words=tuple(sorted(wanted.intersection(job.get("terms") or ()))),
-                            url=site_url(f"/#/feed?job={job['_id']}"))
+                            url=site_url(f"/jobs?job={job['_id']}"))
                   for job in found[:DIGEST_LIMIT]]
-    subject, text, html = digest_email(shown, total=len(jobs), site=site_url("/#/alerts"),
-                                       settings=site_url("/#/alerts"))
+    subject, text, html = digest_email(shown, total=len(jobs), site=site_url("/alerts"),
+                                       settings=site_url("/alerts"))
     try:
         send_within_cap(db, mailer, user.email, subject, text, purpose="digest", html=html)
     except MailError:

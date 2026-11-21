@@ -49,7 +49,7 @@ export function DocumentsPage({ makes }: {
     const after = await suggested().catch(() => before ?? new Set<string>());
     const found = [...after].filter((term) => !before?.has(term)).length;
     toast(found ? { text: `We found ${found} new word${found === 1 ? "" : "s"} for you.`,
-                    links: [{ href: "#/words", label: "See them in My search" }] } : { text: "Saved." });
+                    links: [{ href: "/words", label: "See them in My search" }] } : { text: "Saved." });
     setBefore(after);
   };
 
@@ -136,7 +136,7 @@ function Made({ makes }: { makes: boolean }) {
         // What it is stays said; the way to it is one button (CLAUDE.md §0).
         <div className="row">
           <span className="small">CVs and cover letters for each job come with a membership.</span>
-          <a className="button secondary small" href="#/upgrade">Become a member</a>
+          <a className="button secondary small" href="/upgrade">Become a member</a>
         </div>
       ) : null}
       {kept.documents.length === 0 ? (

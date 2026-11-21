@@ -143,7 +143,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
 
   return (
     <div className="account">
-      <a className="back" href="#/admin/accounts">← All accounts</a>
+      <a className="back" href="/admin/accounts">← All accounts</a>
       <header className="account-head">
         <span className="account-mark" aria-hidden="true">{(user.full_name || user.email).charAt(0)}</span>
         <div className="account-who">

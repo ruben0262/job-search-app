@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 import openapi from "./openapi.json";
 
@@ -14,11 +14,46 @@ const prefixes = new Set(Object.keys(openapi.paths).map((path) => path.split("/"
 // same origin and there is no CORS story to get wrong. In development the API runs on 8000, and
 // this proxy reproduces the same-origin arrangement rather than papering over a different one with
 // permissive CORS headers that would then be untested in production.
+// A page's address and the data behind it are often the same words (`/applied`, `/alerts`). A browser going
+// to one is given the page and the page's own code asking is given the data, told apart by what is asked for,
+// as the API itself tells them apart (`services/api/guard.py`): the same rule, read off the same contract. The
+// API's own addresses that answer a browser (a file to download, the way back from Discord) go to it.
+type Answers = Record<string, { content?: Record<string, unknown> }>;
+const browsersOwn = Object.entries(openapi.paths as Record<string, { get?: { responses: Answers } }>)
+  .filter(([, item]) => item.get && !Object.entries(item.get.responses)
+    .some(([code, answer]) => /^[23]/.test(code) && "application/json" in (answer.content ?? {})))
+  .map(([path]) => new RegExp(`^${path.replace(/\{[^/]+\}/g, "[^/]+")}$`));
+const pageAsked = (method: string | undefined, accept: string | undefined, url: string | undefined) => {
+  const path = (url ?? "").split("?")[0] ?? "";
+  return method === "GET" && (accept ?? "").includes("text/html") && !(path.split("/").pop() ?? "").includes(".")
+    && !browsersOwn.some((own) => own.test(path));
+};
+
+// The landing page is a file of its own, named after what is in it, so its name changes with every build.
+// The page says where it is (`<meta name="landing">`), and `public/theme.js`, which runs before anything is
+// drawn, asks for it there and then for a visitor: beside the site's script, not a round trip after it.
+const landingHint = (): Plugin => ({
+  name: "landing-hint",
+  transformIndexHtml: {
+    order: "post",
+    handler(html, { bundle }) {
+      const landing = Object.values(bundle ?? {}).find((each) => each.type === "chunk"
+        && each.facadeModuleId?.endsWith("/landing/Landing.tsx"));
+      return landing ? html.replace("<head>", `<head>\n    <meta name="landing" content="/${landing.fileName}" />`) : html;
+    },
+  },
+});
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), landingHint()],
   server: {
     proxy: Object.fromEntries(
-      [...prefixes].map((prefix) => [`/${prefix}`, { target: "http://127.0.0.1:8000", changeOrigin: false }]),
+      [...prefixes].map((prefix) => [`/${prefix}`, {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: false,
+        bypass: (request: { method?: string; url?: string; headers: { accept?: string } }) =>
+          (pageAsked(request.method, request.headers.accept, request.url) ? "/index.html" : undefined),
+      }]),
     ),
   },
 });

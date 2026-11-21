@@ -115,3 +115,21 @@ def test_debug_keeps_the_request_trace(tmp_path):
     logging.getLogger("httpx").info('HTTP Request: GET https://example.com "HTTP/1.1 200 OK"')
 
     assert path_lines(path, "200 OK") == 1
+
+
+def test_the_web_servers_request_line_is_logged_without_what_follows_the_question_mark(tmp_path, caplog):
+    """The server's own line for a request named the whole address: a search somebody typed, the email an
+    admin looked an account up by, the code Discord hands a person back with. The address is logged up to
+    its "?" and no further."""
+    configure("api", log_dir=tmp_path, console=False)
+    access = logging.getLogger("uvicorn.access")
+
+    with caplog.at_level(logging.INFO, logger="uvicorn.access"):
+        access.info('%s - "%s %s HTTP/%s" %d', "10.0.0.7:5120", "GET",
+                    "/discord/callback?code=one-time-code&state=signed-state", "1.1", 303)
+        access.info('%s - "%s %s HTTP/%s" %d', "10.0.0.7:5120", "GET", "/admin/users?q=sam%40example.com",
+                    "1.1", 200)
+
+    said = [record.getMessage() for record in caplog.records if record.name == "uvicorn.access"]
+    assert said == ['10.0.0.7:5120 - "GET /discord/callback HTTP/1.1" 303',
+                    '10.0.0.7:5120 - "GET /admin/users HTTP/1.1" 200']

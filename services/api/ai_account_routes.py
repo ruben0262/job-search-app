@@ -204,18 +204,23 @@ class Limits(BaseModel):
 
 
 @router.get("/{account_id}/limits")
-def limits(account_id: str, user_id: _uuid.UUID = Depends(current_user),
+def limits(account_id: str, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user),
            store: SecretStore = Depends(get_store)) -> Limits:
-    """Where this account's plan limits stand: the 5-hour window and the weekly one (owner, 2026-11-14)."""
+    """Where this account's plan limits stand: the 5-hour window and the weekly one (owner, 2026-11-14). As
+    its provider said within the last few minutes, or as it says now (`libs.llm.limits.held`)."""
     try:
-        secret = store.reveal_account(user_id, ObjectId(account_id))
+        account = ObjectId(account_id)
     except (InvalidId, TypeError):
-        secret = None
-    if secret is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="that account is not linked here")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="that account is not linked here") from None
+    windows = plan_limits.held(db, user_id, account)
+    if windows is None:
+        secret = store.reveal_account(user_id, account)
+        if secret is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="that account is not linked here")
+        windows = plan_limits.read(secret.kind, secret.reveal())
+        plan_limits.hold(db, user_id, account, windows)
     return Limits(windows=[LimitWindow(id=each.id, label=each.label, percent=each.percent,
-                                       resets_at=each.resets_at)
-                           for each in plan_limits.read(secret.kind, secret.reveal())])
+                                       resets_at=each.resets_at) for each in windows])
 
 
 @router.delete("/{account_id}")

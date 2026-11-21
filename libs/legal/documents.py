@@ -23,7 +23,7 @@ from libs.notify import site_url
 
 HERE = Path(__file__).parent
 
-# Each page's address on the site (`#/terms` …) and its title.
+# Each page's address on the site (`/terms` …) and its title.
 DOCUMENTS = {
     "terms": "Terms of Service",
     "privacy": "Privacy Policy",

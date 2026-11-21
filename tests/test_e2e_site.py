@@ -525,7 +525,7 @@ def test_the_legal_pages_are_plain_text_from_the_foot_and_say_who_runs_the_site(
                 doc = page.locator("main.legal")
                 expect(doc.get_by_role("heading", level=1)).to_have_text(title)
                 expect(doc).to_contain_text(shown)
-                expect(doc.locator('a[href^="#/"]')).to_have_text(["Back"])
+                expect(doc.locator('a[href="/"]')).to_have_text(["Back"])
                 expect(page.get_by_role("button")).to_have_count(0)
                 expect(page.locator("nav")).to_have_count(0)
                 assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"{title} at {width}px"
@@ -684,9 +684,9 @@ def test_the_landing_page_offers_free_and_member_and_an_admin_words_both(site, c
         _says_more(cards.last.locator(".price-list li").nth(2), lines["areas"]["alerts"][0]["more"])
         expect(page.locator(".price-amount")).to_have_count(0)
         _one_line_each(page)
-        expect(cards.first.get_by_role("link", name=free["button"])).to_have_attribute("href", "#/signup")
+        expect(cards.first.get_by_role("link", name=free["button"])).to_have_attribute("href", "/signup")
         expect(cards.last.get_by_role("link", name=member["button"])).to_have_attribute(
-            "href", "#/signup?plan=member")
+            "href", "/signup?plan=member")
 
         _sign_up(page, base, email, capsys)
         _onboard(page)
@@ -1427,8 +1427,9 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         browser.close()
 
 
-def test_job_cards_show_the_start_of_the_description_and_sit_two_to_a_row_on_a_laptop(site, capsys):
-    """One column on a phone, two on a laptop, each with the start of its description."""
+def test_job_cards_carry_none_of_the_description_and_sit_two_to_a_row_on_a_laptop(site, capsys):
+    """One column on a phone, two on a laptop, and none of a job's text on its card (owner, 2026-11-21:
+    "remove the jobs descriptions, that would make the jobs appear cleaner too")."""
     base, email, _ = site
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
@@ -1441,7 +1442,7 @@ def test_job_cards_show_the_start_of_the_description_and_sit_two_to_a_row_on_a_l
         first, second = cards.nth(0).bounding_box(), cards.nth(1).bounding_box()
         assert abs(first["y"] - second["y"]) < 1 and second["x"] > first["x"] + first["width"] / 2, (
             "two to a row")
-        expect(cards.first.locator(".summary")).to_contain_text("Python, Postgres")
+        expect(cards.first).not_to_contain_text("Python, Postgres")
 
         page.set_viewport_size({"width": 390, "height": 844})
         first, second = cards.nth(0).bounding_box(), cards.nth(1).bounding_box()
@@ -1780,8 +1781,8 @@ def _what_is_missing(page, card) -> None:
     expect(toasts).to_have_text([re.compile(
         "^To make your cover letter, first link your AI account in Settings and upload a cover letter in "
         "My documents.")])
-    expect(toasts.get_by_role("link", name="Open Settings")).to_have_attribute("href", "#/settings")
-    expect(toasts.get_by_role("link", name="Open My documents")).to_have_attribute("href", "#/documents")
+    expect(toasts.get_by_role("link", name="Open Settings")).to_have_attribute("href", "/settings")
+    expect(toasts.get_by_role("link", name="Open My documents")).to_have_attribute("href", "/documents")
     toasts.get_by_role("button", name="Close").click()
     expect(toasts).to_have_count(0)
     # In the bell at once too, not at its next look a minute on: opening it reloads nothing, so it is
@@ -2016,7 +2017,7 @@ def test_a_job_opens_whole_and_skipping_survives_a_lost_connection_and_new_jobs_
         _where_and_when(page, card(TITLES[0]))
 
         view = page.get_by_role("dialog", name=TITLES[0])
-        card(TITLES[0]).locator(".summary").click()
+        card(TITLES[0]).locator(".why").click()
         expect(view.locator(".description")).to_contain_text("Python, Postgres")
         view.get_by_role("button", name="Close").click()
         expect(view).to_have_count(0)
@@ -2290,7 +2291,7 @@ def _emailed(capsys, route: str) -> str:
     printed = ""
     for _ in range(50):
         printed += capsys.readouterr().out
-        if found := re.search(rf"http://\S+#/{route}\?token=\S+", printed):
+        if found := re.search(rf"http://\S+/{route}#token=\S+", printed):
             return found.group(0)
         time.sleep(0.1)
     pytest.fail(f"no {route} link was emailed")
@@ -2691,8 +2692,8 @@ def _alert_links(page, base: str, ids: dict[str, int]) -> None:
 
     for event in vars(notify).values():
         if isinstance(event, notify.Event) and event.url:
-            page.goto(f"{base}/{event.url}")
-            if event.url == "#/upgrade":
+            page.goto(f"{base}{event.url}")
+            if event.url == "/upgrade":
                 # The membership's own page, apart from the places in the bar.
                 expect(page.get_by_role("heading", name=re.compile(r"\bmember\b"))).to_be_visible()
             else:
@@ -3034,7 +3035,7 @@ def test_the_site_installs_as_an_app_and_a_job_it_pushes_shows_the_wheel(site, c
         worker = next(each for each in workers if not each.get("isDeleted"))
         job = ids[TITLES[0]]
         # What the notifier sends (`services.notifier.card.notification`), as a push service delivers it.
-        sent = {"title": "Backend Engineer", "body": "My search · Acme", "url": f"/#/feed?job={job}"}
+        sent = {"title": "Backend Engineer", "body": "My search · Acme", "url": f"/jobs?job={job}"}
         cdp.send("ServiceWorker.deliverPushMessage", {
             "origin": base, "registrationId": worker["registrationId"], "data": json.dumps(sent)})
         shown = page.evaluate("""async () => {
@@ -3137,6 +3138,13 @@ def _holding(held: list):
     def hold(route) -> None:
         held.append(route)
     return hold
+
+
+def _within(page, path: str) -> None:
+    """To another page of the site without loading the site again, as a link or the back button does: what
+    the pages have read stays read. (`page.goto` to another address is a new load, starting from nothing.)"""
+    page.evaluate(
+        "(to) => { history.pushState(null, '', to); dispatchEvent(new PopStateEvent('popstate')); }", path)
 
 
 def _card(page, title: str):
@@ -3258,7 +3266,6 @@ def test_a_job_skipped_is_not_drawn_again_from_the_list_read_before_it_was(site,
     """Jobs draws at once from what it read last, and that list still had the job just skipped: back on Jobs
     it was there again until a fresh answer came, and with no connection for good. Marked, a job leaves the
     kept list too. The server is kept from answering here, so what is drawn is what was kept."""
-    base, _, _ = site
     with sync_api.sync_playwright() as playwright:
         browser, _, page = _someone(playwright, site, capsys)
         with page.expect_response(lambda response: "/hidden" in response.url):
@@ -3267,9 +3274,10 @@ def test_a_job_skipped_is_not_drawn_again_from_the_list_read_before_it_was(site,
         held = []
         page.route(lambda url: _path(url) == "/feed", _holding(held))
 
-        page.goto(f"{base}/#/settings")
+        _within(page, "/settings")
         expect(page.get_by_role("button", name="Sign out")).to_be_visible()
-        page.goto(f"{base}/#/")
+        with page.expect_request(lambda request: _path(request.url) == "/feed"):
+            _within(page, "/jobs")
 
         expect(_card(page, TITLES[0])).to_be_visible()
         assert held, "the premise: the list on the page is the one kept, the server has not answered"
@@ -3283,9 +3291,9 @@ def test_another_page_opens_at_its_top_and_back_returns_to_where_the_last_one_wa
     as the last one was: Settings opened at its middle. Another page starts at its top. Going back is the
     browser's own to put right, and is left to it."""
     with sync_api.sync_playwright() as playwright:
-        browser, _, page = _someone(playwright, site, capsys, width=1280, height=420)
-        page.evaluate("window.scrollTo(0, 260)")
-        assert page.evaluate("scrollY") == 260, "the premise: Jobs is long enough to be scrolled"
+        browser, _, page = _someone(playwright, site, capsys, width=1280, height=320)
+        page.evaluate("window.scrollTo(0, 140)")
+        assert page.evaluate("scrollY") == 140, "the premise: Jobs is long enough to be scrolled"
 
         page.locator("nav .places a", has_text="Settings").click()
         expect(page.get_by_role("button", name="Sign out")).to_be_attached()
@@ -3293,7 +3301,7 @@ def test_another_page_opens_at_its_top_and_back_returns_to_where_the_last_one_wa
 
         page.go_back()
         expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
-        page.wait_for_function("scrollY === 260", timeout=5000)
+        page.wait_for_function("scrollY === 140", timeout=5000)
         browser.close()
 
 
@@ -3447,18 +3455,20 @@ def test_a_look_just_picked_is_not_undone_by_an_answer_asked_for_before_it(site,
         # Read ahead first, so the page below draws from it while its own read is held.
         with page.expect_response(lambda response: _path(response.url) == "/templates"):
             page.reload()
-        # The page's own read is answered by the server at once and the answer kept from the page: what comes
-        # late is what the server said before the change, not after it.
+        # What the server says before the change, kept to be handed to the page late: the page's own read is
+        # held, and answered after the change with what was true before it.
+        before = page.request.get(f"{base}/templates").json()
         held = []
 
         def late(route) -> None:
             if route.request.method == "GET":
-                held.append((route, route.fetch()))
+                held.append(route)
             else:
                 route.continue_()
 
         page.route(lambda url: _path(url) == "/templates", late)
-        page.goto(f"{base}/#/documents")
+        with page.expect_request(lambda request: _path(request.url) == "/templates"):
+            _within(page, "/documents")
         looks = page.locator("section.card").filter(
             has=page.get_by_role("heading", name="How your CVs and cover letters look"))
         expect(looks.locator(".look-name")).to_have_text(["Meridian", "Meridian"])
@@ -3472,8 +3482,8 @@ def test_a_look_just_picked_is_not_undone_by_an_answer_asked_for_before_it(site,
 
         with page.expect_response(
                 lambda response: _path(response.url) == "/templates" and response.request.method == "GET"):
-            for route, answer in held:
-                route.fulfill(response=answer)
+            for route in held:
+                route.fulfill(json=before)
         _drawn(page)
         expect(looks.locator(".look-name").first).to_have_text("Ledger")
         browser.close()
@@ -3527,7 +3537,8 @@ def test_an_account_page_asked_for_another_account_never_draws_the_one_before(si
         held = []
         page.route(lambda url: _path(url) == f"/admin/users/{theirs.id}", _holding(held))
 
-        page.goto(f"{base}/#/admin/users/{theirs.id}")
+        with page.expect_request(lambda request: _path(request.url) == f"/admin/users/{theirs.id}"):
+            _within(page, f"/admin/users/{theirs.id}")
 
         expect(page.get_by_text("Loading…")).to_be_visible()
         assert held, "the premise: the second account has not been read yet"
@@ -3571,3 +3582,128 @@ def test_the_built_site_holds_no_review_nobody_wrote(built):
     shipped = "".join(path.read_text(encoding="utf-8") for path in (built / "assets").glob("*.js"))
 
     assert not [name for name in names if name in shipped]
+
+
+def test_a_job_opens_with_its_whole_text_at_once_on_jobs_bookmarks_and_applied(site, capsys):
+    """Owner, 2026-11-21: "when we click the job, we should get an instant fetch of the description, there
+    should be no waiting to open a job, not on the job board, and not on applied or bookmarked either". Each
+    page asks for the texts of the jobs it lists as soon as it has the list, in one request. Here that request
+    is let through and every later one for a job's text is refused: a job that still opens with its text had
+    it before it was opened. Each page is loaded afresh, so each is shown to read ahead for itself."""
+    base, _, _ = site
+    text = "Python, Postgres, on call one week in six."
+
+    def texts(response) -> bool:
+        return _path(response.url) == "/jobs/descriptions"
+
+    def refuse_more(page) -> None:
+        page.route(lambda url: _path(url) == "/jobs/descriptions" or _path(url).endswith("/description"),
+                   lambda route: route.abort())
+
+    with sync_api.sync_playwright() as playwright:
+        browser, _, page = _someone(playwright, site, capsys)
+        _card(page, TITLES[0]).get_by_role("button", name="Bookmark this job").click()
+        with page.expect_response(lambda response: "/applied" in response.url):
+            _card(page, TITLES[1]).get_by_role("button", name="Mark as applied").click()
+
+        for place, title in (("", TITLES[0]), ("bookmarks", TITLES[0]), ("applied", TITLES[1])):
+            page.unroute_all()
+            page.goto(f"{base}/#/{place}")
+            with page.expect_response(texts):
+                page.reload()
+            refuse_more(page)
+            page.locator("article.job-card").get_by_role("button", name=title, exact=True).click()
+            view = page.get_by_role("dialog", name=title)
+            expect(view.locator(".description")).to_contain_text(text)
+            expect(view.get_by_text("Loading the whole job…")).to_have_count(0)
+            view.get_by_role("button", name="Close").click()
+        browser.close()
+
+
+def test_every_page_has_an_address_without_a_hash_and_an_old_address_still_lands_on_it(site, capsys):
+    """Owner, 2026-11-21: "instead of /#/ we can add something that is more appropriate like /jobs or
+    /applied". A link goes to `/applied`; that address opened by itself, or loaded again, is that page, though
+    the same words are where the page's own data is read from; and an address from before, in an email or a
+    bookmark, lands on the page it meant."""
+    base, _, _ = site
+    places = {"Applied": "/applied", "My search": "/words", "Alerts": "/alerts", "My documents": "/documents",
+              "Settings": "/settings", "Jobs": "/jobs"}
+    with sync_api.sync_playwright() as playwright:
+        browser, _, page = _someone(playwright, site, capsys)
+        here = page.locator("nav .places a[aria-current=page]")
+        asks = "fetch(location.pathname).then((answer) => answer.headers.get('content-type'))"
+
+        for name, address in places.items():
+            page.locator("nav .places a", has_text=name).click()
+            expect(here).to_have_attribute("href", address)
+            assert urlparse(page.url).path == address and "#" not in page.url, page.url
+            page.reload()
+            expect(here).to_have_attribute("href", address)
+            if address in ("/applied", "/alerts", "/documents"):
+                assert page.evaluate(asks) == "application/json", "the page's own code is given the data"
+
+        for old, address in (("/#/applied", "/applied"), ("/#/feed?job=1", "/jobs?job=1"),
+                             ("/#/alerts?alert=1", "/alerts?alert=1")):
+            page.goto("about:blank")
+            page.goto(f"{base}{old}")
+            page.wait_for_function("(to) => location.pathname + location.search === to", arg=address)
+            expect(here).to_have_attribute("href", address.split("?")[0])
+        browser.close()
+
+
+def test_the_token_in_an_emailed_link_is_never_part_of_a_request(site, capsys):
+    """The link in a confirmation email is `/verify#token=…`: what follows the `#` stays in the browser, so
+    the token is in no address a server is asked for, and so in no log on the way. It is sent once, in the
+    body of the request that spends it. And a link emailed before the addresses changed still confirms."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_page()
+        asked: list[str] = []
+        page.on("request", lambda request: asked.append(request.url))
+        page.goto(f"{base}/signup")
+        _fill_sign_up(page, email)
+        link = _emailed(capsys, "verify")
+        token = parse_qs(urlsplit(link).fragment)["token"][0]
+
+        page.goto(link)
+        expect(page.get_by_role("heading", name="Choose your plan")).to_be_visible()
+        assert asked and not [url for url in asked if token in url]
+
+        other = browser.new_context().new_page()
+        other.goto(f"{base}/signup")
+        _fill_sign_up(other, f"sam.{uuid.uuid4().hex[:8]}@example.com")
+        new = urlsplit(_emailed(capsys, "verify"))
+        other.goto(f"{base}/#/verify?{new.fragment}")
+        expect(other.get_by_role("heading", name="Choose your plan")).to_be_visible()
+        browser.close()
+
+
+def test_the_landing_page_is_a_file_a_visitor_is_sent_at_once_and_somebody_signed_in_is_not(site, capsys):
+    """The landing page came in the one file everybody downloads (owner, 2026-11-21: "we can make the landing
+    page its own file"). A visitor's browser asks for it from the page itself, before the site's script has
+    run, so it costs no round trip (measured: 3.04 s either way on a slow connection); somebody signed in is
+    never sent it."""
+    base, _, _ = site
+
+    def scripts(page) -> list[str]:
+        asked: list[str] = []
+        page.on("request", lambda request: asked.append(_path(request.url)))
+        return asked
+
+    with sync_api.sync_playwright() as playwright:
+        browser, _, member = _someone(playwright, site, capsys)
+        asked = scripts(member)
+        member.reload()
+        expect(member.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+        assert [path for path in asked if path.endswith(".js")], "the premise: the site's script was asked"
+        assert not [path for path in asked if "/assets/Landing-" in path]
+
+        visitor = browser.new_context().new_page()
+        asked = scripts(visitor)
+        visitor.goto(base)
+        expect(visitor.locator(".landing")).to_be_visible()
+        named = visitor.locator('meta[name="landing"]').get_attribute("content")
+        assert named and asked.index(named) < asked.index("/dashboard"), "asked before the site's script ran"
+        assert asked.count(named) == 1
+        browser.close()

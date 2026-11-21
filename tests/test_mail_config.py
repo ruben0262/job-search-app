@@ -110,7 +110,7 @@ def test_an_account_email_shows_its_link_as_a_button_and_in_full_and_how_long_it
     from libs.auth.tokens import RESET_TTL, VERIFICATION_TTL
     from libs.mail import reset_email, verification_email
 
-    url = "https://jobs.example.com/#/verify?token=abc&plan=member"
+    url = "https://jobs.example.com/verify#token=abc&plan=member"
     ttl = VERIFICATION_TTL if which == "verify" else RESET_TTL
     subject, text, html = (verification_email if which == "verify" else reset_email)(url, ttl)
     hours = round(ttl.total_seconds() / 3600)
@@ -130,7 +130,7 @@ def test_an_email_that_cannot_be_sent_is_printed_only_on_somebodys_own_computer(
     (2026-11-20). There it says the email was not sent, and prints none of it."""
     import logging
 
-    link = "https://jobs.example/#/reset?token=the-one-that-sets-a-password"
+    link = "https://jobs.example/reset#token=the-one-that-sets-a-password"
     monkeypatch.setenv("PUBLIC_URL", "http://localhost:5180")
     ConsoleSender().send("a@example.com", "Reset your password", link)
     assert link in capsys.readouterr().out

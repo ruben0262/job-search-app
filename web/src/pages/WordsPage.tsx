@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 
 import { api, type Config, type Schema } from "../api";
 import { useKept } from "../kept";
-import { askBeforeLeaving, go } from "../leave";
+import { askBeforeLeaving, leaveFreely } from "../leave";
+import { go } from "../route";
 import { Error, Field, Prompt, Words, useAction } from "../ui";
 
 type Review = Schema<"ReviewPage">;
@@ -97,6 +98,7 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
   const save = useAction(store);
   const saveAndGo = useAction(async (to: string) => {
     await store();
+    leaveFreely();
     go(to);
   });
 
@@ -224,7 +226,7 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
             <button type="button" disabled={!ready || saveAndGo.busy} onClick={() => void saveAndGo.run(leaving)}>
               {saveAndGo.busy ? "Saving…" : "Save and go"}
             </button>
-            <button type="button" className="secondary" onClick={() => go(leaving)}>Leave without saving</button>
+            <button type="button" className="secondary" onClick={() => { leaveFreely(); go(leaving); }}>Leave without saving</button>
             <button type="button" className="linklike" onClick={() => setLeaving(null)}>Stay here</button>
           </div>
         </Prompt>

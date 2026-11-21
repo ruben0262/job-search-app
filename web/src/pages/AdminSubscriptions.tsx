@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { api, type Schema } from "../api";
 import { useKept } from "../kept";
-import { type Pricing, saving } from "../landing/Landing";
+import { type Pricing, saving } from "../landing/pricecards";
 import { PLAN_NAMES, money, price } from "../membership";
 import { day } from "../time";
 import { Error, useAction } from "../ui";
@@ -123,7 +123,7 @@ function SubscriptionLine({ row }: { row: Row }) {
         : row.free_access_at ? `Free access since ${day(row.free_access_at)}` : "—";
   return (
     <tr>
-      <td><a href={`#/admin/users/${row.id}`}>{row.email}</a></td>
+      <td><a href={`/admin/users/${row.id}`}>{row.email}</a></td>
       <td>
         <span className="plan-dot" style={{ background: colour }} aria-hidden="true" />{name}
         {row.tier === "free" ? null : <span className="muted"> · {PLAN_NAMES[row.tier]}</span>}

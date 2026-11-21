@@ -603,6 +603,27 @@ def test_linkedin_is_read_beside_the_boards_and_the_words_found_after_both(ctx, 
     assert order == ["boards", "linkedin", "words"]
 
 
+def test_the_company_boards_of_different_sites_are_read_at_the_same_time(ctx):
+    """The nine ATS families were read one after another, before any other board began, though each asks a
+    site of its own (owner, 2026-11-21: "resolve the company boards reads so it's better"). Two of them
+    here each wait for the other to be under way: read one after the other, the first waits alone until it
+    gives up, and is counted as a board that failed."""
+    import threading
+
+    _active_user(ctx, keywords=["welder"])
+    together = threading.Barrier(2, timeout=3)
+
+    def board(source, cfg, repo):
+        together.wait()
+        return []
+
+    report = run_cycle(ctx, source_configs=_sources(greenhouse={}, lever={}), run_source=board,
+                       describe=False)
+
+    assert set(report.links_by_source) | set(report.source_failures) == {"greenhouse", "lever"}, "both asked"
+    assert not report.source_failures
+
+
 def test_with_no_site_proxy_every_board_but_linkedin_is_harvested(ctx, monkeypatch):
     """The site proxy is what LinkedIn needs and nothing else does: unset, LinkedIn is skipped and no
     other board loses anything."""

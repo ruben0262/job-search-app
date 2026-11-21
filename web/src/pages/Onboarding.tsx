@@ -10,6 +10,7 @@ import { Brand } from "../wheel";
 import { Error, useAction } from "../ui";
 import { AboutYou, Files, useDocuments } from "./DocumentsPage";
 import { WordsForm } from "./WordsPage";
+import { go } from "../route";
 
 /** The four steps, as the bar over each screen names them. */
 const STEPS = [["documents", "Your CV"], ["about", "About you"], ["review", "Your search"], ["done", "Done"]] as const;
@@ -131,7 +132,7 @@ export function Onboarding({ state, member, scores, onChanged }: {
                     </p>
                     {/* Their jobs first, then the Alerts page: finishing is what opens the rest of the site. */}
                     <button type="button" className="secondary" disabled={finish.busy} onClick={() => {
-                      window.location.hash = "#/alerts";
+                      go("/alerts");
                       void finish.run();
                     }}>Set up alerts</button>
                   </>

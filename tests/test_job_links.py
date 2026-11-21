@@ -197,7 +197,7 @@ def test_a_job_already_here_is_found_by_its_link_without_reading_its_page(api):
         "url": "https://www.linkedin.com/jobs/collections/recommended/?currentJobId=4465730645"}).json()
 
     assert answer["outcome"] == "known" and answer["job"]["id"] == known.id
-    assert answer["job"]["summary"], "the card the jobs page shows, with its text"
+    assert answer["job"]["title"] and answer["job"]["apply_on"], "the card the jobs page shows"
     assert _added(http) == [known.id], "listed for them, though it may not have their words"
     assert not pages, "nothing was read"
 
@@ -319,9 +319,15 @@ def test_a_job_written_in_is_not_anybody_elses_by_its_number_either(api):
                 http.put(f"/jobs/{job}/bookmarked").status_code,
                 http.post("/documents/build", json={"job_id": job, "kind": "cv", "mode": "ai"}).status_code)
 
+    def texts() -> set[str]:
+        """Whose text a page that names both jobs is given."""
+        return set(http.get("/jobs/descriptions", params={"ids": [mine, public]}).json()["texts"])
+
     assert asked(mine)[:2] == (200, 200), "their own"
+    assert texts() == {str(mine), str(public)}
     http.cookies.set("access_token", access_cookie(db, other.id), path="/")
     assert asked(mine) == (404, 404, 404)
+    assert texts() == {str(public)}, "nor with a page of others, asked for all at once"
     assert asked(public)[:2] == (200, 200), "the premise: a posting everybody has is theirs to open"
     assert http.get("/jobs/bookmarked").json()[0]["id"] == public
     http.cookies.set("access_token", access_cookie(db, user.id), path="/")

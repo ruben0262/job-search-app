@@ -1,25 +1,24 @@
 /** A job, whole, over the page: its text laid out as the posting had it, and whatever the page that
- * opened it puts beside it. The × or a tap outside closes it, as does Escape. The jobs page and Applied
- * both open it. */
+ * opened it puts beside it. The × or a tap outside closes it, as does Escape. The jobs page, Bookmarks and
+ * Applied all open it, and its text is here before they do (`jobtext.ts`), so it opens drawn. */
 import { Fragment, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-import { api, type Schema } from "./api";
+import { readTexts, textOf } from "./jobtext";
 import { Sheet } from "./ui";
 
-export function JobView({ id, title, text: known, onClose, children }: {
+export function JobView({ id, title, onClose, children }: {
   id: number;
   title: string;
-  /** Its whole text, when the opener already has it; fetched otherwise. */
-  text?: string | null;
   onClose: () => void;
   children: ReactNode;
 }) {
-  const [text, setText] = useState<string | null | undefined>(known);
+  // What was read ahead; `undefined` only for a job opened before its page's read had come, which waits for
+  // that same read.
+  const [text, setText] = useState<string | undefined>(() => textOf(id) ?? undefined);
   useEffect(() => {
     if (text !== undefined) return;
-    api.get<Schema<"JobDescription">>(`/jobs/${id}/description`)
-      .then((body) => setText(body.text)).catch(() => setText(null));
+    readTexts([id]).then(() => setText(textOf(id) ?? ""), () => setText(""));
   }, [id, text]);
 
   return (

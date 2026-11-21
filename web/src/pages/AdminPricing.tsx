@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 
 import { ApiError, api, type Schema } from "../api";
 import { useKept } from "../kept";
-import { PriceCards, type Pricing } from "../landing/Landing";
+import { PriceCards, type Pricing } from "../landing/pricecards";
 import { Error, useAction } from "../ui";
 
 type Editor = Schema<"PricingEditor">;

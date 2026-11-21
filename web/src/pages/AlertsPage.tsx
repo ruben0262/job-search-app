@@ -1,7 +1,7 @@
 /** Alerts (owner, 2026-11-17): named alerts, each following words, companies, places, job sites or a match score,
  * and sending what it finds to the bell, this phone, Telegram or the morning email. One main button: New alert.
  * Where an alert sends is set up inside it, and its switch is the only on and off (owner, 2026-11-19): no pause,
- * and no notifications or Telegram apart from the alerts. `#/alerts?alert=<id>` is one alert's own list of what it
+ * and no notifications or Telegram apart from the alerts. `/alerts?alert=<id>` is one alert's own list of what it
  * found, where its bell line and its Telegram cards go. */
 import { useState } from "react";
 
@@ -123,7 +123,7 @@ function AlertCard({ alert, page, phone, onEdit, onChanged }: {
   return (
     <li className={`card alert-card${on ? "" : " off"}`}>
       <div className="alert-head">
-        <a className="alert-name" href={`#/alerts?alert=${alert.id}`}>{alert.name}</a>
+        <a className="alert-name" href={`/alerts?alert=${alert.id}`}>{alert.name}</a>
         <label className="switch">
           <input type="checkbox" role="switch" checked={on} aria-label={`${alert.name} on`}
                  onChange={(event) => void flip.run(event.target.checked)} />
@@ -152,7 +152,7 @@ function AlertCard({ alert, page, phone, onEdit, onChanged }: {
         </p>
       ) : null}
       <div className="row">
-        <a className="button secondary small" href={`#/alerts?alert=${alert.id}`}>See what it found</a>
+        <a className="button secondary small" href={`/alerts?alert=${alert.id}`}>See what it found</a>
         <button type="button" className="secondary small" onClick={onEdit}>Change</button>
         <button type="button" className="linklike small" disabled={remove.busy}
                 onClick={() => void remove.run()}>Delete</button>
@@ -317,7 +317,7 @@ function Found({ alert, days, onChanged }: { alert: Alert; days: number; onChang
   const { jobs, failed, card } = useJobList(`/alerts/${alert.id}/jobs`, onChanged);
   return (
     <>
-      <p><a className="small" href="#/alerts">← All alerts</a></p>
+      <p><a className="small" href="/alerts">← All alerts</a></p>
       <h1>{alert.name}</h1>
       <p className="lede">
         {!jobs ? "Loading what it found…" : jobs.length ? `${alert.found} found in the last ${days} days, the newest first.`

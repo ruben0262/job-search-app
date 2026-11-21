@@ -8,6 +8,7 @@ import { AdminSubscriptions } from "./AdminSubscriptions";
 import { BinIcon, Error, Field, Prompt, useAction } from "../ui";
 import { JobsByCountry } from "./AdminCountries";
 import { NETWORKS } from "../socials";
+import { go } from "../route";
 
 type Alert = {
   severity: "page" | "warn";
@@ -289,7 +290,7 @@ function lastActive(iso: string | null): string {
  * not being opened (2026-11-20). */
 export const ADMIN_READS = ["/admin/health", "/admin/settings", "/admin/sources"];
 
-/** `tab` is the part of the address after `#/admin/`: each tab has its own address, so an account's page
+/** `tab` is the part of the address after `/admin/`: each tab has its own address, so an account's page
  * goes back to Accounts and a reload stays where it was. */
 export function AdminPage({ tab: asked }: { tab: string }) {
   // Each part draws from what was read last time at once, and each as soon as its own read is back:
@@ -436,7 +437,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
             type="button"
             className={tab === key ? "tab on" : "tab"}
             // In place of this address, not after it: going back leaves Admin, not the last tab.
-            onClick={() => window.location.replace(`#/admin/${key}`)}
+            onClick={() => go(`/admin/${key}`, true)}
           >
             {label}
             {key === "health" && health && health.alerts.length > 0 ? (
@@ -924,7 +925,7 @@ function AccountsTab() {
                 // The whole row opens the account, as its own page at its own address. Its page is read once
                 // the pointer has rested on the row, so it opens drawn.
                 <tr key={user.id} className="row-link"
-                    onClick={() => { window.location.hash = `/admin/users/${user.id}`; }}
+                    onClick={() => go(`/admin/users/${user.id}`)}
                     onPointerEnter={() => {
                       window.clearTimeout(resting.current);
                       resting.current = window.setTimeout(
@@ -1436,7 +1437,7 @@ function PipelineTab() {
               <tr key={`${row.lane}:${row.user_id}`}>
                 <td><strong>{row.lane}</strong></td>
                 <td>
-                  <a href={`#/admin/users/${row.user_id}`}>{row.email}</a>
+                  <a href={`/admin/users/${row.user_id}`}>{row.email}</a>
                   {/* The error is the whole reason to look, so it is not behind a click. */}
                   {row.last_error ? <div className="hint">{row.last_error}</div> : null}
                 </td>

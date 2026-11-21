@@ -22,7 +22,7 @@ class NotificationRow(BaseModel):
     level: str
     title: str
     body: str
-    # An in-app route, like "#/settings": where opening it takes them.
+    # A page of the site, like "/settings": where opening it takes them.
     url: str | None
     created_at: str | None
     read: bool

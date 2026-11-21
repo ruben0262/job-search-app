@@ -1,4 +1,4 @@
-/** Forgot (ask for a link) and Reset (the link lands here: `#/reset?token=…`). */
+/** Forgot (ask for a link) and Reset (the link lands here: `/reset#token=…`). */
 import { useState } from "react";
 
 import { api } from "../api";
@@ -52,7 +52,7 @@ export function ForgotPassword() {
         </button>
       </form>
       <p className="facts" style={{ marginTop: "2rem" }}>
-        Remembered it? <a href="#/signin">Sign in</a>.
+        Remembered it? <a href="/signin">Sign in</a>.
       </p>
     </AuthShell>
   );
@@ -63,11 +63,10 @@ export function ResetPassword({ onDone }: { onDone: () => void }) {
   const [done, setDone] = useState(false);
 
   const submit = useAction(async () => {
-    const query = window.location.hash.split("?")[1] ?? "";
-    const token = new URLSearchParams(query).get("token") ?? "";
+    const token = new URLSearchParams(window.location.hash.slice(1)).get("token") ?? "";
     await api.post("/auth/reset", { token, new_password: chosen.check() });
     // The token is spent: out of the address, and so out of the history, a bookmark, a screen shared.
-    window.history.replaceState(null, "", "#/reset");
+    window.history.replaceState(null, "", "/reset");
     setDone(true);
     // The reset revoked every session, so any signed-in state this app still holds is stale.
     onDone();
@@ -79,7 +78,7 @@ export function ResetPassword({ onDone }: { onDone: () => void }) {
         <p className="muted" style={{ marginBottom: "1.75rem" }}>
           Every device is signed out. Sign in with the new password.
         </p>
-        <a href="#/signin">
+        <a href="/signin">
           <button>Sign in</button>
         </a>
       </AuthShell>
@@ -101,7 +100,7 @@ export function ResetPassword({ onDone }: { onDone: () => void }) {
         </button>
       </form>
       <p className="facts" style={{ marginTop: "2rem" }}>
-        Link expired? <a href="#/forgot">Request another</a>.
+        Link expired? <a href="/forgot">Request another</a>.
       </p>
     </AuthShell>
   );

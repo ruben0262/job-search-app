@@ -681,10 +681,10 @@ def test_the_emailed_links_point_at_the_spa_routes_not_the_api(client):
     http, _db, mailer = client
     email = _email()
     _signup(http, email)
-    assert "/#/verify?token=" in mailer.sent[-1][2]
+    assert "/verify#token=" in mailer.sent[-1][2]
 
     http.post("/auth/forgot", json={"email": email})
-    assert "/#/reset?token=" in mailer.sent[-1][2]
+    assert "/reset#token=" in mailer.sent[-1][2]
 
 
 def test_the_sign_up_link_is_on_the_address_the_site_says_it_is_at(client, monkeypatch):
@@ -699,7 +699,7 @@ def test_the_sign_up_link_is_on_the_address_the_site_says_it_is_at(client, monke
     site = http.get("/health").json()["public_url"]
     assert site == "https://jobs.example.com"
     link = re.search(r"https://\S+", mailer.sent[-1][2]).group(0)
-    assert link.startswith(f"{site}/#/verify?token=")
+    assert link.startswith(f"{site}/verify#token=")
     assert http.post("/auth/verify", json={"token": link.split("token=")[1]}).status_code == 200
     assert http.post("/auth/login", json={"email": email, "password": PASSWORD}).status_code == 200
 
@@ -773,7 +773,7 @@ def test_the_console_sender_shows_the_link_a_developer_must_click(capsys):
     from libs.mail.sender import ConsoleSender
 
     sender = ConsoleSender()
-    sender.send("dev@example.com", "Confirm your email", "  http://localhost/#/verify?token=abc123")
+    sender.send("dev@example.com", "Confirm your email", "  http://localhost/verify#token=abc123")
     out = capsys.readouterr().out
     assert "token=abc123" in out
 

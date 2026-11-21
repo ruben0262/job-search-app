@@ -2083,10 +2083,6 @@
             ],
             "title": "Location"
           },
-          "more": {
-            "title": "More",
-            "type": "boolean"
-          },
           "posted_at": {
             "anyOf": [
               {
@@ -2112,17 +2108,6 @@
           "source": {
             "title": "Source",
             "type": "string"
-          },
-          "summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Summary"
           },
           "title": {
             "title": "Title",
@@ -2155,8 +2140,6 @@
           "first_seen_at",
           "described_at",
           "salary",
-          "summary",
-          "more",
           "documents",
           "bookmarked"
         ],
@@ -2689,6 +2672,22 @@
           "bookmarked"
         ],
         "title": "JobMarks",
+        "type": "object"
+      },
+      "JobTexts": {
+        "properties": {
+          "texts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Texts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "texts"
+        ],
+        "title": "JobTexts",
         "type": "object"
       },
       "KeyBody": {
@@ -7092,7 +7091,7 @@
     },
     "/ai-accounts/{account_id}/limits": {
       "get": {
-        "description": "Where this account's plan limits stand: the 5-hour window and the weekly one (owner, 2026-11-14).",
+        "description": "Where this account's plan limits stand: the 5-hour window and the weekly one (owner, 2026-11-14). As\nits provider said within the last few minutes, or as it says now (`libs.llm.limits.held`).",
         "operationId": "limits_ai_accounts__account_id__limits_get",
         "parameters": [
           {
@@ -7997,6 +7996,81 @@
         ]
       }
     },
+    "/discord/callback": {
+      "get": {
+        "description": "Discord sending them back: their account linked, and them on Settings, told how it went. The account is\nthe one the `state` names, signed here when they asked, and the browser coming back is signed in as it.\nThe state alone was enough, so a link one person asked for and sent to another, opened there, moved that\nperson's Discord account onto the first one's and took their plan's role with it (2026-11-20).",
+        "operationId": "callback_discord_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Callback",
+        "tags": [
+          "discord"
+        ]
+      }
+    },
     "/discord/link": {
       "post": {
         "description": "Discord's page asking them to link their account, for the browser to open.",
@@ -8758,6 +8832,54 @@
         ]
       }
     },
+    "/jobs/descriptions": {
+      "get": {
+        "description": "The whole text of the jobs a page lists, asked for once the list is drawn and before any is opened,\nso opening one waits for nothing (owner, 2026-11-21: \"there should be no waiting to open a job\").",
+        "operationId": "job_descriptions_jobs_descriptions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "integer"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "title": "Ids",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobTexts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Job Descriptions",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
     "/jobs/link": {
       "post": {
         "description": "A pasted link: the job, if it is here; else read from its page and kept, if the page said all of\nit; else what the page did say, for the person to finish and keep (`POST /jobs/link/save`).",
@@ -8844,7 +8966,7 @@
     },
     "/jobs/{job_id}/description": {
       "get": {
-        "description": "A posting's whole description, for a card that was asked to show it: as stored, or in paragraphs\nif it was stored as one line (`paragraphs`).",
+        "description": "One posting's whole description (`_texts`).",
         "operationId": "job_description_jobs__job_id__description_get",
         "parameters": [
           {

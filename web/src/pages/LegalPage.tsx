@@ -8,7 +8,7 @@ import { api, type Schema } from "../api";
 
 type Legal = Schema<"LegalDocument">;
 
-/** Each page's address (`#/terms` …) and its name in a row of links. */
+/** Each page's address (`/terms` …) and its name in a row of links. */
 export const LEGAL_PAGES = [["terms", "Terms"], ["privacy", "Privacy"], ["cookies", "Cookies"], ["data", "Data use"]] as const;
 export type LegalName = (typeof LEGAL_PAGES)[number][0];
 
@@ -16,7 +16,7 @@ export type LegalName = (typeof LEGAL_PAGES)[number][0];
 export function LegalLinks() {
   return (
     <>
-      {LEGAL_PAGES.map(([name, label]) => <a key={name} href={`#/${name}`}>{label}</a>)}
+      {LEGAL_PAGES.map(([name, label]) => <a key={name} href={`/${name}`}>{label}</a>)}
     </>
   );
 }
@@ -36,7 +36,7 @@ export function LegalPage({ name }: { name: LegalName }) {
 
   return (
     <main className="legal">
-      <p><a href="#/">Back</a></p>
+      <p><a href="/">Back</a></p>
       {failed ? <p>This page can't be loaded right now. Check your connection and try again.</p>
         : !doc ? <p>Loading…</p>
           : <Blocks blocks={parsed} />}

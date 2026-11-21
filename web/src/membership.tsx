@@ -193,8 +193,8 @@ export function MembershipCard() {
         </p>
       ) : null}
       <div className="row">
-        {!data.member && data.can_start ? <a className="button" href="#/upgrade">Become a member</a> : null}
-        {data.tier === "starter" ? <a className="button" href="#/upgrade">Move up to Member</a> : null}
+        {!data.member && data.can_start ? <a className="button" href="/upgrade">Become a member</a> : null}
+        {data.tier === "starter" ? <a className="button" href="/upgrade">Move up to Member</a> : null}
         {data.can_manage ? (
           <button type="button" className="secondary" disabled={manage.busy} onClick={() => void manage.run()}>
             {manage.busy ? "Opening Stripe…" : data.can_start ? "Your invoices" : "Manage membership"}

@@ -91,7 +91,7 @@ def link(request: Request, user_id: _uuid.UUID = Depends(current_user)) -> LinkP
         "redirect_uri": _callback(), "state": sign_for(user_id, PURPOSE, LINK_TTL)}))
 
 
-@router.get("/callback", include_in_schema=False)
+@router.get("/callback", response_class=RedirectResponse, status_code=status.HTTP_303_SEE_OTHER)
 def callback(request: Request, code: str | None = None, state: str | None = None, error: str | None = None,
              db: Database = Depends(get_db)) -> RedirectResponse:
     """Discord sending them back: their account linked, and them on Settings, told how it went. The account is
@@ -166,4 +166,4 @@ def _keep(db: Database, user: User, discord_id: str | None, name: str | None) ->
 
 def _back(said: str) -> RedirectResponse:
     """Back to Settings, with how it went in the address for the page to say (`web/src/discord.tsx`)."""
-    return RedirectResponse(site_url(f"/?discord={said}#/settings"), status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(site_url(f"/settings?discord={said}"), status_code=status.HTTP_303_SEE_OTHER)

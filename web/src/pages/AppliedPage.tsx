@@ -1,11 +1,12 @@
 /** Applied: every job you said you applied to, newest first — the ones that no longer match your
  * search included — with the way back to each, and a tap on one shows all of it. Each says how far it
  * got, in your words (owner, 2026-11-03): an interview, an offer, the job, or not this time. */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties, MouseEvent } from "react";
 
 import { api, type Schema } from "../api";
 import { useBuild } from "../documents";
+import { textsAhead } from "../jobtext";
 import { JobView } from "../jobview";
 import { useKept } from "../kept";
 import { ago, useNow } from "../time";
@@ -53,6 +54,8 @@ export function AppliedPage() {
   const progressed = (id: number, progress: Step[]) =>
     setJobs((now) => now?.map((job) => (job.id === id ? { ...job, progress } : job)) ?? null);
   const summary = jobs ? tally(jobs) : "";
+  // Their texts, so each opens at once (`jobtext.ts`).
+  useEffect(() => textsAhead((jobs ?? []).map((job) => job.id)), [jobs]);
 
   return (
     <>
@@ -65,7 +68,7 @@ export function AppliedPage() {
       {jobs?.length === 0 ? (
         <p className="muted">
           Nothing here yet. When you have applied to a job, tap “Mark as applied” on it in{" "}
-          <a href="#/">Jobs</a>, and it is kept here.
+          <a href="/jobs">Jobs</a>, and it is kept here.
         </p>
       ) : null}
       <div className="jobs">
@@ -125,7 +128,7 @@ function AppliedCard({ job, busy, onUndo, onProgress }: {
     if (!(event.target as HTMLElement).closest("a, button, dialog")) setOpen(true);
   };
   return (
-    <article className="job-card" onClick={opener}>
+    <article className="job-card" onClick={opener} onPointerEnter={() => textsAhead([job.id])}>
       <h3>
         <button type="button" className="title" onClick={() => setOpen(true)}>{job.title}</button>
       </h3>

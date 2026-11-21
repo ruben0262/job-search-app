@@ -9,6 +9,8 @@ files a deploy had since removed.
 """
 from __future__ import annotations
 
+import re
+
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -58,6 +60,37 @@ HEADERS = (
 )
 
 
+# The API's own addresses that answer a browser going to them, as patterns: found once, from the contract.
+_BROWSERS_OWN: list[re.Pattern] | None = None
+
+
+def _answers_a_browser(path: str) -> bool:
+    """Whether the API itself answers a browser that goes to this address: a file to download, or the way
+    back from signing in somewhere else. Read off the contract, not listed: a GET whose answer, as the
+    contract states it, is never JSON."""
+    global _BROWSERS_OWN  # noqa: PLW0603 - found once, at the first page asked for
+    if _BROWSERS_OWN is None:
+        from services.api.app import app  # noqa: PLC0415 - the app imports this module
+
+        _BROWSERS_OWN = [
+            re.compile("^" + re.sub(r"\{[^/]+\}", "[^/]+", route) + "$")
+            for route, item in app.openapi()["paths"].items() if "get" in item and not any(
+                "application/json" in (answer.get("content") or {})
+                for code, answer in item["get"]["responses"].items() if code[0] in "23")]
+    return any(own.match(path) for own in _BROWSERS_OWN)
+
+
+def page_asked(scope: Scope) -> bool:
+    """Whether this is a browser going to one of the site's pages. A page's address and the data behind it
+    are often the same words (`/applied`, `/alerts`): a browser going there is given the page, and the page's
+    own code asking is given the data. Told apart by what is asked for, which a browser says (`Accept`). An
+    address that names a file, and one the API answers a browser at itself, are left as they are."""
+    if scope["method"] != "GET" or b"text/html" not in dict(scope["headers"]).get(b"accept", b""):
+        return False
+    path = scope["path"]
+    return "." not in path.rsplit("/", 1)[-1] and not _answers_a_browser(path)
+
+
 def _keeping(path: str, start: Message) -> tuple[tuple[bytes, bytes], ...]:
     """How long a browser may keep this answer, where the answer does not say."""
     kind = dict(start.get("headers", [])).get(b"content-type", b"")
@@ -68,8 +101,10 @@ def _keeping(path: str, start: Message) -> tuple[tuple[bytes, bytes], ...]:
         # Somebody's own data, or an error about it: kept by no browser and no proxy.
         return ((b"cache-control", b"no-store"),)
     if kind.startswith(b"text/html") or path == "/sw.js":
-        # The page and its worker are asked for again each time: they name the files of this deploy.
-        return ((b"cache-control", b"no-cache"),)
+        # The page and its worker are asked for again each time: they name the files of this deploy. And an
+        # address answers a browser with the page and the page's code with data, so nothing between may
+        # hand one the other's.
+        return ((b"cache-control", b"no-cache"), (b"vary", b"Accept"))
     return ()
 
 
@@ -84,6 +119,9 @@ class Guard:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        if page_asked(scope):
+            # Every page is the one file, which draws the page its address names (`web/src/route.ts`).
+            scope = {**scope, "path": "/", "raw_path": b"/"}
         path = scope["path"]
         limit = BODY_LIMITS.get(path, MAX_BODY_BYTES)
         too_large = f"That is more than the {limit // (1024 * 1024)} MB this takes."

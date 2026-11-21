@@ -427,7 +427,7 @@ def checkout(request: Request, which: Literal["member", "starter"] = Query("memb
             # A card finishes in the page (`onComplete`); a payment that goes to a bank's page comes back
             # here. The mark is in the query, not after the `#`, which is the app's own address.
             "redirect_on_completion": "if_required",
-            "return_url": site_url(f"/?{BACK}#/"),
+            "return_url": site_url(f"/?{BACK}"),
         })
     audit(logger, "billing.checkout", user=user.id, plan=which, trial_days=days)
     return Checkout(client_secret=session.client_secret)
@@ -462,7 +462,7 @@ def portal(request: Request, db: Database = Depends(get_db),
         # The account's own portal, as saved at Stripe (Settings → Billing → Customer portal), opened already
         # signed in: what its login link opens, without the code by email.
         session = _stripe().v1.billing_portal.sessions.create(params={
-            "customer": user.stripe_customer_id, "return_url": site_url(f"/?{BACK}#/settings")})
+            "customer": user.stripe_customer_id, "return_url": site_url(f"/settings?{BACK}")})
     audit(logger, "billing.portal", user=user.id)
     return Link(url=session.url)
 

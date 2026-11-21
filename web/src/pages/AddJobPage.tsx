@@ -54,7 +54,7 @@ export function AddJobPage({ onChanged, can }: {
         // What it is stays said; the way to it is one button (CLAUDE.md §0).
         <div className="row">
           <span className="small">Adding a job by its link comes with a membership.</span>
-          <a className="button secondary small" href="#/upgrade">Become a member</a>
+          <a className="button secondary small" href="/upgrade">Become a member</a>
         </div>
       )}
       <Error>{find.error}</Error>

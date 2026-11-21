@@ -9,14 +9,17 @@ import { Error, Field, useAction, useNewPassword } from "../ui";
 import type { LegalName } from "./LegalPage";
 import { ThemeToggle } from "../theme";
 import { Brand, Wheel } from "../wheel";
+import { go } from "../route";
 
 type Picked = "free" | "starter" | "member";
 
-/** The plan the address asks for: the landing page's Member card is `#/signup?plan=member`, its Starter card
+/** The plan the address asks for: the landing page's Member card is `/signup?plan=member`, its Starter card
  * `?plan=starter`; anything else is free. Carried by the email link (`Verify`) to the plan page, which opens
  * on that plan's checkout. */
 export function planAsked(): Picked {
-  const asked = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("plan");
+  // In the address of sign-up (`/signup?plan=member`), and beside the token in the emailed link.
+  const asked = new URLSearchParams(window.location.search).get("plan")
+    ?? new URLSearchParams(window.location.hash.slice(1)).get("plan");
   return asked === "member" || asked === "starter" ? asked : "free";
 }
 
@@ -26,7 +29,7 @@ export function SignIn({
 }: {
   /** Resolves once the dashboard has been read, which is what makes the route safe to change. */
   onSignedIn: () => void | Promise<void>;
-  /** From the address (`#/signin`, `#/signup`), and from nothing else. */
+  /** From the address (`/signin`, `/signup`), and from nothing else. */
   mode: "in" | "up";
 }) {
   const [email, setEmail] = useState("");
@@ -55,8 +58,8 @@ export function SignIn({
     // signed out routes `/` to the landing page for as long as the dashboard takes to answer —
     // which is the flash of marketing copy people saw between pressing Sign in and arriving.
     await onSignedIn();
-    // Land on the overview, not on `#/signin`.
-    window.location.hash = "/";
+    // Land on the overview, not on `/signin`.
+    go("/");
   });
 
   if (sent) {
@@ -125,14 +128,14 @@ export function SignIn({
       <p className="facts" style={{ marginTop: "2rem" }}>
         {mode === "in" ? "New here? " : "Already have an account? "}
         <a
-          href={mode === "in" ? "#/signup" : "#/signin"}
+          href={mode === "in" ? "/signup" : "/signin"}
         >
           {mode === "in" ? "Create an account" : "Sign in instead"}
         </a>
         {mode === "in" ? (
           <>
             {" · "}
-            <a href="#/forgot">Forgot your password?</a>
+            <a href="/forgot">Forgot your password?</a>
           </>
         ) : null}
       </p>
@@ -191,7 +194,7 @@ export function AuthShell({
       <div className="backdrop" aria-hidden="true" />
       <main className="auth page-in">
         <header className="shell-top">
-          <Brand href="#/" />
+          <Brand href="/" />
           <ThemeToggle />
         </header>
         <div className="auth-body">
@@ -208,5 +211,5 @@ export function AuthShell({
 
 /** One legal page, opened in a tab of its own so the form keeps what was typed. */
 function Page({ name, children }: { name: LegalName; children: string }) {
-  return <a href={`#/${name}`} target="_blank" rel="noreferrer">{children}</a>;
+  return <a href={`/${name}`} target="_blank" rel="noreferrer">{children}</a>;
 }

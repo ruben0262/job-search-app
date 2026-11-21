@@ -309,7 +309,7 @@ def test_a_free_account_makes_no_documents_and_is_told_where_the_membership_is(d
     assert answer.status_code == 402
     assert answer.json()["detail"] == "Making CVs and cover letters comes with a membership."
     [note] = db[UserNotification.COLLECTION].find({"user_id": free.id})
-    assert (note["event"], note["url"]) == ("document.needs_membership", "#/upgrade")
+    assert (note["event"], note["url"]) == ("document.needs_membership", "/upgrade")
 
     sign_in(http, searching(db, subscription_status="trialing"))
     pressed = http.post("/documents/build", json={"job_id": job.id, "kind": "cv", "mode": "ai"})
@@ -655,7 +655,7 @@ def test_the_form_starts_the_trial_with_a_card_and_only_for_somebody_who_never_h
     assert form["subscription_data[trial_period_days]"] == "7"
     # A card even for the free trial, so the first payment is taken by itself when it ends.
     assert form["payment_method_collection"] == "always"
-    assert form["return_url"] == "https://jobs.example/?stripe=back#/"
+    assert form["return_url"] == "https://jobs.example/?stripe=back"
 
     # Somebody whose membership ended: the same form, at the price, without a second free trial.
     fake.customers["cus_old"] = {"id": "cus_old", "object": "customer"}
@@ -854,7 +854,7 @@ def test_the_portal_is_their_own_and_comes_back_to_settings(db, http, fake):
     assert http.post("/billing/portal").json() == {"url": "https://billing.stripe.com/p/session/test_1"}
     [portal] = fake.calls("POST", "/v1/billing_portal/sessions")
     assert portal["customer"] == "cus_2"
-    assert portal["return_url"] == "https://jobs.example/?stripe=back#/settings"
+    assert portal["return_url"] == "https://jobs.example/settings?stripe=back"
     assert "configuration" not in portal, "the account's own portal, as saved at Stripe"
 
     sign_in(http, person(db))
@@ -1175,7 +1175,7 @@ def test_a_member_links_their_discord_and_stripe_carries_it_for_rolelogic(db, ht
     assert http.get("/discord").json() == {"available": True, "name": None}
 
     back = _link(http, "code-jordan")
-    assert (back.status_code, back.headers["location"]) == (303, "https://jobs.example/?discord=linked#/settings")
+    assert (back.status_code, back.headers["location"]) == (303, "https://jobs.example/settings?discord=linked")
     assert http.get("/discord").json() == {"available": True, "name": "Jordan E"}
     assert get(db, User, member.id).discord_id == JORDAN["id"]
     assert fake.customers[member.stripe_customer_id]["metadata"]["discord_user_id"] == JORDAN["id"]
@@ -1195,7 +1195,7 @@ def test_a_discord_linked_before_paying_reaches_the_customer_and_subscription_st
     told at the next read."""
     newcomer = person(db)
     sign_in(http, newcomer)
-    assert _link(http, "code-sam").headers["location"].endswith("?discord=linked#/settings")
+    assert _link(http, "code-sam").headers["location"].endswith("/settings?discord=linked")
     assert fake.sent == [], "no customer at Stripe yet, so nothing to tell it"
     assert http.get("/discord").json()["name"] == "sam", "no display name: the user name"
 
@@ -1222,12 +1222,12 @@ def test_a_return_from_discord_counts_only_with_a_state_this_site_signed_for_lin
                   sign_for(someone.id, "discord-link", timedelta(seconds=-1))):
         back = http.get("/discord/callback", params={"code": "code-jordan", "state": state},
                         follow_redirects=False)
-        assert back.headers["location"].endswith("?discord=failed#/settings"), state
+        assert back.headers["location"].endswith("/settings?discord=failed"), state
     assert get(db, User, someone.id).discord_id is None
 
-    assert _link(http, "code-nobody").headers["location"].endswith("?discord=failed#/settings")
+    assert _link(http, "code-nobody").headers["location"].endswith("/settings?discord=failed")
     assert _link(http, "code-jordan", error="access_denied").headers["location"].endswith(
-        "?discord=cancelled#/settings")
+        "/settings?discord=cancelled")
     assert get(db, User, someone.id).discord_id is None
 
     # A link's state is no access token: as a cookie it signs nobody in.
@@ -1251,7 +1251,7 @@ def test_a_link_one_person_asked_for_links_nothing_in_another_persons_browser(db
     back = http.get("/discord/callback", params={"code": "code-jordan", "state": state},
                     follow_redirects=False)
 
-    assert back.headers["location"].endswith("?discord=failed#/settings")
+    assert back.headers["location"].endswith("/settings?discord=failed")
     assert (get(db, User, asker.id).discord_id, get(db, User, opener.id).discord_id) == (None, None)
 
 

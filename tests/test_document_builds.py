@@ -580,9 +580,9 @@ def test_what_is_missing_reaches_the_bell_too_once_however_often_it_is_pressed(a
     bell = {row["event"]: row for row in api.db[UserNotification.COLLECTION].find({"user_id": api.user.id})}
     assert len(bell) == 2
     assert (bell["document.needs_ai_account"]["url"], bell["document.needs_ai_account"]["body"]) == (
-        "#/settings", "To make your CV, first link your AI account in Settings.")
+        "/settings", "To make your CV, first link your AI account in Settings.")
     assert (bell["document.needs_upload"]["url"], bell["document.needs_upload"]["body"]) == (
-        "#/documents", "To make your cover letter, first upload a cover letter in My documents.")
+        "/documents", "To make your cover letter, first upload a cover letter in My documents.")
 
 
 def test_a_cv_switched_off_is_said_as_one_to_switch_on(api):

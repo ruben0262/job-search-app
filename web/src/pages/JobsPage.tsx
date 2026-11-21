@@ -1,11 +1,12 @@
 /** Jobs, the home page: the jobs that match your words, each a tap from a CV and a cover letter written
  * for it with their own AI account, and a tap on one shows all of it. New ones are announced, never
- * pushed in under the reader. Every alert lands here, on `#/feed?job=<id>`. */
+ * pushed in under the reader. Every alert lands here, on `/jobs?job=<id>`. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 
 import { api, request, type Ready, type Schema } from "../api";
 import { useBuild } from "../documents";
+import { textsAhead } from "../jobtext";
 import { JobView } from "../jobview";
 import { keep, peek, useKept } from "../kept";
 import { type Mark, bookmark, bookmarked, mark as record, send, unsent } from "../marks";
@@ -108,8 +109,8 @@ function narrowing(filters: Filters, known: {
 
 /** Jobs has three tabs: the jobs that match your words, the ones you bookmarked, and one brought in by
  * its link. */
-const TABS = [["list", "#/", "Your jobs"], ["bookmarks", "#/bookmarks", "Bookmarks"],
-              ["add", "#/add", "Add a job"]] as const;
+const TABS = [["list", "/jobs", "Your jobs"], ["bookmarks", "/bookmarks", "Bookmarks"],
+              ["add", "/add", "Add a job"]] as const;
 
 export function JobsTabs({ on }: { on: (typeof TABS)[number][0] }) {
   return (
@@ -129,6 +130,8 @@ export function JobsTabs({ on }: { on: (typeof TABS)[number][0] }) {
  * browser are sent before the list is asked for, so a bookmark tapped a moment ago is in it. */
 export function useJobList(path: string, onChanged: () => void) {
   const { data: jobs, set, failed } = useKept<Job[]>(path, send);
+  // Their texts, so each opens at once (`jobtext.ts`).
+  useEffect(() => textsAhead((jobs ?? []).map((job) => job.id)), [jobs]);
   const [marked, setMarked] = useState<Map<number, Mark>>(new Map());
   const onMark = (job: Job, kind: Mark, on: boolean) => {
     setMarked((now) => {
@@ -265,6 +268,10 @@ export function JobsPage({ dashboard, focus, onChanged, onRead }: {
     return () => window.clearTimeout(timer);
   }, [reload, query]);
 
+  // The text of every job on the page, as soon as the page is: a job opens drawn (`jobtext.ts`). After "Show
+  // more" too, for the jobs it added.
+  useEffect(() => textsAhead((feed?.jobs ?? []).map((job) => job.id)), [feed]);
+
   // New jobs are counted, not added: the list never moves under somebody reading it.
   const asOf = feed?.as_of;
   useEffect(() => {
@@ -348,7 +355,7 @@ export function JobsPage({ dashboard, focus, onChanged, onRead }: {
       {dashboard.banners.map((banner) => (
         <Banner key={banner.key} level={banner.level}>
           <span>{banner.text}</span>{" "}
-          <a className="button small" href={banner.key === "free" ? "#/upgrade" : "#/alerts"}>
+          <a className="button small" href={banner.key === "free" ? "/upgrade" : "/alerts"}>
             {banner.key === "free" ? "Become a member" : "Fix it in Alerts"}
           </a>
         </Banner>
@@ -380,7 +387,7 @@ export function JobsPage({ dashboard, focus, onChanged, onRead }: {
       {dashboard.applied ? (
         <p className="small muted">
           You have applied to {dashboard.applied} {dashboard.applied === 1 ? "job" : "jobs"}.{" "}
-          <a href="#/applied">See them</a>
+          <a href="/applied">See them</a>
         </p>
       ) : null}
 
@@ -438,12 +445,12 @@ export function JobsPage({ dashboard, focus, onChanged, onRead }: {
           ) : posted ? (
             <>
               Nothing from the {posted} matches your words yet. Choose a longer time under “Posted”, or{" "}
-              <a href="#/words">add more words</a>.
+              <a href="/words">add more words</a>.
             </>
           ) : (
             <>
               No jobs match your words yet. New jobs come in all day, or{" "}
-              <a href="#/words">add more words</a>.
+              <a href="/words">add more words</a>.
             </>
           )}
         </p>
@@ -740,7 +747,7 @@ export function JobCard({ job, focus, done, fresh, onMark }: {
     if (!(event.target as HTMLElement).closest("a, button, input, select, label, dialog")) setOpen(true);
   };
   return (
-    <article onClick={opener}
+    <article onClick={opener} onPointerEnter={() => textsAhead([job.id])}
              className={["job-card", focus && "focus", made.has("cv") && "made-cv", made.has("cover") && "made-cover"]
                .filter(Boolean).join(" ")}>
       <button type="button" className={saved ? "bookmark on" : "bookmark"} aria-pressed={saved} onClick={save}
@@ -751,20 +758,11 @@ export function JobCard({ job, focus, done, fresh, onMark }: {
         <button type="button" className="title" onClick={() => setOpen(true)}>{job.title}</button>
       </h3>
       {head}
-      {job.summary ? (
-        <p className="summary">
-          {job.summary}{" "}
-          {job.more ? (
-            <button type="button" className="linklike small" onClick={() => setOpen(true)}>Read it all</button>
-          ) : null}
-        </p>
-      ) : null}
       {why}
       {documents}
       {marks}
       {open ? (
-        <JobView id={job.id} title={job.title} text={job.more ? undefined : job.summary}
-                 onClose={() => setOpen(false)}>
+        <JobView id={job.id} title={job.title} onClose={() => setOpen(false)}>
           {head}
           {why}
           {documents}
@@ -799,7 +797,7 @@ export function MakeDocument({ doc, kind, existing }: { doc: Build; kind: "cv" |
         </a>
         {build?.saved === false ? (
           <span className="small muted">
-            Not kept: your storage is full. <a href="#/documents">Make room</a>
+            Not kept: your storage is full. <a href="/documents">Make room</a>
           </span>
         ) : (
           <button type="button" className="again" onClick={() => void start()}>{MORE_PICTURES.again}Make it again</button>

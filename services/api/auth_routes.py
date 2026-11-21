@@ -368,7 +368,9 @@ def logout_everywhere(request: Request, response: Response,
 def _send_verification(db: Database, mailer: EmailSender, email: str, token: str, plan: Plan) -> None:
     """Send the link, and treat any delivery failure as recoverable."""
     # The SPA's hash route, not the API's path; for a membership, on to the payment form once it is opened.
-    url = site_url(f"/#/verify?token={token}" + ("" if plan == "free" else f"&plan={plan}"))
+    # The token after the "#", the part of an address a browser keeps to itself: it is in no request, so in
+    # no log of ours or of anything between, and in no address another site is told the visitor came from.
+    url = site_url(f"/verify#token={token}" + ("" if plan == "free" else f"&plan={plan}"))
     subject, body, html = verification_email(url, VERIFICATION_TTL)
     # The token grants access to the account, so it is scrubbed from anything logged in flight.
     with redacting(token):
@@ -381,7 +383,7 @@ def _send_verification(db: Database, mailer: EmailSender, email: str, token: str
 
 def _send_reset(db: Database, mailer: EmailSender, email: str, token: str) -> None:
     """Send the reset link, and treat any delivery failure as recoverable: they can ask again."""
-    subject, body, html = reset_email(site_url(f"/#/reset?token={token}"), RESET_TTL)
+    subject, body, html = reset_email(site_url(f"/reset#token={token}"), RESET_TTL)
     with redacting(token):
         try:
             send_within_cap(db, mailer, email, subject, body, purpose="reset_password", html=html)

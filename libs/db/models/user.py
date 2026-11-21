@@ -191,3 +191,7 @@ class UserSecret(Document):
     validated_at: datetime | None = None
     created_at: datetime = field(default_factory=now)
     updated_at: datetime = field(default_factory=now)
+    # Where its plan's limits stood when they were last read from its provider, and when that was
+    # (`libs.llm.limits.held`): what a page is answered with for the next few minutes.
+    limits: list[dict] | None = None
+    limits_at: datetime | None = None

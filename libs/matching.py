@@ -206,8 +206,13 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
     searches = [[{"$match": {"$and": [*where, {"terms_at": None, **has_any(mine)}]}}, *newest, *found_there]]
     how: dict = {}
     if indexed:
+        # Found by the words stored on it, and with every word of theirs stored, nothing below reads its
+        # text: left behind before the newest are sorted and not after, so what is sorted is a tenth the
+        # size. 567 ms to 456 for a list of 5,894 (2026-11-21). With a word still pending, the text is read
+        # for it, and leaves after.
+        early = [{"$unset": left}] if left and not pending else []
         # First: what the database is told about how to read applies to the question it begins with.
-        searches.insert(0, [{"$match": {"$and": [*where, {"terms": {"$in": indexed}}]}}, *newest,
+        searches.insert(0, [{"$match": {"$and": [*where, {"terms": {"$in": indexed}}]}}, *early, *newest,
                             *found_there])
         how = {} if only is not None or described_since is not None else {"hint": WORDS_INDEX}
     if pending:

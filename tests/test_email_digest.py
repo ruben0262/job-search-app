@@ -133,8 +133,8 @@ def test_it_lists_what_was_found_since_the_last_one_with_a_link_to_each(db, monk
     [mail] = inbox.sent
     assert mail["subject"] == "1 new job for you"
     assert f"New {word} — Acme · Berlin" in mail["body"] and f"Old {word}" not in mail["body"]
-    assert f"https://jobs.example.com/#/feed?job={new.id}" in mail["body"]
-    assert "https://jobs.example.com/#/alerts" in mail["body"], "and where to change it"
+    assert f"https://jobs.example.com/jobs?job={new.id}" in mail["body"]
+    assert "https://jobs.example.com/alerts" in mail["body"], "and where to change it"
 
 
 @needs_db
@@ -172,11 +172,11 @@ def test_its_designed_version_lists_each_job_linked_with_the_words_that_found_it
 
     [mail] = inbox.sent
     html = mail["html"]
-    assert f'href="https://jobs.example.com/#/feed?job={job.id}"' in html
+    assert f'href="https://jobs.example.com/jobs?job={job.id}"' in html
     assert f"&lt;b&gt;Lead&lt;/b&gt; {word}" in html and "<b>Lead</b>" not in html
     assert f">{word}</span>" in html, "the word that found it"
     assert ">My search</td>" in html, "under the alert that found it"
-    assert "Acme · Berlin" in html and 'href="https://jobs.example.com/#/alerts"' in html
+    assert "Acme · Berlin" in html and 'href="https://jobs.example.com/alerts"' in html
 
 
 @needs_db

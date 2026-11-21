@@ -6,12 +6,13 @@ import { useState } from "react";
 
 import { api, type Membership } from "../api";
 import { useKept } from "../kept";
-import { PriceCards, type Pricing } from "../landing/Landing";
+import { PriceCards, type Pricing } from "../landing/pricecards";
 import { MEMBERSHIP, StripeCheckout, price } from "../membership";
 import { ThemeToggle } from "../theme";
 import { Error, useAction } from "../ui";
 import { Brand } from "../wheel";
 import { planAsked } from "./SignIn";
+import { go } from "../route";
 
 export function PlanPage({ onChanged }: { onChanged: () => Promise<void> | void }) {
   const pricing = useKept<Pricing>("/pricing");
@@ -31,12 +32,12 @@ export function PlanPage({ onChanged }: { onChanged: () => Promise<void> | void 
   const free = useAction(async () => {
     await api.post("/billing/free");
     await onChanged();
-    window.location.hash = "/";
+    go("/");
   });
   const paid = async () => {
     await api.post("/billing/refresh").catch(() => undefined);
     await onChanged();
-    window.location.hash = "/";
+    go("/");
   };
   const plan = (form === "starter" ? pricing.data?.starter : pricing.data?.plan) ?? null;
   // The plan's own free days: the membership's, and none on Starter (owner, 2026-11-17).
@@ -47,7 +48,7 @@ export function PlanPage({ onChanged }: { onChanged: () => Promise<void> | void 
       <div className="backdrop" aria-hidden="true" />
       <main className="plan-page">
         <header className="shell-top">
-          <Brand href="#/" />
+          <Brand href="/" />
           <ThemeToggle />
         </header>
         {/* Stripe's checkout is made as the page opens and drawn, unseen and out of reach, under the cards while

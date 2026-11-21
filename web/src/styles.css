@@ -5411,19 +5411,7 @@ input[type="checkbox"]:disabled {
   color: var(--muted);
 }
 
-/* ── a job's description, and two columns where there is room ──────────────────────────────── */
-
-.job-card .summary {
-  margin: 0.6rem 0 0.4rem;
-  font-size: var(--text-sm);
-  line-height: 1.55;
-  color: var(--muted);
-}
-
-/* Inside the line, not a box of its own that pushes the last line down. */
-.job-card .summary .linklike {
-  display: inline;
-}
+/* ── two columns where there is room ───────────────────────────────────────────────────────── */
 
 /* Two columns on a laptop, one on a phone. */
 @media (min-width: 900px) {

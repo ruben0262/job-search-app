@@ -662,6 +662,46 @@ def test_every_company_board_is_polled_over_a_round_of_runs_not_only_the_first_f
     assert len(polled) == 25 and set(polled) == {f"company{n:03d}" for n in range(25)}
 
 
+def test_never_more_boards_are_read_at_once_than_the_client_has_connections():
+    """**A relationship, not a stopwatch.** Every ATS reads with workers of its own and all of them share
+    one client. Read together, their workers outnumber its connections: a read then waits for a connection on
+    its own clock, and is timed out by boards it never asked. So a worker takes a turn first, and there are
+    as many turns as connections. Three families of thirty want to read here; sixty do, and thirty wait."""
+    import threading
+
+    from services.harvester.sources.ats import AT_ONCE, gather_ats
+
+    reading, most, lock = 0, 0, threading.Lock()
+    full, over, go = threading.Event(), threading.Event(), threading.Event()
+
+    def fetch(_token, _etag):
+        nonlocal reading, most
+        with lock:
+            reading += 1
+            most = max(most, reading)
+            (over if reading > AT_ONCE else full if reading == AT_ONCE else threading.Event()).set()
+        go.wait(timeout=30)
+        with lock:
+            reading -= 1
+        return [], None
+
+    families = [threading.Thread(target=gather_ats, args=({"concurrency": 30}, logging.getLogger("test")),
+                                 kwargs={"ats": name, "repo": _boards(30), "fetch_company": fetch})
+                for name in ("greenhouse", "lever", "ashby")]
+    for family in families:
+        family.start()
+    try:
+        assert full.wait(timeout=30), "the premise: as many boards are being read as there are connections"
+        # A moment in which the thirty that wait would have come in, were anything to let them.
+        over.wait(timeout=0.3)
+    finally:
+        go.set()
+        for family in families:
+            family.join(timeout=30)
+
+    assert most == AT_ONCE
+
+
 def test_adzuna_is_asked_each_countrys_newest_with_no_word_two_countries_a_run(monkeypatch):
     """Its free tier allows ~250 calls a day: two a run, a country each, every country in turn."""
     from libs.settings import PLATFORM_TICK_MIN

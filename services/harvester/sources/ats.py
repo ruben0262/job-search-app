@@ -27,6 +27,13 @@ _TIMEOUT = 15
 LEVER_TIMEOUT = 60
 # The three JSON files and their lock are gone.
 
+# How many company boards are being read at any moment, across every ATS: as many as the shared client has
+# connections. The ATS families are read at the same time (`cycle._gather`), each with its own workers, and
+# without this they would outnumber the connections: a read then waits for one on its own clock, and is
+# timed out by a board that never heard of it. A worker waits here instead, on no clock, for its turn.
+AT_ONCE = 60
+_BOARD_TURNS = threading.BoundedSemaphore(AT_ONCE)
+
 # One pooled client shared by every board poll.
 _CLIENT: httpx.Client | None = None
 _CLIENT_LOCK = threading.Lock()
@@ -39,7 +46,7 @@ def _http() -> httpx.Client:
             if _CLIENT is None:
                 _CLIENT = make_shared_client(
                     timeout=_TIMEOUT, follow_redirects=True,
-                    limits=httpx.Limits(max_connections=60, max_keepalive_connections=30))
+                    limits=httpx.Limits(max_connections=AT_ONCE, max_keepalive_connections=AT_ONCE // 2))
     return _CLIENT
 
 
@@ -93,7 +100,8 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
 
     def _one(token: str) -> tuple[str, Any, str | None]:
         try:
-            jobs, etag = fetch_company(token, etags.get(token) if use_cond else None)
+            with _BOARD_TURNS:
+                jobs, etag = fetch_company(token, etags.get(token) if use_cond else None)
             return token, jobs, etag
         except Exception as exc:
             logger.warning("%s: %s failed: %s", ats, token, exc)

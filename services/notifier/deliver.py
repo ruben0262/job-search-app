@@ -117,7 +117,7 @@ def _send(db: Database, user: User, job: CorpusJob, alerts: list[Alert], mine: s
     for alert in () if again else alerts:
         if "bell" in alert.channels:
             # One line an alert in the bell, brought up to date while it is unread rather than one a job.
-            notify(db, user.id, Event(f"alert.{alert.id}", "info", alert.name, f"#/alerts?alert={alert.id}"),
+            notify(db, user.id, Event(f"alert.{alert.id}", "info", alert.name, f"/alerts?alert={alert.id}"),
                    " · ".join(filter(None, (job.title, job.company))))
     if "telegram" in ways and not again and ways & {"push", "bell"}:
         record_state(db, user.id, job.id, pushed_at=now())

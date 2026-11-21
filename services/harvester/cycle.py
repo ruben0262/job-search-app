@@ -205,7 +205,9 @@ def _warn_if_near_budget(elapsed: float, report: CycleReport) -> None:
 
 def _gather(source_configs: dict[str, dict], ats: AtsRepository,
             run_source: Callable[..., list[JobLink]], report: CycleReport) -> list[JobLink]:
-    """Run every enabled shared source concurrently."""
+    """Read every enabled board, `OUTER_CONCURRENCY` of them at a time, the company boards among them: they
+    were read one family after another before anything else began, when the boards they ask are nine
+    different sites. What bounds them is how many boards are read at once (`sources.ats.AT_ONCE`)."""
     shared = [s for s in REGISTRY.values() if source_configs.get(s.key, {}).get("enabled")]
     links: list[JobLink] = []
     if not shared:
@@ -215,21 +217,9 @@ def _gather(source_configs: dict[str, dict], ats: AtsRepository,
     def _config_for(source: Source) -> dict:
         return dict(source_configs.get(source.key, {}))
 
-    db_bound = [s for s in shared if s.needs_ats_repo]
-    network_only = [s for s in shared if not s.needs_ats_repo]
-
-    for source in db_bound:
-        try:
-            found = run_source(source, _config_for(source), ats)
-        except Exception as exc:                                    # noqa: BLE001
-            logger.warning("source %s failed: %s", source.key, exc)
-            report.source_failures[source.key] = str(exc)[:200]
-        else:
-            _record_source(report, source, found, links)
-
-    if network_only:
-        with ThreadPoolExecutor(max_workers=min(OUTER_CONCURRENCY, len(network_only))) as pool:
-            futures = {pool.submit(run_source, s, _config_for(s), ats): s for s in network_only}
+    if shared:
+        with ThreadPoolExecutor(max_workers=min(OUTER_CONCURRENCY, len(shared))) as pool:
+            futures = {pool.submit(run_source, s, _config_for(s), ats): s for s in shared}
             for future, source in futures.items():
                 try:
                     found = future.result()

@@ -20,6 +20,7 @@ from libs.obs import configure
 from libs.proxy import site_proxy
 from libs.queue.worker import INTERACTIVE_IDLE_SLEEP_SEC, Terminal, run_worker
 from libs.secrets import SecretStore, install, redacting
+from libs.secrets.process import keep_to_itself
 from services.docgen import pdf, run
 from services.docgen.run import NotBuildable
 
@@ -105,6 +106,8 @@ def purge(db) -> None:
 def main() -> int:
     configure("docgen")
     install()
+    # Before anything is started from here: the AI tools and the browser are other people's programs.
+    keep_to_itself()
     ensure_schema()
     # Launched now, so the first person after a restart does not wait for it.
     pdf.browser()

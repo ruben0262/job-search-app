@@ -130,3 +130,51 @@ def test_the_payment_form_is_allowed_everything_stripe_says_it_needs():
         assert not [origin for origin in origins if origin not in _allowed(directive)], directive
     assert _allowed("frame-ancestors") == ["'none'"] and _allowed("object-src") == ["'none'"]
 
+
+
+@pytest.mark.parametrize(("method", "path", "accept", "page"), [
+    # A browser going to a page: the page, though the same words are an address of the API's.
+    ("GET", "/applied", "text/html,application/xhtml+xml,*/*;q=0.8", True),
+    ("GET", "/alerts", "text/html", True),
+    ("GET", "/jobs", "text/html", True),
+    ("GET", "/admin/users/7f1c7a3e-58a0-4b53-9d0a-6a4e4a1b2c3d", "text/html", True),
+    ("GET", "/settings", "text/html", True),
+    # The page's own code asking the same address: the data.
+    ("GET", "/applied", "*/*", False),
+    ("GET", "/alerts", "application/json", False),
+    ("GET", "/admin/pipeline/stream", "text/event-stream", False),
+    ("POST", "/applied", "text/html", False),
+    # What the API answers a browser with itself: a file to download, the way back from Discord.
+    ("GET", "/documents/build/7/file", "text/html", False),
+    ("GET", "/documents/65a1b2c3d4e5f6a7b8c9d0e1/file", "text/html", False),
+    ("GET", "/discord/callback", "text/html", False),
+    # And a file of the site's own.
+    ("GET", "/assets/index-abc123.js", "text/html", False),
+    ("GET", "/sw.js", "text/html", False),
+])
+def test_a_browser_going_to_an_address_gets_the_page_and_the_pages_code_gets_the_data(method, path, accept,
+                                                                                         page):
+    """Addresses lost their `/#/` (owner, 2026-11-21: "like /jobs or /applied"), and a page's address is
+    often the very address its data is read from. Which is wanted is told by what the request asks for: a
+    browser going somewhere says it will take a page. The API's own addresses that answer a browser are
+    read off the contract, so a new download is one without being listed anywhere."""
+    from services.api.guard import page_asked
+
+    scope = {"type": "http", "method": method, "path": path, "headers": [(b"accept", accept.encode())]}
+
+    assert page_asked(scope) is page
+
+
+def test_the_page_looks_for_the_same_mark_the_site_keeps():
+    """`theme.js` runs before the site's code and cannot import it, so the name of the mark that says somebody
+    was signed in here (`session.ts`) is written again in it. A second copy of a name is held to the first: it
+    decides whether a visitor's browser asks for the landing page at once."""
+    import pathlib
+    import re
+
+    web = pathlib.Path(__file__).resolve().parents[1] / "web"
+    key = re.search(r'^const KEY = "([^"]+)";', (web / "src" / "session.ts").read_text(encoding="utf-8"),
+                    re.M)
+
+    assert key and f'localStorage.getItem("{key.group(1)}")' in (web / "public" / "theme.js").read_text(
+        encoding="utf-8")

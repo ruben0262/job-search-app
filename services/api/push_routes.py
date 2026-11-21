@@ -78,7 +78,7 @@ def test(body: PushEndpoint, db: Database = Depends(get_db),
         with redacting(key):
             delivered = send(browser, {"title": "Notifications are on",
                                        "body": "New jobs from your alerts will arrive like this.",
-                                       "url": "/#/alerts"}, key)
+                                       "url": "/alerts"}, key)
     except (WebPushException, requests.RequestException) as exc:
         code = getattr(exc, "status_code", None)
         logger.warning("push: a test to a browser of %s was refused (%s): %s", user_id, code, exc)

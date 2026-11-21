@@ -39,8 +39,8 @@ console.log(opened[0]);
 
 @pytest.mark.skipif(NODE is None, reason="needs node, as the site's build does")
 @pytest.mark.parametrize(("named", "opens"), [
-    ("/#/feed?job=7", "https://app.example/#/feed?job=7"),
-    ("/#/alerts", "https://app.example/#/alerts"),
+    ("/jobs?job=7", "https://app.example/jobs?job=7"),
+    ("/alerts", "https://app.example/alerts"),
     ("https://elsewhere.example/sign-in", "https://app.example/"),
     ("//elsewhere.example/sign-in", "https://app.example/"),
 ])

@@ -57,7 +57,7 @@ export function SettingsPage({ dashboard, onSignedOut }: {
 
       <p className="small legal-links">
         <LegalLinks />
-        {dashboard.is_admin ? <a href="#/admin">Platform</a> : null}
+        {dashboard.is_admin ? <a href="/admin">Platform</a> : null}
       </p>
     </>
   );

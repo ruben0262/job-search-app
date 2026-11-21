@@ -28,7 +28,7 @@ from libs.obs import audit
 from libs.onboarding import onboarding_state
 from libs.settings import HARVEST_SOURCES
 from libs.tenant import applications
-from libs.tenant.filters import theirs_to_open
+from libs.tenant.filters import theirs_among, theirs_to_open
 from services.api.deps import current_user, get_db
 from services.api.onboarding_routes import OnboardingSteps
 from services.api.saved_routes import JobDocument, job_document
@@ -37,9 +37,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["dashboard"])
 
 FEED_PAGE = 25
-
-# How much of a description a job card shows before "Show the full description".
-SUMMARY_CHARS = 280
+# How many jobs' texts one request may ask for: the longest list a page shows at once
+# (`link_routes.MARKED_SHOWN`).
+TEXTS_AT_ONCE = 100
 
 
 class DashboardBanner(BaseModel):
@@ -132,12 +132,9 @@ class FeedJob(BaseModel):
     # When its text was read, and so when it reached the list (`candidate_conditions`): what makes it
     # new. None only for a job somebody wrote in themselves with a short text.
     described_at: datetime | None
+    # Read off its text, which the card itself does not carry (owner, 2026-11-21: "remove the jobs
+    # descriptions"): the page reads the whole text ahead, from `/jobs/descriptions`, so a job opens at once.
     salary: FeedSalary | None
-    # The start of the description, whitespace folded, cut at a word: what the card shows. None until
-    # the posting has been described.
-    summary: str | None
-    # Whether there is more of it than the summary, to fetch from `/jobs/{id}/description`.
-    more: bool
     # The CVs and cover letters made for it, newest first: still downloadable after a refresh.
     documents: list[JobDocument]
     # They bookmarked it: it is under Bookmarks too.
@@ -429,44 +426,55 @@ def bookmarked(db: Database, user_id: _uuid.UUID, ids: list[int]) -> set[int]:
 
 def feed_row(match: Match, text: str | None, documents: list[dict], *,
              bookmarked: bool = False) -> FeedJob:
-    """One job, with the start of its text and the salary in it, not the whole of it."""
+    """One job as its card shows it, with the salary its text states and none of the text."""
     job = match.job
     return FeedJob(id=job.id, title=job.title, company=job.company, location=job.location,
                    country=job.country, is_remote=job.is_remote, url=job.url, source=job.source,
                    apply_on=apply_on(job.source), words=list(match.words), posted_at=job.posted_at,
                    first_seen_at=job.first_seen_at, described_at=job.described_at,
-                   salary=salary.extract(text), **_summary(text),
+                   salary=salary.extract(text),
                    documents=[job_document(row) for row in documents], bookmarked=bookmarked,
                    fit=None if match.fit is None else fit.shown(match.fit))
-
-
-def _summary(description: str | None) -> dict:
-    """The first `SUMMARY_CHARS` of a description, on one line, cut at a word."""
-    text = " ".join((description or "").split())
-    if len(text) <= SUMMARY_CHARS:
-        return {"summary": text or None, "more": False}
-    cut = text[:SUMMARY_CHARS].rsplit(" ", 1)[0].rstrip(" ,;:-")
-    return {"summary": f"{cut}…", "more": True}
 
 
 class JobDescription(BaseModel):
     text: str
 
 
-@router.get("/jobs/{job_id}/description")
-def job_description(job_id: int, db: Database = Depends(get_db),
-                    user_id: _uuid.UUID = Depends(current_user)) -> JobDescription:
-    """A posting's whole description, for a card that was asked to show it: as stored, or in paragraphs
-    if it was stored as one line (`paragraphs`)."""
-    where: dict = {"_id": job_id}
+class JobTexts(BaseModel):
+    # Each job's whole text, by its number. A job with no text, or not theirs to read, is not in it.
+    texts: dict[int, str]
+
+
+def _texts(db: Database, user_id: _uuid.UUID, ids: list[int]) -> dict[int, str]:
+    """The whole text of each of these jobs that this account may read: as stored, or in paragraphs if it
+    was stored as one line (`paragraphs`). The one rule for one job and for a page of them."""
+    where: dict = {"_id": {"$in": sorted(theirs_among(db, user_id, ids))},
+                   "description": {"$nin": [None, ""]}}
     if (behind := jobs_as_of(db, get(db, User, user_id))) is not None:
         # Not the text of a job a waiting account's list does not show yet, asked for by its number.
         where["$or"] = [{"source": TYPED}, {"described_at": {"$lte": behind}}]
-    found = theirs_to_open(db, user_id, job_id) and db[CorpusJob.COLLECTION].find_one(
-        where, {"description": 1})
-    if not found or not found.get("description"):
+    return {row["_id"]: paragraphs(row["description"])
+            for row in db[CorpusJob.COLLECTION].find(where, {"description": 1})}
+
+
+@router.get("/jobs/descriptions")
+def job_descriptions(ids: list[int] = Query(min_length=1, max_length=TEXTS_AT_ONCE),
+                     db: Database = Depends(get_db),
+                     user_id: _uuid.UUID = Depends(current_user)) -> JobTexts:
+    """The whole text of the jobs a page lists, asked for once the list is drawn and before any is opened,
+    so opening one waits for nothing (owner, 2026-11-21: "there should be no waiting to open a job")."""
+    return JobTexts(texts=_texts(db, user_id, ids))
+
+
+@router.get("/jobs/{job_id}/description")
+def job_description(job_id: int, db: Database = Depends(get_db),
+                    user_id: _uuid.UUID = Depends(current_user)) -> JobDescription:
+    """One posting's whole description (`_texts`)."""
+    text = _texts(db, user_id, [job_id]).get(job_id)
+    if text is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no description for that job")
-    return JobDescription(text=paragraphs(found["description"]))
+    return JobDescription(text=text)
 
 
 class Step(BaseModel):

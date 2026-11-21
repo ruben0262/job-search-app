@@ -44,7 +44,7 @@ def applicant_label(count: int | None, caption: str | None = None) -> str:
 
 def job_page(job: CorpusJob) -> str:
     """The job on our site, where the CV for it is made."""
-    return site_url(f"/#/feed?job={job.id}")
+    return site_url(f"/jobs?job={job.id}")
 
 
 def render(job: CorpusJob, words: Sequence[str], alerts: Sequence[str] = ()) -> str:
