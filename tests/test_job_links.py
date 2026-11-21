@@ -184,7 +184,7 @@ def api(db, monkeypatch):
 
 
 def _added(http) -> list[int]:
-    return [job["id"] for job in http.get("/jobs/added").json()]
+    return [job["id"] for job in http.get("/jobs/added").json()["jobs"]]
 
 
 @needs_db
@@ -329,7 +329,7 @@ def test_a_job_written_in_is_not_anybody_elses_by_its_number_either(api):
     assert asked(mine) == (404, 404, 404)
     assert texts() == {str(public)}, "nor with a page of others, asked for all at once"
     assert asked(public)[:2] == (200, 200), "the premise: a posting everybody has is theirs to open"
-    assert http.get("/jobs/bookmarked").json()[0]["id"] == public
+    assert http.get("/jobs/bookmarked").json()["jobs"][0]["id"] == public
     http.cookies.set("access_token", access_cookie(db, user.id), path="/")
 
 

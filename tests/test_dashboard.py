@@ -670,22 +670,25 @@ def test_a_bookmarked_job_stays_on_the_jobs_page_and_is_listed_under_bookmarks_l
     def on_the_page() -> dict[int, bool]:
         return {row["id"]: row["bookmarked"] for row in http.get("/feed").json()["jobs"]}
 
+    def listed() -> list[dict]:
+        return http.get("/jobs/bookmarked").json()["jobs"]
+
     assert on_the_page() == {first.id: False, senior.id: False}
-    assert http.get("/jobs/bookmarked").json() == []
+    assert http.get("/jobs/bookmarked").json() == {"jobs": [], "total": 0}
 
     assert http.put(f"/jobs/{first.id}/bookmarked").json()["bookmarked"] is True
     # One that is not on their list can be bookmarked too: it was shown to them by its link, or was theirs.
     assert http.put(f"/jobs/{nurse.id}/bookmarked").json()["bookmarked"] is True
 
     assert on_the_page() == {first.id: True, senior.id: False}
-    listed = http.get("/jobs/bookmarked").json()
-    assert [row["id"] for row in listed] == [nurse.id, first.id]
-    assert all(row["bookmarked"] for row in listed)
-    assert {"title", "company", "salary", "apply_on", "documents"} <= set(listed[0]), "a card like any other"
-    assert [row["words"] for row in listed] == [[], ["backend engineer"]], "and it says why, as it did there"
+    cards = listed()
+    assert [row["id"] for row in cards] == [nurse.id, first.id]
+    assert all(row["bookmarked"] for row in cards)
+    assert {"title", "company", "salary", "apply_on", "documents"} <= set(cards[0]), "a card like any other"
+    assert [row["words"] for row in cards] == [[], ["backend engineer"]], "and it says why, as it did there"
 
     assert http.delete(f"/jobs/{nurse.id}/bookmarked").json()["bookmarked"] is False
-    assert [row["id"] for row in http.get("/jobs/bookmarked").json()] == [first.id]
+    assert [row["id"] for row in listed()] == [first.id]
     assert on_the_page() == {first.id: True, senior.id: False}
 
 
@@ -695,17 +698,44 @@ def test_a_bookmark_is_one_persons_and_leaves_bookmarks_when_they_apply_skip_or_
     other = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
                             active=True))
     record_state(db, other.id, senior.id, bookmarked_at=now())
-    assert http.get("/jobs/bookmarked").json() == [], "somebody else's bookmark is not theirs"
+    assert http.get("/jobs/bookmarked").json()["jobs"] == [], "somebody else's bookmark is not theirs"
 
     for job in jobs:
         http.put(f"/jobs/{job.id}/bookmarked")
     http.put(f"/jobs/{first.id}/applied")
     http.put(f"/jobs/{senior.id}/hidden")
-    assert [row["id"] for row in http.get("/jobs/bookmarked").json()] == [nurse.id]
+    assert [row["id"] for row in http.get("/jobs/bookmarked").json()["jobs"]] == [nurse.id]
     assert [row["id"] for row in http.get("/applied").json()] == [first.id]
 
     db[CorpusJob.COLLECTION].update_one({"_id": nurse.id}, {"$set": {"closed_at": now()}})
-    assert http.get("/jobs/bookmarked").json() == []
+    assert http.get("/jobs/bookmarked").json() == {"jobs": [], "total": 0}
+
+
+def test_more_bookmarks_than_a_page_are_counted_whole_and_come_a_page_at_a_time(api):
+    """The first hundred marks were read and the closed ones dropped after, and the page's heading counted the
+    cards it got: somebody with more was told a smaller number and had no way to the rest. Now a page of the
+    open ones, as long as a page of Jobs, the count of all of them, and the next page from where this ends."""
+    from services.api.dashboard_routes import FEED_PAGE
+
+    http, db, user, _jobs = api
+    marked = []
+    for n in range(FEED_PAGE + 4):
+        job = insert(db, CorpusJob(described_at=now(), url=f"https://example.com/{uuid.uuid4()}",
+                                   source="test", title=f"Bookkeeper {n}", description="we keep books"))
+        record_state(db, user.id, job.id, bookmarked_at=now() - timedelta(minutes=n))
+        marked.append(job.id)
+    # Two of the latest have closed since: they are neither shown nor counted, and do not shorten the page.
+    closed = marked[1:3]
+    db[CorpusJob.COLLECTION].update_many({"_id": {"$in": closed}}, {"$set": {"closed_at": now()}})
+    still = [job_id for job_id in marked if job_id not in closed]
+
+    first = http.get("/jobs/bookmarked").json()
+    assert first["total"] == len(still) == FEED_PAGE + 2
+    assert [row["id"] for row in first["jobs"]] == still[:FEED_PAGE], "a whole page, the latest first"
+    rest = http.get(f"/jobs/bookmarked?offset={FEED_PAGE}").json()
+    assert [row["id"] for row in rest["jobs"]] == still[FEED_PAGE:], "and the rest, each once"
+    assert rest["total"] == first["total"]
+    assert http.get(f"/jobs/bookmarked?offset={len(still)}").json() == {"jobs": [], "total": len(still)}
 
 
 # ── the landing page ──────────────────────────────────────────────────────────────────────────

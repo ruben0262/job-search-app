@@ -8,12 +8,12 @@ import re
 import uuid as _uuid
 from collections import Counter
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter, ValidationError, create_model
 from pymongo.database import Database
 
 from libs import templates
@@ -45,7 +45,6 @@ from libs.membership import (
     ONGOING,
     STARTER,
     WAITS,
-    admin_emails,
     choosing,
     is_admin,
     is_member,
@@ -56,7 +55,7 @@ from libs.membership import (
 from libs.obs import audit
 from libs.ops import evaluate, platform_health
 from libs.ops.countries import RANGES_HOURS, by_country
-from libs.ops.latency import latency_report, stage_detail
+from libs.ops.latency import stage_breakdown, stage_detail
 from libs.ops.pipeline import pipeline
 from libs.ops.pipeline import sources as found_by_source
 from libs.settings import (
@@ -98,20 +97,47 @@ def require_admin(db: Database = Depends(get_db),
     return user
 
 
-@router.get("/health")
+# What each handler here answers is said in its type, which the site's own types are made from
+# (`web/src/api-types.ts`): the Admin pages kept a copy of every shape by hand, 250 lines, one of them with a
+# part the server had stopped sending. A field is declared when a page reads it, and only then sent.
+
+class LaneDepth(BaseModel):
+    lane: str
+    ready: int
+    claimed: int
+    dead: int
+    oldest_ready_min: float | None
+
+
+class HealthAlert(BaseModel):
+    # `page` needs somebody now; `warn` needs somebody today.
+    severity: Literal["page", "warn"]
+    key: str
+    text: str
+    action: str
+    user_email: str | None
+
+
+class Health(BaseModel):
+    checked_at: datetime
+    lanes: list[LaneDepth]
+    users_total: int
+    users_active: int
+    corpus_rows: int
+    database_bytes: int
+    disk_used_bytes: int
+    disk_total_bytes: int
+    alerts: list[HealthAlert]
+
+
+@router.get("/health", response_model=Health)
 def health(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
     """Every number the Health tab shows, plus the conditions that currently need a person: an account one
     of them names is in its alert, and the accounts they were read from stay here."""
     state = platform_health(db)
     alerts = evaluate(state)
     audit(logger, "admin.health", user=admin.id, alerts=len(alerts))
-    return {
-        **{key: value for key, value in state.as_dict().items() if key != "users"},
-        "alerts": [
-            {"severity": alert.severity, "key": alert.key, "text": alert.text,
-             "action": alert.action, "user_email": alert.user_email}
-            for alert in alerts],
-    }
+    return {**state.as_dict(), "alerts": [vars(alert) for alert in alerts]}
 
 
 class OutcomeRow(BaseModel):
@@ -235,44 +261,49 @@ def subscriptions(db: Database = Depends(get_db), admin: User = Depends(require_
 USERS_PAGE = 50
 
 
+class AccountRow(BaseModel):
+    id: str
+    email: str
+    status: str
+    telegram: str
+    # Effective access, not just the column.
+    is_admin: bool
+    # Stripe's word for their membership (None: never had one), and whether an admin let them in.
+    membership: str | None
+    free_access: bool
+    onboarded: bool
+    # The whole of account lifecycle now: an operator reads this and decides whether to delete. Nothing
+    # acts on it automatically (ROADMAP 6c).
+    last_active_at: datetime | None
+
+
+class AccountsPage(BaseModel):
+    total: int
+    offset: int
+    page_size: int
+    users: list[AccountRow]
+
+
 @router.get("/users")
 def users(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
-          q: str = Query("", max_length=200), offset: int = Query(0, ge=0)) -> dict:
+          q: str = Query("", max_length=200), offset: int = Query(0, ge=0)) -> AccountsPage:
     """A page of the account list, the first to join first, with no credential material of any kind; `q` finds
     the accounts whose address has it. Every account was read whole on each open of Admin and all of them
     drawn: 1.9 s and 196 MB at ten thousand, on a copy made of the dev accounts (2026-11-20)."""
     audit(logger, "admin.users", user=admin.id)
-    allowed = admin_emails()
     accounts = db[User.COLLECTION]
     # An address is stored in lower case.
     where = {"email": {"$regex": re.escape(q.strip().lower())}} if q.strip() else {}
-    return {
-        "total": accounts.count_documents(where) if where else accounts.estimated_document_count(),
-        "offset": offset,
-        "page_size": USERS_PAGE,
-        "users": [
-            {
-                "id": str(row.id),
-                "email": row.email,
-                "status": row.status,
-                "telegram": row.telegram_status,
-                # Effective access, not just the column.
-                "is_admin": is_admin(row),
-                # Stripe's word for their membership (None: never had one), and whether an admin let them in.
-                "membership": row.subscription_status,
-                "free_access": row.free_access_at is not None,
-                # Whether the flag can be changed here at all.
-                "admin_locked": row.email.lower() in allowed,
-                "onboarded": row.onboarding_completed_at is not None,
-                "created_at": row.created_at.isoformat() if row.created_at else None,
-                # The whole of account lifecycle now: an operator reads this and decides whether to
-                # delete. Nothing acts on it automatically (ROADMAP 6c).
-                "last_active_at": (row.last_active_at.isoformat()
-                                   if row.last_active_at else None),
-            }
-            for row in find(db, User, where, projection=LIGHT, sort=[("created_at", 1), ("_id", 1)],
-                            skip=offset, limit=USERS_PAGE)],
-    }
+    return AccountsPage(
+        total=accounts.count_documents(where) if where else accounts.estimated_document_count(),
+        offset=offset, page_size=USERS_PAGE,
+        users=[AccountRow(id=str(row.id), email=row.email, status=row.status, telegram=row.telegram_status,
+                          is_admin=is_admin(row), membership=row.subscription_status,
+                          free_access=row.free_access_at is not None,
+                          onboarded=row.onboarding_completed_at is not None,
+                          last_active_at=row.last_active_at)
+               for row in find(db, User, where, projection=LIGHT, sort=[("created_at", 1), ("_id", 1)],
+                               skip=offset, limit=USERS_PAGE)])
 
 
 class AdminAccount(BaseModel):
@@ -449,16 +480,35 @@ class SettingPatch(BaseModel):
     value: dict | list | int | str
 
 
+def _kind(default: object) -> Any:
+    """What a setting holds, read off its default (`libs.settings.DEFAULTS`): a number, a line of text, or
+    one of either to a name. Anything else to a name is taken as it is."""
+    if not isinstance(default, dict):
+        return type(default)
+    kinds = {type(each) for each in default.values()}
+    return dict[str, kinds.pop() if len(kinds) == 1 and kinds <= {int, str} else Any]
+
+
+# Every setting with what it holds: what Admin is sent, and what it may store. Made from the defaults, so a
+# setting added there is in both with nothing to add here.
+PlatformSettings = create_model(
+    "PlatformSettings", **{key: (_kind(default), ...) for key, default in DEFAULTS.items()})
+
+
+class SettingsNow(BaseModel):
+    settings: PlatformSettings
+
+
 @router.get("/settings")
-def read_settings(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
+def read_settings(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> SettingsNow:
     """What the operator controls, with the defaults filled in for anything unset."""
     audit(logger, "admin.settings_read", user=admin.id)
-    return {"settings": all_settings(db), "defaults": DEFAULTS}
+    return SettingsNow(settings=all_settings(db))
 
 
 @router.put("/settings/{key}")
 def write_setting(key: str, body: SettingPatch, db: Database = Depends(get_db),
-                  admin: User = Depends(require_admin)) -> dict:
+                  admin: User = Depends(require_admin)) -> SettingsNow:
     """Set one, unless it would leave a plan's Jobs pages empty or Starter behind Free. An account on a plan
     that waits (`libs.membership.WAITS`) sees a job from that wait until it leaves everybody's list at the job
     shelf life, so the shelf must be the longer: the server kept 11-07's week of shelf while free accounts
@@ -500,12 +550,17 @@ def write_setting(key: str, body: SettingPatch, db: Database = Depends(get_db),
                 "most."))
         body.value = {field: body.value.get(field, "").strip() for field in OPERATOR_FIELDS}
     try:
-        put(db, key, body.value, by=admin.email)
+        # What the setting holds, or nothing is stored: text kept for a number was read back by the harvester
+        # as it stood, which stops on it, every run, and Admin could no longer be sent its own settings.
+        put(db, key, TypeAdapter(_kind(DEFAULTS[key])).validate_python(body.value), by=admin.email)
     except KeyError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail=f"That is not a value {key} takes. Nothing was changed.") from exc
 
     audit(logger, "admin.settings_write", user=admin.id, setting=key)
-    return {"status": "ok", "settings": all_settings(db)}
+    return SettingsNow(settings=all_settings(db))
 
 
 class AdminFlag(BaseModel):
@@ -583,7 +638,26 @@ def delete_user(user_id: _uuid.UUID, body: DeleteConfirmation, db: Database = De
     return {"status": "deleted", "id": str(user_id)}
 
 
-@router.get("/sources")
+class SourceRow(BaseModel):
+    name: str
+    hours: int
+    min_age_hours: int
+    queries_per_cycle: int | None
+    results_per_query: int | None
+    pages_per_cycle: int | None
+
+
+class AtsCeiling(BaseModel):
+    companies_per_cycle: int
+    companies_held: int
+
+
+class SourceList(BaseModel):
+    sources: list[SourceRow]
+    ats: AtsCeiling
+
+
+@router.get("/sources", response_model=SourceList)
 def sources(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
     """Every source the harvester collects from, with the freshness window each one is using. No source is
     asked for a word (owner, 2026-11-04): each is read whole for its window."""
@@ -669,7 +743,28 @@ class LimitPatch(BaseModel):
     value: int | None = None
 
 
-@router.get("/limits")
+class LimitSpec(BaseModel):
+    """One ceiling as the account page offers it (`libs.limits.describe`)."""
+    key: str
+    label: str
+    default: int | None
+    unit: str
+    detail: str
+    allow_unlimited: bool
+    # The values that can be picked, from `libs.limits`: no copy of them is kept in the page.
+    choices: list[int]
+
+
+class LimitCatalogue(BaseModel):
+    limits: list[LimitSpec]
+
+
+class LimitsNow(BaseModel):
+    # `None` is unlimited and is a real value, not a missing one.
+    limits: dict[str, int | None]
+
+
+@router.get("/limits", response_model=LimitCatalogue)
 def limit_catalogue(admin: User = Depends(require_admin)) -> dict:
     """What can be set, what it defaults to, and what each one means."""
     return {"limits": describe()}
@@ -678,7 +773,7 @@ def limit_catalogue(admin: User = Depends(require_admin)) -> dict:
 @router.put("/users/{user_id}/limits/{key}")
 def set_user_limit(user_id: _uuid.UUID, key: str, body: LimitPatch,
                    db: Database = Depends(get_db),
-                   admin: User = Depends(require_admin)) -> dict:
+                   admin: User = Depends(require_admin)) -> LimitsNow:
     """Set one ceiling on one account, or clear it to unlimited."""
     target = get(db, User, user_id)
     if target is None:
@@ -692,16 +787,42 @@ def set_user_limit(user_id: _uuid.UUID, key: str, body: LimitPatch,
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     audit(logger, "admin.limit_set", user=admin.id, subject=user_id, limit=key, value=body.value)
-    return {"status": "ok", "limits": all_for(get(db, User, user_id))}
+    return LimitsNow(limits=all_for(get(db, User, user_id)))
 
 # What an operator can page through at once.
 CORPUS_PAGE = 50
 
 
+class CorpusRow(BaseModel):
+    id: int
+    title: str
+    company: str | None
+    location: str | None
+    source: str | None
+    is_remote: bool | None
+    # Its whole text stored: what puts it on Jobs pages (`CorpusRepository.set_description`).
+    described: bool
+    url: str
+    first_seen_at: datetime | None
+
+
+class SourceCount(BaseModel):
+    source: str
+    count: int
+
+
+class CorpusPage(BaseModel):
+    total: int
+    offset: int
+    page_size: int
+    sources: list[SourceCount]
+    jobs: list[CorpusRow]
+
+
 @router.get("/corpus")
 def corpus(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
            q: str = "", source: str = "", days: int = 30,
-           offset: int = 0) -> dict:
+           offset: int = 0) -> CorpusPage:
     """Search the shared corpus."""
     window = datetime.now(UTC) - timedelta(days=max(days, 1))
     where: dict = {"first_seen_at": {"$gte": window}}
@@ -722,21 +843,13 @@ def corpus(db: Database = Depends(get_db), admin: User = Depends(require_admin),
         {"$group": {"_id": "$source", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}])]
 
     audit(logger, "admin.corpus", user=admin.id, q=q[:60], total=total)
-    return {
-        "total": total,
-        "offset": max(offset, 0),
-        "page_size": CORPUS_PAGE,
-        "sources": [{"source": name or "unknown", "count": count} for name, count in by_source],
-        "jobs": [
-            {"id": row.id, "title": row.title, "company": row.company,
-             "location": row.location, "source": row.source, "is_remote": row.is_remote,
-             # Its whole text stored: what puts it on Jobs pages (`CorpusRepository.set_description`).
-             "described": row.described_at is not None,
-             "url": row.url,
-             "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
-             "posted_at": row.posted_at.isoformat() if row.posted_at else None}
-            for row in rows],
-    }
+    return CorpusPage(
+        total=total, offset=max(offset, 0), page_size=CORPUS_PAGE,
+        sources=[SourceCount(source=name or "unknown", count=count) for name, count in by_source],
+        jobs=[CorpusRow(id=row.id, title=row.title, company=row.company, location=row.location,
+                        source=row.source, is_remote=row.is_remote, described=row.described_at is not None,
+                        url=row.url, first_seen_at=row.first_seen_at)
+              for row in rows])
 
 
 @router.delete("/queue/dead")
@@ -754,14 +867,67 @@ def discard_dead_letters(db: Database = Depends(get_db), admin: User = Depends(r
     return {"status": "discarded", "count": len(rows), "lane": lane}
 
 
-@router.get("/pipeline")
+class PipelineStage(BaseModel):
+    """One step as it stands right now (`libs.ops.pipeline.Stage`)."""
+    key: str
+    label: str
+    what: str
+    entered: int | None
+    # `None`, not 0, where the step has no queue at all.
+    waiting: int | None
+    oldest_min: float | None
+    # Left the step's queue too old for anybody's Jobs page in the window, never taken.
+    missed: int | None
+    slow_after_min: int | None
+    too_long_after_min: int | None
+    note: str | None
+    verdict: Literal["ok", "warn", "down"]
+
+
+class PipelineLane(BaseModel):
+    lane: str
+    ready: int
+    running: int
+    dead: int
+    done: int
+
+
+class LaneAccount(PipelineLane):
+    """One lane's work for one account: whose, and why."""
+    user_id: str
+    email: str
+    last_error: str | None
+
+
+class PipelineReport(BaseModel):
+    window_hours: int
+    stages: list[PipelineStage]
+    lanes: list[PipelineLane]
+    lane_accounts: list[LaneAccount]
+
+
+@router.get("/pipeline", response_model=PipelineReport)
 def pipeline_shape(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
                    hours: int = 24) -> dict:
     """Where the jobs are right now, stage by stage."""
     return pipeline(db, hours=max(1, min(hours, 168)))
 
 
-@router.get("/pipeline/sources")
+class SourceFound(BaseModel):
+    """One source's window: found, with text, still waiting for text, and its newest."""
+    source: str
+    found: int
+    with_text: int
+    waiting: int
+    newest: datetime | None
+
+
+class SourcesFound(BaseModel):
+    window_hours: int
+    sources: list[SourceFound]
+
+
+@router.get("/pipeline/sources", response_model=SourcesFound)
 def pipeline_sources(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
                      hours: int = 24) -> dict:
     """Each source's last `hours`: found, with text, waiting for text, newest. Not in the live frame: it
@@ -811,17 +977,81 @@ async def pipeline_stream(request: Request, db: Database = Depends(get_db),
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
 
 
-@router.get("/latency")
+class StageRow(BaseModel):
+    """One zone of the pipeline, as the table shows it collapsed (`libs.ops.latency`)."""
+    key: str
+    label: str
+    zone: str
+    what: str
+    scope: Literal["corpus", "user"]
+    caveat: str | None
+    p50: float | None
+    p90: float | None
+    p99: float | None
+    worst: float | None
+    samples: int
+    # `unjudged` is not `unknown`: one is a choice not to colour it, the other too few examples to say.
+    verdict: Literal["ok", "warn", "down", "unknown", "unjudged"]
+    judged: bool
+    amber_after_min: int | None
+    red_after_min: int | None
+
+
+class LatencyReport(BaseModel):
+    window_hours: int
+    stages: list[StageRow]
+
+
+class LaneTiming(BaseModel):
+    """How long a lane waited and then ran, in seconds, from the queue's own timestamps."""
+    lane: str
+    samples: int
+    wait_p50: float
+    wait_p90: float
+    run_p50: float
+    run_p90: float
+    run_max: float
+
+
+class Backlog(BaseModel):
+    waiting: int
+    oldest_min: float | None
+
+
+class SeriesPoint(BaseModel):
+    at: datetime
+    samples: int
+    p50: float | None
+    p90: float | None
+
+
+class StageDetail(BaseModel):
+    """What one expanded row shows."""
+    key: str
+    label: str
+    zone: str
+    what: str
+    caveat: str | None
+    window_hours: int
+    lane_name: str | None
+    lane: LaneTiming | None
+    backlog: Backlog | None
+    series: list[SeriesPoint]
+    reasoning: str | None
+    amber_after_min: int | None
+    red_after_min: int | None
+
+
+@router.get("/latency", response_model=LatencyReport)
 def latency(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
             hours: int = 24) -> dict:
-    """The drill-down: the spans, then where the time actually went, then when."""
+    """One row per zone the posting crosses, in pipeline order."""
     window = max(1, min(hours, 24 * 7))
     audit(logger, "admin.latency", user=admin.id, hours=window)
-    # One row per zone the posting crosses, in pipeline order; the end-to-end span; the lanes; by hour.
-    return latency_report(db, hours=window)
+    return {"window_hours": window, "stages": stage_breakdown(db, hours=window)}
 
 
-@router.get("/latency/{key}")
+@router.get("/latency/{key}", response_model=StageDetail)
 def latency_stage(key: str, db: Database = Depends(get_db),
                   admin: User = Depends(require_admin), *, hours: int = 24) -> dict:
     """One zone, expanded: waiting versus running, the backlog, and the hour-by-hour shape."""

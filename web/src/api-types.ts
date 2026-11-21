@@ -141,7 +141,7 @@ export interface paths {
         };
         /**
          * Latency
-         * @description The drill-down: the spans, then where the time actually went, then when.
+         * @description One row per zone the posting crosses, in pipeline order.
          */
         get: operations["latency_admin_latency_get"];
         put?: never;
@@ -735,7 +735,7 @@ export interface paths {
         /**
          * Found Jobs
          * @description What this alert found, the latest first, as the Jobs page shows a job: less a job they skipped or
-         *     applied to, and one that closed.
+         *     applied to, and one that closed. A page of it, and how many there are (`marked_jobs`).
          */
         get: operations["found_jobs_alerts__alert_id__jobs_get"];
         put?: never;
@@ -2205,6 +2205,38 @@ export interface components {
             /** Telegram Status */
             telegram_status: string;
         };
+        /** AccountRow */
+        AccountRow: {
+            /** Email */
+            email: string;
+            /** Free Access */
+            free_access: boolean;
+            /** Id */
+            id: string;
+            /** Is Admin */
+            is_admin: boolean;
+            /** Last Active At */
+            last_active_at: string | null;
+            /** Membership */
+            membership: string | null;
+            /** Onboarded */
+            onboarded: boolean;
+            /** Status */
+            status: string;
+            /** Telegram */
+            telegram: string;
+        };
+        /** AccountsPage */
+        AccountsPage: {
+            /** Offset */
+            offset: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+            /** Users */
+            users: components["schemas"]["AccountRow"][];
+        };
         /** AdminAccount */
         AdminAccount: {
             /** Billing Synced At */
@@ -2518,6 +2550,13 @@ export interface components {
             /** Reply Id */
             reply_id: number;
         };
+        /** AtsCeiling */
+        AtsCeiling: {
+            /** Companies Held */
+            companies_held: number;
+            /** Companies Per Cycle */
+            companies_per_cycle: number;
+        };
         /**
          * AtsMeasured
          * @description How many CVs passed every ATS check in our own tests: said on the landing page as a share alone (owner,
@@ -2536,6 +2575,13 @@ export interface components {
         AuthStatus: {
             /** Status */
             status: string;
+        };
+        /** Backlog */
+        Backlog: {
+            /** Oldest Min */
+            oldest_min: number | null;
+            /** Waiting */
+            waiting: number;
         };
         /** Body_upload_documents_post */
         Body_upload_documents_post: {
@@ -2673,6 +2719,40 @@ export interface components {
             reference: string;
             /** Subject */
             subject: string;
+        };
+        /** CorpusPage */
+        CorpusPage: {
+            /** Jobs */
+            jobs: components["schemas"]["CorpusRow"][];
+            /** Offset */
+            offset: number;
+            /** Page Size */
+            page_size: number;
+            /** Sources */
+            sources: components["schemas"]["SourceCount"][];
+            /** Total */
+            total: number;
+        };
+        /** CorpusRow */
+        CorpusRow: {
+            /** Company */
+            company: string | null;
+            /** Described */
+            described: boolean;
+            /** First Seen At */
+            first_seen_at: string | null;
+            /** Id */
+            id: number;
+            /** Is Remote */
+            is_remote: boolean | null;
+            /** Location */
+            location: string | null;
+            /** Source */
+            source: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
         };
         /** CountryChart */
         CountryChart: {
@@ -2947,6 +3027,46 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** Health */
+        Health: {
+            /** Alerts */
+            alerts: components["schemas"]["HealthAlert"][];
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /** Corpus Rows */
+            corpus_rows: number;
+            /** Database Bytes */
+            database_bytes: number;
+            /** Disk Total Bytes */
+            disk_total_bytes: number;
+            /** Disk Used Bytes */
+            disk_used_bytes: number;
+            /** Lanes */
+            lanes: components["schemas"]["LaneDepth"][];
+            /** Users Active */
+            users_active: number;
+            /** Users Total */
+            users_total: number;
+        };
+        /** HealthAlert */
+        HealthAlert: {
+            /** Action */
+            action: string;
+            /** Key */
+            key: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "page" | "warn";
+            /** Text */
+            text: string;
+            /** User Email */
+            user_email: string | null;
+        };
         /** HistoryBody */
         HistoryBody: {
             /** Text */
@@ -3104,11 +3224,73 @@ export interface components {
             value: string;
         };
         /**
+         * LaneAccount
+         * @description One lane's work for one account: whose, and why.
+         */
+        LaneAccount: {
+            /** Dead */
+            dead: number;
+            /** Done */
+            done: number;
+            /** Email */
+            email: string;
+            /** Lane */
+            lane: string;
+            /** Last Error */
+            last_error: string | null;
+            /** Ready */
+            ready: number;
+            /** Running */
+            running: number;
+            /** User Id */
+            user_id: string;
+        };
+        /** LaneDepth */
+        LaneDepth: {
+            /** Claimed */
+            claimed: number;
+            /** Dead */
+            dead: number;
+            /** Lane */
+            lane: string;
+            /** Oldest Ready Min */
+            oldest_ready_min: number | null;
+            /** Ready */
+            ready: number;
+        };
+        /**
+         * LaneTiming
+         * @description How long a lane waited and then ran, in seconds, from the queue's own timestamps.
+         */
+        LaneTiming: {
+            /** Lane */
+            lane: string;
+            /** Run Max */
+            run_max: number;
+            /** Run P50 */
+            run_p50: number;
+            /** Run P90 */
+            run_p90: number;
+            /** Samples */
+            samples: number;
+            /** Wait P50 */
+            wait_p50: number;
+            /** Wait P90 */
+            wait_p90: number;
+        };
+        /**
          * Language
          * @description ISO 639-1 codes the platform offers. Also a controlled list, for the same reason.
          * @enum {string}
          */
         Language: "en" | "de" | "fr" | "es" | "nl" | "hu" | "pl" | "pt" | "it" | "sv" | "da";
+        /** LatencyReport */
+        LatencyReport: {
+            /** Stages */
+            stages: components["schemas"]["StageRow"][];
+            /** Window Hours */
+            window_hours: number;
+        };
         /** LegalDocument */
         LegalDocument: {
             /** Markdown */
@@ -3120,10 +3302,35 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** LimitCatalogue */
+        LimitCatalogue: {
+            /** Limits */
+            limits: components["schemas"]["LimitSpec"][];
+        };
         /** LimitPatch */
         LimitPatch: {
             /** Value */
             value?: number | null;
+        };
+        /**
+         * LimitSpec
+         * @description One ceiling as the account page offers it (`libs.limits.describe`).
+         */
+        LimitSpec: {
+            /** Allow Unlimited */
+            allow_unlimited: boolean;
+            /** Choices */
+            choices: number[];
+            /** Default */
+            default: number | null;
+            /** Detail */
+            detail: string;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Unit */
+            unit: string;
         };
         /**
          * LimitWindow
@@ -3143,6 +3350,13 @@ export interface components {
         Limits: {
             /** Windows */
             windows: components["schemas"]["LimitWindow"][];
+        };
+        /** LimitsNow */
+        LimitsNow: {
+            /** Limits */
+            limits: {
+                [key: string]: number | null;
+            };
         };
         /**
          * Line
@@ -3209,6 +3423,16 @@ export interface components {
             all: boolean;
             /** Ids */
             ids?: number[] | null;
+        };
+        /**
+         * MarkedJobs
+         * @description A page of the jobs somebody holds a mark on, and how many there are in all.
+         */
+        MarkedJobs: {
+            /** Jobs */
+            jobs: components["schemas"]["FeedJob"][];
+            /** Total */
+            total: number;
         };
         /**
          * Membership
@@ -3344,6 +3568,61 @@ export interface components {
             /** New Password */
             new_password: string;
         };
+        /** PipelineLane */
+        PipelineLane: {
+            /** Dead */
+            dead: number;
+            /** Done */
+            done: number;
+            /** Lane */
+            lane: string;
+            /** Ready */
+            ready: number;
+            /** Running */
+            running: number;
+        };
+        /** PipelineReport */
+        PipelineReport: {
+            /** Lane Accounts */
+            lane_accounts: components["schemas"]["LaneAccount"][];
+            /** Lanes */
+            lanes: components["schemas"]["PipelineLane"][];
+            /** Stages */
+            stages: components["schemas"]["PipelineStage"][];
+            /** Window Hours */
+            window_hours: number;
+        };
+        /**
+         * PipelineStage
+         * @description One step as it stands right now (`libs.ops.pipeline.Stage`).
+         */
+        PipelineStage: {
+            /** Entered */
+            entered: number | null;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Missed */
+            missed: number | null;
+            /** Note */
+            note: string | null;
+            /** Oldest Min */
+            oldest_min: number | null;
+            /** Slow After Min */
+            slow_after_min: number | null;
+            /** Too Long After Min */
+            too_long_after_min: number | null;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "ok" | "warn" | "down";
+            /** Waiting */
+            waiting: number | null;
+            /** What */
+            what: string;
+        };
         /**
          * Plan
          * @description A plan to pay for: its price as Stripe has it, and the free days a new subscription to it starts with
@@ -3401,6 +3680,81 @@ export interface components {
             free: components["schemas"]["PlanLines"];
             member: components["schemas"]["PlanLines"];
             starter: components["schemas"]["PlanLines"];
+        };
+        /** PlatformSettings */
+        PlatformSettings: {
+            /** Ats Companies Per Cycle */
+            ats_companies_per_cycle: number;
+            /** Corpus Retention Days */
+            corpus_retention_days: number;
+            /** Default Freshness Hours */
+            default_freshness_hours: number;
+            /** Describe Per Cycle */
+            describe_per_cycle: number;
+            /** Document Keep Hours */
+            document_keep_hours: number;
+            /** Document Models */
+            document_models: {
+                [key: string]: string;
+            };
+            /** Email Digest Hour */
+            email_digest_hour: number;
+            /** Free Delay Hours */
+            free_delay_hours: number;
+            /** Job Max Age Hours */
+            job_max_age_hours: number;
+            /** Members Channel Url */
+            members_channel_url: string;
+            /** Operator */
+            operator: {
+                [key: string]: string;
+            };
+            /** Price Was */
+            price_was: {
+                [key: string]: number;
+            };
+            /** Pricing Cards */
+            pricing_cards: {
+                [key: string]: unknown;
+            };
+            /** Pricing Lines */
+            pricing_lines: {
+                [key: string]: unknown;
+            };
+            /** Proxy Exits */
+            proxy_exits: number;
+            /** Socials */
+            socials: {
+                [key: string]: string;
+            };
+            /** Source Freshness Hours */
+            source_freshness_hours: {
+                [key: string]: number;
+            };
+            /** Source Min Age Hours */
+            source_min_age_hours: {
+                [key: string]: number;
+            };
+            /** Source Pages Per Cycle */
+            source_pages_per_cycle: {
+                [key: string]: number;
+            };
+            /** Source Queries Per Cycle */
+            source_queries_per_cycle: {
+                [key: string]: number;
+            };
+            /** Source Results Per Query */
+            source_results_per_query: {
+                [key: string]: number;
+            };
+            /** Starter Delay Hours */
+            starter_delay_hours: number;
+            /** Support Chat Enabled */
+            support_chat_enabled: number;
+            /** Support Email */
+            support_email: string;
+            /** Trial Days */
+            trial_days: number;
         };
         /** Pricing */
         Pricing: {
@@ -3678,12 +4032,30 @@ export interface components {
          * @enum {string}
          */
         Seniority: "intern" | "junior" | "mid" | "senior" | "staff" | "principal" | "lead" | "manager";
+        /** SeriesPoint */
+        SeriesPoint: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** P50 */
+            p50: number | null;
+            /** P90 */
+            p90: number | null;
+            /** Samples */
+            samples: number;
+        };
         /** SettingPatch */
         SettingPatch: {
             /** Value */
             value: {
                 [key: string]: unknown;
             } | unknown[] | number | string;
+        };
+        /** SettingsNow */
+        SettingsNow: {
+            settings: components["schemas"]["PlatformSettings"];
         };
         /** SignInCancel */
         SignInCancel: {
@@ -3740,6 +4112,50 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** SourceCount */
+        SourceCount: {
+            /** Count */
+            count: number;
+            /** Source */
+            source: string;
+        };
+        /**
+         * SourceFound
+         * @description One source's window: found, with text, still waiting for text, and its newest.
+         */
+        SourceFound: {
+            /** Found */
+            found: number;
+            /** Newest */
+            newest: string | null;
+            /** Source */
+            source: string;
+            /** Waiting */
+            waiting: number;
+            /** With Text */
+            with_text: number;
+        };
+        /** SourceList */
+        SourceList: {
+            ats: components["schemas"]["AtsCeiling"];
+            /** Sources */
+            sources: components["schemas"]["SourceRow"][];
+        };
+        /** SourceRow */
+        SourceRow: {
+            /** Hours */
+            hours: number;
+            /** Min Age Hours */
+            min_age_hours: number;
+            /** Name */
+            name: string;
+            /** Pages Per Cycle */
+            pages_per_cycle: number | null;
+            /** Queries Per Cycle */
+            queries_per_cycle: number | null;
+            /** Results Per Query */
+            results_per_query: number | null;
+        };
         /** SourceSeries */
         SourceSeries: {
             /** Counts */
@@ -3750,6 +4166,85 @@ export interface components {
             source: string | null;
             /** Total */
             total: number;
+        };
+        /** SourcesFound */
+        SourcesFound: {
+            /** Sources */
+            sources: components["schemas"]["SourceFound"][];
+            /** Window Hours */
+            window_hours: number;
+        };
+        /**
+         * StageDetail
+         * @description What one expanded row shows.
+         */
+        StageDetail: {
+            /** Amber After Min */
+            amber_after_min: number | null;
+            backlog: components["schemas"]["Backlog"] | null;
+            /** Caveat */
+            caveat: string | null;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            lane: components["schemas"]["LaneTiming"] | null;
+            /** Lane Name */
+            lane_name: string | null;
+            /** Reasoning */
+            reasoning: string | null;
+            /** Red After Min */
+            red_after_min: number | null;
+            /** Series */
+            series: components["schemas"]["SeriesPoint"][];
+            /** What */
+            what: string;
+            /** Window Hours */
+            window_hours: number;
+            /** Zone */
+            zone: string;
+        };
+        /**
+         * StageRow
+         * @description One zone of the pipeline, as the table shows it collapsed (`libs.ops.latency`).
+         */
+        StageRow: {
+            /** Amber After Min */
+            amber_after_min: number | null;
+            /** Caveat */
+            caveat: string | null;
+            /** Judged */
+            judged: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** P50 */
+            p50: number | null;
+            /** P90 */
+            p90: number | null;
+            /** P99 */
+            p99: number | null;
+            /** Red After Min */
+            red_after_min: number | null;
+            /** Samples */
+            samples: number;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "corpus" | "user";
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "ok" | "warn" | "down" | "unknown" | "unjudged";
+            /** What */
+            what: string;
+            /** Worst */
+            worst: number | null;
+            /** Zone */
+            zone: string;
         };
         /**
          * Step
@@ -4202,9 +4697,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CorpusPage"];
                 };
             };
             /** @description Validation Error */
@@ -4266,9 +4759,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Health"];
                 };
             };
         };
@@ -4290,9 +4781,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["LatencyReport"];
                 };
             };
             /** @description Validation Error */
@@ -4325,9 +4814,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["StageDetail"];
                 };
             };
             /** @description Validation Error */
@@ -4356,9 +4843,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["LimitCatalogue"];
                 };
             };
         };
@@ -4400,9 +4885,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PipelineReport"];
                 };
             };
             /** @description Validation Error */
@@ -4433,9 +4916,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SourcesFound"];
                 };
             };
             /** @description Validation Error */
@@ -4614,9 +5095,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SettingsNow"];
                 };
             };
         };
@@ -4642,9 +5121,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SettingsNow"];
                 };
             };
             /** @description Validation Error */
@@ -4673,9 +5150,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SourceList"];
                 };
             };
         };
@@ -4718,9 +5193,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AccountsPage"];
                 };
             };
             /** @description Validation Error */
@@ -4898,9 +5371,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["LimitsNow"];
                 };
             };
             /** @description Validation Error */
@@ -5288,7 +5759,9 @@ export interface operations {
     };
     found_jobs_alerts__alert_id__jobs_get: {
         parameters: {
-            query?: never;
+            query?: {
+                offset?: number;
+            };
             header?: never;
             path: {
                 alert_id: number;
@@ -5303,7 +5776,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeedJob"][];
+                    "application/json": components["schemas"]["MarkedJobs"];
                 };
             };
             /** @description Validation Error */
@@ -6274,7 +6747,9 @@ export interface operations {
     };
     added_jobs_added_get: {
         parameters: {
-            query?: never;
+            query?: {
+                offset?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6287,14 +6762,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeedJob"][];
+                    "application/json": components["schemas"]["MarkedJobs"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
     };
     bookmarks_jobs_bookmarked_get: {
         parameters: {
-            query?: never;
+            query?: {
+                offset?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6307,7 +6793,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeedJob"][];
+                    "application/json": components["schemas"]["MarkedJobs"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

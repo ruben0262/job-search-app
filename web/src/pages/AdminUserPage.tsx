@@ -1,24 +1,12 @@
 /** One account, for an operator. */
 import { Fragment, useState } from "react";
 
-import { ApiError, api } from "../api";
+import { ApiError, api, type Schema } from "../api";
 import { useKept } from "../kept";
 import { PLAN_NAMES, money, standingWord } from "../membership";
 import { day } from "../time";
-import type { components } from "../api-types";
 
-type LimitSpec = {
-  key: string;
-  label: string;
-  default: number | null;
-  unit: string;
-  detail: string;
-  allow_unlimited: boolean;
-  /** The settable values, from `libs.limits`. Not a copy kept here — see the note on the render. */
-  choices: number[];
-};
-
-type UserDetail = components["schemas"]["AdminAccountDetail"];
+type UserDetail = Schema<"AdminAccountDetail">;
 
 /** How long ago: "just now", "12 min ago", "4 hours ago", "7 days ago", or "never". */
 function ago(iso: string | null | undefined): string {
@@ -60,7 +48,7 @@ const TELEGRAM: Record<string, string> = {
 export function AdminUserPage({ userId }: { userId: string }) {
   // Drawn from what was read last time (or read ahead from the list) at once, and kept current.
   const account = useKept<UserDetail>(`/admin/users/${userId}`);
-  const catalogue = useKept<{ limits: LimitSpec[] }>("/admin/limits");
+  const catalogue = useKept<Schema<"LimitCatalogue">>("/admin/limits");
   const detail = account.data;
   const specs = catalogue.data?.limits ?? [];
   const setDetail = (change: (current: UserDetail | null) => UserDetail | null) => account.set(change);
@@ -89,7 +77,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
     setSaving(key);
     setLimitError(null);
     try {
-      const body = await api.put<{ limits: Record<string, number | null> }>(
+      const body = await api.put<Schema<"LimitsNow">>(
         `/admin/users/${userId}/limits/${key}`,
         { value: raw === "unlimited" ? null : Number(raw) },
       );

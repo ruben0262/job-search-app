@@ -13,8 +13,7 @@ import { AdminPricing } from "./AdminPricing";
 
 type Subscriptions = Schema<"Subscriptions">;
 type Row = Subscriptions["rows"][number];
-type Settings = { trial_days: number; free_delay_hours: number; starter_delay_hours: number;
-                  members_channel_url: string; price_was: Record<string, number> };
+type Settings = Schema<"PlatformSettings">;
 
 /** Each plan's name, colour and line, in the order the bar draws them (`admin_routes.PLAN_KINDS`). */
 const KINDS: Record<string, [name: string, colour: string, line: string]> = {
@@ -141,12 +140,12 @@ function SubscriptionLine({ row }: { row: Row }) {
 /** The plans: each one's price as Stripe has it and the price it is shown as reduced from, and the settings that
  * come with them. What each plan includes is fixed in code (owner, 2026-11-16), and its card says it. */
 function ThePlan({ subscriptions }: { subscriptions: Subscriptions }) {
-  const kept = useKept<{ settings: Settings }>("/admin/settings");
+  const kept = useKept<Schema<"SettingsNow">>("/admin/settings");
   // What the cards will say: read again after each change, so the preview below follows it.
   const pricing = useKept<Pricing>("/pricing");
   const [saved, setSaved] = useState<string | null>(null);
   const save = useAction(async (key: keyof Settings, value: Settings[keyof Settings]) => {
-    const body = await api.put<{ settings: Settings }>(`/admin/settings/${key}`, { value });
+    const body = await api.put<Schema<"SettingsNow">>(`/admin/settings/${key}`, { value });
     kept.set(() => body);
     setSaved(key);
     await pricing.reload();
@@ -206,8 +205,7 @@ function ThePlan({ subscriptions }: { subscriptions: Subscriptions }) {
                 membership, for somebody who never had one. Starter has no trial: it is billed from the first day.
               </span>
             </label>
-            {(["free", "starter"] as const).map((plan) => {
-              const key = `${plan}_delay_hours` as const;
+            {([["free", "free_delay_hours"], ["starter", "starter_delay_hours"]] as const).map(([plan, key]) => {
               const named = `${PLAN_NAMES[plan]} accounts see a job`;
               return (
                 <label key={key}>

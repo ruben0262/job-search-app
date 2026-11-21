@@ -423,7 +423,7 @@ def test_a_free_account_adds_no_job_by_its_link_and_keeps_the_ones_it_added(db, 
     sign_in(http, free)
 
     assert http.post("/jobs/link", json={"url": job.url}).status_code == 402
-    assert [row["id"] for row in http.get("/jobs/added").json()] == [job.id]
+    assert [row["id"] for row in http.get("/jobs/added").json()["jobs"]] == [job.id]
 
     sign_in(http, searching(db, subscription_status="active"))
     assert http.post("/jobs/link", json={"url": job.url}).json()["outcome"] == "known"

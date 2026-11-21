@@ -231,7 +231,7 @@ def test_the_health_check_asks_only_what_an_apps_own_login_may(db):
     from pymongo import MongoClient, monitoring
 
     from libs.ops.health import platform_health
-    from libs.ops.latency import latency_report
+    from libs.ops.latency import stage_breakdown, stage_detail
 
     granted = {action for role in ("readWrite", "dbAdmin")
                for privilege in db.command("rolesInfo", {"role": role, "db": db.name},
@@ -255,7 +255,8 @@ def test_the_health_check_asks_only_what_an_apps_own_login_may(db):
     with MongoClient(os.environ["MONGODB_URI"], uuidRepresentation="standard", tz_aware=True,
                      event_listeners=[sent]) as client:
         platform_health(client[db.name])
-        latency_report(client[db.name])
+        stage_breakdown(client[db.name])
+        stage_detail(client[db.name], "found_to_delivered")
     # Reading a collection is the action `find`, whichever command does it; a cursor's next page and
     # the end of the client's sessions need none. The rest are named for their action.
     reads = {"aggregate": "find", "count": "find", "distinct": "find"}

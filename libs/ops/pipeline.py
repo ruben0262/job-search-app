@@ -107,8 +107,7 @@ def pipeline(db: Database, *, hours: int = 24) -> dict:
             "lanes": lanes(db, since),
             # The same lanes, split by account: "docgen 2 dead" is only actionable once you know
             # whose two, and which error.
-            "lane_accounts": lane_accounts(db, since),
-            "at": now.isoformat()}
+            "lane_accounts": lane_accounts(db, since)}
 
 
 def sources(db: Database, *, hours: int = 24) -> list[dict]:

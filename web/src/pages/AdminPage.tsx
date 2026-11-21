@@ -10,197 +10,20 @@ import { JobsByCountry } from "./AdminCountries";
 import { NETWORKS } from "../socials";
 import { go } from "../route";
 
-type Alert = {
-  severity: "page" | "warn";
-  key: string;
-  text: string;
-  action: string;
-  user_email: string | null;
-};
-
-type Lane = {
-  lane: string;
-  ready: number;
-  claimed: number;
-  dead: number;
-  oldest_ready_min: number | null;
-};
-
-type Health = {
-  checked_at: string;
-  lanes: Lane[];
-  users_total: number;
-  users_active: number;
-  corpus_rows: number;
-  database_bytes: number;
-  disk_used_bytes: number;
-  disk_total_bytes: number;
-  alerts: Alert[];
-  latency: {
-    window_hours: number;
-    found_to_delivered: Span;
-  };
-};
-
-/** A page of the account list (`GET /admin/users`). */
-type UsersPage = { users: AdminUser[]; total: number; offset: number; page_size: number };
-
-type AdminUser = {
-  id: string;
-  email: string;
-  status: string;
-  telegram: string;
-  onboarded: boolean;
-  is_admin: boolean;
-  /** Last sign-in or Telegram tap. Null for an account that has never done either. */
-  last_active_at: string | null;
-  /** Stripe's word for their subscription (`billing_routes.sync`); null if they never had one. */
-  membership: string | null;
-  free_access: boolean;
-};
-
-/** One latency stage. */
-type Span = {
-  p50: number | null;
-  p90: number | null;
-  p99: number | null;
-  samples: number;
-  verdict?: "ok" | "warn" | "down" | "unknown";
-  amber_after_min?: number;
-  red_after_min?: number;
-};
-
-/** One zone of the pipeline, as the table renders it collapsed. */
-type StageRow = {
-  key: string;
-  label: string;
-  zone: string;
-  what: string;
-  scope: "corpus" | "user";
-  caveat: string | null;
-  p50: number | null;
-  p90: number | null;
-  p99: number | null;
-  worst: number | null;
-  samples: number;
-  verdict: "ok" | "warn" | "down" | "unknown" | "unjudged";
-  judged: boolean;
-  amber_after_min: number | null;
-  red_after_min: number | null;
-};
-
-type SeriesPoint = { at: string; samples: number; p50: number | null; p90: number | null };
-
-/** What one expanded row shows. */
-type StageDetail = {
-  key: string;
-  label: string;
-  zone: string;
-  what: string;
-  caveat: string | null;
-  window_hours: number;
-  lane_name: string | null;
-  // Seconds, from the queue's own timestamps.
-  lane: {
-    lane: string;
-    samples: number;
-    wait_p50: number;
-    wait_p90: number;
-    run_p50: number;
-    run_p90: number;
-    run_max: number;
-  } | null;
-  backlog: { waiting: number; oldest_min: number | null } | null;
-  series: SeriesPoint[];
-  reasoning: string | null;
-  amber_after_min: number | null;
-  red_after_min: number | null;
-};
-
-type LatencyReport = { window_hours: number; stages: StageRow[] };
-
-/** One stage as it stands right now. */
-type PipelineStage = {
-  key: string;
-  label: string;
-  what: string;
-  entered: number | null;
-  // `null`, not 0, where the stage has no queue at all.
-  waiting: number | null;
-  oldest_min: number | null;
-  /** Left the step's queue too old for anybody's Jobs page in the window, never taken. */
-  missed: number | null;
-  slow_after_min: number | null;
-  too_long_after_min: number | null;
-  note: string | null;
-  verdict: "ok" | "warn" | "down";
-};
-
-/** One source's last day: found, with text, still waiting for text, and its newest. */
-type SourceFound = { source: string; found: number; with_text: number; waiting: number; newest: string | null };
-
-type PipelineLane = {
-  lane: string;
-  // Waiting for a worker.
-  ready: number;
-  // Claimed and executing — the number that moves second to second.
-  running: number;
-  // Abandoned.
-  dead: number;
-  done: number;
-};
-
-/** One lane's work for one account. `lanes` says "docgen 2 dead"; this says whose, and why. */
-type LaneAccount = {
-  lane: string;
-  user_id: string;
-  email: string;
-  ready: number;
-  running: number;
-  dead: number;
-  done: number;
-  last_error: string | null;
-};
-
-type PipelineReport = {
-  window_hours: number;
-  stages: PipelineStage[];
-  lanes: PipelineLane[];
-  lane_accounts: LaneAccount[];
-  at: string;
-};
-
-type Settings = {
-  job_max_age_hours: number;
-  source_freshness_hours: Record<string, number>;
-  source_min_age_hours: Record<string, number>;
-  default_freshness_hours: number;
-  source_queries_per_cycle: Record<string, number>;
-  source_results_per_query: Record<string, number>;
-  source_pages_per_cycle: Record<string, number>;
-  ats_companies_per_cycle: number;
-  describe_per_cycle: number;
-  /** How many addresses the site proxy sends from: LinkedIn pages read at once. */
-  proxy_exits: number;
-  /** Per provider: `anthropic`, `gemini`, `openai`. */
-  document_models: Record<string, string>;
-  document_keep_hours: number;
-  /** The help chat: 0 off, 1 on. */
-  support_chat_enabled: number;
-  corpus_retention_days: number;
-  /** Where the Help page's contact form is emailed. */
-  support_email: string;
-  /** Who runs the site, as every legal page names them (`OPERATOR`). */
-  operator: Record<string, string>;
-  /** The hour of each person's own day their daily email of new jobs goes out. */
-  email_digest_hour: number;
-  /** The free days a new membership starts with; 0 is none. */
-  trial_days: number;
-  /** How many hours after a member a free account sees a job; 0 is at once. */
-  free_delay_hours: number;
-  /** Each social network's link (`libs.settings.SOCIAL_NETWORKS`): empty is not shown. */
-  socials: Record<string, string>;
-};
+// What Admin's handlers answer, as the server says it (`services/api/admin_routes.py`): no copy kept here.
+type Health = Schema<"Health">;
+type UsersPage = Schema<"AccountsPage">;
+type AdminUser = Schema<"AccountRow">;
+type StageRow = Schema<"StageRow">;
+type SeriesPoint = Schema<"SeriesPoint">;
+type StageDetail = Schema<"StageDetail">;
+type LatencyReport = Schema<"LatencyReport">;
+type PipelineReport = Schema<"PipelineReport">;
+type SourceFound = Schema<"SourceFound">;
+type Settings = Schema<"PlatformSettings">;
+type Source = Schema<"SourceRow">;
+type AtsInfo = Schema<"AtsCeiling">;
+type CorpusPage = Schema<"CorpusPage">;
 
 /** The legal details, in the order the Terms name them (`libs.settings.OPERATOR_FIELDS`). */
 const OPERATOR: [string, string][] = [
@@ -212,22 +35,6 @@ const OPERATOR: [string, string][] = [
   ["hosting", "Hosting provider: its name, address and email"],
 ];
 
-type Source = {
-  name: string;
-  hours: number;
-  /** How long a posting from this source stays deliverable once stored — the floor the global
-   *  window cannot push below. The other half of `hours`, and until 2026-08-09 it had no control. */
-  min_age_hours: number;
-  /** Calls a run, for the one source metered by the call (Adzuna); `null` for every other. */
-  queries_per_cycle: number | null;
-  /** `null` where the source has no result cap to set — it serves a feed or counts pages. */
-  results_per_query: number | null;
-  /** `null` where the source fetches one response rather than walking pages. */
-  pages_per_cycle: number | null;
-};
-
-/** The ATS ceiling and the number it is a ceiling on. */
-type AtsInfo = { companies_per_cycle: number; companies_held: number };
 
 
 /** The four questions an operator arrives with, in the order they ask them. */
@@ -246,29 +53,6 @@ const TABS: [Tab, string][] = [
 type Tab = "health" | "settings" | "corpus" | "pipeline" | "latency" | "accounts" | "subscriptions" | "outcomes"
   | "messages";
 
-/** One message from the Help page's contact form. */
-type ContactRow = { reference: string; email: string; subject: string; message: string; created_at: string;
-                    emailed: boolean };
-
-type CorpusJob = {
-  id: number;
-  title: string;
-  company: string | null;
-  location: string | null;
-  source: string | null;
-  is_remote: boolean;
-  described: boolean;
-  url: string;
-  first_seen_at: string | null;
-};
-
-type CorpusPage = {
-  total: number;
-  offset: number;
-  page_size: number;
-  sources: { source: string; count: number }[];
-  jobs: CorpusJob[];
-};
 
 /**
  * How long since an account did anything, in the unit an operator judges on.
@@ -297,8 +81,8 @@ export function AdminPage({ tab: asked }: { tab: string }) {
   // the page waited for all four, the slowest 2.7 s (2026-11-03).
   const kept = {
     health: useKept<Health>("/admin/health"),
-    settings: useKept<{ settings: Settings }>("/admin/settings"),
-    sources: useKept<{ sources: Source[]; ats: AtsInfo }>("/admin/sources"),
+    settings: useKept<Schema<"SettingsNow">>("/admin/settings"),
+    sources: useKept<Schema<"SourceList">>("/admin/sources"),
   };
   const health = kept.health.data;
   const settings = kept.settings.data?.settings ?? null;
@@ -315,33 +99,33 @@ export function AdminPage({ tab: asked }: { tab: string }) {
 
   // One source, one number.
   const savePlatform = useAction(async (key: string, value: number) => {
-    const body = await api.put<{ settings: Settings }>(`/admin/settings/${key}`, { value });
+    const body = await api.put<Schema<"SettingsNow">>(`/admin/settings/${key}`, { value });
     setSettings(body.settings);
   });
 
   const saveAddress = useAction(async (value: string) => {
     if (!value || value === settings?.support_email) return;
-    const body = await api.put<{ settings: Settings }>("/admin/settings/support_email", { value });
+    const body = await api.put<Schema<"SettingsNow">>("/admin/settings/support_email", { value });
     setSettings(body.settings);
   });
 
   const saveSocial = useAction(async (network: string, value: string) => {
     if (!settings || value === (settings.socials[network] ?? "")) return;
-    const body = await api.put<{ settings: Settings }>("/admin/settings/socials",
+    const body = await api.put<Schema<"SettingsNow">>("/admin/settings/socials",
       { value: { ...settings.socials, [network]: value } });
     setSettings(body.settings);
   });
 
   const saveOperator = useAction(async (field: string, value: string) => {
     if (!settings || value === (settings.operator[field] ?? "")) return;
-    const body = await api.put<{ settings: Settings }>("/admin/settings/operator",
+    const body = await api.put<Schema<"SettingsNow">>("/admin/settings/operator",
       { value: { ...settings.operator, [field]: value } });
     setSettings(body.settings);
   });
 
   const saveResults = useAction(async (name: string, value: number) => {
     const next = { ...(settings?.source_results_per_query ?? {}), [name]: value };
-    const body = await api.put<{ settings: Settings }>(
+    const body = await api.put<Schema<"SettingsNow">>(
       "/admin/settings/source_results_per_query", { value: next });
     setSettings(body.settings);
     setSources((rows) =>
@@ -349,7 +133,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
   });
 
   const saveAtsCompanies = useAction(async (value: number) => {
-    const body = await api.put<{ settings: Settings }>(
+    const body = await api.put<Schema<"SettingsNow">>(
       "/admin/settings/ats_companies_per_cycle", { value });
     setSettings(body.settings);
     setAts((row) => (row ? { ...row, companies_per_cycle: value } : row));
@@ -357,7 +141,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
 
   const saveQueries = useAction(async (name: string, value: number) => {
     const next = { ...(settings?.source_queries_per_cycle ?? {}), [name]: value };
-    const body = await api.put<{ settings: Settings }>(
+    const body = await api.put<Schema<"SettingsNow">>(
       "/admin/settings/source_queries_per_cycle", { value: next });
     setSettings(body.settings);
     setSources((rows) =>
@@ -366,7 +150,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
 
   const savePages = useAction(async (name: string, value: number) => {
     const next = { ...(settings?.source_pages_per_cycle ?? {}), [name]: value };
-    const body = await api.put<{ settings: Settings }>(
+    const body = await api.put<Schema<"SettingsNow">>(
       "/admin/settings/source_pages_per_cycle", { value: next });
     setSettings(body.settings);
     setSources((rows) =>
@@ -375,7 +159,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
 
   const saveFreshness = useAction(async (name: string, hours: number) => {
     const next = { ...(settings?.source_freshness_hours ?? {}), [name]: hours };
-    const body = await api.put<{ settings: Settings }>(
+    const body = await api.put<Schema<"SettingsNow">>(
       "/admin/settings/source_freshness_hours", { value: next });
     setSettings(body.settings);
     setSources((rows) => rows?.map((row) => (row.name === name ? { ...row, hours } : row)) ?? rows);
@@ -387,7 +171,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
   // never learn that a floor they could not see was discarding them.
   const saveMinAge = useAction(async (name: string, hours: number) => {
     const next = { ...(settings?.source_min_age_hours ?? {}), [name]: hours };
-    const body = await api.put<{ settings: Settings }>(
+    const body = await api.put<Schema<"SettingsNow">>(
       "/admin/settings/source_min_age_hours", { value: next });
     setSettings(body.settings);
     setSources((rows) =>
@@ -405,13 +189,13 @@ export function AdminPage({ tab: asked }: { tab: string }) {
   const saveModel = useAction(async (provider: string, model: string) => {
     if (!model || model === settings?.document_models[provider]) return;
     const next = { ...(settings?.document_models ?? {}), [provider]: model };
-    const body = await api.put<{ settings: Settings }>(
+    const body = await api.put<Schema<"SettingsNow">>(
       "/admin/settings/document_models", { value: next });
     setSettings(body.settings);
   });
 
   const saveMaxAge = useAction(async (hours: number) => {
-    const body = await api.put<{ settings: Settings }>(
+    const body = await api.put<Schema<"SettingsNow">>(
       "/admin/settings/job_max_age_hours", { value: hours });
     setSettings(body.settings);
   });
@@ -1064,7 +848,7 @@ function OutcomesTab() {
 
 /** What people wrote on the Help page, newest first, and whether each reached the support inbox. */
 function MessagesTab() {
-  const { data: rows } = useKept<ContactRow[]>("/admin/contact");
+  const { data: rows } = useKept<Schema<"ContactRow">[]>("/admin/contact");
   if (rows === null) return <p className="muted">Loading messages…</p>;
   if (rows.length === 0) return <p className="muted">Nobody has written yet.</p>;
   return (
@@ -1229,7 +1013,7 @@ function PipelineTab() {
 
   useEffect(() => {
     const read = () =>
-      api.get<{ sources: SourceFound[] }>("/admin/pipeline/sources")
+      api.get<Schema<"SourcesFound">>("/admin/pipeline/sources")
         .then((body) => setSources(body.sources))
         .catch(() => undefined);
     void read();

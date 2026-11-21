@@ -7,7 +7,7 @@ import uuid as _uuid
 from datetime import datetime, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from pymongo.database import Database
 
@@ -24,9 +24,8 @@ from libs.membership import has
 from libs.obs import audit
 from libs.settings import HARVEST_SOURCES
 from libs.tenant.repository import TenantRepository
-from services.api.dashboard_routes import FeedJob
 from services.api.deps import current_user, get_db, with_alerts
-from services.api.link_routes import MARKED_SHOWN, job_cards
+from services.api.link_routes import MarkedJobs, marked_jobs
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -159,18 +158,15 @@ def delete(alert_id: int, db: Database = Depends(get_db),
 
 
 @router.get("/{alert_id}/jobs")
-def found_jobs(alert_id: int, db: Database = Depends(get_db),
-               user_id: _uuid.UUID = Depends(current_user)) -> list[FeedJob]:
+def found_jobs(alert_id: int, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user), *,
+               offset: int = Query(0, ge=0)) -> MarkedJobs:
     """What this alert found, the latest first, as the Jobs page shows a job: less a job they skipped or
-    applied to, and one that closed."""
+    applied to, and one that closed. A page of it, and how many there are (`marked_jobs`)."""
     alert = _theirs(db, user_id, alert_id)
-    rows = db[UserJobState.COLLECTION].find(
-        {"user_id": user_id, "alerts": alert_id, "applied_at": None, "dismissed_at": None},
-        {"job_id": 1}, sort=[("alerted_at", -1)], limit=MARKED_SHOWN)
     words = list(alert.keywords)
     if alert.search:
         words += green_words(TenantRepository(db).get_config(user_id))
-    return job_cards(db, user_id, [row["job_id"] for row in rows], open_only=True, why=True, words=words)
+    return marked_jobs(db, user_id, {"alerts": alert_id}, "alerted_at", offset, why=True, words=words)
 
 
 def _tidy(db: Database, user_id: _uuid.UUID, body: AlertIn) -> dict:

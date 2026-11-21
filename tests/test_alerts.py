@@ -1212,10 +1212,11 @@ def test_an_alerts_page_lists_what_it_found_and_counts_it(api):
     _catch(db)
     record_state(db, user.id, skipped.id, dismissed_at=now())
 
-    jobs = http.get(f"/alerts/{alert['id']}/jobs").json()
-    assert [job["id"] for job in jobs] == [found.id], "less the one they skipped"
-    [listed] = http.get("/alerts").json()["alerts"]
-    assert (listed["found"], listed["last_found_at"] is not None) == (2, True)
+    listed = http.get(f"/alerts/{alert['id']}/jobs").json()
+    assert [job["id"] for job in listed["jobs"]] == [found.id], "less the one they skipped"
+    assert listed["total"] == 1, "and counted without it"
+    [mine] = http.get("/alerts").json()["alerts"]
+    assert (mine["found"], mine["last_found_at"] is not None) == (2, True)
 
 
 @needs_db

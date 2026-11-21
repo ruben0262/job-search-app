@@ -18,6 +18,8 @@ import { Banner, Error, Field, Prompt, Sheet, useAction } from "../ui";
 type Feed = Schema<"Feed">;
 type Filters = Schema<"JobFilters">;
 type Job = Schema<"FeedJob">;
+/** A page of the jobs somebody holds a mark on, and how many there are (`link_routes.marked_jobs`). */
+type Listed = Schema<"MarkedJobs">;
 type Made = Schema<"JobDocument">;
 type Build = ReturnType<typeof useBuild>;
 
@@ -125,32 +127,58 @@ export function JobsTabs({ on }: { on: (typeof TABS)[number][0] }) {
   );
 }
 
-/** The jobs kept under `path` (`kept.ts`), as cards, with what is done to each: a skipped one is gone,
- * one marked applied shows its Undo. What Bookmarks and Add a job both list. Marks still waiting in this
- * browser are sent before the list is asked for, so a bookmark tapped a moment ago is in it. */
+/** The jobs kept under `path` (`kept.ts`), a page of them at first, as cards, with what is done to each: a
+ * skipped one is gone, one marked applied shows its Undo. What Bookmarks, Add a job and an alert's own list
+ * show. Marks still waiting in this browser are sent before the list is asked for, so a bookmark tapped a
+ * moment ago is in it. `total` is how many there are, on this page or not, and `more` the way to the rest. */
 export function useJobList(path: string, onChanged: () => void) {
-  const { data: jobs, set, failed } = useKept<Job[]>(path, send);
+  const { data: listed, set, failed } = useKept<Listed>(path, send);
+  const jobs = listed?.jobs ?? null;
   // Their texts, so each opens at once (`jobtext.ts`).
   useEffect(() => textsAhead((jobs ?? []).map((job) => job.id)), [jobs]);
   const [marked, setMarked] = useState<Map<number, Mark>>(new Map());
+  // The list as the server has it now: without the ones skipped or applied to here.
+  const less = (all: Listed, gone: Map<number, Mark>): Listed => {
+    const left = all.jobs.filter((job) => !gone.has(job.id));
+    return { jobs: left, total: all.total - (all.jobs.length - left.length) };
+  };
   const onMark = (job: Job, kind: Mark, on: boolean) => {
-    setMarked((now) => {
-      const next = new Map(now);
-      if (on) next.set(job.id, kind);
-      else next.delete(job.id);
-      return next;
-    });
+    const next = new Map(marked);
+    if (on) next.set(job.id, kind);
+    else next.delete(job.id);
+    setMarked(next);
     // Gone from the list kept for next time at once; this one keeps its Undo while it is open.
-    keep(path, on ? (jobs ?? []).filter((each) => each.id !== job.id) : jobs);
+    if (listed) keep(path, less(listed, next));
     void record(job.id, kind, on).then(() => {
       if (kind === "applied") onChanged();
     });
   };
+  // The next page starts after the ones the server still lists: a bookmark taken off here has left Bookmarks.
+  // One counted out that is still listed only comes a second time, and is dropped.
+  const rest = useAction(async () => {
+    if (!listed) return;
+    await send();
+    const still = less(listed, marked).jobs.filter((job) => bookmarked(job) || !job.bookmarked).length;
+    const next = await api.get<Listed>(`${path}?offset=${still}`);
+    const have = new Set(listed.jobs.map((job) => job.id));
+    const longer = { total: next.total + listed.jobs.length - less(listed, marked).jobs.length,
+                     jobs: [...listed.jobs, ...next.jobs.filter((job) => !have.has(job.id))] };
+    set(() => longer);
+    keep(path, less(longer, marked));
+  });
   const card = (job: Job) => marked.get(job.id) === "hidden" ? null : (
     <JobCard key={job.id} job={job} focus={false} fresh={false} onMark={onMark}
              done={marked.get(job.id) === "applied" ? "applied" : undefined} />
   );
-  return { jobs, set, failed, card };
+  const more = listed && listed.jobs.length < listed.total ? (
+    <>
+      <button type="button" className="secondary more" disabled={rest.busy} onClick={() => void rest.run()}>
+        {rest.busy ? "Loading more…" : "Show more jobs"}
+      </button>
+      <Error>{rest.error}</Error>
+    </>
+  ) : null;
+  return { jobs, total: listed ? less(listed, marked).total : 0, set, failed, card, more };
 }
 
 export function JobsPage({ dashboard, focus, onChanged, onRead }: {

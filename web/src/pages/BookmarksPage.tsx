@@ -10,8 +10,7 @@ export function BookmarksPage({ onChanged }: {
   /** "Mark as applied" changed the count the dashboard keeps. */
   onChanged: () => void;
 }) {
-  const { jobs, failed, card } = useJobList(BOOKMARKED, onChanged);
-  const count = jobs?.length ?? 0;
+  const { jobs, total: count, failed, card, more } = useJobList(BOOKMARKED, onChanged);
   return (
     <>
       <JobsTabs on="bookmarks" />
@@ -20,6 +19,7 @@ export function BookmarksPage({ onChanged }: {
         <p className="lede">Tap the bookmark in the corner of a job, and it is kept here for you.</p>
       ) : null}
       <div className="jobs">{(jobs ?? []).map(card)}</div>
+      {more}
       {failed ? <p className="error">Your bookmarks did not load. Refresh the page to try again.</p> : null}
     </>
   );

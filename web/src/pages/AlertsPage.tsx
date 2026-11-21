@@ -314,7 +314,7 @@ function Choose({ label, hint, options, values, onChange }: {
 
 /** One alert's own list: what it found, the latest first, each job as the Jobs page shows it. */
 function Found({ alert, days, onChanged }: { alert: Alert; days: number; onChanged: () => void }) {
-  const { jobs, failed, card } = useJobList(`/alerts/${alert.id}/jobs`, onChanged);
+  const { jobs, failed, card, more } = useJobList(`/alerts/${alert.id}/jobs`, onChanged);
   return (
     <>
       <p><a className="small" href="/alerts">← All alerts</a></p>
@@ -324,6 +324,7 @@ function Found({ alert, days, onChanged }: { alert: Alert; days: number; onChang
           : "Nothing yet. The moment a job matches, it is here."}
       </p>
       <div className="jobs">{(jobs ?? []).map(card)}</div>
+      {more}
       {failed ? <p className="error">What it found did not load. Refresh the page to try again.</p> : null}
     </>
   );

@@ -56,18 +56,6 @@ def test_thresholds_follow_from_how_the_pipeline_actually_runs():
     assert all(THRESHOLDS["found_to_delivered"][0] >= other[0] for other in THRESHOLDS.values())
 
 
-def test_the_worst_span_is_the_pipeline_verdict():
-    """One word for "is this healthy", derived from the rows rather than alongside them."""
-    from libs.ops.latency import _worst
-
-    assert _worst(["ok", "ok", "ok"]) == "ok"
-    assert _worst(["ok", "warn", "ok"]) == "warn"
-    assert _worst(["ok", "warn", "down"]) == "down"
-    # `unknown` never outranks a real verdict.
-    assert _worst(["unknown", "down"]) == "down"
-    assert _worst(["unknown", "unknown"]) == "unknown"
-
-
 # ── the drill-down: one row per zone ─────────────────────────────────────────────────────────────
 
 def test_every_zone_the_posting_crosses_is_a_row_and_they_are_in_order():
@@ -213,7 +201,7 @@ def test_shared_work_is_counted_once_however_many_accounts_hold_the_posting(db):
 
 def test_each_zone_reports_its_own_minutes_rather_than_the_whole_journey(db):
     """The point of the breakdown: 40 minutes end to end is useless until it says *which* handoff ate them."""
-    from libs.ops.latency import latency_report, stage_breakdown
+    from libs.ops.latency import stage_breakdown
 
     job, found = _posting(db, minutes_ago=120, described_after=10, fetched_before=0.5, posted_before=30.5)
     _delivered(db, job, found + timedelta(minutes=40))
@@ -225,25 +213,7 @@ def test_each_zone_reports_its_own_minutes_rather_than_the_whole_journey(db):
     assert rows["found_to_described"]["p50"] == 10.0
     # And the total is what the person waited, not the sum of anybody's percentiles.
     assert rows["found_to_delivered"]["p50"] == 40.0
-    assert latency_report(db, hours=24)["spans"]["found_to_delivered"]["p50"] == 40.0
 
-
-
-def test_the_drill_down_read_once_is_the_same_as_its_parts_read_apart(db):
-    """`latency_report` reads each zone once; the route read found → delivered three times."""
-    from libs.ops import latency
-
-    job, found = _posting(db, minutes_ago=120, described_after=10, fetched_before=0.5, posted_before=30.5)
-    _delivered(db, job, found + timedelta(minutes=40))
-    _delivered(db, job, found + timedelta(minutes=70))
-
-    report = latency.latency_report(db, hours=24)
-
-    assert report["stages"] == latency.stage_breakdown(db, hours=24)
-    assert report["lanes"] == latency.lane_timings(db, hours=24)
-    delivered = latency._spans(db, latency._BY_KEY["found_to_delivered"], hours=24)
-    assert report["series"] == latency._hourly(delivered) and report["series"], "one hour, two deliveries"
-    assert report["spans"]["found_to_delivered"]["samples"] == 2
 
 def test_the_backlog_counts_what_has_not_got_through_rather_than_what_has(db):
     """The percentiles describe what already completed."""

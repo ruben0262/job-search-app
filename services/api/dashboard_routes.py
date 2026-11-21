@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["dashboard"])
 
 FEED_PAGE = 25
-# How many jobs' texts one request may ask for: the longest list a page shows at once
-# (`link_routes.MARKED_SHOWN`).
+# How many jobs' texts one request may ask for: a ceiling on a script, four pages' worth. A page asks for its
+# own (`web/src/jobtext.ts`).
 TEXTS_AT_ONCE = 100
 
 

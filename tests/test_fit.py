@@ -533,11 +533,12 @@ def test_a_job_shows_the_same_score_under_bookmarks_and_add_a_job_as_on_jobs(sit
         assert http.put(f"/jobs/{job_id}/bookmarked").status_code == 200
         record_state(db, user.id, job_id, added_at=now())  # what bringing it in by its link leaves
     for tab in ("/jobs/bookmarked", "/jobs/added"):
-        assert {job["id"]: job["fit"] for job in http.get(tab).json()} == shown, tab
+        assert {job["id"]: job["fit"] for job in http.get(tab).json()["jobs"]} == shown, tab
 
     db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"subscription_status": None}})
     for tab in ("/jobs/bookmarked", "/jobs/added"):
-        assert {job["fit"] for job in http.get(tab).json()} == {None}, f"a free account has none on {tab}"
+        listed = http.get(tab).json()["jobs"]
+        assert {job["fit"] for job in listed} == {None}, f"a free account has none on {tab}"
 
 
 @needs_db

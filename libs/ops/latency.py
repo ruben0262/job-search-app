@@ -113,20 +113,6 @@ def verdict(span: str, measured: dict) -> str:
     return "ok"
 
 
-def _judged(span: str, measured: dict) -> dict:
-    """One span's numbers with its verdict attached."""
-    return {**measured, "verdict": verdict(span, measured),
-            "amber_after_min": THRESHOLDS[span][0], "red_after_min": THRESHOLDS[span][1]}
-
-
-def _worst(verdicts: list[str]) -> str:
-    """The most serious verdict present."""
-    for level in ("down", "warn", "ok"):
-        if level in verdicts:
-            return level
-    return "unknown"
-
-
 def _percentile(ordered: list[float], fraction: float) -> float:
     """Linear interpolation between the closest ranks: what Postgres's `percentile_cont` computed."""
     rank = (len(ordered) - 1) * fraction
@@ -179,22 +165,6 @@ def _hourly(spans: list[tuple[datetime, float]]) -> list[dict]:
             for hour, values in sorted(buckets.items())]
 
 
-def _delivered(spans: list[tuple[datetime, float]], *, hours: int) -> dict:
-    found_to_delivered = _judged("found_to_delivered", _measure([minutes for _, minutes in spans]))
-    return {"window_hours": hours, "found_to_delivered": found_to_delivered,
-            "verdict": found_to_delivered["verdict"]}
-
-
-def latency_report(db: Database, *, hours: int = WINDOW_HOURS) -> dict:
-    """The drill-down whole: each zone, the end-to-end span, the lanes and the hourly series, from one
-    read of each zone's spans. Found → delivered was read three times for it, once for each part
-    that shows it (2026-11-03): the same numbers, three round trips to Atlas."""
-    spans = {stage.key: _spans(db, stage, hours=hours) for stage in STAGES}
-    return {"window_hours": hours, "stages": _breakdown(spans),
-            "spans": _delivered(spans["found_to_delivered"], hours=hours),
-            "lanes": lane_timings(db, hours=hours), "series": _hourly(spans["found_to_delivered"])}
-
-
 def lane_timings(db: Database, *, hours: int = WINDOW_HOURS) -> list[dict]:
     """How long each lane waited and then ran, in seconds, from the queue's own timestamps."""
     since = datetime.now(UTC) - timedelta(hours=hours)
@@ -216,14 +186,12 @@ def lane_timings(db: Database, *, hours: int = WINDOW_HOURS) -> list[dict]:
 
 
 def stage_breakdown(db: Database, *, hours: int = WINDOW_HOURS) -> list[dict]:
-    """Every zone, in pipeline order, with the numbers a collapsed row shows."""
-    return _breakdown({stage.key: _spans(db, stage, hours=hours) for stage in STAGES})
-
-
-def _breakdown(spans: dict[str, list[tuple[datetime, float]]]) -> list[dict]:
+    """Every zone, in pipeline order, with the numbers a collapsed row shows: the whole of what the Latency
+    tab reads at first. It was sent the end-to-end span, every lane's timings and an hourly series beside
+    them, which no page drew (2026-11-21): a read of the queue's finished jobs on every open of the tab."""
     rows = []
     for stage in STAGES:
-        measured = _measure([minutes for _, minutes in spans[stage.key]])
+        measured = _measure([minutes for _, minutes in _spans(db, stage, hours=hours)])
         judged = stage.key in THRESHOLDS
         rows.append({
             "key": stage.key, "label": stage.label, "zone": stage.zone, "what": stage.what,

@@ -20,7 +20,7 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from pymongo.database import Database
 
@@ -38,7 +38,7 @@ from libs.obs import audit
 from libs.proxy import site_proxy
 from libs.secrets import redacting
 from libs.tenant.repository import TenantRepository
-from services.api.dashboard_routes import FeedJob, bookmarked, feed_row
+from services.api.dashboard_routes import FEED_PAGE, FeedJob, bookmarked, feed_row
 from services.api.deps import current_user, get_db, rate_limit
 
 logger = logging.getLogger(__name__)
@@ -48,8 +48,6 @@ router = APIRouter(tags=["links"])
 # server, a LinkedIn one through the site's proxy, and each job kept is shown to everyone whose words
 # it has: a ceiling on a script, as uploads and the contact form have, not on a person.
 LINKS_PER_HOUR = 30
-# How many of the jobs they brought, and of the jobs they bookmarked, a page lists, newest first.
-MARKED_SHOWN = 100
 # A person waits on the read, and a job's page is a few hundred KB; past this it is not one.
 READ_TIMEOUT = 10
 MAX_PAGE_BYTES = 5 * 1024 * 1024
@@ -185,28 +183,42 @@ def save_typed(body: TypedJob, request: Request, db: Database = Depends(get_db),
     return _answer(db, user_id, "added", job_id, url, typed=True)
 
 
+class MarkedJobs(BaseModel):
+    """A page of the jobs somebody holds a mark on, and how many there are in all."""
+    jobs: list[FeedJob]
+    total: int
+
+
 @router.get("/jobs/added")
-def added(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> list[FeedJob]:
+def added(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user), *,
+          offset: int = Query(0, ge=0)) -> MarkedJobs:
     """The jobs this person brought here by their links, the latest first, until they skip one, apply
     to it, or it closes."""
-    return _listed(db, user_id, "added_at")
+    return marked_jobs(db, user_id, {"added_at": {"$ne": None}}, "added_at", offset)
 
 
 @router.get("/jobs/bookmarked")
-def bookmarks(db: Database = Depends(get_db),
-              user_id: _uuid.UUID = Depends(current_user)) -> list[FeedJob]:
+def bookmarks(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user), *,
+              offset: int = Query(0, ge=0)) -> MarkedJobs:
     """The jobs this person bookmarked, the latest first, as the Jobs page shows a job: until they take
     the bookmark off, skip the job, apply to it, or it closes. For every account (owner, 2026-11-15)."""
-    return _listed(db, user_id, "bookmarked_at", why=True)
+    return marked_jobs(db, user_id, {"bookmarked_at": {"$ne": None}}, "bookmarked_at", offset, why=True)
 
 
-def _listed(db: Database, user_id: _uuid.UUID, since: str, *, why: bool = False) -> list[FeedJob]:
-    """The jobs this person holds a mark of their own on (`since`: when they added it, or bookmarked it),
-    the latest first, less the ones they skipped or applied to and the ones that closed."""
-    rows = db[UserJobState.COLLECTION].find(
-        {"user_id": user_id, since: {"$ne": None}, "applied_at": None, "dismissed_at": None},
-        {"job_id": 1}, sort=[(since, -1)], limit=MARKED_SHOWN)
-    return job_cards(db, user_id, [row["job_id"] for row in rows], open_only=True, why=why)
+def marked_jobs(db: Database, user_id: _uuid.UUID, mark: dict, since: str, offset: int, *, why: bool = False,
+                words: list[str] | None = None) -> MarkedJobs:
+    """The jobs this person holds a mark on (`mark`: they added it, bookmarked it, an alert found it), the
+    latest first by `since`, less the ones they skipped or applied to and the ones that closed: a page of them
+    as the Jobs page has one, from `offset`, and how many there are. The first hundred marks were read and
+    the closed ones dropped after, with no count: somebody with 300 bookmarks, 30 of them closed, was shown
+    "90 bookmarked jobs" and no way to the other 180 (2026-11-21)."""
+    ids = [row["job_id"] for row in db[UserJobState.COLLECTION].find(
+        {"user_id": user_id, **mark, "applied_at": None, "dismissed_at": None}, {"job_id": 1},
+        sort=[(since, -1)])]
+    still = set(db[CorpusJob.COLLECTION].distinct("_id", {"_id": {"$in": ids}, "closed_at": None}))
+    ids = [job_id for job_id in ids if job_id in still]
+    return MarkedJobs(total=len(ids),
+                      jobs=job_cards(db, user_id, ids[offset:offset + FEED_PAGE], why=why, words=words))
 
 
 def _theirs_to_add(db: Database, user_id: _uuid.UUID) -> None:
@@ -262,8 +274,8 @@ def _answer(db: Database, user_id: _uuid.UUID, outcome: str, job_id: int, url: s
     return LinkAnswer(outcome=outcome, job=job_cards(db, user_id, [job_id])[0])
 
 
-def job_cards(db: Database, user_id: _uuid.UUID, ids: list[int], *, open_only: bool = False,
-              why: bool = False, words: list[str] | None = None) -> list[FeedJob]:
+def job_cards(db: Database, user_id: _uuid.UUID, ids: list[int], *, why: bool = False,
+              words: list[str] | None = None) -> list[FeedJob]:
     """Cards for these jobs, in this order, with the documents made for each. `why` says which of the
     person's words each has, as its card on the Jobs page does and by the same rule (`words.terms_of`): a
     bookmarked job is shown as it was there. A job brought by its link is listed for that, not its words.
@@ -272,7 +284,7 @@ def job_cards(db: Database, user_id: _uuid.UUID, ids: list[int], *, open_only: b
     to say instead of theirs: an alert's, on the Alerts page."""
     mine = words if words is not None else (
         green_words(TenantRepository(db).get_config(user_id)) if why else [])
-    where: dict[str, Any] = {"_id": {"$in": ids}, **({"closed_at": None} if open_only else {})}
+    where: dict[str, Any] = {"_id": {"$in": ids}}
     user = get(db, User, user_id) if has(db, user_id, "match_scores") else None
     made = fit.profile(db, user) if user is not None else None
     rows = (db[CorpusJob.COLLECTION].find(where) if made is None

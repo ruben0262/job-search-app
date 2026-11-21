@@ -955,3 +955,102 @@ def test_the_chart_says_how_many_linkedin_jobs_still_wait_for_their_text(api):
                                       title="Nurse", location="Berlin, Germany"), "Ward nursing. " * 40)
 
     assert http.get("/admin/countries").json()["waiting"] == 3
+
+
+# ── what each tab is sent, in the shape its handler declares (2026-11-21) ──────────────────────────────────
+
+def test_every_admin_read_says_what_it_answers():
+    """The Admin pages kept a copy by hand of what every handler sent, 250 lines of them, because the
+    handlers said only "an object": one copy had a part the server had stopped sending. A handler that says
+    its shape is where the pages' types come from (`web/src/api-types.ts`), so there is nothing to copy."""
+    from services.api.app import app
+
+    said = "application/json"
+    reads = {path: item["get"]["responses"]["200"].get("content", {}).get(said, {}).get("schema")
+             for path, item in app.openapi()["paths"].items()
+             if path.startswith("/admin") and "get" in item}
+    assert {"/admin/health", "/admin/users", "/admin/settings", "/admin/latency"} <= set(reads), "the premise"
+    # A handler typed `dict` is written into the contract as an object of anything.
+    unsaid = sorted(path for path, schema in reads.items() if (schema or {}).get("type") == "object")
+    assert not unsaid, f"these answer an object nobody described: {unsaid}"
+
+
+def test_each_tab_is_answered_whole_with_one_of_everything_it_can_hold(api):
+    """An answer that does not fit what its handler declares is refused by the server itself, a 500 where a
+    tab was: so each is read here with one of everything it can hold, and what it holds is looked for. And a
+    tab is sent what it draws: the Latency tab was sent every lane's timings, an hourly series and the
+    end-to-end span beside its rows, which nothing drew."""
+    from libs.db.models import CorpusJob, QueueJob, UserJobState
+    from libs.settings import DEFAULTS
+
+    http, db, operator, ordinary, sign_in = api
+    sign_in(http, operator)
+    found = now() - timedelta(minutes=90)
+    read = insert(db, CorpusJob(url=f"https://example.test/{uuid.uuid4()}", source="linkedin", title="Read",
+                                posted_at=found - timedelta(minutes=30),
+                                fetched_at=found - timedelta(minutes=1), first_seen_at=found,
+                                description="x" * 500,
+                                description_fetched_at=found + timedelta(minutes=10),
+                                described_at=found + timedelta(minutes=10)))
+    insert(db, CorpusJob(url=f"https://example.test/{uuid.uuid4()}", source="linkedin", title="Waiting",
+                         first_seen_at=now() - timedelta(minutes=5)))
+    insert(db, UserJobState(user_id=ordinary.id, job_id=read.id, notified_at=found + timedelta(minutes=20)))
+    _dead_job(db, ordinary)
+    insert(db, QueueJob(lane="notify", user_id=ordinary.id, payload={}, state="done", created_at=found,
+                        claimed_at=found + timedelta(seconds=4), finished_at=found + timedelta(seconds=10)))
+
+    def tab(path: str) -> dict:
+        answer = http.get(path)
+        assert answer.status_code == 200, f"{path}: {answer.text[:300]}"
+        return answer.json()
+
+    health = tab("/admin/health")
+    assert [alert["key"] for alert in health["alerts"]] == ["dead_letter:notify"]
+    assert {lane["lane"]: lane["dead"] for lane in health["lanes"]}["notify"] == 1
+
+    pipeline = tab("/admin/pipeline")
+    assert [stage["key"] for stage in pipeline["stages"]] == ["gather", "describe", "deliver"]
+    assert {stage["key"]: stage["waiting"] for stage in pipeline["stages"]}["describe"] == 1
+    whose = [(row["email"], row["dead"], row["done"], row["last_error"]) for row in pipeline["lane_accounts"]]
+    assert whose == [(ordinary.email, 1, 1, "RuntimeError: Bad Gateway")]
+    linkedin = next(row for row in tab("/admin/pipeline/sources")["sources"] if row["source"] == "linkedin")
+    assert (linkedin["found"], linkedin["with_text"], linkedin["waiting"]) == (2, 1, 1) and linkedin["newest"]
+
+    latency = tab("/admin/latency")
+    assert set(latency) == {"window_hours", "stages"}, "and nothing the tab does not draw"
+    rows = {row["key"]: row for row in latency["stages"]}
+    assert (rows["found_to_delivered"]["samples"], rows["found_to_delivered"]["p50"]) == (1, 20.0)
+    assert rows["posted_to_fetched"]["verdict"] == "unjudged"
+    sent = tab("/admin/latency/found_to_delivered")
+    assert (sent["lane"]["samples"], sent["lane"]["wait_p50"], sent["lane"]["run_p50"]) == (1, 4.0, 6.0)
+    assert [point["samples"] for point in sent["series"]] == [1]
+    assert tab("/admin/latency/found_to_described")["backlog"]["waiting"] == 1
+
+    assert set(tab("/admin/settings")["settings"]) == set(DEFAULTS), "every setting, each with what it holds"
+    assert all(limit["choices"] for limit in tab("/admin/limits")["limits"])
+    assert [job["title"] for job in tab("/admin/corpus")["jobs"]] == ["Waiting", "Read"]
+    assert ordinary.email in {row["email"] for row in tab("/admin/users")["users"]}
+
+
+def test_a_setting_is_stored_only_as_what_it_holds(api):
+    """Anything was stored under any setting: text under a number was then read by the harvester as it stood
+    (`int("many")`), which stops on it every run, and it is what Admin itself is sent back. Refused, with
+    nothing changed; a number written as text is the number."""
+    from libs import settings
+
+    http, db, operator, _, sign_in = api
+    sign_in(http, operator)
+    before = settings.describe_per_cycle(db)
+
+    for key, wrong in (("describe_per_cycle", "many"), ("source_freshness_hours", {"linkedin": "soon"}),
+                       ("support_email", 5), ("document_models", ["gpt"])):
+        refused = http.put(f"/admin/settings/{key}", json={"value": wrong})
+        assert refused.status_code == 400, (key, refused.text)
+        assert "Nothing was changed" in refused.json()["detail"]
+    assert settings.describe_per_cycle(db) == before
+    assert settings.freshness_hours(db, "linkedin") == settings.DEFAULT_SOURCE_FRESHNESS_HOURS["linkedin"]
+
+    kept = http.put("/admin/settings/describe_per_cycle", json={"value": str(before + 5)})
+    assert kept.status_code == 200 and kept.json()["settings"]["describe_per_cycle"] == before + 5
+    assert settings.describe_per_cycle(db) == before + 5
+    assert http.get("/admin/settings").json()["settings"]["describe_per_cycle"] == before + 5

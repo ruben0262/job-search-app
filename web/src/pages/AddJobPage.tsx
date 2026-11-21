@@ -23,13 +23,17 @@ export function AddJobPage({ onChanged, can }: {
 }) {
   const [link, setLink] = useState("");
   const [answer, setAnswer] = useState<Answer | null>(null);
-  const { jobs: added, set: setAdded, failed, card } = useJobList(ADDED, onChanged);
+  const { jobs: added, set: setAdded, failed, card, more } = useJobList(ADDED, onChanged);
   const show = (body: Answer) => {
     setAnswer(body);
     const job = body.job;
     if (!job) return;
     setLink("");
-    setAdded((now) => [job, ...(now ?? []).filter((each) => each.id !== job.id)]);
+    // First among the ones they added, and counted if it was not there.
+    setAdded((now) => {
+      const others = (now?.jobs ?? []).filter((each) => each.id !== job.id);
+      return { jobs: [job, ...others], total: (now?.total ?? 0) + others.length + 1 - (now?.jobs.length ?? 0) };
+    });
   };
   const find = useAction(async (event: FormEvent) => {
     event.preventDefault();
@@ -69,6 +73,7 @@ export function AddJobPage({ onChanged, can }: {
         <>
           <h2 style={{ marginTop: "2rem" }}>Jobs you added</h2>
           <div className="jobs">{others.map(card)}</div>
+          {more}
         </>
       ) : null}
       {failed ? <p className="error">The jobs you added did not load. Refresh the page to try again.</p> : null}

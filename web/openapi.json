@@ -19,6 +19,105 @@
         "title": "AccountOut",
         "type": "object"
       },
+      "AccountRow": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "free_access": {
+            "title": "Free Access",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
+          },
+          "last_active_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Active At"
+          },
+          "membership": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Membership"
+          },
+          "onboarded": {
+            "title": "Onboarded",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "telegram": {
+            "title": "Telegram",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "status",
+          "telegram",
+          "is_admin",
+          "membership",
+          "free_access",
+          "onboarded",
+          "last_active_at"
+        ],
+        "title": "AccountRow",
+        "type": "object"
+      },
+      "AccountsPage": {
+        "properties": {
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/AccountRow"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "total",
+          "offset",
+          "page_size",
+          "users"
+        ],
+        "title": "AccountsPage",
+        "type": "object"
+      },
       "AdminAccount": {
         "properties": {
           "billing_synced_at": {
@@ -1100,6 +1199,24 @@
         "title": "Asked",
         "type": "object"
       },
+      "AtsCeiling": {
+        "properties": {
+          "companies_held": {
+            "title": "Companies Held",
+            "type": "integer"
+          },
+          "companies_per_cycle": {
+            "title": "Companies Per Cycle",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "companies_per_cycle",
+          "companies_held"
+        ],
+        "title": "AtsCeiling",
+        "type": "object"
+      },
       "AtsMeasured": {
         "description": "How many CVs passed every ATS check in our own tests: said on the landing page as a share alone (owner,\n2026-11-15: on the site if above 95.3%; 2026-11-17: \"99% passed all ATS checks.\", what was tested and\nwhen taken off the page, so they are said here and not served).",
         "properties": {
@@ -1135,6 +1252,31 @@
           "status"
         ],
         "title": "AuthStatus",
+        "type": "object"
+      },
+      "Backlog": {
+        "properties": {
+          "oldest_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Min"
+          },
+          "waiting": {
+            "title": "Waiting",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "waiting",
+          "oldest_min"
+        ],
+        "title": "Backlog",
         "type": "object"
       },
       "Body_upload_documents_post": {
@@ -1543,6 +1685,134 @@
           "emailed"
         ],
         "title": "ContactRow",
+        "type": "object"
+      },
+      "CorpusPage": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/CorpusRow"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceCount"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "offset",
+          "page_size",
+          "sources",
+          "jobs"
+        ],
+        "title": "CorpusPage",
+        "type": "object"
+      },
+      "CorpusRow": {
+        "properties": {
+          "company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "described": {
+            "title": "Described",
+            "type": "boolean"
+          },
+          "first_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Seen At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_remote": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Remote"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "company",
+          "location",
+          "source",
+          "is_remote",
+          "described",
+          "url",
+          "first_seen_at"
+        ],
+        "title": "CorpusRow",
         "type": "object"
       },
       "CountryChart": {
@@ -2392,6 +2662,110 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "Health": {
+        "properties": {
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/HealthAlert"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "corpus_rows": {
+            "title": "Corpus Rows",
+            "type": "integer"
+          },
+          "database_bytes": {
+            "title": "Database Bytes",
+            "type": "integer"
+          },
+          "disk_total_bytes": {
+            "title": "Disk Total Bytes",
+            "type": "integer"
+          },
+          "disk_used_bytes": {
+            "title": "Disk Used Bytes",
+            "type": "integer"
+          },
+          "lanes": {
+            "items": {
+              "$ref": "#/components/schemas/LaneDepth"
+            },
+            "title": "Lanes",
+            "type": "array"
+          },
+          "users_active": {
+            "title": "Users Active",
+            "type": "integer"
+          },
+          "users_total": {
+            "title": "Users Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checked_at",
+          "lanes",
+          "users_total",
+          "users_active",
+          "corpus_rows",
+          "database_bytes",
+          "disk_used_bytes",
+          "disk_total_bytes",
+          "alerts"
+        ],
+        "title": "Health",
+        "type": "object"
+      },
+      "HealthAlert": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "page",
+              "warn"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email"
+          }
+        },
+        "required": [
+          "severity",
+          "key",
+          "text",
+          "action",
+          "user_email"
+        ],
+        "title": "HealthAlert",
+        "type": "object"
+      },
       "HistoryBody": {
         "properties": {
           "text": {
@@ -2720,6 +3094,146 @@
         "title": "KeyBody",
         "type": "object"
       },
+      "LaneAccount": {
+        "description": "One lane's work for one account: whose, and why.",
+        "properties": {
+          "dead": {
+            "title": "Dead",
+            "type": "integer"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lane",
+          "ready",
+          "running",
+          "dead",
+          "done",
+          "user_id",
+          "email",
+          "last_error"
+        ],
+        "title": "LaneAccount",
+        "type": "object"
+      },
+      "LaneDepth": {
+        "properties": {
+          "claimed": {
+            "title": "Claimed",
+            "type": "integer"
+          },
+          "dead": {
+            "title": "Dead",
+            "type": "integer"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "oldest_ready_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Ready Min"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lane",
+          "ready",
+          "claimed",
+          "dead",
+          "oldest_ready_min"
+        ],
+        "title": "LaneDepth",
+        "type": "object"
+      },
+      "LaneTiming": {
+        "description": "How long a lane waited and then ran, in seconds, from the queue's own timestamps.",
+        "properties": {
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "run_max": {
+            "title": "Run Max",
+            "type": "number"
+          },
+          "run_p50": {
+            "title": "Run P50",
+            "type": "number"
+          },
+          "run_p90": {
+            "title": "Run P90",
+            "type": "number"
+          },
+          "samples": {
+            "title": "Samples",
+            "type": "integer"
+          },
+          "wait_p50": {
+            "title": "Wait P50",
+            "type": "number"
+          },
+          "wait_p90": {
+            "title": "Wait P90",
+            "type": "number"
+          }
+        },
+        "required": [
+          "lane",
+          "samples",
+          "wait_p50",
+          "wait_p90",
+          "run_p50",
+          "run_p90",
+          "run_max"
+        ],
+        "title": "LaneTiming",
+        "type": "object"
+      },
       "Language": {
         "description": "ISO 639-1 codes the platform offers. Also a controlled list, for the same reason.",
         "enum": [
@@ -2737,6 +3251,27 @@
         ],
         "title": "Language",
         "type": "string"
+      },
+      "LatencyReport": {
+        "properties": {
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/StageRow"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "window_hours": {
+            "title": "Window Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window_hours",
+          "stages"
+        ],
+        "title": "LatencyReport",
+        "type": "object"
       },
       "LegalDocument": {
         "properties": {
@@ -2766,6 +3301,22 @@
         "title": "LegalDocument",
         "type": "object"
       },
+      "LimitCatalogue": {
+        "properties": {
+          "limits": {
+            "items": {
+              "$ref": "#/components/schemas/LimitSpec"
+            },
+            "title": "Limits",
+            "type": "array"
+          }
+        },
+        "required": [
+          "limits"
+        ],
+        "title": "LimitCatalogue",
+        "type": "object"
+      },
       "LimitPatch": {
         "properties": {
           "value": {
@@ -2781,6 +3332,60 @@
           }
         },
         "title": "LimitPatch",
+        "type": "object"
+      },
+      "LimitSpec": {
+        "description": "One ceiling as the account page offers it (`libs.limits.describe`).",
+        "properties": {
+          "allow_unlimited": {
+            "title": "Allow Unlimited",
+            "type": "boolean"
+          },
+          "choices": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "default",
+          "unit",
+          "detail",
+          "allow_unlimited",
+          "choices"
+        ],
+        "title": "LimitSpec",
         "type": "object"
       },
       "LimitWindow": {
@@ -2834,6 +3439,29 @@
           "windows"
         ],
         "title": "Limits",
+        "type": "object"
+      },
+      "LimitsNow": {
+        "properties": {
+          "limits": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Limits",
+            "type": "object"
+          }
+        },
+        "required": [
+          "limits"
+        ],
+        "title": "LimitsNow",
         "type": "object"
       },
       "Line": {
@@ -3037,6 +3665,28 @@
           }
         },
         "title": "MarkRead",
+        "type": "object"
+      },
+      "MarkedJobs": {
+        "description": "A page of the jobs somebody holds a mark on, and how many there are in all.",
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/FeedJob"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "jobs",
+          "total"
+        ],
+        "title": "MarkedJobs",
         "type": "object"
       },
       "Membership": {
@@ -3486,6 +4136,194 @@
         "title": "PasswordChange",
         "type": "object"
       },
+      "PipelineLane": {
+        "properties": {
+          "dead": {
+            "title": "Dead",
+            "type": "integer"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lane",
+          "ready",
+          "running",
+          "dead",
+          "done"
+        ],
+        "title": "PipelineLane",
+        "type": "object"
+      },
+      "PipelineReport": {
+        "properties": {
+          "lane_accounts": {
+            "items": {
+              "$ref": "#/components/schemas/LaneAccount"
+            },
+            "title": "Lane Accounts",
+            "type": "array"
+          },
+          "lanes": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineLane"
+            },
+            "title": "Lanes",
+            "type": "array"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineStage"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "window_hours": {
+            "title": "Window Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window_hours",
+          "stages",
+          "lanes",
+          "lane_accounts"
+        ],
+        "title": "PipelineReport",
+        "type": "object"
+      },
+      "PipelineStage": {
+        "description": "One step as it stands right now (`libs.ops.pipeline.Stage`).",
+        "properties": {
+          "entered": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entered"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "missed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missed"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "oldest_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Min"
+          },
+          "slow_after_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slow After Min"
+          },
+          "too_long_after_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Too Long After Min"
+          },
+          "verdict": {
+            "enum": [
+              "ok",
+              "warn",
+              "down"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "waiting": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting"
+          },
+          "what": {
+            "title": "What",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "what",
+          "entered",
+          "waiting",
+          "oldest_min",
+          "missed",
+          "slow_after_min",
+          "too_long_after_min",
+          "note",
+          "verdict"
+        ],
+        "title": "PipelineStage",
+        "type": "object"
+      },
       "Plan": {
         "description": "A plan to pay for: its price as Stripe has it, and the free days a new subscription to it starts with\n(none for Starter).",
         "properties": {
@@ -3621,6 +4459,168 @@
           "member"
         ],
         "title": "PlansLines",
+        "type": "object"
+      },
+      "PlatformSettings": {
+        "properties": {
+          "ats_companies_per_cycle": {
+            "title": "Ats Companies Per Cycle",
+            "type": "integer"
+          },
+          "corpus_retention_days": {
+            "title": "Corpus Retention Days",
+            "type": "integer"
+          },
+          "default_freshness_hours": {
+            "title": "Default Freshness Hours",
+            "type": "integer"
+          },
+          "describe_per_cycle": {
+            "title": "Describe Per Cycle",
+            "type": "integer"
+          },
+          "document_keep_hours": {
+            "title": "Document Keep Hours",
+            "type": "integer"
+          },
+          "document_models": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Document Models",
+            "type": "object"
+          },
+          "email_digest_hour": {
+            "title": "Email Digest Hour",
+            "type": "integer"
+          },
+          "free_delay_hours": {
+            "title": "Free Delay Hours",
+            "type": "integer"
+          },
+          "job_max_age_hours": {
+            "title": "Job Max Age Hours",
+            "type": "integer"
+          },
+          "members_channel_url": {
+            "title": "Members Channel Url",
+            "type": "string"
+          },
+          "operator": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Operator",
+            "type": "object"
+          },
+          "price_was": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Price Was",
+            "type": "object"
+          },
+          "pricing_cards": {
+            "additionalProperties": true,
+            "title": "Pricing Cards",
+            "type": "object"
+          },
+          "pricing_lines": {
+            "additionalProperties": true,
+            "title": "Pricing Lines",
+            "type": "object"
+          },
+          "proxy_exits": {
+            "title": "Proxy Exits",
+            "type": "integer"
+          },
+          "socials": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Socials",
+            "type": "object"
+          },
+          "source_freshness_hours": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Freshness Hours",
+            "type": "object"
+          },
+          "source_min_age_hours": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Min Age Hours",
+            "type": "object"
+          },
+          "source_pages_per_cycle": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Pages Per Cycle",
+            "type": "object"
+          },
+          "source_queries_per_cycle": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Queries Per Cycle",
+            "type": "object"
+          },
+          "source_results_per_query": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Results Per Query",
+            "type": "object"
+          },
+          "starter_delay_hours": {
+            "title": "Starter Delay Hours",
+            "type": "integer"
+          },
+          "support_chat_enabled": {
+            "title": "Support Chat Enabled",
+            "type": "integer"
+          },
+          "support_email": {
+            "title": "Support Email",
+            "type": "string"
+          },
+          "trial_days": {
+            "title": "Trial Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_max_age_hours",
+          "source_freshness_hours",
+          "source_min_age_hours",
+          "default_freshness_hours",
+          "source_queries_per_cycle",
+          "source_results_per_query",
+          "source_pages_per_cycle",
+          "ats_companies_per_cycle",
+          "describe_per_cycle",
+          "proxy_exits",
+          "document_models",
+          "document_keep_hours",
+          "support_chat_enabled",
+          "corpus_retention_days",
+          "support_email",
+          "operator",
+          "email_digest_hour",
+          "trial_days",
+          "free_delay_hours",
+          "starter_delay_hours",
+          "pricing_cards",
+          "pricing_lines",
+          "price_was",
+          "members_channel_url",
+          "socials"
+        ],
+        "title": "PlatformSettings",
         "type": "object"
       },
       "Pricing": {
@@ -4350,6 +5350,49 @@
         "title": "Seniority",
         "type": "string"
       },
+      "SeriesPoint": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "p50": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50"
+          },
+          "p90": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P90"
+          },
+          "samples": {
+            "title": "Samples",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "at",
+          "samples",
+          "p50",
+          "p90"
+        ],
+        "title": "SeriesPoint",
+        "type": "object"
+      },
       "SettingPatch": {
         "properties": {
           "value": {
@@ -4376,6 +5419,18 @@
           "value"
         ],
         "title": "SettingPatch",
+        "type": "object"
+      },
+      "SettingsNow": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/PlatformSettings"
+          }
+        },
+        "required": [
+          "settings"
+        ],
+        "title": "SettingsNow",
         "type": "object"
       },
       "SignInCancel": {
@@ -4538,6 +5593,145 @@
         "title": "SocialLink",
         "type": "object"
       },
+      "SourceCount": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "count"
+        ],
+        "title": "SourceCount",
+        "type": "object"
+      },
+      "SourceFound": {
+        "description": "One source's window: found, with text, still waiting for text, and its newest.",
+        "properties": {
+          "found": {
+            "title": "Found",
+            "type": "integer"
+          },
+          "newest": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newest"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "waiting": {
+            "title": "Waiting",
+            "type": "integer"
+          },
+          "with_text": {
+            "title": "With Text",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source",
+          "found",
+          "with_text",
+          "waiting",
+          "newest"
+        ],
+        "title": "SourceFound",
+        "type": "object"
+      },
+      "SourceList": {
+        "properties": {
+          "ats": {
+            "$ref": "#/components/schemas/AtsCeiling"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceRow"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources",
+          "ats"
+        ],
+        "title": "SourceList",
+        "type": "object"
+      },
+      "SourceRow": {
+        "properties": {
+          "hours": {
+            "title": "Hours",
+            "type": "integer"
+          },
+          "min_age_hours": {
+            "title": "Min Age Hours",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pages_per_cycle": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages Per Cycle"
+          },
+          "queries_per_cycle": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queries Per Cycle"
+          },
+          "results_per_query": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Results Per Query"
+          }
+        },
+        "required": [
+          "name",
+          "hours",
+          "min_age_hours",
+          "queries_per_cycle",
+          "results_per_query",
+          "pages_per_cycle"
+        ],
+        "title": "SourceRow",
+        "type": "object"
+      },
       "SourceSeries": {
         "properties": {
           "counts": {
@@ -4574,6 +5768,295 @@
           "counts"
         ],
         "title": "SourceSeries",
+        "type": "object"
+      },
+      "SourcesFound": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceFound"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "window_hours": {
+            "title": "Window Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window_hours",
+          "sources"
+        ],
+        "title": "SourcesFound",
+        "type": "object"
+      },
+      "StageDetail": {
+        "description": "What one expanded row shows.",
+        "properties": {
+          "amber_after_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amber After Min"
+          },
+          "backlog": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Backlog"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caveat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caveat"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "lane": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LaneTiming"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lane_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lane Name"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning"
+          },
+          "red_after_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Red After Min"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesPoint"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "what": {
+            "title": "What",
+            "type": "string"
+          },
+          "window_hours": {
+            "title": "Window Hours",
+            "type": "integer"
+          },
+          "zone": {
+            "title": "Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "zone",
+          "what",
+          "caveat",
+          "window_hours",
+          "lane_name",
+          "lane",
+          "backlog",
+          "series",
+          "reasoning",
+          "amber_after_min",
+          "red_after_min"
+        ],
+        "title": "StageDetail",
+        "type": "object"
+      },
+      "StageRow": {
+        "description": "One zone of the pipeline, as the table shows it collapsed (`libs.ops.latency`).",
+        "properties": {
+          "amber_after_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amber After Min"
+          },
+          "caveat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caveat"
+          },
+          "judged": {
+            "title": "Judged",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "p50": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50"
+          },
+          "p90": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P90"
+          },
+          "p99": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P99"
+          },
+          "red_after_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Red After Min"
+          },
+          "samples": {
+            "title": "Samples",
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "corpus",
+              "user"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "ok",
+              "warn",
+              "down",
+              "unknown",
+              "unjudged"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "what": {
+            "title": "What",
+            "type": "string"
+          },
+          "worst": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst"
+          },
+          "zone": {
+            "title": "Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "zone",
+          "what",
+          "scope",
+          "caveat",
+          "p50",
+          "p90",
+          "p99",
+          "worst",
+          "samples",
+          "verdict",
+          "judged",
+          "amber_after_min",
+          "red_after_min"
+        ],
+        "title": "StageRow",
         "type": "object"
       },
       "Step": {
@@ -5753,9 +7236,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Corpus Admin Corpus Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/CorpusPage"
                 }
               }
             },
@@ -5867,9 +7348,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Health Admin Health Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Health"
                 }
               }
             },
@@ -5884,7 +7363,7 @@
     },
     "/admin/latency": {
       "get": {
-        "description": "The drill-down: the spans, then where the time actually went, then when.",
+        "description": "One row per zone the posting crosses, in pipeline order.",
         "operationId": "latency_admin_latency_get",
         "parameters": [
           {
@@ -5903,9 +7382,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Latency Admin Latency Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/LatencyReport"
                 }
               }
             },
@@ -5958,9 +7435,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Latency Stage Admin Latency  Key  Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/StageDetail"
                 }
               }
             },
@@ -5992,9 +7467,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Limit Catalogue Admin Limits Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/LimitCatalogue"
                 }
               }
             },
@@ -6054,9 +7527,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Pipeline Shape Admin Pipeline Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/PipelineReport"
                 }
               }
             },
@@ -6100,9 +7571,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Pipeline Sources Admin Pipeline Sources Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SourcesFound"
                 }
               }
             },
@@ -6332,9 +7801,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Read Settings Admin Settings Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SettingsNow"
                 }
               }
             },
@@ -6377,9 +7844,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Write Setting Admin Settings  Key  Put",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SettingsNow"
                 }
               }
             },
@@ -6411,9 +7876,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Sources Admin Sources Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SourceList"
                 }
               }
             },
@@ -6481,9 +7944,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Users Admin Users Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AccountsPage"
                 }
               }
             },
@@ -6756,9 +8217,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Set User Limit Admin Users  User Id  Limits  Key  Put",
-                  "type": "object"
+                  "$ref": "#/components/schemas/LimitsNow"
                 }
               }
             },
@@ -7292,7 +8751,7 @@
     },
     "/alerts/{alert_id}/jobs": {
       "get": {
-        "description": "What this alert found, the latest first, as the Jobs page shows a job: less a job they skipped or\napplied to, and one that closed.",
+        "description": "What this alert found, the latest first, as the Jobs page shows a job: less a job they skipped or\napplied to, and one that closed. A page of it, and how many there are (`marked_jobs`).",
         "operationId": "found_jobs_alerts__alert_id__jobs_get",
         "parameters": [
           {
@@ -7303,6 +8762,17 @@
               "title": "Alert Id",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -7310,11 +8780,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/FeedJob"
-                  },
-                  "title": "Response Found Jobs Alerts  Alert Id  Jobs Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/MarkedJobs"
                 }
               }
             },
@@ -8784,20 +10250,39 @@
       "get": {
         "description": "The jobs this person brought here by their links, the latest first, until they skip one, apply\nto it, or it closes.",
         "operationId": "added_jobs_added_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/FeedJob"
-                  },
-                  "title": "Response Added Jobs Added Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/MarkedJobs"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Added",
@@ -8810,20 +10295,39 @@
       "get": {
         "description": "The jobs this person bookmarked, the latest first, as the Jobs page shows a job: until they take\nthe bookmark off, skip the job, apply to it, or it closes. For every account (owner, 2026-11-15).",
         "operationId": "bookmarks_jobs_bookmarked_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/FeedJob"
-                  },
-                  "title": "Response Bookmarks Jobs Bookmarked Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/MarkedJobs"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Bookmarks",

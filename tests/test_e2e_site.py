@@ -3707,3 +3707,58 @@ def test_the_landing_page_is_a_file_a_visitor_is_sent_at_once_and_somebody_signe
         assert named and asked.index(named) < asked.index("/dashboard"), "asked before the site's script ran"
         assert asked.count(named) == 1
         browser.close()
+
+
+def test_more_bookmarks_than_a_page_say_how_many_and_show_more_brings_the_rest(site, db, capsys):
+    """Bookmarks drew the first hundred it was sent and counted those: with more, the heading said a smaller
+    number and nothing led to the others. It says how many there are, shows a page as Jobs does, and "Show
+    more jobs" brings the rest, each once, and then is gone. One skipped is one fewer in the heading."""
+    from libs.db.models import User
+    from libs.db.models.tenant import record_state
+    from services.api.dashboard_routes import FEED_PAGE
+
+    _, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser, _, page = _someone(playwright, site, capsys)
+        user_id = db[User.COLLECTION].find_one({"email": email})["_id"]
+        kept = _jobs(db, uuid.uuid4().hex[:8], [f"Bookkeeper {n}" for n in range(FEED_PAGE + 2)])
+        for n, job_id in enumerate(kept.values()):
+            record_state(db, user_id, job_id, bookmarked_at=datetime.now(UTC) - timedelta(minutes=n))
+
+        page.get_by_role("navigation", name="Jobs").get_by_role("link", name="Bookmarks").click()
+        expect(page.get_by_role("heading", name=f"{FEED_PAGE + 2} bookmarked jobs")).to_be_visible()
+        expect(page.locator("article.job-card")).to_have_count(FEED_PAGE)
+        _skip(page, "Bookkeeper 0")
+        expect(page.get_by_role("heading", name=f"{FEED_PAGE + 1} bookmarked jobs")).to_be_visible()
+
+        page.get_by_role("button", name="Show more jobs").click()
+        expect(page.locator("article.job-card")).to_have_count(FEED_PAGE + 1)
+        titles = page.locator("article.job-card button.title").all_inner_texts()
+        assert len(set(titles)) == len(titles) == FEED_PAGE + 1, "each once, the skipped one not among them"
+        expect(page.get_by_role("button", name="Show more jobs")).to_have_count(0)
+        expect(page.get_by_role("heading", name=f"{FEED_PAGE + 1} bookmarked jobs")).to_be_visible()
+        browser.close()
+
+
+def test_the_fonts_the_site_is_set_in_are_asked_for_from_the_page_itself(site):
+    """A font was asked for only when the first words were drawn, so they were drawn in another font and
+    again in their own a moment later, and the page moved (layout shift 0.021 on a slow connection). The two
+    that Latin text is set in are named in the page, asked for before the site's script has run, each once."""
+    base, _, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_page()
+        asked: list[str] = []
+        page.on("request", lambda request: asked.append(_path(request.url)))
+        page.goto(base)
+        expect(page.locator(".landing .hero-title")).to_be_visible()
+        page.evaluate("() => document.fonts.ready")
+
+        named = page.locator('link[rel="preload"][as="font"]').evaluate_all(
+            "(links) => links.map((link) => new URL(link.href).pathname)")
+        assert sorted(name.split("/")[-1].split("-")[0] for name in named) == ["inter", "sora"], named
+        assert sorted(path for path in asked if path.endswith(".woff2")) == sorted(named), (
+            "the two the page is drawn in, each asked for once, and no other")
+        assert all(asked.index(font) < asked.index("/dashboard") for font in named), (
+            "before the script that draws the page had asked for anything")
+        browser.close()
