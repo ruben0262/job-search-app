@@ -134,8 +134,10 @@ drawn, each looking right on the page:
    reached the text all together, ahead of the name. A grid paints in document order, but see rule 7.
 3. **No small capitals, no wide letter-spacing on anything an ATS must read.** `font-variant: small-caps`
    gave "A LEX M ORGAN". 1.4pt of tracking on 9pt gave "E X P E R I E N C E", and so, for poppler and
-   pdfminer, did Quill's 0.9pt on 9pt: exactly 0.1 of the size. Keep it under that: the most here is
-   Foundry's 0.095, read whole by all five readers measured.
+   pdfminer, did Quill's 0.9pt on 9pt: exactly 0.1 of the size. Less can still split capitals: Kestrel's
+   0.8pt on 9pt (0.089) gave "AT TENDANT", "TEL JESKÖRŰ" and "VÉGZET TSÉG" for pdfminer, a pair of narrow
+   capitals in its face (2026-11-18), where Foundry's 0.095 reads whole in its own. So it is measured on hard
+   pairs in each face (`test_every_look_reads_its_capitals_as_whole_words`), and Kestrel's is now 0.5pt.
 4. **Dates at the right of their line, and nothing drawn left of what precedes it in the markup.**
    Every look puts a job's dates at the right end of its line (owner, 2026-11-08), and the test measures
    it as Chrome prints. Tabula's dates sat left of their titles, the text ran "Northwind LogisticsMar

@@ -120,7 +120,7 @@ def test_several_can_be_linked_and_switching_one_on_switches_the_others_off(api)
 @needs_db
 def test_each_account_says_the_model_it_writes_with_the_one_admin_picked(api):
     """One model a provider, chosen by the platform (owner, 2026-11-10), and shown where it is used: the
-    name the docgen worker will ask for. A ChatGPT sign-in's is its plan's, which Codex picks."""
+    name the docgen worker will ask for."""
     from libs.settings import DEFAULT_DOCUMENT_MODELS, put
 
     http, db, _, _ = api
@@ -202,7 +202,10 @@ def test_a_chatgpt_sign_in_waits_until_openais_page_has_the_code(api, monkeypatc
     second = http.post("/ai-accounts/signin/codex_login/finish", json={"session_id": started["session_id"]})
 
     assert first.json() == {"status": "waiting", "accounts": None}
-    assert second.json()["accounts"]["accounts"][0]["label"] == "ChatGPT Plus · sam@example.com"
+    linked = second.json()["accounts"]["accounts"][0]
+    assert linked["label"] == "ChatGPT Plus · sam@example.com"
+    # Sol, named, as the docgen worker asks for it (owner, 2026-11-19); empty, the plan's default wrote.
+    assert linked["model"] == "gpt-6.2-sol"
 
 
 @needs_db

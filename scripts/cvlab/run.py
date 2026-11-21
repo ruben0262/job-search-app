@@ -59,6 +59,7 @@ import unicodedata
 from concurrent import futures
 from html import unescape
 from types import SimpleNamespace
+from typing import ClassVar
 
 from pypdf import PdfReader
 
@@ -68,7 +69,7 @@ if str(REPO) not in sys.path:
 
 from libs import templates  # noqa: E402
 from libs.documents.needs import BASE  # noqa: E402
-from libs.llm import cli, client_for  # noqa: E402
+from libs.llm import cli, client_for, rest  # noqa: E402
 from libs.settings import CV_MODEL, DEFAULT_DOCUMENT_MODELS  # noqa: E402
 from scripts.cvlab import checkers, cvchecks  # noqa: E402
 from services.docgen import build, pdf  # noqa: E402
@@ -83,6 +84,10 @@ JUDGE_PROMPT = REPO / "libs" / "prompts" / "eval_cv.md"
 # "cover letter prompt should be claude first same way cv was made, with the same procedure").
 LETTER_JUDGE_PROMPT = HERE / "eval_cover.md"
 LETTER_JUDGE_SYSTEM = "You review cover letters the way the hiring manager for the job would."
+# The hiring manager's read of a letter (owner, 2026-11-21: "a filter where we are reverse engineering the
+# cover letter as a hiring manager would want to see it"): what the posting needs most, the best case the
+# person's record makes for it, every claim against that record, and the chance of an interview.
+HIRE_JUDGE_PROMPT = HERE / "eval_hire.md"
 # What is known about each posting's company, a file a posting (`company/<slug>.txt`): a `{{company}}` slot
 # in a letter's wording is filled with it, and the letters' reviewer is shown it whatever wrote the letter.
 COMPANY_FACTS = HERE / "company"
@@ -125,12 +130,19 @@ class Candidate:
     A folder holds `candidate.json` (`{"name", "links", "languages"}`) and one text file a document,
     named for its kind: `cv.txt`, `cv-2.txt`, `cover_letter.txt`, `history.txt` (their "About you")."""
 
-    def __init__(self, spec: str, root: pathlib.Path):
+    def __init__(self, spec: str, root: pathlib.Path, overlay: pathlib.Path | None = None):
         self.name, _, source = spec.partition("=")
         if source.startswith("db:"):
             self._from_db(source[3:])
         else:
             self._from_folder(root / self.name)
+        # `--overlay`: their own cover letter and About you as the letter bench has them (2026-11-20), kept
+        # apart from the panel, whose people the fit score was rated on. A kind there replaces theirs.
+        if overlay and (overlay / self.name).is_dir():
+            given: dict[str, list[str]] = {}
+            for path in sorted((overlay / self.name).glob("*.txt")):
+                given.setdefault(re.sub(r"-\d+$", "", path.stem), []).append(path.read_text(encoding="utf-8"))
+            self.documents = {**self.documents, **given}
         if not self.documents.get("cv"):
             raise SystemExit(f"candidate {self.name} has no CV")
         self.user = SimpleNamespace(full_name=self.identity.get("name"),
@@ -218,7 +230,8 @@ def write_one(client, candidate: Candidate, posting: Posting, *, template: str, 
     the call ran, and its tokens in and out where the account's tool counts them)."""
     request = request_for(candidate, posting, template, kind, look)
     started = time.monotonic()
-    reply, body = build.draft(client, request, model=model, effort=effort)
+    reply, body = build.draft(client.opened() if isinstance(client, _LazyClient) else client, request,
+                              model=model, effort=effort)
     used = getattr(reply, "usage", None)
     return build.assemble(request, body), {
         "seconds": round(time.monotonic() - started, 1),
@@ -227,15 +240,16 @@ def write_one(client, candidate: Candidate, posting: Posting, *, template: str, 
         "model": getattr(reply, "model", None)}
 
 
-def kept_in(out: pathlib.Path, model: str, effort: str, wording: str) -> pathlib.Path:
+def kept_in(out: pathlib.Path, model: str, effort: str, wording: str, lean: bool = False) -> pathlib.Path:
     """Where the documents one model wrote from one wording are kept (owner, 2026-11-15: "save them
     based on the model that produced it and the version of the prompt that was used", a before and an
     after): `<out>/<model>/<version>/`, the wording itself beside them as `prompt.md`. The version is the
     one production keeps with a document (`prompts.version`), so the live prompt's folder is the stamp on
     people's own documents. A model's folder says how hard it was told to think, where it was told: a
     Claude model always is, Codex only by `--codex-effort`."""
-    name = model or "the-accounts-own-model"
-    told = effort if name.startswith("claude") else cli.CODEX_EFFORT
+    name = (model or "the-accounts-own-model") + ("+lean" if lean else "")
+    told = (effort if name.startswith("claude") else rest.GEMINI_THINKING if name.startswith("gemini")
+            else cli.CODEX_EFFORT)
     folder = out / (f"{name}@{told}" if told else name) / version_of(wording)
     folder.mkdir(parents=True, exist_ok=True)
     if not (folder / "prompt.md").exists():
@@ -294,6 +308,13 @@ def measured(candidate: Candidate, posting: Posting, page: str, document: bytes 
     if kind == "cv":
         issues = ats_read(document, page) if document else ["not rendered"]
         row |= {"ats_read": len(issues), "ats_read_issues": issues}
+    if kind == "cover":
+        said = letter_text(page, subject=True)
+        # The title word for word, as the check read it until 2026-11-19, kept to set beside it.
+        row |= {"title_exact": int(f" {_words(checkers.job_title(posting.title))} " in f" {_words(said)} "),
+                "company_as_said": says_company_as_people_do(said, posting.company),
+                # What reads as written by AI (`checks.AI_LANGUAGE`), anywhere in it: §3b wants none.
+                "ai_language": len(build.checks.ai_language(said, but=posting.description or ""))}
     if document:
         passed = (ats_checks(document, page, posting.title, report, row["ats_read_issues"]) if kind == "cv"
                   else ats_letter_checks(document, page, posting, report))
@@ -303,14 +324,38 @@ def measured(candidate: Candidate, posting: Posting, page: str, document: bytes 
     return row
 
 
-def letter_text(page: str) -> str:
+def _words(text: str) -> str:
+    return " ".join(each for each in re.findall(r"\w+", text.casefold()) if each != "and")
+
+
+def says_company_as_people_do(text: str, company: str) -> int | None:
+    """Whether a letter calls its employer what people call it (owner, 2026-11-19: "not the long posted
+    versions but from bosch group we should say bosch"): never followed by what `checks.employer` leaves
+    out of the board's field, a legal form, "Group" or a strapline ("Bosch Group", "SÖHNE GmbH", "VNOM |").
+    None where the field has nothing to leave out."""
+    field = " ".join(unescape(company or "").split())
+    name = build.checks.employer(field)
+    rest = field[len(name):].split() if name and field.casefold().startswith(name.casefold()) else []
+    if not rest:
+        return None
+    said = " ".join(text.split())
+    return int(not re.search(rf"(?i){re.escape(name.split()[-1])}[\s,]+{re.escape(rest[0])}", said))
+
+
+def letter_text(page: str, *, subject: bool = False) -> str:
     """A letter as a person pastes it: greeting to name, a blank line between paragraphs and none between
-    the sign-off and the name. The subject line stays out, as it does from a letter box."""
+    the sign-off and the name. The subject line stays out, as it does from a letter box; `subject` puts it
+    first, as the person the letter is sent to reads it. The letters' reviewer was not shown it until
+    2026-11-18, and a school leaver's subject said he specialised in "employee benefits"."""
+    def plain(part: str) -> str:
+        return " ".join(unescape(re.sub(r"<[^>]+>", " ", part)).split())
+
     found = re.search(r'(?s)<div class="letter">(.*)</div>', page)
-    blocks: list[str] = []
+    heading = re.search(r'(?s)<p class="letter-subject">(.*?)</p>', page)
+    blocks = [f"Subject: {plain(heading.group(1))}"] if subject and heading else []
     letter = found.group(1) if found else body_of(page)
     for attributes, inner in re.findall(r"(?s)<p([^>]*)>(.*?)</p>", letter):
-        text = " ".join(unescape(re.sub(r"<[^>]+>", " ", inner)).split())
+        text = plain(inner)
         if "letter-subject" in attributes or not text:
             continue
         if "signature" in attributes and blocks:
@@ -388,9 +433,12 @@ def ats_letter_checks(document: bytes, page: str, posting: Posting, report: pdf.
     - `text`: every word comes out whole for both readers, with no ligature;
     - `name`: the text starts with the person's name;
     - `contact`: the email address and the phone number come out as written;
-    - `company`: the employer is named in the letter;
-    - `title`: the posting's job title is in it, in the subject or the letter, as a reader searches by it;
-    - `length`: the letter itself is `checks.LETTER_WORDS` long, the length a hiring manager reads;
+    - `company`: the employer is named in the letter's own words, not only in the block above the subject
+      that code writes into every letter, as the docgen worker asks it (`checks.names_employer`);
+    - `title`: the posting's job title is in it, in the subject or the letter, as a reader searches by it,
+      roughly as the posting has it (`checkers.names_title`; owner, 2026-11-19);
+    - `length`: the letter itself is `checks.LETTER_WORDS` long, the length a hiring manager reads, counted
+      as the docgen worker counts it (`checks.letter_words`);
     - `pages`: one page."""
     from pdfminer.high_level import extract_text  # noqa: PLC0415 - a development dependency
 
@@ -404,14 +452,10 @@ def ats_letter_checks(document: bytes, page: str, posting: Posting, report: pdf.
     read = " ".join(readers["pypdf"].split()).casefold()
     email, phone = contact_of(page)
 
-    def words(text: str) -> str:
-        return " ".join(each for each in re.findall(r"\w+", text.casefold()) if each != "and")
-
     def digits(text: str) -> str:
         return re.sub(r"\D", "", text)
 
-    company = re.sub(r"(?i)\b(ltd|limited|plc|gmbh|kft|inc|llc)\b\.?", "", posting.company or "")
-    letter_words = len(letter_text(page).split())
+    letter_words = build.checks.letter_words(body_of(page))
     return {
         "text": all(not re.search("[\ufb00-\ufb06]", text)
                     and set(re.findall(r"\w+", unicodedata.normalize("NFC", text).casefold())) == written
@@ -419,11 +463,30 @@ def ats_letter_checks(document: bytes, page: str, posting: Posting, report: pdf.
         "name": bool(name) and all(" ".join(text.split()).casefold().startswith(name.casefold())
                                    for text in readers.values()),
         "contact": email.casefold() in read and digits(phone) in digits(read),
-        "company": bool(words(company)) and f" {words(company)} " in f" {words(read)} ",
-        "title": f" {words(checkers.job_title(posting.title))} " in f" {words(read)} ",
+        "company": build.checks.names_employer(letter_text(page), posting.company, posting.description),
+        "title": checkers.names_title(letter_text(page, subject=True), posting.title),
         "length": build.checks.LETTER_WORDS[0] <= letter_words <= build.checks.LETTER_WORDS[1],
         "pages": report.pages == 1,
     }
+
+
+def every_look(candidate: Candidate, posting: Posting, page: str, kind: str = "cv") -> dict:
+    """The document drawn in every look of its kind and checked as an ATS reads it: the share of the checks
+    passed over all the looks, and what failed in which (owner, 2026-11-18: "make sure all the formats that
+    we can choose the cover letter for also works with it"). A letter is written the same for every look,
+    so this is the letter a person who picked another look gets; a CV is written for its look's page, so for
+    a CV it is the same CV redrawn, as the site's ATS figure was measured (2026-11-16)."""
+    body, scores, failed = build.clean(body_of(page)), [], {}
+    for look in templates.of_kind(kind):
+        drawn = build.assemble(request_for(candidate, posting, None, kind, look.id), body)
+        document, read = rendered(drawn, f"{posting.slug} in {look.id}", kind)
+        passed = ({"rendered": False} if document is None
+                  else ats_letter_checks(document, drawn, posting, read) if kind == "cover"
+                  else ats_checks(document, drawn, posting.title, read, ats_read(document, drawn)))
+        scores.append(100 * sum(passed.values()) / len(passed))
+        if bad := [name for name, ok in passed.items() if not ok]:
+            failed[look.id] = bad
+    return {"ats_every_look": round(statistics.mean(scores), 1), "looks_failed": failed}
 
 
 def ats_checks(document: bytes, page: str, title: str, report: pdf.PdfReport,
@@ -469,29 +532,35 @@ def ats_checks(document: bytes, page: str, title: str, report: pdf.PdfReport,
 
 
 def judge_one(client, posting: Posting, text: str, report: dict, theirs: str, *,
-              kind: str = "cv") -> dict | None:
+              kind: str = "cv", model: str | None = None, hire: bool = False) -> dict | None:
     """The reviewer's verdict, on what no regular expression reaches. `theirs` is everything the person
     gave us: a reviewer who cannot see it cannot say what the document made up. A letter's reviewer is shown
     what is known about the company too, for the same reason."""
     letter = kind == "cover"
-    prompt = ((LETTER_JUDGE_PROMPT if letter else JUDGE_PROMPT).read_text(encoding="utf-8")
+    prompt = (_judge_prompt(kind, hire).read_text(encoding="utf-8")
               .replace("<DETERMINISTIC_SUMMARY>", json.dumps(report))
-              .replace("<JOB_DESCRIPTION>", f"{posting.title}\n{posting.company}\n\n{posting.description}")
+              # The posting as its writer is given it, its place too (`build._job`).
+              .replace("<JOB_DESCRIPTION>", build._job(posting))
               .replace("<COMPANY_FACTS>", posting.company_facts or "Nothing beyond the posting.")
               .replace("<THEIR_DOCUMENTS>", theirs)
               .replace("<CV_TEXT>", text))
     try:
         system = LETTER_JUDGE_SYSTEM if letter else JUDGE_SYSTEM
-        reply = client.complete_text(model=JUDGE_MODEL, system=system,
+        reply = client.complete_text(model=model or JUDGE_MODEL, system=system,
                                      messages=[{"role": "user", "content": prompt}],
                                      max_tokens=JUDGE_MAX_TOKENS)
-        verdict = read_verdict(reply, text, LETTER_DIMENSIONS if letter else DIMENSIONS)
+        verdict = read_verdict(reply, text,
+                               HIRE_DIMENSIONS if hire else LETTER_DIMENSIONS if letter else DIMENSIONS)
         if verdict is None:
             logger.warning("judge returned no JSON object for %s (%d chars)", posting.slug, len(reply))
         return verdict
     except Exception as exc:                                    # noqa: BLE001 - a lab, not a lane
         logger.warning("judge failed on %s, scoring without it: %s", posting.slug, exc)
         return None
+
+
+def _judge_prompt(kind: str, hire: bool = False) -> pathlib.Path:
+    return HIRE_JUDGE_PROMPT if hire else LETTER_JUDGE_PROMPT if kind == "cover" else JUDGE_PROMPT
 
 
 def _flat(text: str) -> str:
@@ -526,7 +595,9 @@ def read_verdict(reply: str, text: str, dimensions: tuple[str, ...] | None = Non
             "unquoted": len(marks) - len(kept),
             "not_theirs": [each for each in answer.get("not_theirs") or []
                            if isinstance(each, dict) and quoted(each.get("line"))],
-            "left_out": answer.get("left_out") or [], "top_fixes": answer.get("top_fixes") or []}
+            "left_out": answer.get("left_out") or [], "top_fixes": answer.get("top_fixes") or [],
+            # The hiring manager's chance of an interview, out of 100 (`eval_hire.md`).
+            "interview": chance if isinstance(chance := answer.get("interview"), int | float) else None}
 
 
 def _rate_limited(exc: Exception) -> bool:
@@ -535,7 +606,8 @@ def _rate_limited(exc: Exception) -> bool:
 
 
 def _verdict(client, posting: Posting, text: str, report: dict, *, kept: pathlib.Path,
-             judge: bool, force: bool, theirs: str = "", kind: str = "cv") -> dict | None:
+             judge: bool, force: bool, theirs: str = "", kind: str = "cv", judge_model: str | None = None,
+             judge_how: str = "", hire: bool = False) -> dict | None:
     """This CV's verdict, from beside it on disk when it has already been judged.
 
     **A verdict is cached with its CV.** Without this, every resume re-judged each finished cell
@@ -546,30 +618,65 @@ def _verdict(client, posting: Posting, text: str, report: dict, *, kept: pathlib
     if not judge:
         return None
     if kept.exists() and not force:
-        return json.loads(kept.read_text(encoding="utf-8"))
+        cached = json.loads(kept.read_text(encoding="utf-8"))
+        if cached.get("reviewer") == reviewer(kind, judge_model, judge_how, hire):
+            return cached
     if client is None:
         return None
-    verdict = judge_one(client, posting, text, report, theirs, kind=kind)
+    verdict = judge_one(client, posting, text, report, theirs, kind=kind, model=judge_model, hire=hire)
     if verdict is not None:
-        kept.write_text(json.dumps(verdict, indent=2), encoding="utf-8")
+        kept.write_text(json.dumps({**verdict, "reviewer": reviewer(kind, judge_model, judge_how, hire)},
+                                   indent=2), encoding="utf-8")
     return verdict
+
+
+# How a document is put to its reviewer. A change here is a change of reviewer: write it in.
+SHOWN = {"cv": "the CV's text; the posting as its writer is given it",
+         "cover": "the letter's text, its subject line first; the posting as its writer is given it"}
+
+
+def reviewer(kind: str, model: str | None = None, how: str = "", hire: bool = False) -> str:
+    """Who reads a document of `kind`, as a short hash of its model, its prompt and what it is shown
+    (`SHOWN`), and for a reviewer on another platform where and how hard it thinks (`how`). Kept in every
+    verdict, and a kept verdict is used again only by the reviewer that wrote it: one that changed reads the
+    document again, so that its marks are never averaged with another's."""
+    prompt = _judge_prompt(kind, hire).read_text(encoding="utf-8")
+    return version_of(f"{model or JUDGE_MODEL}\n{SHOWN[kind]}\n{prompt}" + (f"\n{how}" if how else ""))
+
+
+def _lean(args) -> bool:
+    """Whether a ChatGPT document is written lean: as production writes it (`build.LEAN`), or as the bench
+    was told (`--codex-lean`). What decides the call decides where it is kept and what its record says."""
+    return getattr(args, "provider", None) == "codex" and (bool(getattr(args, "codex_lean", False))
+                                                           or args.kind in build.LEAN)
 
 
 class _LazyClient:
     """The client, created the first time something actually calls it: on `--account`, the AI account
     that person has in use in the local database, else an API key."""
 
-    def __init__(self, key_file: str | None, account: str | None, provider: str | None = None):
+    # The sign-ins this run has opened (`_signed_in`).
+    opened_ids: ClassVar[set] = set()
+
+    def __init__(self, key_file: str | None, account: str | None, provider: str | None = None,
+                 tune: dict | None = None):
         self._key_file, self._account, self._provider = key_file, account, provider
+        # Set on the client once it is opened, where it has them: a Codex reviewer's `lean` and effort.
+        self._tune = tune or {}
         self._client = None
         self._held = None
         self._lock = threading.Lock()
 
     def __getattr__(self, name: str):
+        return getattr(self.opened(), name)
+
+    def opened(self):
+        """The client itself, for production's own call (`build.draft`), which asks what kind of client it
+        holds: a ChatGPT letter is written lean only on a `CliClient`, and this wrapper is not one."""
         with self._lock:
             if self._client is None:
                 self._client = self._signed_in() if self._account else client_for(*credential(self._key_file))
-        return getattr(self._client, name)
+        return self._client
 
     def _signed_in(self):
         from libs.db import database  # noqa: PLC0415 - only `--account` needs one
@@ -588,13 +695,31 @@ class _LazyClient:
         if account is None:
             raise SystemExit(f"{self._account} has no {self._provider or 'AI'} account "
                              f"{'linked' if self._provider else 'in use'} in {os.environ.get('MONGODB_DB')}")
+        # One client a sign-in: two would each hold a copy, and a renewal by one retires the other's.
+        if account.id in _LazyClient.opened_ids:
+            raise SystemExit(f"this run would hold the {account.kind} sign-in twice (writer and reviewer): "
+                             "write first, then read with --dry-run")
+        _LazyClient.opened_ids.add(account.id)
         # Held for the whole run: the secret stays redacted from every log line while it is.
         self._held = paying_client(SecretStore(db), row["_id"], str(account.id))
         paid = self._held.__enter__()
         if paid is None:
             raise SystemExit("that AI account could not be opened")
         logger.info("credential: %s", account.kind)
+        for name, value in self._tune.items():
+            if hasattr(paid[0], name):
+                setattr(paid[0], name, value)
         return paid[0]
+
+
+def _verdict_file(path: pathlib.Path, args, judge_model: str | None) -> tuple[pathlib.Path, bool]:
+    """Where a document's verdict is kept, and whether it is the hiring manager's read: a reviewer on another
+    platform by its model and effort, and the hiring manager's beside the letter reviewer's, never over it."""
+    hire = args.kind == "cover" and getattr(args, "reviewer", "letter") == "hire"
+    named = ".hire" if hire else ".verdict"
+    if getattr(args, "judge_provider", None):
+        return path.with_suffix(f"{named}.{judge_model}@{args.judge_effort or 'own'}.json"), hire
+    return path.with_suffix(f"{named}.json"), hire
 
 
 def _run_cell(client, candidate: Candidate, posting: Posting, *, variant: str, sample: int,
@@ -607,7 +732,7 @@ def _run_cell(client, candidate: Candidate, posting: Posting, *, variant: str, s
     version = version_of(wording) if wording else None
     # Asked for no model (a ChatGPT sign-in takes its plan's own), it is kept under its provider's name.
     out = out / UPLOADED if uploaded else kept_in(
-        out, args.model or getattr(args, "provider", None) or "", args.effort, wording)
+        out, args.model or getattr(args, "provider", None) or "", args.effort, wording, lean=_lean(args))
     out.mkdir(parents=True, exist_ok=True)
     # A wording written for another look than the default is a variant of its own: "live@halcyon".
     look = getattr(args, "look", None) or templates.DEFAULT
@@ -634,10 +759,10 @@ def _run_cell(client, candidate: Candidate, posting: Posting, *, variant: str, s
         # A document already written is a document already paid for.
         page = path.read_text(encoding="utf-8")
     else:
-        page, took = _with_backoff(
+        page, took = FIRST_PAID(lambda: _with_backoff(
             lambda: write_one(client, candidate, posting, template=template, model=args.model,
                               effort=args.effort, kind=kind, look=look),
-            what=f"{candidate.name}/{variant}/{posting.slug}#{sample}")
+            what=f"{candidate.name}/{variant}/{posting.slug}#{sample}"), out, tag, args)
         if took["model"] and args.model and took["model"] != args.model:
             logger.warning("%s was asked for and %s answered: kept under the one asked for, named in its "
                            "record", args.model, took["model"])
@@ -645,6 +770,7 @@ def _run_cell(client, candidate: Candidate, posting: Posting, *, variant: str, s
         # one asked for.
         took |= {"answered": took["model"], "model": took["model"] or args.model or None,
                  "asked": args.model, "effort": args.effort, "codex_effort": cli.CODEX_EFFORT,
+                 "codex_lean": _lean(args),
                  "wording": variant, "prompt_version": version}
         path.write_text(page, encoding="utf-8")
         cost.write_text(json.dumps(took), encoding="utf-8")
@@ -653,11 +779,19 @@ def _run_cell(client, candidate: Candidate, posting: Posting, *, variant: str, s
 
     document, read = (None, None) if uploaded else rendered(page, posting.slug, kind)
     report = {} if uploaded else {**(cvchecks.check(page) if kind == "cv" else {}),
-                                  **measured(candidate, posting, page, document, report=read, kind=kind)}
+                                  **measured(candidate, posting, page, document, report=read, kind=kind),
+                                  **(every_look(candidate, posting, page, kind)
+                                     if getattr(args, "every_look", False) else {})}
     text = page if uploaded else cvchecks.text_of(page) if kind == "cv" else letter_text(page)
     theirs = "\n\n".join(each for texts in candidate.documents.values() for each in texts)
-    verdict = _verdict(judge or client, posting, text, report, kept=path.with_suffix(".verdict.json"),
-                       judge=args.judge, force=args.force, theirs=theirs, kind=kind)
+    shown = letter_text(page, subject=True) if kind == "cover" and not uploaded else text
+    # A reviewer on another platform keeps its verdicts beside the default's, by its model and effort.
+    judged_on = getattr(args, "judge_provider", None)
+    judge_how = f"{judged_on}@{args.judge_effort or ''}" if judged_on else ""
+    judge_model = (getattr(args, "judge_model", None) or JUDGE_MODEL) if judged_on else None
+    kept, hire = _verdict_file(path, args, judge_model)
+    verdict = _verdict(judge or client, posting, shown, report, kept=kept, judge=args.judge, force=args.force,
+                       theirs=theirs, kind=kind, judge_model=judge_model, judge_how=judge_how, hire=hire)
     dimensions = {key: value.get("score")
                   for key, value in ((verdict or {}).get("dimensions") or {}).items()}
     outside = {}
@@ -682,11 +816,11 @@ def _run_cell(client, candidate: Candidate, posting: Posting, *, variant: str, s
            # What the reviewer found in the CV that is not in their documents, and what it left unused.
            "judge_not_theirs": len(verdict["not_theirs"]) if verdict and "not_theirs" in verdict else None,
            "judge_left_out": len(verdict["left_out"]) if verdict and "left_out" in verdict else None,
-           "dimensions": dimensions,
+           "dimensions": dimensions, "interview": (verdict or {}).get("interview"),
            "top_fixes": (verdict or {}).get("top_fixes") or []}
-    logger.info("%-7s %-10s %-42s #%d  %4.1fs pages=%s invented=%s judge=%s", candidate.name, variant,
-                posting.slug[:42], sample, seconds, report.get("pages"), report.get("invented"),
-                row["overall_100"])
+    logger.info("%-7s %-10s %-42s #%d  %4.1fs in=%s pages=%s invented=%s judge=%s", candidate.name, variant,
+                posting.slug[:42], sample, seconds, took.get("tokens_in"), report.get("pages"),
+                report.get("invented"), row["overall_100"])
     return row
 
 
@@ -694,6 +828,46 @@ def _run_cell(client, candidate: Candidate, posting: Posting, *, variant: str, s
 # away a run that would have finished; retrying forever hides a limit that will not clear. Bounded,
 # with the wait growing, and the cell is skipped rather than the whole run abandoned.
 RATE_LIMIT_WAITS = (30, 90, 240)
+
+
+class _FirstPaid:
+    """The first document a run pays for is written alone, and the run stops there if it took far more
+    tokens than the documents kept for the same model and setup: 2026-11-19, 72 letters were written plain
+    and kept as lean, at twice the tokens, and spent a ChatGPT plan's five hours before anyone looked."""
+
+    # How many times the kept documents' middle a first one may take before the run stops.
+    CEILING = 1.5
+
+    def __init__(self):
+        self._lock, self._done, self._refused = threading.Lock(), False, None
+
+    def __call__(self, write, folder: pathlib.Path, tag: str, args):
+        if self._done:
+            return write()
+        with self._lock:
+            if self._refused:
+                raise self._refused
+            if self._done:
+                return write()
+            page, took = write()
+            kept = [json.loads(each.read_text(encoding="utf-8")).get("tokens_in")
+                    for each in folder.parent.glob(f"*/*{tag}.cost.json")
+                    if each.parent != folder and (tag or not each.name.endswith(".cover.cost.json"))]
+            middle = statistics.median([each for each in kept if each]) if any(kept) else None
+            logger.info("first document: %s tokens in, %s for the %d kept for %s", took.get("tokens_in"),
+                        middle, len(kept), folder.parent.name)
+            if (middle and took.get("tokens_in") and took["tokens_in"] > self.CEILING * middle
+                    and not getattr(args, "costs_more", False)):
+                self._refused = SystemExit(
+                    f"the first document took {took['tokens_in']:,} tokens in where the {len(kept)} kept for "
+                    f"{folder.parent.name} took {middle:,.0f}: not written as it is kept, so nothing more is "
+                    "paid for (--costs-more if this setup is meant to cost more)")
+                raise self._refused
+            self._done = True
+            return page, took
+
+
+FIRST_PAID = _FirstPaid()
 
 
 def _with_backoff(call, *, what: str):
@@ -710,12 +884,10 @@ def _with_backoff(call, *, what: str):
 
 
 def at_once(args) -> int:
-    """How many cells run together. One on a person's linked account, as the docgen worker writes: it is
-    most often a sign-in, whose tool renews the session when it starts, and two starting together can each
-    renew it, the loser retiring the sign-in for everybody (2026-11-14: one was lost to a renewal that was
-    not saved). A dry run writes nothing, but with `--judge` it still calls the reviewer."""
-    calls = not args.dry_run or getattr(args, "judge", False)
-    return 1 if args.account and calls else max(args.concurrency, 1)
+    """How many cells run together: as many as asked, on a key or a sign-in. A sign-in's renewal retires the
+    copy every other call holds (2026-11-14), so its client runs a call that may renew alone
+    (`libs.llm.cli.CliClient._turn`), and a run opens one client a sign-in (`_LazyClient`)."""
+    return max(args.concurrency, 1)
 
 
 def run(args) -> int:
@@ -723,8 +895,17 @@ def run(args) -> int:
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
+    overlay = pathlib.Path(args.overlay) if getattr(args, "overlay", None) else None
     candidates = {candidate.name: candidate for candidate in
-                  (Candidate(spec, pathlib.Path(args.candidates_dir)) for spec in args.candidates.split(","))}
+                  (Candidate(spec, pathlib.Path(args.candidates_dir), overlay)
+                   for spec in args.candidates.split(","))}
+    # The site makes no letter for someone who has not uploaded one of their own, nor a CV without a CV
+    # (`libs.documents.needs.BASE`): 19 of the letter bench's 25 people had no letter, a case no person can
+    # reach (2026-11-20).
+    if lacking := sorted(name for name, candidate in candidates.items()
+                         if not candidate.documents.get(BASE[args.kind])):
+        raise SystemExit(f"no {BASE[args.kind]} of their own for {', '.join(lacking)}: the site makes no "
+                         f"{args.kind} without one (libs/documents/needs.py); give them one under --overlay")
     variants = args.variants.split(",")
 
     # Built on first use, never on start-up. `--dry-run --judge` over a grid whose verdicts are
@@ -732,8 +913,13 @@ def run(args) -> int:
     # refusing to start without a credential it would never have used.
     provider = getattr(args, "provider", None)
     client = _LazyClient(args.key_file, args.account, provider)
-    # The reviewer is Claude's whoever writes: on the account in use.
-    judge = _LazyClient(args.key_file, args.account) if provider else client
+    # The reviewer is Claude's whoever writes, on the account in use; or one on another platform
+    # (`--judge-provider`), so a model's letters can be read by its own platform's best (owner, 2026-11-19).
+    if getattr(args, "judge_provider", None):
+        judge = _LazyClient(args.key_file, args.account, args.judge_provider,
+                            tune={"lean": True, "codex_effort": args.judge_effort})
+    else:
+        judge = _LazyClient(args.key_file, args.account) if provider else client
 
     # Every cell up front, so the work can be spread across threads instead of across processes.
     # Four processes was the previous shape and it cost a merge step, four log files, and a rate
@@ -775,16 +961,19 @@ def run(args) -> int:
                        failed, len(cells))
     look = getattr(args, "look", None)
     baseline = args.baseline if look in (None, templates.DEFAULT) else f"{args.baseline}@{look}"
-    return _finish(rows, out, baseline, args.kind)
+    return _finish(rows, out, baseline, args.kind, getattr(args, "results", None))
 
 
-def _finish(rows: list[dict], out: pathlib.Path, baseline: str = "live", kind: str = "cv") -> int:
+def _finish(rows: list[dict], out: pathlib.Path, baseline: str = "live", kind: str = "cv",
+            results: str | None = None) -> int:
     if not rows:
         logger.warning("nothing was measured, so nothing was written")
         return 1
     # A letter's grid may share a folder with a CV's, so neither writes over the other's numbers.
     tag = "" if kind == "cv" else ".cover"
-    (out / f"results{tag}.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    # `--results`: runs on two accounts at once each keep their own rows.
+    (pathlib.Path(results) if results else out / f"results{tag}.json").write_text(json.dumps(rows, indent=2),
+                                                                                  encoding="utf-8")
     board = scoreboard(rows, baseline)
     print(board)
     (out / f"scoreboard{tag}.md").write_text(board, encoding="utf-8")
@@ -797,8 +986,9 @@ MECHANICAL = ("first_person", "profile_first_person", "third_person", "profile_t
               "present_in_ended", "past_in_held",
               "task_bullets", "said_twice",
               "colon_bullets", "emdash_violations",
-              "cliches", "profile_words", "entries", "bullets", "est_pages", "pages", "fitted", "ats_issues",
-              "ats_score", "ats_title", "ats_dates",
+              "cliches", "ai_language", "profile_words", "entries", "bullets", "est_pages", "pages", "fitted",
+              "ats_issues",
+              "ats_score", "ats_title", "ats_dates", "ats_every_look",
               "faults", "invented", "seconds", "tokens_in", "tokens_out", "over_ceiling")
 
 # The per-variant table, a column for each of ours that any row has: a letter has no bullets to count.
@@ -808,14 +998,17 @@ COLUMNS = (("1st person", "first_person"), ("profile 1p", "profile_first_person"
            ("past in a held job", "past_in_held"), ("task bullets", "task_bullets"),
            ("said twice in the same words", "said_twice"),
            ("colon bullets", "colon_bullets"), ("em-dash", "emdash_violations"), ("clichés", "cliches"),
+           ("AI language", "ai_language"),
            ("profile words", "profile_words"), ("entries", "entries"), ("pages", "pages"),
            ("lines taken up", "fitted"), ("ATS checks passed, of 100", "ats_score"),
+           ("ATS checks in every look, of 100", "ats_every_look"),
            ("job title in it", "ats_title"), ("dates in one form", "ats_dates"),
            ("sent back for", "faults"), ("not theirs", "invented"),
            ("seconds", "seconds"), ("tokens in", "tokens_in"), ("tokens out", "tokens_out"),
            ("over a key's ceiling", "over_ceiling"))
 
 LETTER_DIMENSIONS = ("opening", "why_here", "evidence", "fit", "voice", "honesty", "close")
+HIRE_DIMENSIONS = ("first_lines", "best_case", "proof", "doubts", "stands_out", "accuracy")
 DIMENSIONS = ("six_second_pull", "role_angle_fit", "relevance_coverage", "achievement_quality",
               "human_voice", "defensibility", "keyword_integration")
 # What the reviewer lists beside its marks, as counts.
@@ -945,10 +1138,15 @@ def main() -> int:
     parser.add_argument("--account", default=None,
                         help="write and judge on the AI account this person has in use in the local database")
     parser.add_argument("--candidates-dir", default="scripts/cvlab/candidates")
+    parser.add_argument("--overlay", default=None,
+                        help="a folder of <person>/*.txt that replace or add to each person's documents")
     parser.add_argument("--jobs-dir", default="scripts/cvlab/jobs")
     parser.add_argument("--only", default="", help="comma-separated fixture slugs; default all")
     parser.add_argument("--samples", type=int, default=3,
                         help="generations per cell; one is not a result")
+    parser.add_argument("--costs-more", action="store_true",
+                        help="go on when the first document takes far more tokens than those kept for its "
+                             "model (a wording meant to cost more)")
     parser.add_argument("--concurrency", type=int, default=4,
                         help="cells in flight at once. Higher finishes sooner and trips the "
                              "account's rate limit sooner; a 429 is waited out, not fatal. Always one "
@@ -964,9 +1162,28 @@ def main() -> int:
     parser.add_argument("--codex-effort", default=None, choices=["minimal", "low", "medium", "high"],
                         help="with --provider codex: tell Codex how hard to think; production tells it "
                              "nothing, and the documents are kept apart under <model>@<effort>")
-    parser.add_argument("--look", default=None, choices=[each.id for each in templates.of_kind("cv")],
-                        help="the look a CV is written for and drawn in; its name joins the variant's")
+    parser.add_argument("--look", default=None, choices=sorted({each.id for each in templates.CATALOGUE}),
+                        help="the look a document is written for and drawn in; its name joins the variant's")
+    parser.add_argument("--every-look", action="store_true",
+                        help="also draw each document in every look of its kind, and check each as an ATS")
     parser.add_argument("--judge", action="store_true", help="also run the recruiter verdict (CVs)")
+    parser.add_argument("--reviewer", default="letter", choices=("letter", "hire"),
+                        help="with --kind cover --judge: the letter's reviewer (eval_cover.md), or the "
+                             "hiring manager's read (eval_hire.md), whose verdicts are kept beside it")
+    parser.add_argument("--judge-provider", default=None, choices=sorted(DEFAULT_DOCUMENT_MODELS),
+                        help="with --account: the reviewer on the account linked for this provider, lean, "
+                             "its verdicts kept apart from the default reviewer's")
+    parser.add_argument("--judge-model", default=None, help="with --judge-provider: the reviewer's model")
+    parser.add_argument("--judge-effort", default=None,
+                        help="with --judge-provider codex: how hard it thinks")
+    parser.add_argument("--codex-lean", action="store_true",
+                        help="with --provider codex: write from this platform's instructions alone, no tools "
+                             "(`libs.llm.cli.CODEX_LEAN`); kept under <model>+lean")
+    parser.add_argument("--gemini-thinking", default=None, choices=["minimal", "low", "medium", "high"],
+                        help="with a Gemini key: how much it thinks; production tells it nothing, and the "
+                             "documents are kept apart under <model>@<level>")
+    parser.add_argument("--results", default=None,
+                        help="where this run's rows go (default <out>/results.json)")
     parser.add_argument("--checkers", default="",
                         help=f"comma-separated tools that are not ours, of {', '.join(checkers.CHECKERS)}; "
                              "each answers for its own kind of document")
@@ -977,6 +1194,8 @@ def main() -> int:
     parser.add_argument("--out", default="scripts/cvlab/out")
     args = parser.parse_args()
     cli.CODEX_EFFORT = args.codex_effort
+    cli.CODEX_LEAN = args.codex_lean
+    rest.GEMINI_THINKING = args.gemini_thinking
     cli.WEB_SEARCH = args.research
     if args.model is None:
         args.model = DEFAULT_DOCUMENT_MODELS[args.provider] if args.provider else CV_MODEL
@@ -985,6 +1204,8 @@ def main() -> int:
         parser.error(f"no such checker: {', '.join(sorted(unknown))}")
     if idle := [name for name in args.checkers if checkers.CHECKERS[name][1] != args.kind]:
         parser.error(f"{', '.join(idle)} cannot read a {args.kind}")
+    if args.look and templates.find(args.kind, args.look) is None:
+        parser.error(f"there is no {args.kind} look called {args.look}")
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     # One line a request would bury the bench's own lines (CLAUDE.md §8).

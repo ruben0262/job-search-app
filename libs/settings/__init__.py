@@ -268,9 +268,11 @@ DEFAULT_DOCUMENT_MODELS: dict[str, str] = {
     "anthropic": CV_MODEL,
     "gemini": "gemini-3.8-flash",
     "openai": "gpt-6-luna",
-    # A ChatGPT sign-in, through Codex (`libs.llm.cli`): empty is Codex's own choice, which knows the
-    # models the person's plan includes; an API model name may not be one of them.
-    "codex": "",
+    # A ChatGPT sign-in, through Codex (`libs.llm.cli`). Sol, named (owner, 2026-11-19): left empty it was
+    # Codex's own choice for the plan, which was Sol on Plus that day, so a change at OpenAI would have
+    # changed every ChatGPT document and its cost with nothing changed here. Terra lean costs a quarter of a
+    # letter and wrote weaker closes and reasons; Luna flatter ones (CHANGELOG 2026-11-19, evening).
+    "codex": "gpt-6.2-sol",
 }
 
 # How long a built document waits to be downloaded before the docgen worker deletes it (D9:

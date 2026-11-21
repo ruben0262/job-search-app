@@ -9,6 +9,8 @@ from __future__ import annotations
 import base64
 import json
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -42,11 +44,21 @@ if args[:1] == ["-p"]:  # Claude Code
     print(json.dumps({"type": "result", "is_error": False, "result": json.dumps(said), "usage": {
         "input_tokens": 12, "cache_creation_input_tokens": 3000, "cache_read_input_tokens": 500,
         "output_tokens": 900}, "modelUsage": {"claude-haiku-x": {"outputTokens": 900}}}))
-elif args[:1] == ["exec"]:  # Codex
-    renew(home + "/auth.json")
+elif args[:1] == ["exec"]:  # Codex, `exec --json`
+    login = renew(home + "/auth.json")
+    if login.get("limit"):
+        print(json.dumps({"type": "turn.failed", "error": {"message": "You've hit your usage limit."}}))
+        sys.exit(1)
+    settings = [args[at + 1] for at, arg in enumerate(args) if arg == "-c"]
+    told = [each.split("=", 1)[1] for each in settings if each.startswith("model_instructions_file=")]
+    if told:
+        said["system"] = open(json.loads(told[0])).read()
     open(option("--output-last-message"), "w").write(json.dumps(said))
-    sys.stderr.write("OpenAI Codex v0.167.0\\n--------\\nworkdir: /tmp/x\\nmodel: gpt-x-sol\\n"
-                     "--------\\nuser\\nmodel: not-this-one\\ncodex\\nOK\\ntokens used\\n2,253\\n")
+    print(json.dumps({"type": "thread.started", "thread_id": "t"}))
+    print("not an event")
+    used = {"input_tokens": 9800, "cached_input_tokens": 4800, "output_tokens": 640,
+            "reasoning_output_tokens": 300}
+    print(json.dumps({"type": "turn.completed", "usage": used}))
 else:  # Gemini CLI
     login = renew(home + "/.gemini/oauth_creds.json")
     if login.get("retired"):
@@ -140,6 +152,30 @@ def test_codex_is_told_how_hard_to_think_only_by_the_bench(tools, monkeypatch):
     assert "-c" not in _write("claude_login", _blob("claude_login"))["args"]
 
 
+def test_codex_writes_lean_only_when_the_bench_asks_from_this_platforms_instructions_and_with_no_tools(
+        tools, monkeypatch):
+    """Owner, 2026-11-19: use less of a person's ChatGPT plan. Codex adds a coding agent's prompt and its
+    tools to every call, 13,856 tokens for a one-word answer and 4,842 without them. Lean, the platform's
+    instructions are Codex's own and nothing else is offered; plain, as every account writes until letters
+    written lean are measured, they lead the prompt and Codex keeps its own."""
+    plain = _write("codex_login", _blob("codex_login"))
+    assert "Write CVs plainly." in plain["prompt"] and "system" not in plain
+    assert not any(arg.startswith("features.") for arg in plain["args"])
+
+    monkeypatch.setattr(cli, "CODEX_LEAN", True)
+    lean = _write("codex_login", _blob("codex_login"))
+    assert lean["system"] == "Write CVs plainly." and "Write CVs plainly." not in lean["prompt"]
+    assert "The job: a nurse." in lean["prompt"]
+    for setting in ('web_search="disabled"', "features.shell_tool=false", "features.multi_agent=false",
+                    "features.browser_use=false", "features.image_generation=false"):
+        assert setting in lean["args"], setting
+
+
+def test_a_codex_limit_is_said_as_a_limit(tools):
+    with pytest.raises(LlmError, match="usage limit"):
+        _write("codex_login", _blob("codex_login", limit=True))
+
+
 def test_codex_picks_its_own_model_when_none_is_set(tools):
     """A ChatGPT plan's models are Codex's to know; an API model's name may not be one of them."""
     assert _write("codex_login", _blob("codex_login"), model="")["model"] is None
@@ -161,7 +197,7 @@ def test_a_login_the_tool_renewed_is_handed_back_to_be_sealed_and_used_next(tool
 def test_an_answer_carries_what_its_call_used_where_the_tool_says(tools):
     """Owner, 2026-11-14: record the token spend. Claude Code and Gemini CLI report it with the answer;
     what went in is the prompt however it was billed, and what came out includes the thinking. Codex
-    writes its last message alone, so its use is not known rather than nought."""
+    prints its events as JSON, the turn's use among them (2026-11-19)."""
     def used(kind: str):
         client = cli.CliClient(kind, _blob(kind), [].append)
         return client.complete_text(model="m", system="s", max_tokens=1,
@@ -169,14 +205,13 @@ def test_an_answer_carries_what_its_call_used_where_the_tool_says(tools):
 
     assert used("claude_login") == Usage(input_tokens=3512, output_tokens=900)
     assert used("gemini_login") == Usage(input_tokens=4100, output_tokens=950)
-    assert used("codex_login") is None
+    assert used("codex_login") == Usage(input_tokens=9800, output_tokens=640)
 
 
 def test_an_answer_says_which_model_wrote_it_where_the_tool_says(tools):
     """Owner, 2026-11-15: a document is kept by the model that produced it. That is the model the tool
-    says answered, which need not be the one asked for: a plan may not include it, and Codex is asked for
-    none. Codex names the model it chose in the heading it prints before the prompt, and a line of the
-    prompt that looks like one is not it."""
+    says answered, which need not be the one asked for: a plan may not include it. Codex's events name
+    no model, so its document is kept by the one asked for, and by none when the plan chose."""
     def wrote(kind: str):
         client = cli.CliClient(kind, _blob(kind), [].append)
         return client.complete_text(model="asked-for", system="s", max_tokens=1,
@@ -184,7 +219,7 @@ def test_an_answer_says_which_model_wrote_it_where_the_tool_says(tools):
 
     assert wrote("claude_login") == "claude-haiku-x"
     assert wrote("gemini_login") == "gemini-x"
-    assert wrote("codex_login") == "gpt-x-sol"
+    assert wrote("codex_login") == "asked-for"
 
 
 def test_an_expired_sign_in_says_to_sign_in_again(tools):
@@ -240,3 +275,64 @@ def test_each_account_is_named_by_its_plan_and_address_where_the_sign_in_says_th
     assert cli.label("claude_login", claude) == "Claude Pro · a@example.com"
     assert cli.label("gemini_login", gemini) == "Google Gemini · b@gmail.com"
     assert cli.label("claude_login", json.dumps({".credentials.json": "{}"})) == "Claude", "says nothing more"
+
+
+def _signed_in(expires_in: float) -> str:
+    """A Claude sign-in whose session runs out `expires_in` seconds from now, kept as `cli.snapshot` does."""
+    expires_at = (time.time() + expires_in) * 1000
+    return json.dumps({".credentials.json": json.dumps({"claudeAiOauth": {"expiresAt": expires_at}}),
+                       ".claude.json": "{}"}, sort_keys=True)
+
+
+def test_a_sign_in_says_when_its_session_runs_out_and_one_that_does_not_runs_its_calls_alone():
+    """Read 2026-11-20 from the stored sign-ins: a tool renews one only when its session runs out."""
+    claims = base64.urlsafe_b64encode(json.dumps({"exp": 1_900_000_000}).encode()).decode().rstrip("=")
+    codex = json.dumps({"auth.json": json.dumps({"tokens": {"access_token": f"h.{claims}.s"}})})
+
+    assert cli.expires("codex_login", codex) == 1_900_000_000
+    assert abs(cli.expires("claude_login", _signed_in(60)) - (time.time() + 60)) < 5
+    assert cli.expires("claude_login", "{}") is None
+    assert cli.expires("gemini_login", "{}") is None
+
+
+def test_calls_on_one_sign_in_run_together_while_its_session_lasts_and_a_renewal_runs_alone():
+    """Owner, 2026-11-20: cut the bench's hours, fairly. Calls on one sign-in once ran one at a time, because
+    a renewal retires the copy every other call holds (one retired the local Claude sign-in, 2026-11-14).
+    A tool renews only when the session runs out, so calls run together while it lasts; one that may renew
+    runs alone, and the sign-in it renewed is the one kept and used after it."""
+    saved, running, most, renewed_beside = [], [0], [0], []
+    lock = threading.Lock()
+
+    class Tool(cli.CliClient):
+        def _run(self, model, home, work, folder, prompt, **_call):
+            with lock:
+                running[0] += 1
+                most[0] = max(most[0], running[0])
+            time.sleep(0.3)
+            credentials = home / ".credentials.json"
+            # As the real tool does: it renews the session it was given only if that has run out.
+            if json.loads(credentials.read_text())["claudeAiOauth"]["expiresAt"] / 1000 < time.time():
+                renewed_beside.append(running[0] - 1)
+                credentials.write_text(json.loads(_signed_in(3600))[".credentials.json"])
+            with lock:
+                running[0] -= 1
+            return "ok"
+
+    def together(client, calls):
+        call = {"model": "", "system": "", "messages": [{"content": "hi"}], "max_tokens": 0}
+        threads = [threading.Thread(target=client.complete_text, kwargs=call) for _ in range(calls)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+    fresh = Tool("claude_login", _signed_in(3600), saved.append)
+    together(fresh, 3)
+    assert most[0] == 3 and saved == []
+
+    most[0] = 0
+    stale = Tool("claude_login", _signed_in(-60), saved.append)
+    together(stale, 3)
+    # Renewed once, with nothing else running; then the other two ran together on the renewed sign-in.
+    assert renewed_beside == [0] and len(saved) == 1 and most[0] == 2
+    assert cli.expires("claude_login", saved[0]) > time.time() + 3000

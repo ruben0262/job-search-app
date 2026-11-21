@@ -50,6 +50,19 @@ def test_gemini_is_asked_on_its_own_header_and_only_the_answer_comes_back():
     assert body["systemInstruction"] == {"parts": [{"text": "Facts."}]}
     assert body["contents"] == [{"role": "user", "parts": [{"text": "Write the CV."}]}]
     assert body["generationConfig"]["maxOutputTokens"] == 500
+    assert "thinkingConfig" not in body["generationConfig"], "a key thinks at its model's own default"
+
+
+def test_gemini_is_told_how_much_to_think_only_by_the_bench(monkeypatch):
+    """Owner, 2026-11-19: leave people usage. Gemini's thinking is billed as output, so a lower level is
+    measured on letters before every Gemini user's documents change with it: only the bench sets it."""
+    from libs.llm import rest
+
+    http, seen = _http(lambda r: httpx.Response(200, json={"candidates": [{"content": {"parts": [
+        {"text": "<html>CV</html>"}]}, "finishReason": "STOP"}]}))
+    monkeypatch.setattr(rest, "GEMINI_THINKING", "low")
+    _ask(GeminiClient, http)
+    assert json.loads(seen[0].content)["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "low"}
 
 
 def test_a_key_s_answer_carries_the_tokens_its_call_used():

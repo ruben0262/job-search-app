@@ -6,8 +6,10 @@ name to contents. A call unpacks them into a private folder that exists for that
 tool there with nothing else in its environment, and takes the answer. The tool renews a sign-in on its
 own when it needs to; the files it leaves are sealed again (`on_refresh`), so the next call has them.
 
-One docgen worker makes the calls, so two never renew one sign-in at the same moment. A second worker
-would need a lock per account first: a renewed sign-in can retire the one another call is holding.
+A tool renews a sign-in only when its session runs out (`expires`), and the renewal retires the copy every
+other call is holding. So calls on one client run together while the session has time left, and a call that
+may renew runs alone (`CliClient._turn`). That holds within one client: two clients, or two processes, on one
+sign-in can still retire it, which is why one docgen worker makes the calls.
 """
 from __future__ import annotations
 
@@ -18,7 +20,10 @@ import os
 import re
 import subprocess
 import tempfile
-from collections.abc import Callable
+import threading
+import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -125,11 +130,51 @@ def label(kind: str, blob: str) -> str:
 # the model a Plus plan gets, 2026-11-15). Only the bench sets it (`scripts/cvlab/run.py --codex-effort`),
 # to measure one before every ChatGPT user's documents change with it (owner, 2026-11-15).
 CODEX_EFFORT: str | None = None
+# Whether Codex writes from this platform's instructions alone. Asked plainly, it adds its own: a coding
+# agent's prompt and its tools (shell, browser, images, other agents, web search) with their guidance, which a
+# person's ChatGPT plan pays for on every call: "reply with one word" took 13,856 tokens in, and 4,842 lean
+# (2026-11-19). A letter is written lean (`services.docgen.build.LEAN`, which sets `CliClient.lean` for the
+# call); a CV is not until it is measured so, and only the bench turns this on for one
+# (`scripts/cvlab/run.py --codex-lean`). Once CVs are measured, lean is the only path and the plain one goes.
+CODEX_LEAN = False
+# The features that bring Codex a tool or the instructions for one, all off when it is lean.
+_CODEX_TOOLS = ("apps", "browser_use", "browser_use_external", "browser_use_full_cdp_access",
+                "browser_annotation_api", "computer_use", "image_generation", "in_app_browser", "multi_agent",
+                "plugins", "remote_plugin", "plugin_discovery_prefetch", "shell_tool", "unified_exec",
+                "unified_exec_tty", "code_mode_host", "view_image", "sleep_tool", "skill_search",
+                "skill_mcp_dependency_install", "tool_suggest", "goals", "hooks", "collaboration_modes",
+                "workspace_dependencies", "worktrees", "mentions_v2", "deferred_tool_world_state",
+                "incremental_tools", "tool_call_mcp_elicitation", "tool_search_always_defer_mcp_tools",
+                "write_stdin_approval", "guardian_approval", "shell_snapshot")
+_CODEX_LEAN_SETTINGS = ('web_search="disabled"', "include_permissions_instructions=false",
+                        "include_apps_instructions=false", "include_collaboration_mode_instructions=false",
+                        *(f"features.{name}=false" for name in _CODEX_TOOLS))
+_CODEX_LEAN_ARGS = tuple(arg for setting in _CODEX_LEAN_SETTINGS for arg in ("-c", setting))
 # Whether Claude Code may search the web while it writes: off, so a sign-in writes from what it is given, as
 # an API key does. Only the bench turns it on (`scripts/cvlab/run.py --research`), to measure the AI looking a
 # company up itself against facts read by rules (owner, 2026-11-16). Search only: WebFetch would fetch pages
 # from this server, where a posting's words could point it at a private address.
 WEB_SEARCH = False
+
+
+# How long a session must still have for a call to run beside others: longer than any call takes, and than
+# the few minutes before the end at which a tool renews early. Below it, a call waits to run alone.
+FRESH_FOR = 30 * 60
+
+
+def expires(kind: str, blob: str) -> float | None:
+    """When the session in a sign-in runs out, in seconds since the epoch; None where it does not say so, and
+    then every call runs alone. Read 2026-11-20: Claude's lasts about five hours, Codex's ten days, and
+    neither was renewed in the hundreds of calls between."""
+    try:
+        files = json.loads(blob)
+        if kind == "claude_login":
+            return json.loads(files[".credentials.json"])["claudeAiOauth"]["expiresAt"] / 1000
+        if kind == "codex_login":
+            return float(_jwt_claims(json.loads(files["auth.json"])["tokens"]["access_token"])["exp"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return None
 
 
 class CliClient:
@@ -140,33 +185,60 @@ class CliClient:
         if kind not in TOOLS:
             raise ValueError(f"{kind!r} is not a signed-in kind")
         self._kind, self._blob, self._on_refresh = kind, blob, on_refresh
+        # A Codex call's own settings, where they differ from the module's: the bench's reviewer runs lean
+        # and thinks hard while the letters it reads were written otherwise. None follows the module.
+        self.lean: bool | None = None
+        self.codex_effort: str | None = None
+        # The calls running now, and whether one of them is running alone because it may renew.
+        self._turns, self._running, self._alone = threading.Condition(), 0, False
 
     def complete_text(self, *, model: str, system: str, messages: list[dict],
-                      max_tokens: int, effort: str | None = None) -> str:
+                      max_tokens: int, effort: str | None = None, lean: bool | None = None) -> str:
         """One answer. `max_tokens` is the tool's own to decide; `effort` is passed to Claude Code, so a
-        sign-in thinks as hard as an API key does."""
+        sign-in thinks as hard as an API key does. `lean`, for this call alone (`CODEX_LEAN`)."""
         del max_tokens
         prompt = "\n\n".join(str(message["content"]) for message in messages)
-        with tempfile.TemporaryDirectory(prefix="ai-") as folder:
+        with self._turn(), tempfile.TemporaryDirectory(prefix="ai-") as folder:
             home, work = Path(folder) / "home", Path(folder) / "work"
             home.mkdir(mode=0o700)
             work.mkdir(mode=0o700)
             prepare(self._kind, home)
-            unpack(self._kind, self._blob, home)
+            started = self._blob
+            unpack(self._kind, started, home)
             (Path(folder) / "system.md").write_text(system)
             try:
-                return self._run(model, home, work, Path(folder), prompt, effort=effort)
+                return self._run(model, home, work, Path(folder), prompt, effort=effort, lean=lean)
             finally:
+                # Against the copy this call started from: one that renewed nothing never writes it back
+                # over a newer one.
                 renewed = snapshot(self._kind, home)
-                if renewed and renewed != self._blob:
+                if renewed and renewed != started:
                     self._blob = renewed
                     self._on_refresh(renewed)
+
+    @contextmanager
+    def _turn(self) -> Iterator[None]:
+        """A call's turn: beside the others while the session has `FRESH_FOR` left, else alone, once the
+        calls before it are done, so that a renewal retires no copy another call is holding."""
+        with self._turns:
+            while True:
+                fresh = (expires(self._kind, self._blob) or 0) - time.time() > FRESH_FOR
+                if not self._alone and (fresh or not self._running):
+                    break
+                self._turns.wait()
+            self._alone, self._running = not fresh, self._running + 1
+        try:
+            yield
+        finally:
+            with self._turns:
+                self._alone, self._running = False, self._running - 1
+                self._turns.notify_all()
 
     def complete_tools(self, **_kwargs) -> dict:
         raise LlmError("a signed-in account writes documents only")
 
     def _run(self, model: str, home: Path, work: Path, folder: Path, prompt: str, *,
-             effort: str | None = None) -> str:
+             effort: str | None = None, lean: bool | None = None) -> str:
         binary, system = TOOLS[self._kind].path(), str(folder / "system.md")
         env = environment(self._kind, home)
         answer = folder / "answer.txt"
@@ -179,13 +251,20 @@ class CliClient:
             argv += ["--effort", effort] if effort else []
             stdin = prompt
         elif self._kind == "codex_login":
-            argv = [binary, "exec", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config",
+            # `--json`: what the call used comes with the answer, as Claude's and Gemini's do.
+            argv = [binary, "exec", "--json", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config",
                     "--sandbox", "read-only", "--cd", str(work), "--output-last-message", str(answer)]
             argv += ["--model", model] if model else []
-            argv += ["-c", f"model_reasoning_effort={CODEX_EFFORT}"] if CODEX_EFFORT else []
+            effort_told = self.codex_effort if self.codex_effort is not None else CODEX_EFFORT
+            argv += ["-c", f"model_reasoning_effort={effort_told}"] if effort_told else []
+            if next(each for each in (lean, self.lean, CODEX_LEAN) if each is not None):
+                # This platform's instructions in place of Codex's own, and none of its tools.
+                argv += ["-c", f"model_instructions_file={json.dumps(system)}", *_CODEX_LEAN_ARGS]
+                stdin = prompt
+            else:
+                # Codex keeps its own instructions; what this platform asks comes first in the prompt.
+                stdin = f"{(folder / 'system.md').read_text()}\n\n---\n\n{prompt}"
             argv += ["-"]
-            # Codex keeps its own instructions; what this platform asks comes first in the prompt.
-            stdin = f"{(folder / 'system.md').read_text()}\n\n---\n\n{prompt}"
         else:
             # Trusted, or Gemini CLI quietly drops the read-only mode in a folder it has not seen.
             argv = [binary, "--output-format", "json", "--approval-mode", "plan", "--skip-trust",
@@ -202,23 +281,26 @@ class CliClient:
         except subprocess.TimeoutExpired as exc:
             logger.error("cli: %s gave no answer within %ds", TOOLS[self._kind].name, TIMEOUT_SEC)
             raise LlmError(f"{TOOLS[self._kind].name} took too long to answer") from exc
-        text = self._answer(done, answer)
+        text = self._answer(done, answer, model)
         if not text.strip():
             raise LlmError(f"{TOOLS[self._kind].name} wrote nothing")
         return text
 
-    def _answer(self, done: subprocess.CompletedProcess, answer: Path) -> Reply:
+    def _answer(self, done: subprocess.CompletedProcess, answer: Path, model: str = "") -> Reply:
         """The answer, with what the call used where the tool says, or why there is none. Claude and Gemini
         print their JSON even when they fail, with the reason inside it, so it is read before the exit
-        code. Codex writes its last message alone, so its use is not known."""
+        code. Codex writes its last message to a file and its events as lines of JSON, the last turn's use
+        among them; they name no model, so it is the one asked for, and none when the plan chose."""
         if self._kind == "codex_login":
+            events = _events(done.stdout)
             if done.returncode == 0 and answer.is_file():
-                # Asked for no model, Codex takes the one the person's plan gives it and names it in the
-                # heading it prints before the prompt ("model: gpt-6.1-sol", 2026-11-15).
-                heading = (done.stderr or "").split("\nuser\n", 1)[0]
-                named = re.search(r"(?m)^model:\s*(\S+)\s*$", heading)
-                return Reply(answer.read_text(), None, named.group(1) if named else None)
-            raise self._failed(done.stderr or done.stdout)
+                done_turns = [event.get("usage") for event in events if event.get("type") == "turn.completed"]
+                used = done_turns[-1] if done_turns and isinstance(done_turns[-1], dict) else {}
+                return Reply(answer.read_text(), counted(used.get("input_tokens"), used.get("output_tokens")),
+                             model or None)
+            said = [str(event.get("message") or (event.get("error") or {}).get("message") or "")
+                    for event in events if event.get("type") in ("error", "turn.failed")]
+            raise self._failed("\n".join(each for each in said if each) or done.stderr or done.stdout)
         try:
             reply = json.loads(done.stdout)
         except json.JSONDecodeError:
@@ -253,6 +335,19 @@ class CliClient:
         name = TOOLS[self._kind].name
         logger.warning("cli: %s could not answer: %s", name, said)
         return LlmError(f"{name} could not write this ({_why(said)})")
+
+
+def _events(printed: str | None) -> list[dict]:
+    """Codex's events, one JSON object a line; a line that is not one is passed over."""
+    found = []
+    for line in (printed or "").splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict):
+            found.append(event)
+    return found
 
 
 def _named(models: object) -> str | None:

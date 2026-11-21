@@ -28,6 +28,7 @@ from html.parser import HTMLParser
 
 from libs import prompts
 from libs.documents.read import LANGUAGE_NAMES, read, texts
+from libs.llm import cli
 from libs.templates import Template
 from services.docgen import checks
 
@@ -54,6 +55,11 @@ MAX_TOKENS = 32_000
 # every call so an API key and a Claude sign-in write alike: unset, a key ran at Haiku 5.5's own default
 # and a sign-in at Claude Code's, which nobody had chosen. Measured 2026-11-11 (CHANGELOG).
 EFFORT = "medium"
+# The documents a ChatGPT sign-in writes lean, from this platform's instructions alone and without Codex's own
+# and its tools (`libs.llm.cli.CliClient.lean`). A letter: 8,824 tokens in against 19,890, about half the
+# person's plan, with both reviewers, the ATS checks and a blind language read level or better (owner,
+# 2026-11-19, CHANGELOG). A CV is written plain until it is measured lean.
+LEAN = frozenset({"cover"})
 
 # Whether a name found in neither their documents nor the posting is said back for a second call
 # (`names_not_in`). Off: the owner, 2026-11-15, "keep the name check just in case but remove it from
@@ -88,7 +94,7 @@ class Request:
     # Their name, and the header and title of the page, written by code.
     name: str
     header: str
-    # On a letter, the company and its place.
+    # On a letter, the company as people call it (`checks.employer`) and its place.
     letter_to: str
     look: Template
     # Every text a number or a name in the document may come from: their documents and the posting.
@@ -130,7 +136,8 @@ def prepare(kind: str, *, user, job, documents: dict[str, list[str]], look: Temp
     sources = "\n".join([theirs, job.title or "", company, place, job.description or ""])
     return Request(kind=kind, prompt=text, name=name, header=header, look=look, sources=sources,
                    theirs=theirs,
-                   letter_to="<br>".join(escape(each) for each in (company, place) if each), company=company,
+                   letter_to="<br>".join(escape(each) for each in (checks.employer(company) or company, place)
+                                         if each), company=company,
                    posting=job.description or "")
 
 
@@ -142,8 +149,10 @@ def draft(client, request: Request, *, model: str, revision: tuple[str, str] | N
     messages = [{"role": "user", "content": request.prompt}]
     if revision is not None:
         messages += [{"role": "assistant", "content": revision[0]}, {"role": "user", "content": revision[1]}]
+    # Told with the call and never set on the client, which other calls may be using at the same moment.
+    lean = {"lean": True} if request.kind in LEAN and isinstance(client, cli.CliClient) else {}
     reply = client.complete_text(model=model, system=SYSTEM, messages=messages, max_tokens=MAX_TOKENS,
-                                 effort=effort)
+                                 effort=effort, **lean)
     body = answer(reply, request.kind)
     if body is None:
         # Never log the reply: it is the person's CV.
@@ -165,7 +174,7 @@ def answer(reply: str | None, kind: str) -> str | None:
         return None
     body = found[-1]
     if kind == "cover":
-        return _undated(_EMDASH.sub(", ", body))
+        return _undated(checks.paragraphs_split(_EMDASH.sub(", ", body)))
     return _one_profile(strip_prose_emdashes(body))
 
 
@@ -385,26 +394,40 @@ def _one_profile(body: str) -> str:
 # "10k" as the 10,000 it is: a letter wrote "10,000 records" for a CV's "10k+" and was sent back for it
 # (2026-11-11).
 _NUMBER = re.compile(r"(\d+(?:[.,]\d+)*)(?:\s?([kKmM])(?![a-zA-Z]))?")
+# Thousands set apart by a space, as Polish, French or Hungarian write them: "1 100" is one number, the
+# "1,100" an English letter makes of a Polish CV's "ok. 1 100 osób" (2026-11-19). Only from a group of one
+# to three figures: "2019 120 clients" is a year and a count.
+_SPACED = re.compile(r"(?<!\d)(\d{1,3})((?:[ \u00a0\u202f]\d{3})+)(?!\d)")
 
 
 def numbers_not_in(text: str, sources: str) -> tuple[str, ...]:
     """The numbers in `text` that appear nowhere in `sources`, each once: the fabrication a reader cannot
-    see and an interviewer will ask about."""
+    see and an interviewer will ask about. A number is theirs however its language writes it: "1 100",
+    "1.100" and "1,100" are one number, and so are "3,5" and "3.5"."""
     def forms(digits: str, scale: str) -> set[str]:
         plain = digits.replace(",", "")
+        found = {plain}
+        if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", digits):
+            found.add(digits.replace(".", ""))
+        if re.fullmatch(r"\d+,\d{1,2}", digits):
+            found.add(digits.replace(",", "."))
         if not scale:
-            return {plain}
+            return found
         try:
             value = float(plain) * (1_000 if scale in "kK" else 1_000_000)
         except ValueError:
-            return {plain}
-        return {plain, str(int(value)) if value.is_integer() else str(value)}
+            return found
+        return found | {str(int(value)) if value.is_integer() else str(value)}
 
-    known = set().union(*(forms(*each) for each in _NUMBER.findall(sources)))
+    def joined(part: str) -> str:
+        return _SPACED.sub(lambda found: found.group(1) + re.sub(r"\D", "", found.group(2)), part)
+
+    written = _NUMBER.findall(sources) + _NUMBER.findall(joined(sources))
+    known = set().union(*(forms(*each) for each in written))
     # A date written with dots is read as one number ("07.02.2029", "2028.05.16."): its year is theirs too.
     known |= {part for digits, _ in _NUMBER.findall(sources) if digits.count(".") >= 2
               for part in digits.split(".") if len(part) == 4}
-    return tuple(dict.fromkeys(match.group(0) for match in _NUMBER.finditer(text)
+    return tuple(dict.fromkeys(match.group(0) for match in _NUMBER.finditer(joined(text))
                                if not forms(match.group(1), match.group(2) or "") & known))
 
 

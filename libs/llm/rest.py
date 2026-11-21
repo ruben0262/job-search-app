@@ -25,6 +25,13 @@ GEMINI_STREAM_URL = ("https://generativelanguage.googleapis.com/v1beta/models/{m
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
 
+# How much Gemini thinks before it writes: not told, so a key writes at the model's own default (medium on
+# 3.8 Flash), and the thinking is paid for as output. Only the bench sets it (`scripts/cvlab/run.py
+# --gemini-thinking`), to measure a lower level on letters before every Gemini user's documents change with it
+# (owner, 2026-11-19: leave people usage).
+GEMINI_THINKING: str | None = None
+
+
 class GeminiClient:
     """`complete_text` on a Gemini API key. The key travels in a header, never in the URL.
 
@@ -41,7 +48,9 @@ class GeminiClient:
             "systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "model" if message["role"] == "assistant" else "user",
                           "parts": [{"text": message["content"]}]} for message in messages],
-            "generationConfig": {"maxOutputTokens": max_tokens}})
+            "generationConfig": {"maxOutputTokens": max_tokens,
+                                 **({"thinkingConfig": {"thinkingLevel": GEMINI_THINKING}} if GEMINI_THINKING
+                                    else {})}})
         candidate = (reply.get("candidates") or [{}])[0]
         warn_if_truncated(candidate.get("finishReason") == "MAX_TOKENS", model, max_tokens)
         text = "".join(part.get("text", "") for part in (candidate.get("content") or {})

@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 import pytest
 
 from libs import templates
+from libs.llm import cli
 from services.docgen import build, checks, pdf, run
 
 MERIDIAN = templates.find("cv", "meridian")
@@ -102,6 +103,24 @@ class FakeClient:
 
 # ── what reaches the model ────────────────────────────────────────────────────────────────────
 
+def test_a_chatgpt_letter_is_written_lean_and_a_cv_as_before():
+    """Owner, 2026-11-19: "yes use sol lean for letters". A letter goes to Codex with this platform's
+    instructions alone, about half of the person's ChatGPT plan for the same letter (CHANGELOG); a CV as
+    before until it is measured lean. The client is left as its caller had it."""
+    told, replies = [], [LETTER_ANSWER, ANSWER]
+
+    class Codex(cli.CliClient):
+        def complete_text(self, **call):
+            told.append(call.get("lean"))
+            return replies.pop(0)
+
+    client = Codex("codex_login", "{}", [].append)
+    build.draft(client, _request("cover"), model="gpt-6.2-sol")
+    build.draft(client, _request("cv"), model="gpt-6.2-sol")
+
+    assert told == [True, None] and client.lean is None
+
+
 def test_a_prompt_that_asks_what_a_page_holds_is_told_the_picked_looks_own_number():
     """Owner, 2026-11-14: tell the prompt the picked look's own number, so a CV is written for the page it
     will be drawn on. Meridian's is the 400 the prompt has always said."""
@@ -136,6 +155,21 @@ def test_an_ampersand_is_never_shown_as_its_code():
     assert "Fennel & Flint" in letter.prompt and "R&D Chef" in letter.prompt and "&amp;" not in letter.prompt
     assert "Fennel &amp; Flint" in letter.letter_to and "amp;amp" not in letter.letter_to
     assert letter.company == "Fennel & Flint"
+
+
+def test_a_letter_is_addressed_to_the_company_as_people_call_it():
+    """Owner, 2026-11-19: "the company name should be mentioned, not the long posted versions but from bosch
+    group we should say bosch". Code writes the block above the subject from the board's field, and it
+    showed the field as typed: a strapline ("VNOM | We get the job done"), "Group", every legal form."""
+    job = FakeJob()
+    for field, shown in (("Bosch Group", "Bosch"), ("VNOM | We get the job done", "VNOM"),
+                         ("J. RETTENMAIER &amp; SÖHNE GmbH + Co KG", "J. RETTENMAIER &amp; SÖHNE"),
+                         ("Fennel & Flint", "Fennel &amp; Flint"), ("Northwind", "Northwind")):
+        job.company = field
+        assert _request("cover", job=job).letter_to == f"{shown}<br>Berlin", field
+    # The letter's own words are still checked against the field as the board gave it.
+    job.company = "Bosch Group"
+    assert _request("cover", job=job).company == "Bosch Group"
 
 
 def test_the_prompt_carries_the_job_and_everything_they_switched_on():
@@ -879,6 +913,152 @@ def test_a_letter_that_closes_on_applying_is_sent_back_and_one_quoting_the_posti
     assert any("i would welcome" in fault for fault in checks.letter(welcome, company="Northwind"))
     assert checks.letter(quoting, company="Northwind", posting="We run a proactive payments platform.") == []
     assert checks.letter(quoting, company="Northwind"), "the same word, not the posting's, is a cliché"
+
+
+def test_a_letter_in_ai_language_is_sent_back_naming_it_and_a_persons_own_words_are_not():
+    """Owner, 2026-11-19: "make sure it passes without using any AI language". What current models write many
+    times as often as people do (CHANGELOG 2026-11-19, night): Gemini's vocabulary, GPT's and Claude's frames,
+    a chatbot's own words. The same things said literally, or quoted from the posting, are the person's."""
+    def faults(*changes: tuple[str, str], posting: str = "") -> str:
+        letter = GOOD_LETTER
+        for old, new in changes:
+            letter = letter.replace(old, new)
+        return " ".join(checks.letter(letter, company="Northwind", posting=posting))
+
+    gemini = ("The page has stayed fast since", "It is a testament to the team that the page has stayed fast")
+    gpt = ("so that refunds settle", "so that refunds settle, rather than simply queue,")
+    claude = ("Quiet nights are the measure I care about most.",
+              "Billing is not a back office, it is the product.")
+    chatbot = ("Quiet nights are the measure I care about most.",
+               "Let me know if you would like changes, [Your Name].")
+    literal = ("I rebuilt the billing service",
+               "I wear a safety harness near load-bearing walls, and I rebuilt the billing service")
+
+    assert "AI" not in faults(), "the letter as a person writes it"
+    assert "'testament to'" in faults(gemini) and "reads as written by AI" in faults(gemini)
+    assert "'rather than simply'" in faults(gpt)
+    assert "'is not a back office, it is'" in faults(claude)
+    assert "Let me know if you" in faults(chatbot) and "[Your Name]" in faults(chatbot)
+    assert "AI" not in faults(literal), "what the words mean when a person says them"
+    posting = "Our uptime is a testament to our engineers."
+    assert "AI" not in faults(gemini, posting=posting), "a turn the posting itself uses"
+
+
+
+def test_a_letter_names_its_employer_as_people_write_it():
+    """A board's company field is not what a person writes: "VNOM | We get the job done", "Bosch Group",
+    "J. RETTENMAIER & SÖHNE GmbH + Co KG", "Alloheim Senioren-Residenzen SE". Each letter written for those
+    named its employer as the posting does, and was sent back for not naming it: 6 of the 8 so sent back of 36
+    letters for people the wording was not tuned on (2026-11-18). A letter that names nobody still is."""
+    def opening(text: str) -> str:
+        return _letter(text, *GOOD_LETTER.split("</p><p>")[2:4])
+
+    def sent_back(text: str, company: str) -> bool:
+        return any("does not name" in fault for fault in checks.letter(opening(text), company=company))
+
+    for company, text in (("VNOM | We get the job done", "Bij VNOM plan ik graag de ritten van morgen."),
+                          ("Bosch Group", "I would like to join Bosch Service Solutions in Magdeburg."),
+                          ("J. RETTENMAIER & SÖHNE GmbH + Co KG", "Ich möchte zu J. Rettenmaier & Söhne."),
+                          ("Rushcliffe Care Limited", "I would like to join Rushcliffe Care Group."),
+                          ("Acme Ltd", "I would like to bring that to Acme."),
+                          # Written as the company writes itself, in lower case (2026-11-21).
+                          ("emagine Polska", "I would like to bring that to emagine as an analyst."),
+                          ("dmTECH Polska", "I would like to join dmTECH in Kraków.")):
+        assert checks.names_employer(text, company) and not sent_back(text, company), company
+    for company, text in (("Alloheim Senioren-Residenzen SE", "Ich möchte in Rheinfelden pflegen."),
+                          ("Person Centred Software", "I am a person who keeps a leadership team moving."),
+                          ("all inclusive Fitness", "I like an inclusive team on a busy gym floor.")):
+        assert not checks.names_employer(text, company) and sent_back(text, company), company
+    assert checks.employer("VNOM | We get the job done") == "VNOM"
+    assert checks.employer("J. RETTENMAIER & SÖHNE GmbH + Co KG") == "J. RETTENMAIER & SÖHNE"
+
+
+def test_a_number_written_the_way_another_language_writes_it_is_still_theirs():
+    """A Polish CV's "ok. 1 100 osób" is the English letter's "1,100": the check read "1" and "100", and the
+    payroll person's letter was sent back for inventing 1,100 under every wording (2026-11-19), a second call
+    each. So are a German "1.100" and a decimal comma ("3,5 Jahre", "3.5 years"), in a CV or a letter."""
+    for written, sources in (("about 1,100 people a month", "ok. 1 100 osób miesięcznie"),
+                             ("1,100 people", "rund 1.100 Beschäftigte"),
+                             ("3.5 years", "3,5 Jahre Erfahrung"),
+                             ("ok. 1 100 osób", "about 1,100 people"),
+                             ("1.250.000 EUR", "1,250,000 EUR"),
+                             ("120 clients since 2019", "Since 2019 120 clients")):
+        assert build.numbers_not_in(written, sources) == (), written
+    # A number they never wrote is still found.
+    assert build.numbers_not_in("about 1,200 people", "ok. 1 100 osób") == ("1,200",)
+
+
+def test_a_letter_names_its_employer_by_the_name_its_posting_uses():
+    """Letters for people the wording was not tuned on named their employer as its own posting does, and were
+    sent back for it, a second call each (2026-11-19): "1KOMMA5°", a name with figures in it; "AMC" of AMC
+    Global Media, three capitals; "JRS", the initials J. Rettenmaier & Söhne goes by in its posting. Initials
+    a posting never uses, or a name not written as a name, still do not name the employer."""
+    def sent_back(text: str, company: str, posting: str = "") -> bool:
+        body = _letter(text, *GOOD_LETTER.split("</p><p>")[2:4])
+        faults = checks.letter(body, company=company, posting=posting)
+        return any("does not name" in fault for fault in faults)
+
+    rettenmaier = "J. RETTENMAIER & SÖHNE GmbH + Co KG"
+    jrs = "Diese Arbeit möchte ich bei JRS in Rosenberg einbringen."
+    for company, text, posting in (
+            ("1KOMMA5° Commercial Solutions GmbH", "Damit bewerbe ich mich bei 1KOMMA5° als Elektriker.", ""),
+            ("AMC Global Media", "Jelentkezem az AMC Media Central Europe koordinátor munkakörére.", ""),
+            (rettenmaier, jrs, "JRS wächst in der Region und rund um den Globus.")):
+        assert not sent_back(text, company, posting), company
+    for company, text, posting in ((rettenmaier, jrs, ""),
+                                   ("AMC Global Media", "I would like to join amc in Budapest.", "")):
+        assert sent_back(text, company, posting), company
+
+def test_a_paragraph_over_four_sentences_is_cut_where_its_sentences_end_and_not_sent_back():
+    """A paragraph over four sentences sent Claude Haiku 5.5's first draft back, a second call on the
+    person's plan, 3 of 8 so sent back on the live wording (2026-11-20). It is cut in code, into paragraphs
+    of at most three, at its sentences' ends and not at a title's full stop; every word stays."""
+    long = ("At Northwind I run the night shift for twelve people. Dr. Baron asked me to train the new "
+            "starters. I wrote them a checklist. They learn the floor in a week now. Our lorries leave "
+            "on time. The rota is fair to everyone.")
+    paragraphs = re.findall(r"<p>(.*?)</p>", GOOD_LETTER)[1:]
+    written = _letter(paragraphs[0], long, *paragraphs[2:])
+
+    body = build.answer(f"<letter>{written}</letter>", "cover")
+
+    assert ("At Northwind I run the night shift for twelve people. Dr. Baron asked me to train the new "
+            "starters. I wrote them a checklist.</p><p>They learn the floor in a week now.") in body
+    assert checks.text(body).split() == checks.text(written).split()
+    assert not any("sentences" in fault for fault in checks.letter(body, company="Northwind"))
+    assert checks.paragraphs_split(GOOD_LETTER) == GOOD_LETTER, "a letter with nothing to cut is left alone"
+
+
+def test_a_letter_that_begins_without_a_greeting_is_read_from_its_first_paragraph():
+    """Every check skipped a letter's first paragraph, taken for the greeting: a letter that began without
+    one had its opening unread, and was sent back for not naming the employer it named there (1 of 144,
+    2026-11-20). A greeting is a few words not ended as a sentence."""
+    without = GOOD_LETTER.replace("<p>Dear Hiring Manager,</p>", "")
+
+    assert without != GOOD_LETTER
+    assert checks.letter(without, company="Northwind") == []
+    assert checks.letter_words(without) == checks.letter_words(GOOD_LETTER)
+    unnamed = without.replace("At Northwind I cut", "I cut")
+    assert any("does not name Northwind" in fault for fault in checks.letter(unnamed, company="Northwind"))
+
+
+def test_a_closing_paragraph_marked_as_the_sign_off_is_still_read_and_counted():
+    """A model marked its closing paragraph `closing`, the class of "Kind regards," alone, and the check
+    skipped it: 32 words uncounted, and whatever it said unread, which is where "I look forward to…" is
+    written (1 of 54 letters, 2026-11-18). The sign-off is the last paragraph so marked; one length for the
+    check and the bench."""
+    close = ("I would like to bring the same habits to your payments platform, starting with the parts that "
+             "wake people at night. Quiet nights are the measure I care about most.")
+    last = ("I would like to bring the same habits to your payments platform. I look forward to hearing "
+            "from you.")
+    marked = GOOD_LETTER.replace(f"<p>{close}</p>", f'<p class="closing">{last}</p>')
+    shorter_by = len(close.split()) - len(last.split())
+
+    assert marked != GOOD_LETTER
+    assert any("i look forward to" in fault for fault in checks.letter(marked, company="Northwind"))
+    assert checks.letter_words(marked) == checks.letter_words(GOOD_LETTER) - shorter_by
+    # Greeting, sign-off and name are not the letter's length.
+    assert checks.letter_words(GOOD_LETTER) == sum(len(each.split()) for each in re.findall(
+        r"<p>(.*?)</p>", GOOD_LETTER)[1:])
 
 
 def test_a_second_page_with_a_few_lines_on_it_is_sent_back_and_a_full_one_is_not():

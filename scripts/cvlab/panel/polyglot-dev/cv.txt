@@ -1,0 +1,27 @@
+Joanna Pike
+Software Engineer
+Manchester, UK · 07700 900417 · joanna.pike@example.com · github.com/jpike-example
+
+Profile
+Software engineer with six years in product teams, building backend services and the internal tools around them. I have shipped code in Python, Go, Java, JavaScript and TypeScript, and I work in whichever language the team's service is written in.
+
+Experience
+
+Software Engineer — Northgate Payments, Manchester                     Mar 2022 – present
+Card-payments processor for about 300 UK merchants.
+• Python (FastAPI) services for merchant onboarding and payouts, on PostgreSQL, Redis and Kafka.
+• Wrote the nightly reconciliation job that matches settlement files to payouts; unmatched items fell from about 400 a week to under 30.
+• Built one internal service in Go: a webhook relay that retries merchant notifications, about 1.5 million a day.
+• TypeScript and React for the internal support dashboard used by 25 support staff.
+• On call one week in six.
+
+Software Developer — Halden Bank, Leeds                                 Sep 2019 – Feb 2022
+• Java (Spring Boot) services for the mortgage application journey.
+• Moved the document upload service out of the monolith into its own service; upload failures fell from 3% to 0.5%.
+• JavaScript for the front end of the broker portal.
+
+Education
+BSc Computer Science, University of Sheffield, 2015 – 2019
+
+Skills
+Python, Go, Java, JavaScript, TypeScript, FastAPI, Spring Boot, React, PostgreSQL, Redis, Kafka, Docker, Kubernetes (basic), AWS, GitHub Actions

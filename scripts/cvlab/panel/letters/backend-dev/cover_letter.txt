@@ -1,0 +1,15 @@
+Tomasz Zieliński
++48 555 014 228 · tomasz.zielinski@example.com
+
+Dear Sir or Madam,
+
+I would like to apply for the Python Developer position in your company. I am a backend developer with over 4 years of experience in Python, Django and FastAPI, and I am passionate about building scalable and reliable systems.
+
+In my current job at Fernhill Software House I work on the backend for a logistics client and I am responsible for APIs, databases and integrations with carriers. I also improved the performance of some endpoints and I helped to move our services to Docker and AWS. Before that I worked in an e-commerce agency where I built backends for online shops.
+
+I am a team player, I like to learn new things and I always try to write clean code. I am looking for a company where I can grow as a backend developer and take more ownership of services, ideally remote or hybrid in Kraków.
+
+Thank you for your time and consideration. I look forward to hearing from you.
+
+Best regards,
+Tomasz Zieliński

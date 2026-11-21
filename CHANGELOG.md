@@ -14,6 +14,492 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-21, night — Claude models for letters, measured: Opus 5.5 reads better and writes in half the time, at fifteen times Haiku's price; nothing switched
+
+The owner: "look to one or two up the current claude model see the usage and see if it pays off to use a better
+model rather than the current one or one with better effort". On v20, for the 14 held-out people and the trap's three
+postings, each against what runs (Haiku 5.5 at medium, `build.EFFORT`): Haiku 5.5 at high effort, and Sonnet 5.5 and
+Opus 5.5 at medium, given the same prompt and documents (6,130 to 6,160 tokens in). Read by Claude's letter reviewer
+and hiring manager (Sonnet 5.5); GPT's readers not run, the ChatGPT week being at 97%. Paired by person and posting,
+± one standard error, * where the difference is at least two of them. `scripts/cvlab/out/sell-2026-11-21/models.sh`,
+`compare_models.py`; the Claude plan's windows read before and after each writing step, nothing else on the sign-in.
+
+| 14 held out, against Haiku at medium | Haiku, high | Sonnet, medium | Opus, medium |
+|---|---|---|---|
+| letter reviewer, overall (Haiku 65.0) | +0.07 ± 2.09 | +2.79 ± 1.37* | +5.00 ± 1.40* |
+| hiring manager, overall (63.7) | −0.64 ± 1.78 | +1.36 ± 1.70 | +2.86 ± 1.50 |
+| the chance of an interview (47.4) | +0.00 ± 2.66 | +1.64 ± 2.87 | +5.29 ± 2.81 |
+| lines not theirs, letter reviewer (1.43 a letter) | −0.21 ± 0.38 | +0.79 ± 0.33* | +0.14 ± 0.39 |
+| lines not theirs, hiring manager (1.21) | −0.21 ± 0.26 | +0.57 ± 0.37 | +0.21 ± 0.39 |
+| accuracy, hiring manager (8.50) | −0.14 ± 0.31 | −0.07 ± 0.27 | −0.14 ± 0.27 |
+| ATS, every check in all six looks (96.9) | 98.0 | 99.0 | 98.0 |
+| first drafts sent back (2 of 14) | 1 | 1 | 1 |
+| tokens out, a letter (7,023, most of it thinking) | 14,237 | 1,825 | 1,946 |
+| seconds a letter (38.9) | 75.3 | 14.3 | 19.7 |
+| the Claude plan's five-hour window, 14 letters | 2% | 5% | 7% |
+| a letter on an API key (Haiku $0.004) | $0.008 | $0.031 | $0.063 |
+
+API prices of 2026-11-03 a million tokens in and out: Haiku 5.5 $0.10 and $0.50, Sonnet 5.5 $2 and $10, Opus 5.5 $4 and
+$20. Haiku at medium's share of the window was not read tonight (its letters were written that afternoon); from its
+tokens, about 1% for 14. The window is read in whole percents. The whole run, 51 letters and 102 reviews, took 53% of
+a five-hour window and 4% of the week (27 → 31%).
+
+- **Haiku at high effort buys nothing**: no mark moved, at twice the tokens and twice the time (75 s a letter).
+- **Sonnet writes more that is not the person's** (gate 10: +0.79 ± 0.33* by the letter reviewer). Read line by line,
+  mostly wants and feelings they never gave ("I also like a varied caseload", "Support for professional
+  qualifications also matters to me", "the setting where I do my best work"), the fault v20 was written against. Worse,
+  whatever else it raises.
+- **Opus is the one that could pay.** The letter reviewer +5.0* (the reason for this employer +0.93 ± 0.22*, evidence
+  +0.50 ± 0.23*, the close +0.71 ± 0.22*); the hiring manager +2.9 and the interview chance 47 → 53, each just under two
+  errors; standing out +0.50 ± 0.17*; lines not theirs level, its own stretches of another kind ("close to where I
+  live" for a care home in the next town, "myself" for work done under supervision). And in half Haiku's time: 20 s
+  a letter, inside CLAUDE.md §0's 20 s, where Haiku at medium takes 39 s on v20. On the trap (three letters) Opus has
+  more lines not theirs by the hiring manager (+0.67 ± 0.33*) and the interview chance +4.0 ± 2.0*.
+- **Not shown.** Claude's reviewer is Sonnet 5.5, of the family of both bigger writers, so GPT's readers decide
+  (gate 2): on Opus's 17 letters after the ChatGPT week resets, 34 reads, about 4% of a week (Sonnet and Haiku at
+  high are out on the readings above). By the rule written into the run's log
+  before it started (two errors above Haiku on both Claude readers' overall, no more lines not theirs), no model has
+  passed yet: Opus is 1.9 errors on the hiring manager.
+- **What a switch would take.** `CV_MODEL` writes CVs as well as letters, and CVs were tuned and measured on Haiku
+  only, so a model for letters alone is a new setting; and whether every Claude plan a person signs in with offers
+  Opus 5.5 is to be checked. Not switched; the owner decides, after GPT's reads.
+
+## 2026-11-21, later — What the review left: every bookmark counted and reachable, Admin's answers said once, the fonts asked for from the page
+
+The owner, after `46128eb`: "no to both, and do the not done items too, then lets commit". The two noes: CVs on
+ChatGPT keep Codex's tools (the bench was not run, nothing changed), and the Jobs page goes on answering whole,
+its counts with its page ("Any time" stays near 520 ms on the dev copy's heaviest account). Each fix below has
+a test that fails on `46128eb`, run there in a scratch checkout with its own build. **Four of the items were
+measured and left, with their numbers, at the end.**
+
+### More marked jobs than a page
+
+- Bookmarks, Add a job and an alert's own list read the first hundred marks, dropped the closed jobs after,
+  and the heading counted the cards it was sent: somebody with 300 bookmarks, 30 of them closed, was shown
+  "90 bookmarked jobs" and no way to the other 180.
+- **A page of them, as long as a page of Jobs, and how many there are** (`link_routes.marked_jobs`,
+  `MarkedJobs`): the closed ones are left out before the page is cut, so a page is whole and the count is of
+  the jobs that can be opened. "Show more jobs" brings the next page, each job once (`useJobList`); one
+  skipped or applied to is one fewer in the heading at once.
+- One page length for every list of jobs (`FEED_PAGE`); `MARKED_SHOWN` is gone. Every card on such a page has
+  its text read ahead, which a hundred at once did not (`jobtext.ts` reads 25).
+- Measured, 300 bookmarks: 56 ms and 36.4 kB for 90 cards, to 24-38 ms and 10.1 kB for 25 and the count.
+
+### What Admin is sent is said by the handler that sends it
+
+- Twelve Admin handlers a page reads answered "an object", so the Admin pages kept a copy by hand of every
+  shape: 250 lines, the same address typed two ways in two files, and one type with a part the server had
+  stopped sending. Each now declares what it answers (`admin_routes.py`: `Health`, `AccountsPage`,
+  `PlatformSettings`, `SourceList`, `LimitCatalogue`, `CorpusPage`, `PipelineReport`, `SourcesFound`,
+  `LatencyReport`, `StageDetail`), the pages' types are made from that (`Schema<...>`), and the copies are
+  deleted. 345 lines in, 377 out.
+- **The settings' type is made from their defaults** (`PlatformSettings`, from `libs.settings.DEFAULTS`): a
+  setting added there is in the contract and in the pages with nothing else to write.
+- **A setting is stored only as what it holds** (`PUT /admin/settings/{key}`): text under a number was stored
+  as sent, read by the harvester as it stood (`int("many")`, which stops every run), and would now be refused
+  on the way back to Admin too. 400, "Nothing was changed"; a number written as text is the number.
+- **A tab is sent what it draws.** Removed, each with no reader in `web/src` (searched): the Latency tab's
+  end-to-end span, every lane's timings and an hourly series beside its rows (`latency_report`, `_delivered`,
+  `_judged`, and `_worst`, which nothing called but its own test; the lanes' timings were a read of every
+  finished queue job on each open of the tab), `admin_locked` and `created_at` on an account's row,
+  `posted_at` on a corpus row, `archive_overdue` and `expected_wait_min` on the health read (both still judged
+  by the alerts, server side), `defaults` beside the settings, and the pipeline's `at`.
+- A relationship test keeps it so: an Admin read typed `dict` fails the build
+  (`test_every_admin_read_says_what_it_answers`), and each tab is read with one of everything it can hold, so
+  a shape that does not fit is found there and not by an operator
+  (`test_each_tab_is_answered_whole_with_one_of_everything_it_can_hold`).
+- Left typed `dict`: eighteen handlers across the API that answer an acknowledgement nobody reads.
+
+### The fonts are asked for from the page itself
+
+- A font was asked for only when the first words were drawn, so they were drawn in another font and again in
+  their own a moment on. The two Latin text is set in (Inter, and Sora for titles) are named in the page's
+  head at build time (`web/vite.config.ts`, `hints`).
+- Measured on a visitor's first page, nine runs a side, alternated: the headline in its own font at 3.42 s
+  where it was 3.73 on a 1.6 Mbit connection, 0.85 s where it was 0.92 on 10 Mbit; layout shift 0.021 and
+  0.010 to 0. **What it costs:** the first paint of anything, which came before the headline, comes 0.28 s
+  later on the slow connection (3.13 s to 3.41) and 0.04 s on the ordinary one: it now comes with the headline.
+
+### Measured and left
+
+- **Job cards remembered between draws** (`memo`). One key typed in the Jobs search, on a phone's processor
+  (4x slower): 8 ms with 25 cards drawn, 16 ms with 100, 32 ms with 250. Nothing to win a person would notice.
+- **The blur under the phone's tab bar.** Seven seconds of scrolling 100 cards, three runs a side: 6.5 s of
+  main-thread work and 3.3 s of compositor either way, 6 to 11 late frames either way. As 2026-11-18 found for
+  the frosted bars.
+- **A ceiling on what the pages keep.** A visit that lists 1,000 jobs with their texts and makes 60 searches
+  keeps 5 MB (3.7 MB at first, 8.7 MB after). A ceiling would have to know which pages are open: one that
+  dropped an open page's answer would draw it empty.
+- **`TrustedHostMiddleware`.** The API has no open port: the only way in is the tunnel, which carries only the
+  hostnames set for it at Cloudflare, and nothing in the API reads a request's host (every link is made from
+  `PUBLIC_URL`). It would refuse nothing that can arrive, and a hostname wrong in it is every page answering
+  400. The hostnames are in Cloudflare's dashboard, not in this repository.
+
+### Gates
+
+On the commit alone (`cc934a4`), in a clean checkout: lint-imports 2 kept; ruff clean; the schema applies to an
+empty database (33 collections); the contract regenerates with no difference (103 paths); the site builds;
+pytest **1,831 passed, 7 skipped, 0 failed**. The run before it, with the machine at a load of 7.5 and the
+suite taking 12 minutes, had one failure, the sign-up walk's 1.5 s bound for a step (1.54 s); alone it passed 3
+times of 3. With the cover-letter work beside it: 1,938 passed, 7 skipped, and the two tab-order failures that
+belong to `web/src/places.tsx`.
+
+**A setting with no control, deleted** (owner, 2026-11-21: "lets delete the default freshness hour like you
+suggested"). `default_freshness_hours` had no control in Admin and never had one: the test that looks for one
+had been reading its name in a hand-written type. It decided one thing, the window of a board with none of its
+own, which is Findwork alone, six hours; that is the constant it was made from now
+(`settings.DEFAULT_FRESHNESS_HOURS`), and Findwork's window is still set from its own row in Admin. Nothing
+changes unless a value was stored for it on the server, which only a hand-made request could have done; a
+stored one is ignored from here on. The test's exception for it is gone, so the test fails on the commit before.
+
+## 2026-11-21 — Addresses without `/#/`, job cards without their text and a job that opens at once, boards read together, and what a log or a child process may not carry
+
+The owner, after `a14d91e`: "complete the not started items as well. we can actually remove the jobs descriptions
+... when we click the job, we should get an instant fetch of the description ... we could resolve the company
+boards reads ... sure we can make the landing page its own file. we can also fix the ai plan limits ... make sure
+... no secrets are being leaked anywhere ... instead of /#/ we can add something that is more appropriate like
+/jobs or /applied". Every fix has a test that fails on the code before it, each run against `a14d91e` in a scratch
+checkout with its own build. **What was measured and not built, and what waits on the owner, is at the end.**
+
+### A job's card carries none of its text, and the job opens at once
+
+- **The lists carry no description** (`FeedJob` has no `summary` and no `more`): Jobs, Bookmarks, Add a job and
+  what an alert found. The card is the title, where and when, its tags, the person's words and its buttons.
+- **A page reads the texts of the jobs it lists in one request, once the list is drawn**
+  (`GET /jobs/descriptions?ids=…`, `web/src/jobtext.ts`): Jobs after each page of 25, Bookmarks, Add a job and
+  Applied the first 25, and any card as the pointer or a finger reaches it. A job opened is drawn from what is
+  already there: 18 ms for the 25 texts of a page (99 kB) on the dev copy, behind the list and not in it.
+- One rule for one job's text and for a page of them (`dashboard_routes._texts`), and one for whose a job is to
+  open, asked of many at once (`libs.tenant.filters.theirs_among`): a job somebody wrote in is still theirs
+  alone, and a waiting plan still reads no job its list does not show yet.
+- **The list is quicker.** Its pipeline sorted whole postings and dropped their text after; the text is dropped
+  before the sort where no word of the person's is still being looked for (`libs.matching._read`). On the dev
+  copy, the heaviest account (5 words, 5,894 jobs): 24 hours 96 ms to 72, 7 days 202 to 150, "Any time" 624 to
+  523; the answer 25.2 kB to 17.7.
+
+### Addresses
+
+- **A page's address is a path**: `/jobs`, `/applied`, `/alerts?alert=3`, `/admin/accounts`
+  (`web/src/route.ts`). A link changes the page without loading the site again; Back and Forward work as
+  before, and a page with unsaved changes still asks.
+- **A browser going to an address gets the page, and the page's own code asking the same address gets the
+  data** (`services/api/guard.py`, `page_asked`). `/applied` and `/alerts` are both, so they are told apart by
+  what is asked for, which a browser says. The API's own addresses that answer a browser (two downloads, the
+  way back from Discord) are read off the contract, so a new download is one without being listed. The
+  development server follows the same rule from the same contract (`web/vite.config.ts`).
+- **An address from before still lands**: an emailed link, a bookmark, an alert already sent, a notification
+  stored with `#/alerts`. `#/feed?job=7` is `/jobs?job=7`.
+- **A token in a link stays after the `#`**: `/verify#token=…`, `/reset#token=…`. That part of an address never
+  leaves the browser, so the token is in no request and in no log on the way; it is sent once, in the body of
+  the request that spends it. Stripe and Discord come back to `/settings?stripe=back` and
+  `/settings?discord=linked`, which name nothing secret.
+
+### Company boards are read together
+
+- The nine ATS families were read one after another before any other board began (`cycle._gather`). They go
+  through the same pool as the rest, eight boards at a time.
+- **Never more boards are read at once than the shared client has connections** (`sources.ats.AT_ONCE`, 60): a
+  worker takes a turn first. Read together without it, the families' workers outnumber the connections, and a
+  read waits for one on its own clock and is timed out by boards it never asked. Twice today's thirty at most,
+  inside the harvester's 1 GB.
+
+### A plan's limits are asked of its provider once in a while
+
+- Every page load asked Anthropic or ChatGPT for each linked sign-in's limits, with the person's token, holding
+  a worker for up to 8 s. The answer is kept on the account for five minutes (`libs.llm.limits.LIMITS_KEEP`,
+  `UserSecret.limits`), and asked again at once when a document has been made since, which is when the site
+  shows them (owner, 2026-11-19). Never told to anybody but the account's owner.
+
+### The landing page is a file of its own
+
+- Somebody signed in is not sent it: the site's script is 110.5 kB zipped where it was 120.0. The price cards,
+  which the plan and upgrade pages and Admin use too, are a module of their own (`landing/pricecards.tsx`).
+- A visitor's browser asks for it from the page itself, before the site's script has run
+  (`<meta name="landing">`, `public/theme.js`), and it is attached by hand, not through React's `lazy`, which
+  held the page back some 300 ms: measured on a 1.6 Mbit connection, 3.04 s as one file, 3.50 s split the
+  plain way, 3.05 s as built. On 10 Mbit, 0.87 s either way.
+
+### What may not carry a secret
+
+- **The web server's line for each request stops at the `?`** (`libs.obs.logs._NoQuery`). It named the whole
+  address: a search somebody typed, the email an admin looked an account up by, the code Discord sends a
+  person back with.
+- **The document worker keeps to itself** (`libs.secrets.process`). It holds the key to every stored credential
+  in its environment, and a program it starts could read that, being the same user. An AI tool that can run
+  commands is given the text of a job posting, which anybody can write. Nothing the worker starts can read it
+  now, whatever tools that program has.
+- Looked for and not found: a key in any tracked file, in the history of every commit, or in the built site.
+  `certificates/`, `logs/` and `.env` are ignored. No answer of the API names a password hash, a sealed
+  credential or a token.
+
+### Measured and not built
+
+- **Postings stored in batches.** Storing one takes 31 ms, of which the database is 4.4; the rest is reading
+  the posting once for everybody. A batch would also make the first job of a run wait for the last, which is
+  the opposite of what was asked for ("ideally we don't want to ... show it to the users late").
+- **The posting's text in a collection of its own**, which yesterday's entry said would bring "Any time" under
+  300 ms. Measured today on a copy of the postings without their text and match features (840 bytes each, from
+  6,425): 591 ms to 539. It would not. The time is the list's own work over 5,894 matches: reading 13,895
+  postings to keep those (317 ms), then their words, the two orders and the counts beside the filters. What
+  would do it is answering the page first and the counts after; a change to what the page shows first.
+- **`TrustedHostMiddleware`**: every link the site sends is made from `PUBLIC_URL`, never from the request's
+  `Host`, so a forged one changes nothing a person is sent; the list it needs has to match the tunnel and the
+  compose names or the site is down.
+- Not done, each its own change: Admin's hand-written response types against response models on its handlers
+  (some twenty handlers, and a wrong model answers 500); "100 bookmarked jobs" said as a total where it is a
+  ceiling (the answer needs a total and the page a way to the rest); memoised job cards, the kept reads'
+  growth in a tab left open, the blur under the phone's tab bar and preloaded fonts, none of which has a
+  measurement behind it yet.
+
+### Waits on the owner
+
+- **ChatGPT writing CVs without its tools.** Letters already do (lean, 2026-11-19). For a CV it is one word in
+  `services/docgen/build.LEAN`, halves the tokens of the person's plan, and takes away the tools nothing here
+  uses; but it changes what the model is told, and so what a CV says, which CLAUDE.md §3b sends to the bench
+  first (`scripts/cvlab/run.py --codex-lean`), on a ChatGPT plan. Not run: it spends the owner's plan. The
+  reason it mattered for safety is closed without it (the worker keeps to itself).
+
+## 2026-11-21 — Letters that sell what is true: v14 live, then v20, a hiring manager's read and a claims gate on the bench
+
+The owner, after reading the letters: "if v14 is better than v13 then lets make it live"; "we should be writing the
+top best cover letter to sell each user to the job ... paying attention to detail which doesn't mean be soft about
+selling a user with words to job, no, it means make sure the strong points and facts about a user are indeed
+correct"; "even if it means making a filter where we are reverse engineering the cover letter as a hiring manager
+would want to see it"; "I did not say anywhere that my main languages are go and typescript"; "leave gemini out for
+now, we only need gpt and claude". The last iteration.
+
+### v14 is live
+
+v13 was the stock-phrase line, dropped on 2026-11-20; the letters the owner read were live (v12) and v14. v14 was
+measured against v12 on the same people and postings (worse nowhere, better by one reviewer on each model; the
+2026-11-20 evening entry), and v13 was never shown better than v12, so v14 is ahead of both by the same measure.
+`libs/prompts/write_cover.md` is version `4b8d15b93bfc`; v12 is kept as
+`libs/scaffolds/history/write_cover.2026-11-21.pre-v14.md`. This supersedes that entry's "v14 is not live". The
+prompt and document tests: 113 passed.
+
+### Every document a person gives reaches the letter
+
+Asked by the owner, checked in the code: `build.prepare` hands the writer every CV and every cover letter the person
+has switched on (`suggestions.documents_of`), each under its own heading, their About you, their diplomas and other
+files, and the languages on their CV and in their search. Only a posting over 15,000 characters is cut
+(`build.POSTING_MAX_CHARS`).
+
+### Two new gates: the hiring manager's read and nothing bigger than the record (CLAUDE.md §3b, 9 and 10)
+
+- **`scripts/cvlab/eval_hire.md`, `run.py --reviewer hire`.** A reviewer that reads a letter as the hiring manager
+  deciding whom to invite: it works out from the title and the posting what the hire must show and what would make
+  them hesitate, then the best case this person's whole record can make, then checks every claim against that
+  record. Marks: the first lines, how much of the best case the letter makes, proof, doubts settled, whether it
+  stands out from the pile, accuracy; and the chance of an interview, out of 100. Kept beside the letter reviewer's
+  verdict (`.hire.json`), never over it. Its first read of v14 (22 postings) put the interview chance at 33 in 100:
+  most of the panel's postings are a step up for the person.
+- **How much it moves on the same letter.** Six v14 letters read three times by Claude's hiring manager: within a
+  letter the overall mark moves by 1.9 out of 100 and the interview chance by 3.2 (standard deviation), each single
+  mark by 0.1 to 0.4, and the count of lines not theirs by up to 2. A difference between two wordings is read
+  against that, paired.
+- **The trap.** Two made-up developers for postings that ask for Go: `backend-dev` (Python only, for 1dea and
+  Alpaca) and `polyglot-dev` (Python, Go, Java, JavaScript and TypeScript, none ranked, Go on one service, for
+  Alpaca), apart from the 25 (`bench.sh trap`). The owner's letter called two of the five languages they had used
+  their "main" ones.
+- Gate 1 now says letters are measured on weak documents of the person's own; gate 6 leaves Gemini out for now.
+
+### What the readers found in the live wording
+
+Claude's two reviewers, on v14's letters for the 22 tuning postings:
+
+- **The subject line claimed a speciality** in 17 of 22 letters: "[title or field] specialising in [area]" is the
+  shape the prompt asked for, so a school leaver with four months of Saturdays was "specialising in client support".
+- The person's work said to be the posting's work ("this role extends it to the CEO", "the APIs behind the agent
+  tools are that work"), a shared result written as theirs alone ("I brought food cost down", where their CV says
+  "we"), wants they never wrote ("I want to run my own kitchen one day").
+- Licences and registrations the posting requires and they hold left out (the Care Certificate, an IMI Level 3,
+  C+E and ADR); doubts left open (a move from Leipzig, an Irish licence still to exchange); and v14's own reason
+  turned against them ("early shifts only" for a shift job, study support for a bank post).
+
+### v16 to v20, on the 22 tuning postings (Haiku, Claude's two reviewers, against v14)
+
+Paired by posting, ± one standard error, * where the difference is at least two of them. Every draft is kept in
+`libs/scaffolds/history/` with its README row.
+
+| draft | what it adds to v14 | Claude's letter reviewer | Claude's hiring manager | a letter costs |
+|---|---|---|---|---|
+| v16 | the reader's needs and doubts planned first, licences named, doubts settled, wants the job does not meet left out, nothing bigger than their documents | opening −0.52 ± 0.22*, overall −1.18 ± 1.30 | doubts +0.45 ± 0.22*, overall +1.36 ± 1.07 | +2,114 tokens out, +9.0 s |
+| v17 | v16's rules without its longer plan; the subject "[title or field] with [experience]" | opening −0.48 ± 0.16*, evidence −0.41 ± 0.13*, honesty +0.77 ± 0.33*, lines not theirs −0.77 ± 0.30* | overall +2.73 ± 0.78*, accuracy +0.86 ± 0.23*, doubts +0.55 ± 0.21* | +1,866, +7.1 s |
+| v18 | v17 with v14's opening rule back | opening −0.52 ± 0.20*, evidence −0.36 ± 0.12*, honesty +1.09 ± 0.31*, lines not theirs −1.00 ± 0.29* | overall +2.95 ± 0.81*, accuracy +1.18 ± 0.20*, lines not theirs −1.50 ± 0.32* | +1,514, +6.0 s; 4 of 22 opened on the application |
+| v19 | v18 and "true is not timid" | opening −0.38 ± 0.19*, honesty +0.50 ± 0.29 | accuracy +0.95 ± 0.19*, overall +1.86 ± 0.96 | +744, +3.1 s |
+| **v20** | v18 and never opening on the application, in any words | overall −0.09 ± 1.09, opening −0.10 ± 0.12, honesty +0.95 ± 0.34*, lines not theirs −0.77 ± 0.30* | overall +2.45 ± 1.05*, accuracy +0.91 ± 0.27*, lines not theirs −1.23 ± 0.34*, interview +1.86 ± 1.70 | +1,331, +5.1 s |
+
+v20 against v14, word for word: the plan notes what would make the reader hesitate and the licences the posting
+requires; a new rule says each thing exactly as strongly as their documents do (no speciality, rank or label they do
+not give themselves, no part of a list as all of it, a shared result kept shared, nothing the posting asks for
+claimed as theirs, wants from their own words only); the subject is "[title or field] with [experience]"; the
+opening never opens on the application in any words; the middle never calls their work the same as this job's,
+names the licences the job requires that they hold, settles a doubt in one plain sentence and never apologises; the
+reason leaves out wants this job does not meet; a quality is shown, never claimed, and no past employer is run
+down. About 245 words more, nothing of v14 taken out. v20 is `scripts/cvlab/variants/cover/v20.md`, version
+`f42e0895942b`.
+
+### v20 on the 14 held-out people and the trap, both models (Claude's two readers, against v14)
+
+| | Haiku, 14 held out | Sol lean, 14 held out | Haiku, trap (3) | Sol lean, trap (3) |
+|---|---|---|---|---|
+| Claude's letter reviewer, overall | +0.64 ± 1.14 | +0.50 ± 1.60 | +0.67 ± 2.40 | +3.00 ± 3.21 |
+| its honesty | +0.64 ± 0.32 | −0.07 ± 0.37 | +0.67 ± 0.88 | +0.67 ± 0.67 |
+| its lines not theirs, a letter | −0.79 ± 0.37* | +0.00 ± 0.42 | −1.33 ± 0.67* | −1.00 ± 1.00 |
+| Claude's hiring manager, overall | +4.36 ± 1.42* | +2.29 ± 1.68 | +2.67 ± 1.20* | −1.00 ± 1.00 |
+| its best case | +0.50 ± 0.17* | +0.07 ± 0.20 | +0.33 ± 0.33 | +0.00 ± 0.00 |
+| its doubts settled | +0.71 ± 0.29* | +0.36 ± 0.31 | +0.67 ± 0.33* | +0.00 ± 0.00 |
+| its accuracy | +0.86 ± 0.27* | +0.71 ± 0.24* | +0.67 ± 1.20 | −0.33 ± 0.33 |
+| the chance of an interview | 43.3 → 47.4, +4.07 ± 1.42* | 41.0 → 44.6, +3.64 ± 1.93 | 14.7 → 16.3, +1.67 ± 0.88 | 15.3 → 21.3, +6.00 ± 0.58* |
+| its lines not theirs, a letter | −0.71 ± 0.29* | −0.71 ± 0.22* | −1.33 ± 1.20 | +0.67 ± 0.67 |
+| ATS, every check in all six looks | 96.9 both | 99.0 both | 100 → 90.5 | 100 → 95.2 |
+| first drafts sent back | 2 → 2 of 14 | 0 → 1 of 14 | 2 → 1 of 3 | 0 → 0 of 3 |
+| AI language, invented numbers | none on either | none | none | none |
+| tokens out | +1,737 ± 746* | −30 ± 14* | +489 ± 1,236 | −25 ± 13 |
+| seconds | +15.5 ± 3.6* (v14's written the day before) | +1.5 ± 1.4 | −3.4 ± 5.6 | −1.3 ± 0.8 |
+
+- **Lines not theirs, every set, writer and Claude reader together: 226 on v14, 142 on v20.** Each was read by a
+  person (gate 10). Most left on v20 are small (a purpose added to a duty, "every" where the CV gives no
+  frequency); the ones a recruiter would catch are all one kind: Haiku still writes a want the person never said,
+  often in the posting's words ("the part of care I enjoy most", "a team where the Payroll Manager helps identify
+  development opportunities is the kind of place where I want to", an on-call rota "including evenings and
+  weekends"). v20's "what they want comes from their own words only" made them fewer, not none.
+- **The trap.** All six v14 trap letters, on both models, put a speciality in the subject ("Python Backend
+  Developer specialising in API platforms and integrations"); no v20 letter does. No letter on either wording ranks
+  the polyglot developer's five languages: Sol's v20 says "Python and Go backend experience" and "I am happy to work
+  primarily in Go" (her About you: "happy in python or go or whatever the team uses"), Haiku's "Go, which I have
+  shipped in production, and I work in Python and TypeScript too". Haiku's "My main language is Python, not Go"
+  stands on a CV of four and a half years of commercial Python and "some JavaScript". One Haiku v20 letter ends on
+  a want the Python developer never had, "I would like to help build the firmware for your sensors and cameras",
+  two paragraphs after saying firmware would be new to him; no check catches that. Another first draft did not
+  name Alpaca, which production sends back.
+- **ATS.** On the tuning and held-out sets v20 reads exactly as v14. On the trap, the misses are the bench's title
+  and company checks, not parsing: 1dea's title is "Golang | Go Developer | Python | Cloud | IoT | security" and
+  the letters say "the Go Developer role" (the owner asked for the title roughly, 2026-11-19), and the first draft
+  without Alpaca.
+
+### GPT's hiring manager, and v20 live
+
+The owner, that evening: "if better make v20 live, otherwise don't", and "we can run the gpt now we freed up some
+space". The ChatGPT week stood at 90% with no credits on the account, so its last tenth went in the order of what
+decides, each step started only if it could end at or below 99% (`sell-2026-11-21/gpt-now.sh`): GPT's hiring manager
+(gpt-6.2-astra at medium) on Haiku's 28 held-out letters (the week 90 → 94%), then on Sol's 28 (94 → 97%), about
+0.13% of the week a read. GPT's letter reviewer did not fit. What "better" had to mean was written into the run's log
+at 20:07, before any read came back: GPT's hiring manager puts v20 above v14 by two standard errors on overall or
+accuracy on at least one writer, no GPT read puts it two below on overall, accuracy, honesty or lines not theirs on
+any writer, and the checks stay as they are.
+
+| GPT's hiring manager, 14 held out | Haiku | Sol lean |
+|---|---|---|
+| overall | 71.4 → 75.3, +3.93 ± 1.72* | 79.1 → 79.1, +0.07 ± 1.14 |
+| first lines | +0.64 ± 0.23* | −0.14 ± 0.27 |
+| best case | +0.50 ± 0.23* | −0.14 ± 0.10 |
+| proof | +0.36 ± 0.20 | −0.14 ± 0.10 |
+| doubts settled | +0.07 ± 0.27 | +0.43 ± 0.31 |
+| stands out | +0.00 ± 0.18 | −0.14 ± 0.18 |
+| accuracy | +0.86 ± 0.43, two errors exactly | +0.21 ± 0.19 |
+| the chance of an interview | 69.2 → 68.6, −0.64 ± 2.18 | 73.6 → 72.9, −0.71 ± 1.61 |
+| lines not theirs, a letter | 2.00 → 1.29, −0.71 ± 0.38 | 0.50 → 0.36, −0.14 ± 0.14 |
+
+- **v20 met the rule and is live.** Both hiring managers put it ahead on Haiku's letters; on Sol's, Claude's finds
+  it more accurate and GPT's level; no reader on either platform finds it worse on either model, and the checks read
+  as before. `libs/prompts/write_cover.md` is version `f42e0895942b`; v14 is kept as
+  `libs/scaffolds/history/write_cover.2026-11-21.pre-v20.md` with its README row.
+- **What GPT's read did not move:** the chance of an interview on either model (Claude's: +4.1 on Haiku), standing
+  out, and anything on Sol's letters. GPT marks Sol's letters above Haiku's (79 against 71 on v14); a difference
+  paired within one writer is not touched by that.
+- **Every line GPT's hiring manager called not theirs on v20 was read** (gate 10): 18 on Haiku's 14 letters, 5 on
+  Sol's. Most are precision (PPK "returns" where the record has contributions, "every run" where it says per run).
+  The kind a recruiter would catch is the one Claude's readers found: a want the person never stated ("the part of
+  care I enjoy most", on both models; the paralegal's long career "in St Albans" where she asked for Cardiff or
+  Bristol), and two subjects that stretch the record (forty years "in boilers" for forty in the trade, four years
+  "as a key person" for four in a nursery).
+
+### What did not move, and what is worse
+
+- Claude's letter reviewer's overall mark moved on no set: v20's gains are in honesty and the lines not theirs,
+  and the hiring manager's read, not in that reviewer's overall view.
+- The reason for this employer: −0.36 ± 0.19 on the tuning set (just under two errors), 0.00 on Haiku's
+  held-out people and +0.21 on Sol's, −1.00 on each of Haiku's three trap letters, where v20 leaves out wants the
+  job does not meet and a Python developer has few true reasons to want a Go job. The close: −0.41 ± 0.28 on the
+  tuning set, +0.21 on Haiku's held-out letters.
+- Standing out from the pile (the hiring manager): −0.14 ± 0.15 tuning, +0.14 held out. Nothing here made letters
+  more memorable; the gain is in what they get right.
+- On Sol, the hiring manager's overall (+2.29 ± 1.68) and interview chance (+3.64 ± 1.93) are not shown; its
+  accuracy is.
+- Haiku writes about a third more tokens out on v20 (thinking), five seconds more a letter on the tuning set. One
+  Sol first draft of 17 sent back on v20, none on v14 (a colon in a sentence).
+
+### Not run
+
+- **GPT's letter reviewer on v20, and GPT's readers on the trap** (gate 2's GPT half; gate 9 ran on the held-out
+  letters). The run stopped at 20:12 with the week at 97%; it resets 2026-11-22 at 18:34 UTC. Then
+  `scripts/cvlab/out/sell-2026-11-21/gpt-now.sh v20` again: the hiring manager's reads are kept and cost nothing, the
+  rest is 80 reads, some 10% of a week. A reader that puts v20 two errors below v14 there takes it back out.
+- GPT's readers on the five tuning drafts: not run, by design (Claude's only while tuning).
+- Gate 8 (language): letters are measured in English for now (owner, 2026-11-19).
+- Gemini: left out (owner, 2026-11-21).
+
+### The brand field (the owner's question), and a company that writes its name in lower case
+
+**What a brand field would do.** The employer check (`checks.names_employer`) reads the board's company field. For
+hotels, theme parks and care groups that is the owner (Minor Hotels Europe and Americas, Merlin Entertainments,
+Rushcliffe Care), while the posting and the letter rightly name the place (NH Collection, LEGOLAND, Beaumanor). Such
+a letter is sent back for a second call on the person's plan, the second draft names the group, which reads worse,
+and the address block prints the group too. On the bench it was 3 of the 14 held-out postings. In the 36,656
+described postings in the local database, 9,392 (25.6%) never write the board's company name in their own text
+(LinkedIn 24%, JustJoinIT 36%, the company boards 0 to 1%), but most of those name no employer at all (agencies,
+"join a team building ..."), so the brand case is a smaller part of that quarter.
+
+**How hard.** A field filled at harvest is the hard way: no board gives the brand reliably, so it would be
+per-source parsing and still partial, a column with half a producer. The small way: the letter's writer, which
+reads the posting anyway, says which employer name it wrote to, the check accepts that name only when those exact
+words are in the posting (so it can be neither invented nor copied from the person's old letter), and the address
+block prints it. About thirty lines and their tests and no new field, but one line in the prompt: a prompt change,
+so the owner's yes and a bench run first (§3a, §3b). Not built.
+
+**Built: a company that writes its own name in lower case.** The same check wanted a capital, so that "a person
+who" is not Person Centred Software; a letter naming "emagine", "dmTECH" or "j-labs" as those companies write
+themselves was sent back. 2,305 of 36,910 postings (6.2%, 383 companies; emagine Polska alone 1,145) are such
+companies. The company's own first word is now accepted written exactly as it writes it, and only its first word:
+"an inclusive team" still does not name All inclusive Fitness. Test in `tests/test_docgen.py`, failing before.
+
+### Raised, unprompted (CLAUDE.md §5)
+
+- **Haiku's "I would like to bring that ... to the ... role at ..."** is in 8 of 22 tuning letters on v14 and v20
+  alike and in 9 and 10 of 14 held-out ones; Sol's "what draws (drew) me to" in 4 and 6 of 14. Formulas a
+  recruiter would learn. Gate 3 says such a formula goes on the AI-language list, which production sends back:
+  about half of Haiku's letters would then take a second call on the person's plan. Recommend: leave both off the
+  list; the owner decides.
+- **"The part of [the work] I enjoy most"**, in 8 of 39 Haiku letters on v14 and on v20, 6 of 39 of Sol's on v14 and
+  4 of 17 on v20: a formula on both models, and most often a preference the person never stated, so the readers
+  count it as not theirs. On the AI-language list it would send about one letter in five back for a second call; a
+  prompt line against it would be a new wording and a new bench run. Recommend: neither now; the owner decides.
+- **Letters take longer on v20**: Haiku 28 s a letter against 23 s on the tuning set (+1,300 tokens out, its
+  thinking), above CLAUDE.md §0's "done < 20 s" already before. What it bought is above; a letter streams while it
+  writes.
+- **The bench's Claude window had no reading before a run.** It ran out at 10:33 after about 390 calls in 45
+  minutes (some 120 Haiku letters and 266 Sonnet reviews); `limits.read` shows Claude's windows only while the stored
+  sign-in's token is fresh, and in the morning it showed none. No tokens were lost (the reviews that failed are
+  recorded as failures and were read again at 13:32). Leave the code as it is: read both plans before each round.
+- **`tests/test_templates.py::test_every_cv_look_puts_a_jobs_dates_at_the_right_and_shows_none_where_there_are_none`**
+  launches a browser with an empty path when `CHROME_BIN` is unset and fails, where its neighbours skip with "needs
+  CHROME_BIN". Recommend: the same skip (§7, a test needing a live stack sits behind an explicit skip).
+
+### Gates
+
+On this commit alone, in a clean worktree at `68ff22f` with the staged tree read in (the owner's uncommitted web
+files not in it), after the last change to any file but this one: `lint-imports` 2 kept, 0 broken; `ruff check .`
+all passed; `python -m libs.db --prune` on an empty database of the local mongod, exit 0; the contract dump and
+`git diff --exit-code` clean; `npm --prefix web run build` built; `pytest tests/ -q -rfEs` with only `MONGODB_URI`
+(the local mongod) and `CHROME_BIN` set: 1,941 passed, 0 failed, 7 skipped (Stripe test keys, the Postgres copy
+source, the reference instance), in 16 minutes.
+
+Corrected: the morning's run (10:52) reported 24 `test_linkedin_sweep.py` failures as failing the same on `46128eb`.
+They were the gate run's own: it loaded the whole of `certificates/dev.env`, which switches LinkedIn off
+(`HARVEST_LINKEDIN_DISABLED`); without it all 28 pass, on `68ff22f` and on this commit. The same run's two
+`test_e2e_site.py` failures (the landing page's ATS line, the tab order) do not occur on this commit alone.
+
 ## 2026-11-20, night — The review's unfinished list: services that are not root, a content policy, pages that ask once, and the pages' own bugs
 
 The owner, after the review's fixes were committed (`5c737fd`): "commit your work, and complete the not done work
@@ -550,6 +1036,925 @@ from Stripe: it reads `discord_user_id` on the Stripe customer and subscription.
     is one person's. Unset, linking is not offered.
   - The browser walk `test_a_person_links_their_discord_from_the_bar_and_then_joins` goes from the bar to
     Discord's page (a stand-in that says yes) and back to Settings, "Linked as Jordan E", with joining next.
+
+## 2026-11-20, evening — Letters for people whose own letter is weak: v14 measured and waiting on the owner, a long paragraph cut in code, the bench writes only what the site would
+
+The owner, after the afternoon's entry: "go with option 2 and 3 please ... a user cannot make a cover without
+uploading their own cover letter first so we will always get an example and from there a reason as to 'why this
+employer' can always be deducted to match a users about you section plus their cover letter"; "when we are testing
+users should have an about you section and a cover letter, both probably weak"; "lets make this the last
+iteration". Option 2 was fewer first drafts sent back (each a second call on the person's plan); option 3 a wording
+that says how to give the reason.
+
+### The bench writes only what the site would
+
+The site makes no letter for someone who has not uploaded one of their own (`libs.documents.needs`), and 19 of the
+letter bench's 25 people had none: every letter measured until today was for a case no person can reach. The bench
+now refuses it as the site does, and `--overlay` lays each person's own documents over the panel:
+`scripts/cvlab/panel/letters/` holds a weak cover letter for all 25 (90 to 190 words, written earlier for another
+employer, in their own language, with stock phrases, typos where they type so, and a motive or two said vaguely)
+and a weaker About you for the 14 whose own was clear, every fact and limit kept. It is apart from the panel because
+the fit score reads every file in a panel folder and its people were rated without these. The letters went to a
+fresh folder (`scripts/cvlab/out/cvs-weak`), so nothing written from the old inputs was reused.
+
+### Option 2: a paragraph over four sentences is cut in code
+
+`checks.paragraphs_split`, in `build.answer` beside the em dash and date repairs: a paragraph over
+`MAX_PARAGRAPH_SENTENCES` becomes two or more of at most three, cut where its sentences end and not at a title's full
+stop ("Dr. Baron"). Of the 764 letters kept on the bench, 53 had one; after the cut none does, and no word changed.
+It was 3 of the 8 first drafts Claude Haiku 5.5 had sent back on the live wording this morning.
+
+A letter that began without a greeting had its first paragraph skipped by every check, taken for the greeting, and
+was sent back for not naming the employer it named there (1 of 144): a greeting is now a few words not ended as a
+sentence.
+
+Not fixed, and why:
+
+- **A colon in a sentence** (3 of those 8): no rule rewrites one without leaving a fragment ("Much of my day is
+  personal care. Washing, dressing..."), so it stays a second call.
+- **A brand its owner's name does not match.** The board's company is the group (Minor Hotels Europe and Americas,
+  Merlin Entertainments, Rushcliffe Care) and the letter rightly names the place (NH Collection, LEGOLAND,
+  Beaumanor): 3 of live's 5 first drafts sent back for the 14 held-out people, and both of v14's. Two rules were
+  tried and taken out. The workplace after a dash in the title waived the check for "Housekeeping - Room
+  Attendant", whose second half is the job; a name from the posting not in the title or their documents cleared 23
+  of 37 letters, on place names ("St Albans", "Windsor", "Torino"), "CEO" and a sentence's "This". No rule tells a
+  brand from a place; a posting's own brand field is the clean fix (raised below).
+
+### Option 3: the reason found from their own letter and About you (v14)
+
+Measured on Haiku with Claude's reviewer on the panel's own 11 people (22 postings), against live (v12), all on the
+weak documents:
+
+| on 22 tuning postings | v14 | v14 and three example reasons | v15 (the posting's things first) |
+|---|---|---|---|
+| the reason for this employer | −0.18 ± 0.20 | **−0.41 ± 0.19** | −0.18 ± 0.22 |
+| the opening | **+0.48 ± 0.20** | +0.27 ± 0.22 | +0.32 ± 0.23 |
+| the voice | −0.27 ± 0.18 | **−0.32 ± 0.15** | −0.09 ± 0.23 |
+| ATS in every look | 99.4, as live | 96.8 (−2.6 ± 1.5) | 99.4 |
+| sent back | 1 of 22, as live | 3 | 1 |
+| tokens out | **−1,090 ± 490** | −920 ± 410 | −970 ± 455 |
+
+The examples (trades not on the panel) made the letters worse and are kept as
+`libs/scaffolds/history/write_cover.cvlab-v14-ex.md`; v15 moved nothing v14 had not, and is kept as
+`write_cover.cvlab-v15.md`. v14 (`scripts/cvlab/variants/cover/v14.md`, version `4b8d15b93bfc`) is v12 with: their
+own letters shown as weak and full of stock phrases, so their voice is kept and the phrases left behind; the
+reason found from what their letters and About you say they want, joined to something particular in the posting;
+and said as the reason itself, not how the job makes them feel. On all 36 postings, the 14 held-out people never
+tuned on, both models, both reviewers (GPT's at medium), ± one standard error, * at twice it:
+
+| v14 against live | Claude Haiku 5.5 | ChatGPT Sol, lean |
+|---|---|---|
+| Claude's reviewer, 14 held out | **+3.4 ± 1.5 \***; opening +0.36 ± 0.17 \*, evidence +0.57 ± 0.17 \* | +0.2 ± 1.4 |
+| GPT's reviewer, 14 held out | +0.6 ± 1.5 | **+1.4 ± 0.6 \*** (12 read: 2 verdicts quoted no line of the letter) |
+| Claude's reviewer, all 36 | +1.6 ± 1.1; opening +0.43 ± 0.14 \* | +0.4 ± 0.9 |
+| GPT's reviewer, all 36 | +0.5 ± 0.9; opening +0.36 ± 0.19 | not run on the 22 tuning postings (the ChatGPT week) |
+| the reason for this employer | Claude's 0.00 ± 0.16, GPT's −0.08 ± 0.22 | Claude's −0.14 ± 0.15, GPT's +0.33 ± 0.22 |
+| first drafts sent back | 6 → 3 of 36 | 1 → 0 |
+| ATS, every check in all six looks | 98.0 → 98.4 | 99.2 → 99.2 |
+| AI language (`checks.AI_LANGUAGE`) | 0 → 0 | 1 → 0 |
+| numbers in neither their documents nor the posting | 1 → 0 | 0 → 0 |
+| letters with a stock link | 19 → 17 | 26 → 16 ("appeals to me because" 12 → 0) |
+| tokens in, out, seconds a letter | +137; **−774 ± 374 \***; **−3.5 ± 1.5 s \*** | +105; +6 ± 9; level |
+
+Nothing is worse by either reviewer on either model; each model is better by one reviewer and level by the other,
+and Haiku's opening is up by both. What did not move is what option 3 was for: **the reason for this employer stays
+where every wording has left it** (Claude's reviewer about 4.5 of 10, GPT's 6 to 7), now with a weak letter and
+About you of their own to work from. What the reviewers write: the reason a letter gives is a kind ("a step up",
+"more variety", "a busy site"), and the better one names a thing particular to that employer. A cost seen in
+reading: v14 sometimes asks for what the person said they want where the job cannot give it (the nurse's study
+support, for a bank post). Haiku's own "I would like to bring that ..." is in 13 letters where it was in 8.
+
+Not run: GPT's reviewer on Sol's 22 tuning postings (it would have taken the ChatGPT week from 89% to about 95%,
+and a tenth is kept for the owner); Gemini (no key); letters in other languages (English only, owner 2026-11-19).
+The runs took the ChatGPT week from 75% to 89%.
+
+**v14 is not live.** It waits on the owner's yes or no (CLAUDE.md §3a). Letters to read side by side, live and v14
+from both models for six people with their own weak documents: `scripts/cvlab/out/examples-2026-11-20-v14/`.
+
+### Raised, unprompted (CLAUDE.md §5)
+
+- **A posting's brand.** The employer check reads the board's company field, which for hotels, resorts and care
+  groups is the owner. A `brand` the posting itself uses, kept beside the company when they differ, would let the
+  check accept it and the address block print it. Recommend: the owner decides whether it is worth a field.
+- **`paragraphs_split` cuts to at most three sentences**, the prompt's own "two or three" written a second time in
+  code. Leave: the check's limit is `MAX_PARAGRAPH_SENTENCES` (four), and three only decides where a cut lands.
+- **`GREETING_WORDS` (8)** is the longest greeting a check passes over. Leave in code: no operator will set it.
+
+### Gates
+
+Local, on a local mongod (CLAUDE.md §7): lint-imports 2 kept, 0 broken; ruff clean; the schema pruned on an empty
+database; the build compiles. The API contract changed, from the other session's uncommitted Admin accounts
+paging (`q`, pages), not from this work, and the dump wrote it. pytest: 1,842 passed, 7 skipped (Stripe test keys,
+the Postgres copy, the reference instance), 1 failed and 21 errors, the failure the landing page's "99% passed
+all official ATS checks" in `test_e2e_site.py` (the other session's page), the errors gone on a rerun of the
+browser tests (the other session was editing the site during the run). The files this work touches
+(`test_docgen`, `test_cvlab`, `test_cli`, `test_columns_have_producers`, `test_templates`): 369 passed, none
+skipped. `test_a_constant_is_defined_in_one_place` caught a name this work first gave the paragraph cut
+(`_SENTENCE_END`, also in `libs.corpus.postings` with another meaning): renamed `_PARAGRAPH_CUT`.
+
+## 2026-11-20 — Every letter in English (v12 live); the bench checks the first letter it pays for and runs four calls at a time
+
+The owner, after the night's entry: "yes test the stock phrase prompt line, keep medium effort, english for every
+live letter yes"; then, after the bench wasted a night: "make sure you do not make mistakes like that ever again
+because it costs us a lot of tokens", and "find an efficient way of doing things ... we can definitely drastically
+reduce the runtime while keeping everything fair".
+
+### Every letter in English: `write_cover.md` v12 is live
+
+`libs/prompts/write_cover.md` is version `ca6693d975c4` (was `43c12b6c9150`, kept as
+`libs/scaffolds/history/write_cover.2026-11-20.pre-v12.md`). A letter is written in English whatever language the
+posting and the person's documents are in, spelt as the posting spells (British when it is not in English); the
+subject line, greeting and sign-off lose their other-language clauses. The job title as the posting gives it stays.
+
+Measured on the bench (36 postings: the 28 English ones and the 8 that are not), paired by person and posting,
+Claude's reviewer (Sonnet 5.5, `eval_cover.md`) and GPT's (`gpt-6.2-astra`, high), medium effort, ± one standard
+error, * where the difference is at least twice it:
+
+| v12 against live v10 | Claude Haiku 5.5 | ChatGPT Sol, lean |
+|---|---|---|
+| Claude's reviewer, 28 English postings | +2.1 ± 1.1; evidence +0.29 ± 0.12 *, voice +0.36 ± 0.12 * | +1.9 ± 0.9 * |
+| GPT's reviewer, English postings | +0.7 ± 1.1 | +0.4 ± 0.7 |
+| every ATS check in all six looks, English | 28 → 26 of 28 (−0.07 ± 0.05) | 27 → 27 of 28 |
+| sent back by the production checks, English | 1 → 4 of 28 (+0.11 ± 0.08) | 1 → 0 of 28 |
+| AI language (`checks.AI_LANGUAGE`) | 0 → 0 | 0 → 0 |
+| tokens in | −55 | −46 |
+| the 8 postings in German (4), Hungarian (2), Italian, Dutch | all 8 now English; Claude's reviewer +3.1 ± 2.2 against the letters in their own language; sent back 4 of 8 (5 before) | all 8 now English; Claude's reviewer **−4.1 ± 1.1 \***, GPT's −0.8 ± 1.4; sent back 1 of 8 |
+
+On English postings nothing got worse by either reviewer, and Sol's letters read better to Claude's. What it
+costs: by Claude's reviewer, Sol's English letter for a posting in another language reads worse than the one it
+wrote in that language. That is the price of English for everyone, not a fault in the wording, and it reverses
+with the history file. The two Haiku letters out of the ATS checks named the job ("Vehicle Technician" for a
+"Vehicle Mechanic") or the agency differently, as letters do from run to run; one is sent back for it anyway.
+
+### The stock-phrase line (v13): measured, dropped by the owner
+
+v12 plus one line, "No stock phrases", naming the habit (a sentence about bringing their experience to the role,
+a reason brought in by what draws them or appeals) rather than listing words (the Antislop finding).
+
+| v13 against v12, 36 postings | Claude Haiku 5.5 | ChatGPT Sol, lean | Sol, plain (written by mistake, below) |
+|---|---|---|---|
+| letters with a stock link | 19 → 13 (−0.17 ± 0.09) | 30 → 0 (−0.83 ± 0.06 *) | 25 → 0 (−0.69 ± 0.08 *) |
+| Claude's reviewer | −0.6 ± 1.2 | −0.2 ± 0.8; why this employer −0.47 ± 0.18 * | +1.8 ± 0.9; opening, evidence, fit, voice each up * |
+| GPT's reviewer | −0.0 ± 0.7; close −0.39 ± 0.18 * | −0.6 ± 0.7 | −0.6 ± 0.8; why this employer −0.42 ± 0.19 * |
+| every ATS check in all six looks | 33 → 31 of 36 | 34 → 34 | |
+| sent back | 8 → 9 of 36 | 1 → 1 | 2 → 0 |
+| AI language | 0 → 1 (". That matters") | 0 → 0 | 0 → 0 |
+| tokens in | +118 | +89 | +88 |
+
+It takes the stock links out of every Sol letter and a third of Haiku's, whose own "I would like to bring" is still
+in 12 people's letters (16 before). Neither reviewer calls the letters better, and where one moved, the reason for
+this employer (Sol) or the close (Haiku) got worse: the stock link was carrying the reason. Not shown better
+(CLAUDE.md §3b: better only where both reviewers say so). Dropped on the owner's word ("we'll go with not
+adopting the stock phrase lines, so drop it, and we'll try something different"); kept as
+`libs/scaffolds/history/write_cover.cvlab-v13.md`.
+
+### The bench wrote 72 ChatGPT letters plain and kept them as lean (fixed)
+
+The bench hands production's call (`build.draft`) a lazy wrapper around the client, and `build.draft` turns lean on
+only for a `cli.CliClient`. So v12's and v13's 72 Sol letters went to Codex plain, 18,781 to 22,258 tokens in where
+lean takes 7,679 to 10,165, and were kept under `gpt-6.2-sol+lean` as though lean. Nobody looked until the run had
+finished: it spent the ChatGPT plan's five hours, cut GPT's reviewer off 47 letters short, and lost a night.
+Production was never affected (`paying_client` hands `build.draft` the `CliClient` itself).
+
+- `_LazyClient.opened()` hands production's call the client itself, and one rule (`_lean`) says both where a
+  document is kept and what its record says (the record also said `codex_lean: true` on Claude's letters). The 72
+  letters are moved to `gpt-6.2-sol/` with their records corrected: the plain-Sol column above.
+- `build.draft` tells the client lean with the call (`complete_text(lean=True)`), where it used to set and reset
+  `client.lean`: with calls running together on one client, one letter's reset could have sent another plain.
+- **A run is checked on its first paid document** (`_FirstPaid`): it is written alone, and the run stops there if
+  it took more than 1.5 times the middle of the tokens in of the documents kept for the same model and setup
+  (`--costs-more` when a setup is meant to cost more). Last night's run would have stopped at one letter. This
+  morning's: 8,318 against 8,364 for 55 kept. Every cell's log line now says its tokens in. Written into
+  `CLAUDE.md` §3b.
+
+### Four calls at a time on one sign-in, fairly
+
+One call at a time on a sign-in was the rule since 2026-11-14, when a renewal nobody saved retired the local
+Claude sign-in: a renewal retires the copy every other call holds. Read from the stored sign-ins this morning, a
+tool renews only when its session runs out: Claude's lasts about five hours and Codex's ten days, and neither was
+renewed in the hundreds of calls between (Claude's last renewal 2026-11-19 20:38, none again until it ran out;
+Codex's none since 2026-11-10).
+
+- `libs.llm.cli.expires` reads when a sign-in's session runs out, and `CliClient._turn` lets calls on one client
+  run together while more than `FRESH_FOR` (30 minutes) is left; a call that may renew waits for the others and runs
+  alone. A call compares what the tool left with the copy it started from, so one that renewed nothing never writes
+  an older copy over a newer one. Production is unchanged in effect: the docgen worker makes one call at a time.
+- The bench runs `--concurrency` (4) on a sign-in as on a key, and refuses to open two clients on one sign-in (a
+  writer and a reviewer on one plan, where one's renewal would retire the other's copy: possible before, never hit).
+- This morning, on the real sign-ins: Claude's, run out at 01:43, was renewed by the first call alone (07:46:38)
+  and saved; its reviewer then read 108 letters four at a time in 7 minutes (22 last night, one at a time). Sol
+  lean wrote 36 letters in under 3 minutes (about 9); GPT's reviewer read 108 in 10 minutes (31). Same models,
+  wordings, effort and reviewers; seconds a document under concurrency are not compared with serial runs.
+- The ChatGPT window still ran out (back at 12:27). It held 72 lean letters and about 100 of GPT's reviews at high
+  effort; last night's held 72 plain letters and 143. Whether running together spends the window faster is not
+  measured: the plan is shared with any other Codex use. Each full window took about 16% of the ChatGPT week
+  (30% → 62%, back on 2026-11-22). The 13 GPT reviews of Haiku's letters the window left were read at 15:13
+  (above). The run queued for them at 12:29 started at 15:03 and stopped: making v12 live had renamed what it
+  looked for (`variants/cover/v12.md`, and "live" letters under v12's version). Nothing was lost, since a review
+  is kept beside its letter; it ran again under the old names.
+
+### GPT's reviewer at medium effort reads as high does, for less of the plan
+
+The owner: "maybe we can reduce the high effort on GPT to reduce usage slightly, hopefully without losing out on
+the quality of the reviewer". GPT's reviewer (`gpt-6.2-astra`) read Sol lean's live and v12 letters on the 28
+English postings at medium (56, each read at high before), and the 28 v12 ones at high a second time, from copies,
+to know how far high differs from itself:
+
+| the same 28 letters | high against high again | medium against high |
+|---|---|---|
+| agreement of the marks (r) | 0.91 | 0.88 (0.93 against the second high read) |
+| mean gap, of 100 | 1.0 (largest 4) | 1.3 (largest 5): +0.36 ± 0.26 over high's own |
+| same yes or no | 26 of 28 | 25 of 28 |
+| agreement with Claude's reviewer (r) | 0.66, 0.67 | 0.73 |
+
+- Over all 56, medium marks +0.3 ± 0.3 above high, and finds as much: said that is not theirs 0.55 a letter (high
+  0.54), left out 2.14 (2.25), three fixes of 110 words (112).
+- On v12 against live it finds what high found: +0.7 ± 0.7 against +0.4 ± 0.7, no part moved by either; the 28
+  pair differences agree r = 0.75.
+- A review on the same letters: tokens in the same (8,039, 8,036), out 636 against 826 (no reasoning against 190),
+  18 seconds against 23, and 0.80% of the ChatGPT five-hour window against 0.93% (56 took 45%, 28 at high 26%, read
+  from the plan before and after each step; the plan is shared with any other Codex use). About 125 reviews a
+  window where high allows about 107; each step's share of the week: 7% for the 56, 4% for the 28.
+- What it cannot show: one reviewer model, on letters of its own family, in English; 28 letters show a large loss,
+  not a small one.
+
+So the bench's GPT reviewer runs at `--judge-effort medium` (CLAUDE.md §3b). Both sides of a comparison are read
+at one effort: a review is kept by its effort, so a side read only at high so far is read again at medium the
+first time it is compared.
+
+### Raised, unprompted (CLAUDE.md §5)
+
+- **`_FirstPaid.CEILING` (1.5) and `cli.FRESH_FOR` (30 min)** are the bench's guard and a safety margin on the
+  tools' behaviour, not product settings. Leave in code.
+- **`_turn` rests on how the tools renew today.** If a provider's tool starts renewing early, before `FRESH_FOR`,
+  calls running together could retire a sign-in. Re-read the stored sign-ins' `updated_at` after a tool update.
+- **One process a sign-in is kept by the scripts, not the code**: two bench processes on one sign-in would each
+  have their own `_turn`. The docgen worker is one process. Leave; it is said in `libs.llm.cli`'s docstring.
+
+### Gates
+
+Local, in CLAUDE.md §7's order, MongoDB a local mongod: `lint-imports` 2 kept, 0 broken; `ruff` all passed;
+`libs.db --prune` on an empty scratch database, done and dropped; the contract unchanged; the site built;
+`pytest tests/ -q -rs` 1,809 passed, 2 failed, 7 skipped (5 Stripe keys, the Postgres copy, the reference
+instance). The 2 failures are `test_e2e_site.py`'s tab order and phone tab pictures, on uncommitted
+`web/src/places.tsx` changes from other work in the tree, as on 2026-11-19; nothing here touches the site.
+
+## 2026-11-19, night — ChatGPT letters on Sol, lean; a check for AI language; the gates a letter change must pass
+
+The owner, after the evening's report: "yes use sol lean for letters, and lets just stick to english covers for
+now its 10x easier and we can actually optimise for quality first as well, reducing token usage for all models
+and ATS passing as well. Ideally we need to research for some anti AI language and seer through the cover letters
+now and make sure it passes without using any AI language ... You can do some research into some common problems
+for each model too"; and "lets save some of these filters that we use for cv and cover letter optimizations into
+claude.md". No prompt was changed.
+
+### ChatGPT letters on Sol, lean
+
+- `libs.settings.DEFAULT_DOCUMENT_MODELS["codex"]` is `gpt-6.2-sol`. It was empty, which let Codex pick the
+  plan's default: Sol on Plus today, but a change at OpenAI would have changed every ChatGPT document and its
+  cost with nothing changed here. An operator's choice in Admin still wins.
+- A letter goes to Codex lean (`services.docgen.build.LEAN`, which sets `CliClient.lean` for that call only):
+  8,824 tokens in against 19,890 for the same letter, about half the person's plan, with both reviewers, the
+  ATS checks and the language read level or better (the evening's entry). A CV is written as before until it
+  is measured lean; then lean is the only path and the plain one goes. The bench keeps a ChatGPT letter under
+  `<model>+lean` as production now writes it.
+- One risk, raised: a ChatGPT plan without Sol now fails where the plan's default would have written. Sol is
+  on Plus, Business and Pro; Free and Go list only Luna, and not in the Codex CLI.
+
+### English letters
+
+Letters are measured in English for now. The bench's English set is the 9 panel people's 18 postings and the 10
+held-out letters that are English (28). Live, a letter for a posting in another language is still written in
+that language: forcing English is a line in `write_cover.md` and waits for the owner (§3a).
+
+### A check for AI language
+
+What reads as written by AI, researched (sources kept with the list in `services/docgen/checks.py`):
+
+- Graphite's per-model rates over 10,000 human and 90,000 AI articles (graphite.io/research/ai-tells, Sept 2026,
+  Opus 5.5 update Oct 2026): the classic words ("testament to", "navigating", "unwavering", "underscores",
+  "furthermore") are now Gemini's, at 8 to 26 times a person's rate, and at or below a person's in GPT-5.6 Sol,
+  GPT-6 Astra and Claude Opus 5. GPT and Claude now give themselves away in frames: "not simply" (Astra 155x,
+  Sol 74x), "rather than simply", "matters because" (Sol 101x), "less like … more like" and "is not a X; it is
+  Y" (Claude 55-120x), "This matters" (Opus 5.5 116x).
+- Kobak et al., Science Advances 2025 (15.1M abstracts): "delves" 28x in 2024, down to 8x by mid-2025.
+- Pangram's phrase rates; the Antislop paper (ICLR 2026), which also found that telling a model to avoid a list
+  of words can backfire; recruiters' quotes from AI letters (Reboot Online's ~100 applications: "natural flair",
+  "insatiable curiosity", "express my keen interest").
+- The em dash is a tell people believe more than one the 2026 measurements show (Sol 0.31 a thousand words
+  against a person's 3.13). A letter's are replaced by code already (`build.answer`).
+
+`checks.AI_LANGUAGE` holds only what a person almost never writes in a letter, so one sends the letter back for
+a second call: a chatbot's own words, placeholders and markdown; Gemini's vocabulary; recruiters' AI phrases;
+GPT's and Claude's frames. Left out on purpose, being words people use too and a letter too short to tell the
+two apart: "practical", "steady", "dependable", "rather than", "crucial", "additionally", lists of three. A turn
+the posting itself uses is the person's to quote, as with clichés. "delves", "delved" and "delving" join
+"delve" in `CLICHES`, which missed them.
+
+Measured before it was switched on:
+
+| | hits |
+|---|---|
+| 20 AI-style sentences (the research's) | 17 caught; the 3 missed are the ordinary words left out and an em dash |
+| 33 sentences as a person writes them, with "landscape gardener", "safety harness", "load-bearing walls", "foster care" | 0 |
+| 1,234 English job postings in the local corpus, company copy | 8.3% hit any; none above 2.1% ("unwavering commitment", "unparalleled security", "doesn't align perfectly with every requirement"). Dropped for it: "pivotal role", "fostering a culture", "unlock the potential" (8.0%) and "elevate the" (common in hospitality); narrowed: "As an AI Platform Engineer" |
+| every English letter kept on the bench, every model and wording (452) | 1: Luna's "rather than simply" |
+
+So the live wording already keeps the measured AI vocabulary out of every model's letters, and the check costs
+next to no second calls today. It is there for a model that drifts, and for Gemini, the model these words now
+belong to. The bench counts it on every letter (`ai_language`).
+
+### What gives each model away now: its formula
+
+What the list cannot see is the phrase one model writes for many different people. `scripts/cvlab/formulas.py`
+lists them (English letters, phrases of four words or more said for at least a fifth of the people):
+
+| writer (live wording) | its formula, and for how many of the people |
+|---|---|
+| Haiku | "I would like to bring that" 13 of 19; "I am applying for the" 9 |
+| Haiku at low effort | "I am applying for the" 11 of 19; "I would like to bring" 10 |
+| Sol | "appeals to me because" 9 of 19; "I want to take" 7 |
+| Sol lean | "what draws me to" 8 of 19; "I want to build on that" 5; "appeals to me because" 5 |
+| Terra lean | "bring that experience to" 14 of 19; "the chance to work" 10; "appeals to me because" 9 |
+| Luna lean | "I would bring that" 8 of 9; "I would like to help" 7 |
+
+A recruiter reads one letter from each person, but many people's letters from the same model: this is how "I
+am excited to apply" became a tell. Sending these back would cost a second call on a third to three quarters of
+letters, so the fix belongs in the wording, and is the owner's (§3a). The Antislop finding is the reason to name
+the habit rather than list the words.
+
+What the two reviewers ask to fix, by model (English letters, share of letters whose three fixes name it):
+"why this employer" is generic for every writer (Claude's reviewer 78-100%); GPT's letters close weaker (Sol
+64%, Sol lean 75%, Terra 79% against Haiku 46%); Haiku claims more than the documents say (43% and 33%); Luna
+lists duties, not what came of them (50%).
+
+### Haiku at low effort
+
+Tokens: a Claude letter is about 6,000 tokens in and 6,200 out, of which about 400 are the letter and the rest
+thinking at `build.EFFORT = "medium"`; a Sol lean letter is 8,700 in and 400 out. Haiku at low effort, the same 28
+English letters, paired:
+
+| low against medium | |
+|---|---|
+| Claude's reviewer (61.5) | +1.6 ± 1.1; evidence +0.46 ± 0.15 *, voice +0.46 ± 0.13 * |
+| GPT's reviewer (71.8, 18 letters) | +1.8 ± 1.4; fit +0.39 ± 0.16 * |
+| tokens out | 6,166 → 3,517 (−2,649 ± 344 *) |
+| seconds | 27.4 → 16.5 * |
+| sent back by our checks | 1 → 8 of 28 * (company not named 4, paragraph over four sentences 4, a colon 3) |
+| every ATS check in all six looks | 28 → 26 of 28 |
+| no complete letter in the answer | 0 → 1 of 29 (none in about 378 letters before) |
+
+As good a letter by both reviewers, for less thinking, but it keeps the rules less well: with its second calls
+counted it saves about 30% of output tokens and 25% of the time, and one letter in 29 would have failed. Not
+adopted; `build.EFFORT` is shared by CVs and letters, and a letter's own effort is the owner's call.
+
+### The gates, written down
+
+`CLAUDE.md` §3b lists what a CV or letter change must pass before it is adopted: fair people, a reviewer on each
+platform, no AI language and a look at each model's formulas, the production checks and their send-back rate,
+ATS in every look, every model a person can pick, cost, and (when other languages return) a blind read.
+
+### Gemini
+
+Still unmeasured: only the Gemini sign-in is linked, and Google stopped serving those to Gemini CLI on
+2026-06-18. An API key is the route.
+
+### Waiting on the owner
+
+1. A wording against each model's formula (a line naming the habit of reusing a stock linking phrase, not a
+   list of words), measured on Haiku and Sol lean, English letters, both reviewers.
+2. Haiku at low effort for letters: as good, about 30% fewer output tokens with second calls counted, 8 of 28
+   sent back and one incomplete letter in 29. Or keep medium.
+3. Whether letters for postings in other languages are written in English for now (a `write_cover.md` line).
+4. A Gemini API key.
+
+### Raised, unprompted (CLAUDE.md §5)
+
+- **`AI_LANGUAGE` is a dated list.** Tells change with each model (65% belong to one family; Graphite). It is
+  measured again when a provider's model changes; `formulas.py` and the bench's `ai_language` count are how.
+- **`build.LEAN` and `cli.CODEX_LEAN` are two switches for one thing** until CVs are measured lean. Leave: the
+  first is production's, the second the bench's, and both go when lean is the only path.
+- **`build.EFFORT` is one value for CVs and letters.** Leave until a letter effort is decided.
+- **The bench's English set lives in a git-ignored script** (`scripts/cvlab/out/english-2026-11-19/bench.sh`).
+  If English-only stays, the set belongs in `scripts/cvlab/panel/README.md` beside the people.
+
+### Gates
+
+Run locally on the shared tree, MONGODB_URI a local mongod: lint-imports 2 kept, 0 broken; ruff all passed; the
+schema on an empty database, pruned; the contract regenerated and unchanged; the site built; pytest 1,806 passed,
+2 failed, 7 skipped (5 Stripe without test keys, the Postgres copy, the reference instance). The 2 failures are
+`test_e2e_site.py`'s tab order, from another session's uncommitted reorder of `web/src/places.tsx`, failing the
+same way before this work; `test_docgen`, `test_cvlab`, `test_cli` and `test_ai_accounts` pass on the final code.
+
+## 2026-11-19, evening — Cover letters on GPT: a ChatGPT letter for half the plan; fair test people; a reviewer on each platform; a language read
+
+The owner: "lets review [GPT] once again, see if we can use a cheaper model that uses less tokens perhaps, to get
+the same results so less usage is used from a users gpt subscription ... once we get a good result we can test it
+on the ATS as well make sure it passes that and languages and all the others. Lets do the same level of analysis
+on Gemini ... Testing to see if we did well can be also done on a higher tier model on the same platform because
+... claude might be biased"; and "make sure the testing we are using is fair, so different cover letters for
+different people going into different industries and we add 'about you' sections just like on the app". The CV
+is left for later. Every letter here is from the live wording (v10, `43c12b6c9150`); no prompt was changed.
+
+### Fair test people
+
+16 of the 25 people the letter tests use had no "About you"; each has one now, as a person types it, in the
+language of their CV (`scripts/cvlab/panel/README.md`). Where a person's home was far from the jobs they are tested
+on, they say they would move; the sales assistant's "anywhere in Greater Manchester" changed the same way. With
+them, Haiku's letters read more like the person (voice +0.33 ± 0.11 over 18 pairs) and nothing else moved.
+
+### What a ChatGPT letter costs, and the lean mode
+
+Codex adds its own coding-agent instructions, tools and web search to every call: a one-word answer took 13,856
+input tokens. Told this platform's instructions as its own (`model_instructions_file`) with web search, its
+instruction blocks and its tools off, 4,842; a letter 19,890 → 8,824 (−11,065 ± 1 over 18 pairs), and quicker
+(held out 20.6 → 15.1 s a letter). In ChatGPT credits (learn.chatgpt.com/docs/pricing, uncached) a letter is about 1.1 on Sol as it runs
+today, 0.55 on Sol lean, 0.27 on Terra lean and 0.03 on Luna lean. Codex calls now run with `--json`, so a
+ChatGPT document records its tokens like the others (it recorded none). `libs.llm.cli.CODEX_LEAN` is off for
+users: it would change ChatGPT CVs too, which are not measured lean.
+
+### Which GPT
+
+Same 18 postings for each, 9 panel people; then 16 held-out people (18 postings, five languages). Paired by
+person and posting, ± one standard error, * at least two.
+
+Panel, against Sol as it runs today:
+
+| | Sol lean | Terra lean | Luna lean | Haiku |
+|---|---|---|---|---|
+| Claude's reviewer (Sonnet 5.5), of 100 (Sol 61.8) | +0.2 ± 1.7 | −0.8 ± 2.1 | −2.5 ± 2.5, voice −0.61 ± 0.22 * | −1.0 ± 1.6 |
+| GPT's reviewer (gpt-6.2-astra, high) (Sol 78.8) | +2.1 ± 1.4 | −2.4 ± 1.9, voice −0.44 ± 0.12 * | −5.3 ± 2.3 * | −7.0 ± 1.5 * |
+| passing every ATS check in all six looks | 17 of 18 (Sol 17) | 18 | 18 | 18 |
+
+Luna at high effort was no better (Claude's reviewer −2.4 ± 1.9, voice −0.61 ± 0.16 *) and took 44 s a letter;
+Luna is out. Sol lean's honesty was lower by Claude's reviewer (−0.56 ± 0.26 *) and not by GPT's (−0.11 ± 0.24).
+
+Held out, against Sol as it runs today:
+
+| | Sol lean | Terra lean | Haiku |
+|---|---|---|---|
+| Claude's reviewer (Sol 62.7) | −0.1 ± 1.1 | −1.8 ± 1.2: close −0.94 ± 0.21 *, why here −0.44 ± 0.18 *, evidence −0.39 ± 0.14 *, honesty +0.59 ± 0.23 * | −0.9 ± 1.2 |
+| GPT's reviewer (Sol 79.9) | −0.4 ± 0.5: why here −0.56 ± 0.23 *, fit −0.39 ± 0.16 * | −3.3 ± 0.9 *: close −1.00 ± 0.27 *, why here −0.94 ± 0.17 *, voice −0.56 ± 0.12 *, honesty +0.72 ± 0.29 * | not read (allowance) |
+| passing every ATS check in all six looks | 17 of 18 (Sol 16) | 17 | 16 |
+| sent back by our checks | 0 of 18 (Sol 1) | 0 | 5 * |
+| seconds a letter (Sol 20.6) | 15.1 * | 11.8 * | 26.6 * |
+
+### The language read
+
+The held-out letters not in English (16 German, 8 Hungarian, 4 Dutch, 4 Italian: 8 from each writer) were given
+blind, under codes, to native-level readers (Claude Opus agents), every letter of one posting to the same reader:
+errors a careful native reader would notice, naturalness and register 1–5
+(`scripts/cvlab/out/models-2026-11-19/languages.py`). Every letter was read twice by different readers, who agreed
+closely (errors r = 0.93, naturalness r = 0.81); the figures are the mean of the two reads.
+
+| errors a letter, both reads | Sol | Sol lean | Terra lean | Haiku |
+|---|---|---|---|---|
+| mean | 1.62 | 0.81 | 2.44 | 5.88 |
+| against Sol lean | +0.81 ± 0.44 | – | +1.62 ± 0.39 * | +5.06 ± 0.96 * |
+| naturalness (1–5) against Sol lean | −0.38 ± 0.16 * | – | −0.62 ± 0.21 * | −1.19 ± 0.16 * |
+| by language: German, Hungarian, Dutch, Italian | 1.8, 2.5, 0, 1.0 | 0.9, 1.5, 0, 0 | 2.6, 2.8, 2.0, 1.5 | 5.9, 10.0, 2.0, 1.5 |
+
+Sonnet 5.5 was then written on the same 8 postings and read blind beside Haiku and Sol lean (a third read): Sonnet
+− Haiku −0.88 ± 0.93 errors, Sonnet − Sol lean +3.50 ± 0.60 *. A larger Claude does not close it. About a fifth of
+Haiku's errors (18 of 94) are the person's own informal words carried over from their About you (Sonnet 4 of 38,
+Sol lean 0 of 13); the rest are its own.
+
+**A wording for it, v11, moved nothing.** v10 with the language line asking for the letter "as an educated native
+speaker of that language writes a job application: correct grammar, spelling and idiom, its formal register, and
+its usual formal greeting and sign-off. Their notes and documents may be informal or have mistakes; keep what they
+say, not how they typed it." On Haiku's 8 letters, read blind beside the live ones: errors −0.12 ± 0.58,
+naturalness −0.12 ± 0.23; the reviewer's score +0.4 ± 2.2, ATS in every look unchanged. Not adopted; kept as
+`libs/scaffolds/history/write_cover.cvlab-v11.md`. The live wording stays.
+
+Across the four reads, live Haiku against Sol lean: +4.9, +5.3, +4.4 and +4.3 errors a letter, each at least four
+standard errors.
+
+Haiku, the live Claude writer, makes most of its errors in the writing itself (35 of 44: case endings and
+spelling in Hungarian, wrong words in German). A few are mechanical and every writer makes them: a capital after
+"Sehr geehrte Damen und Herren," (Haiku 4 of 4 German letters, Terra 3, Sol lean 2, Sol 1), a comma after "Mit
+freundlichen Grüßen" (Haiku 3), and a Hungarian greeting translated from "Dear Hiring Manager" ("Tisztelt
+Felvételi Vezető!", all four writers). The readers are Claude models and read GPT's letters as the better ones, so
+this is not a preference for Claude.
+
+### A reviewer on each platform
+
+GPT's reviewer is gpt-6.2-astra at high effort on the owner's ChatGPT plan, given `eval_cover.md` unchanged through
+the lean call (`--judge-provider codex --judge-model gpt-6.2-astra --judge-effort high`; verdicts kept apart by
+reviewer). Over 144 letters both read, the two agree moderately (r = 0.54) and GPT's is 15.8 points more generous.
+GPT's rates every GPT setup above Haiku on the panel (−7.0 ± 1.5 * for Haiku) where Claude's sees them level (−1.0 ±
+1.6), so each likely leans to its own family; the decisions here are the ones both agree on. Astra is the costliest
+model on the plan (6–50 messages per 5 hours), so it read 144 letters, not every set (not Luna at high effort, not Haiku held out).
+
+### Gemini
+
+Not measured: Google ended Gemini CLI's Google sign-ins on 2026-06-18 (developers.googleblog.com, 2026-05-19), and
+the owner's newly linked sign-in gets the same answer as on 2026-11-15. A Gemini API key is the route; the bench
+is ready for one (`--provider gemini`, `--gemini-thinking`, a Gemini reviewer by `--judge-provider gemini`).
+
+### Waiting on the owner
+
+1. **ChatGPT letters on Sol, lean.** Set `document_models.codex` to `gpt-6.2-sol` in Admin (today it is empty,
+   which is whatever Codex picks) and turn lean on for letters. CVs have not been measured lean; lean for every
+   document once they are, and the plain path deleted then.
+2. **Claude's letters in other languages.** (a) Code puts right what code can: German lower case after "Sehr
+   geehrte …," and no comma after "Mit freundlichen Grüßen" (rules before AI; about one error a German Haiku
+   letter). (b) A second, proofreading call for a letter not in English, measured the same way. (c) Lines for a
+   particular language in the prompt, measured. (d) Leave it. The Hungarian greeting translated from "Dear Hiring
+   Manager" is in every writer's letters and needs a prompt line (§3a) or a greeting set by code.
+3. **A Gemini API key** for Gemini to be measured; and whether to take the Gemini sign-in off Settings (open since
+   2026-11-15: it cannot write, and the owner linked one again today).
+
+### Raised, unprompted (CLAUDE.md §5)
+
+- **`DEFAULT_DOCUMENT_MODELS["codex"]` is empty**, so the model that writes every ChatGPT document is Codex's
+  default for the plan (gpt-6.2-sol at low effort today). A change at OpenAI changes every ChatGPT letter and its
+  cost with no change here. Expose: it is already an Admin setting; give it a value.
+- **What a ChatGPT document records as its model.** With `--json` Codex's reply names no model, so the one asked
+  for is recorded, and none when the plan's default wrote it. Fixed by the item above.
+- **`cli.CODEX_LEAN`, `cli.CODEX_EFFORT` and `rest.GEMINI_THINKING` are module values only the bench sets.** Leave
+  them until a decision; a lean that is adopted becomes the only path, not a setting.
+- **Codex's default effort** (`CODEX_EFFORT = None`, Codex's own "low") decides cost and quality and is nobody's
+  setting. Leave: measured at low here, and Luna at high was no better.
+- **The language read is a tool in the git-ignored bench folder**, run by hand with blind agents. If it becomes a
+  standing check for any wording change, it belongs in `scripts/cvlab/` with the others.
+
+### Gates
+
+Run on the shared tree (another session's uncommitted site work in it), 2026-11-19 evening: `lint-imports`
+2 contracts kept, 0 broken; `ruff check .` all passed; `python -m libs.db --prune` on the local mongod; the
+contract regenerated to a scratch folder equals `web/openapi.json` and `web/src/api-types.ts`, both as committed;
+`npm --prefix web run build` built; `pytest tests/` with only `MONGODB_URI` (local) and `CHROME_BIN` set: **1,803
+passed, 2 failed, 7 skipped**. The 2 are `test_e2e_site.py`'s tab order, failing on the other session's
+uncommitted `web/src/places.tsx` (My documents before Alerts); the 7 skips are Stripe's test keys (5), the Postgres
+copy source and the Windows reference instance. Sourcing all of `certificates/dev.env` instead fails 24 LinkedIn
+sweep tests on its `HARVEST_LINKEDIN_DISABLED`: the environment, not the code.
+
+Tests for this round: `tests/test_cli.py` (a Codex reply's tokens and the model asked for, read from its JSON
+events; lean only when the bench asks, with this platform's instructions and no tools; a plan limit said as a
+limit), `tests/test_ai_providers.py` (Gemini told how much to think only by the bench), `tests/test_cvlab.py`.
+
+## 2026-11-19, later — `write_cover.md` is v10; GPT writes from it too
+
+The owner: "lets make v10 live and then run the gpt tests as well".
+
+**The letter prompt changed (§3a: approved, measured, recorded).** `libs/prompts/write_cover.md` is the bench's
+v10, version **`43c12b6c9150`** where it was `cd73a2707bab`. What every letter is now told that it was not:
+
+- The opening names the company as people say it, without a legal form, "Group" or a slogan ("Bosch", not "Bosch
+  Group" or "Robert Bosch GmbH"), and the job by the title the posting gives it, as it reads in a sentence,
+  without hours, contract, place or "m/f/d", in the language the posting writes it in even when the letter is in
+  another.
+- Its plan finds two or three things in the posting that would make someone want this job at this company, each
+  particular to the work there (who it serves, what they would work on or with, how the team works, what it offers
+  someone in their position), never its size, reach, awards, values or slogans, nor what any employer offers; and
+  notes beside each what in their documents makes it matter to them.
+- "Why this company, two or three sentences" where it said "Why this job, one or two sentences": the things found,
+  each with what makes it matter to them, in their words rather than the posting's, never the posting's
+  description of the company said back, never a history with the company their documents do not give.
+- A final check, "Why here".
+
+**The evidence** (the entry below): on the 16 held-out people, ATS checks in all six looks 96.0 to 98.4 of 100,
+letters passing all seven in all six looks 13 to 16 of 18, the employer named 15 to 17, as people say it 4 to 8 of
+8; six blind readers over the 36 panel letters +1.78 ± 1.04 of 100, voice +0.39 ± 0.18, the reason for this
+employer +0.44 ± 0.23. **Did not move:** the bench reviewer's score (60.6 against 60.3 on the panel, 59.6 against
+60.6 held out), the reason for this employer by that reviewer (+0.14 ± 0.16 over 36 pairs). **Worse:** fit on
+the held-out people −0.39 ± 0.14, about 10% more tokens out (5,751 against 5,236 on the panel, 5,900 against 5,357
+held out) and 2 to 3 s a letter. Not measured before it went live: any model but Haiku 5.5 (GPT below).
+
+- **Kept** (`libs/scaffolds/history/`, a row each in its README): the prompt it replaces as
+  `write_cover.2026-11-19.pre-v10.md`, and the ten bench drafts that were never live as `write_cover.cvlab-*.md`
+  (v1, v1-search, v2 to v9). `scripts/cvlab/variants/cover/` holds no draft now: `live` is v10.
+- The docgen worker reads the prompt at each build, so a letter is written from v10 from the next deploy on;
+  nothing was deployed from here.
+
+### GPT writes from the same prompt
+
+The owner's ChatGPT Plus sign-in, through Codex, asked for no model and no reasoning effort, as production asks
+it: the plan answered with **gpt-6.2-sol** (it was gpt-6.1-sol on 2026-11-15). The same 36 letters as Haiku's, the
+nine panel people and the 16 held-out ones, from the live wording (v10), reviewed by the same Claude reviewer and
+checked in all six looks. Pairs are the same person and posting.
+
+| | Haiku 5.5, panel | GPT, panel | Haiku 5.5, held out | GPT, held out |
+|---|---|---|---|---|
+| ATS checks in all six looks, of 100 | 99.2 | 100.0 | 98.4 | 99.2 |
+| letters passing all seven in all six looks | 17 of 18 | 18 of 18 | 16 of 18 | 17 of 18 |
+| sent back by our own checks | 2 of 18 | 0 of 18 | 6 of 18 | 0 of 18 (−0.33 ± 0.11) |
+| honesty, of 10 | 7.06 | 8.11 (+1.06 ± 0.26) | 6.89 | 7.83 (+0.94 ± 0.21) |
+| said that is not theirs, a letter | 2.22 | 1.39 (−0.83 ± 0.39) | 2.28 | 1.39 (−0.89 ± 0.29) |
+| opening, of 10 | 7.00 | 6.50 (−0.50 ± 0.25) | 6.56 | 6.56 |
+| voice, of 10 | 5.94 | 6.22 (+0.28 ± 0.14) | 5.94 | 6.17 |
+| reviewer's score, of 100 | 60.6 | 61.7 (+1.1 ± 1.4) | 59.6 | 61.7 (+2.2 ± 1.4) |
+| would reply: yes | 3 of 18 | 2 of 18 | 1 of 18 | 6 of 18 (+0.28 ± 0.11) |
+| seconds a letter | 25.5 | 15.3 | 26.1 | 16.8 |
+
+Both write about 234 words a letter and chose the same language for every letter. **Did not move:** the reason
+for this employer (−0.12 and +0.39, neither beyond its error), evidence, fit, the close. GPT's opening is weaker on
+the panel and level on the held-out people. Its writing is plainer and repeats a word more often ("load lorries"
+twice in one letter, "gehört" twice in another); it said the nurse's missing UK registration, which the reviewers
+keep asking for, where Haiku's letter did not. Codex reports no token counts, so GPT's cost in tokens is not
+measured here. The reviewer is Claude: any preference for its own family's writing would favour Haiku, and GPT is
+level or ahead. **The same wording serves both; nothing in it needs to change for GPT.** GPT's letters use the
+curly apostrophe (18 of 36); the contraction check reads both kinds.
+
+**CVs on GPT, from the live CV prompt** (v12, `6fcbbabfca70`; its GPT CVs on file were gpt-6.1-sol's, so 18 were
+written again on gpt-6.2-sol for the nine panel people). Haiku's 18 and GPT's 18 were read again by the CV
+reviewer as it stands since 2026-11-18 (it reads the posting as the writer is given it), and checked in every look.
+
+| | Haiku 5.5 | GPT | GPT − Haiku |
+|---|---|---|---|
+| ATS checks in every look, of 100 | 99.9 | 99.2 | −0.7 ± 0.7 |
+| CVs passing every check in every look | 17 of 18 | 16 of 18 | |
+| sent back by our own checks | 0 of 18 | 1 of 18 | two bullets starting "Loaded" |
+| reviewer's score, of 100 | 62.9 | 65.1 | +2.2 ± 0.9 |
+| the first six seconds / the angle for the job / coverage / keywords, of 10 | 6.1 / 6.1 / 5.5 / 5.9 | 6.3 / 6.6 / 5.9 / 6.5 | each up, beyond twice its error |
+| defensibility, of 10 | 8.6 | 8.3 | −0.33 ± 0.16 |
+| said that is not theirs, a CV | 0.44 | 1.00 | +0.56 ± 0.25 |
+| seconds a CV | 42.5 | 24.5 | −18 |
+
+**Did not move:** what came of the work, voice, what was left out, would the reader reply. GPT's CVs read
+stronger to the reviewer and claim a little more: most of its extra lines are small stretches ("Manage care for 6
+patients" for "care for", a "Time management" skill from a paper round), and some are not: "HGV Class 1 driver"
+for an Irish C+E licence (a rule against exactly this was in a CV draft that never went live, v6), "online
+facilitation" and "skills gap analysis" for a teacher whose documents show neither. One GPT CV left out the
+posting's title, which v12 asks for at the end of the profile. So for CVs the wording holds on GPT, with a small
+honesty gap a GPT-only sentence might close: not tried, it is a prompt change.
+
+Gemini is not measured: its sign-in was retired by Google (2026-11-15) and no API key is linked here.
+
+**Spent:** on the owner's ChatGPT Plus sign-in, 36 letters and 18 CVs on gpt-6.2-sol, no limit reached; on the
+owner's Claude sign-in, 72 reviews on Sonnet 5.5 (36 GPT letters, 18 GPT CVs, and Haiku's 18 CVs read again by
+the CV reviewer as it now stands). The bench was pointed at the Codex tool it installs (`CODEX_CLI`), as it is at
+Claude's.
+
+### Gates (local; Actions is unavailable, CLAUDE.md §7)
+lint-imports: 2 contracts kept, 0 broken. ruff: clean. `python -m libs.db --prune` on an empty scratch database
+of the local mongod: applied, then dropped. The contract: unchanged. The site: built. pytest with only
+`MONGODB_URI` (local) and `CHROME_BIN` set: 1,793 passed, 7 skipped (five need Stripe test keys, one a Postgres
+copy source, one the reference instance), 0 failed. Nothing committed or pushed.
+
+## 2026-11-19 — Cover letters: the job's title roughly, the company as people say it, two or three reasons to join
+
+The owner, on the letters of 2026-11-18: "we should mention the postings title because we are writing a cover
+letter for that job, that makes sense, perhaps not the exact title but it should be in there roughly the same, and
+the company name should be mentioned, not the long posted verisons but from bosch group we should say bosch for
+example. i think its perfectly reasonable in the prompt to find 2-3 things about the why someone would want to join
+the company and we can add that in the prompt somewhere, so lets do that instead of the user deciding the why.
+after this we can run some tests once again and see which cover letter does the best." Claude Haiku 5.5 first;
+GPT and Gemini after, on the same prompt.
+
+Every letter below was written by claude-haiku-5-5 at medium on the owner's linked Claude sign-in, reviewed by the
+bench's reviewer (`scripts/cvlab/eval_cover.md`, claude-sonnet-5-5, not edited) and checked as an ATS reads it in
+all six letter looks. The nine panel people (18 postings in nine trades) and the 16 held-out people (18 postings,
+16 trades, five languages; `scripts/cvlab/panel/README.md`) both, for every wording. `libs/prompts/write_cover.md`
+is not touched (CLAUDE.md §3a): every wording is a file in `scripts/cvlab/variants/cover/`.
+
+### Corrected first
+
+Each has a test that fails on the code before it.
+
+- **"The title is in it" means roughly now** (`checkers.names_title`): the posting's title, cut as the ATS check
+  cuts it (and at "m/f/d", after which a German title says where or with what), in one sentence of the letter or
+  its subject, its words in order with at most one other between them, each as written or in a form of it
+  ("Mitarbeiterin" for "Mitarbeiter", "Pflegefachassistentin" for "Pflegefachassistenz"), either side of a stroke
+  ("Elektriker / Elektroniker"): all of a title of up to three words, three in five of a longer one. The
+  word-for-word check failed four of yesterday's 36 live and v3 letters that a person reads as naming the job
+  ("Clinical Nurse Specialist for Endometriosis", "Apprentice/Trainee Client Support Administrator",
+  "Mitarbeiterin Kundenservice für Krankenkassen und weitere Themen", "Elektroniker im Bereich Gebäudetechnik").
+  Word for word is kept beside it as a count. Not the title, by either: "Vehicle Technician" for a Vehicle
+  Mechanic (every wording wrote the person's own title), "Server" for a Waiting Team Member, and a Hungarian
+  translation of an English title in a Hungarian posting.
+- **The letter's address block names the company as people say it** (`build.prepare` through `checks.employer`):
+  code wrote the board's field as typed, "VNOM | We get the job done", "Bosch Group", "J. RETTENMAIER & SÖHNE GmbH
+  + Co KG". The letter's own words are still checked against the field as the board gave it.
+- **A letter naming its employer as its own posting does is not sent back for it** (`checks.names_employer`): a
+  name with figures in it ("1KOMMA5°"), a name of two or three capitals ("AMC" of AMC Global Media), initials the
+  posting itself goes by ("JRS", J. Rettenmaier & Söhne). Three of the 36 held-out letters of v8 and v9 were sent
+  back for it, a second call each for a letter that was right. A brand the company's name does not contain
+  (LEGOLAND for Merlin Entertainments, NH Collection for Minor Hotels, Panda for Greenstar) is still sent back:
+  nothing in the name says it is the same employer.
+- **A number written as another language writes it is theirs** (`build.numbers_not_in`, CVs and letters): a
+  Polish CV's "ok. 1 100 osób" was read as 1 and 100, so the English letter's "1,100" was "invented" and sent back
+  under every wording. Thousands set apart by a space ("1 100") or a dot ("1.100") and a decimal comma ("3,5")
+  are now the same numbers as "1,100" and "3.5".
+- A bench count, `company_as_said`: whether a letter's own words leave out what `checks.employer` leaves out (a
+  legal form, "Group", a strapline), counted where the board's field has one (2 panel postings, 8 held out).
+
+### The wordings
+
+| wording | the one point | what moved | adopted |
+|---|---|---|---|
+| v8, from v3 | the company as people say it ("Bosch", not "Bosch Group"); the job by the posting's title as it reads in a sentence, in the title's own language | the company said so: held out 4 → 8 of 8 against live (+0.50 ± 0.19), panel 1 → 2 of 2; the title roughly 18 of 18 (panel) and 16 of 18 (held out); sent back on the held-out people 7 → 1 of 18 (−0.33 ± 0.11); nothing else | yes, into v10 |
+| v9, from v8 | two or three things in the posting that would make someone want to join this company, as the owner asked | "why this employer" back to where it was (+0.28 ± 0.14 over v8, 4.22 against live's 4.11); the reasons read back the company's own blurb, "Radisson has ten brands and more than 1,500 hotels", "the largest health organisation in Wales", Bosch's slogan; +840 output tokens a letter on the held-out people | no |
+| v10, from v9 | the reasons particular to the work there (who it serves, what they would work on, training, a way up), each tied to something in their documents, never the posting's description of the company said back | see below | **the candidate** |
+
+Read in the letters, v10's reasons are the work, not the company's blurb: the school leaver's "fully funded
+Hospitality Team Member Level 2 apprenticeship matters to me, because I have just left school and want a
+qualification as I work"; the driver's "collecting fridges and household electrical waste for recycling ... because
+those materials would otherwise go to waste"; the nurse's nurse-led endometriosis service. One letter of 36 says
+"two things" out loud.
+
+### v10 against live
+
+| | panel live | panel v10 | held out live | held out v10 |
+|---|---|---|---|---|
+| ATS checks in all six looks, of 100 | 98.4 | 99.2 | 96.0 | 98.4 |
+| letters passing all seven in all six looks | 16 of 18 | 17 of 18 | 13 of 18 | 16 of 18 |
+| the job's title, roughly | 16 of 18 | 17 of 18 | 16 of 18 | 17 of 18 |
+| the employer named | 18 of 18 | 18 of 18 | 15 of 18 | 17 of 18 |
+| the employer as people say it | 1 of 2 | 2 of 2 | 4 of 8 | 8 of 8 |
+| sent back by our own checks (a second call) | 2 of 18 | 2 of 18 | 7 of 18 | 6 of 18 |
+| reviewer's score, of 100 | 60.3 | 60.6 | 60.6 | 59.6 |
+| why this employer, of 10 | 4.11 | 4.44 | 4.17 | 4.11 |
+| fit, of 10 | 5.89 | 5.78 | 6.56 | 6.17 (−0.39 ± 0.14) |
+| would reply: yes | 1 of 18 | 3 of 18 | 4 of 18 | 1 of 18 |
+| seconds a letter | 23.1 | 25.5 | 23.2 | 26.1 |
+| output tokens a letter | 5,236 | 5,751 | 5,357 | 5,900 |
+
+**Six blind readers** (Claude in the session, crossed as before: three letters of each wording each, never both of
+one posting, under coded names), the 36 panel letters: the score +1.78 ± 1.04 of 100 (12 up, 6 down; 62.5 against
+64.3), voice +0.39 ± 0.18 (8 up, 2 down), the reason for this employer +0.44 ± 0.23 (9 up, 2 down), honesty +0.44 ±
+0.33, the close −0.28 ± 0.23; "would reply: yes" 6 → 8 of 18, "template phrasing" named in 4 → 1 of their
+suggested fixes. The bench's reviewer against them, letter by letter: 0.70, as yesterday.
+
+So v10 does what the owner asked and every check of the writer's own holds or improves on people it was not tuned
+on; the independent readers like its letters better, by under two standard errors overall and by two in voice. By
+the bench's reviewer the reason for this employer moves little on average (+0.14 ± 0.16 over 36 pairs), though
+letters whose reason it marks 5 or more go from 8 to 16 of 36 (11 pairs up to it, 3 down, p = 0.06). It costs
+about 10% more output tokens and two to three seconds a letter, and on the held-out people fit is a little lower,
+as it has been for every opening change since v3.
+
+**What stays short:** over 280 reviews the reason for this employer was never marked above 6 of 10. The reviewer
+asks for the person's own reason, grounded in what they have written, and their documents say why they want this
+kind of work, never this employer. The reasons v10 finds are true to the posting and joined to their work, which
+is as far as the documents go.
+
+### Spent
+
+On the owner's linked Claude sign-in: 108 letters on Haiku 5.5 (v8, v9 and v10, 36 each) and 108 reviews on Sonnet
+5.5; every re-score after a corrected check reused the kept letters and verdicts and asked no model. In this
+session, six blind readers, about 943,000 tokens.
+
+### Raised, unprompted (CLAUDE.md §5)
+
+- The writer is still given the board's company field (`build._job`); v8 onward tells the model to shorten it.
+  Code could hand it `checks.employer` instead, as the address block now is (rules before AI), but that changes
+  what every CV and letter is written from: measure first.
+- A brand the company's name does not contain sends a right letter back (LEGOLAND, NH Collection, Panda). The
+  other names a company goes by would need a source; the employer's own page is the one found before (2026-11-16).
+- v10's extra send-backs are a paragraph run over four sentences (3 of 18 held out) and a colon (2): the second
+  call fixes both, at its price.
+- `checkers.names_title`'s "all of three words, three in five of more" and its little words are the bench's
+  constants, not settings: nothing in the product reads them.
+
+### Gates (local; Actions is unavailable, CLAUDE.md §7)
+lint-imports: 2 contracts kept, 0 broken. ruff: clean. `python -m libs.db --prune` on an empty scratch database
+of the local mongod: applied, then dropped. The contract: `openapi.json` and `api-types.ts` unchanged. The
+site: built. pytest with only `MONGODB_URI` (local) and `CHROME_BIN` set, four workers: 1,793 passed, 7 skipped
+(five need Stripe test keys, one a Postgres copy source, one the reference instance), 0 failed. Nothing
+committed or pushed.
+
+## 2026-11-18, last of all — Cover letters: the measuring checked first, every look a person can pick, the wording loop, people it was not tuned on
+
+The owner: "lets continue with the cover letter optimization process just like before with the cv, and lets make
+sure all the formats that we can choose the cover letter for also works with it. make sure the evaluation process
+is also correct and accurate as well to make sure the cover letters are very high quality, it shoudl also pass
+the ats checks just like the cv but cover instead"; and, during it, "did you make sure that we have a variety of
+different industries that we are testing for not just IT? ... are you measuring the success of the cover letter
+with both quantifiable numbers and in a qualititave way so it sounds and reads great?"
+
+### What the measuring got wrong, found before any wording was tried
+
+Each has a test that fails on the code before it.
+
+- **The Ledger letter look read the contact line before the name** (pdfminer; 2 of 18 letters, in every wording).
+  The Ledger CV had the same fault fixed on 2026-11-15 with 16pt under the name; the letter look, under the same
+  letterhead, had 3pt. `test_the_name_is_read_first_however_wide_the_contact_line_under_it` now runs over all 14
+  looks, not the 8 CV looks.
+- **A letter's length was counted two ways.** The docgen worker counts from the greeting to the sign-off; the bench
+  counted the greeting, sign-off and name too, 6 to 39 words more over 54 letters. One count now,
+  `checks.letter_words`.
+- **The docgen worker skipped a closing paragraph marked as the sign-off.** A model marked its last paragraph
+  `closing`, the class of "Kind regards," alone (1 of 54 letters): 32 words not counted, and whatever it said not
+  read, which is where "I look forward to…" is written. The sign-off is now the last paragraph so marked.
+- **The bench's "employer is named" could not fail**: it read the block above the subject, which code writes into
+  every letter. It now reads the letter's own words.
+- **The reviewer was never shown the subject line**, which the hiring manager reads first. A school leaver's
+  subjects said he "specialised in employee benefits"; nothing could see it. It is shown, first.
+- **The reviewer was not shown where the job is**, which the writer is told. 5 of the 34 lines it found "not
+  theirs" in the 18 live letters were the job's own place (Screwfix in Leeds, Prezzo in Chester...). It now reads
+  the posting as the writer is given it (`build._job`), for CVs too.
+- **A kept verdict was used again whoever wrote it.** Each verdict now carries its reviewer (a hash of the model,
+  the prompt and what it is shown, `run.reviewer`) and is used again only by that reviewer. The 46 letter verdicts
+  read without the subject and the place are kept beside their letters as `.verdict.nosubject.json`.
+
+### Is the reviewer accurate?
+
+The letters' reviewer is `scripts/cvlab/eval_cover.md` on claude-sonnet-5-5 (not edited).
+
+- **Planted faults.** Six live letters (chef, warehouse operative, nurse, HGV driver, retail, marketing), each copied
+  four times with one fault none of our code checks flags, so only the reviewer could see it: a generic opening; a
+  claim their documents do not make or contradict (a prescribing qualification the nurse says she lacks, a UK
+  licence for a driver whose licence is Irish, a team leader's post nobody gave the warehouse operative...); a
+  reason for the job that fits any employer; a close about applying. **The mark aimed at fell in 24 of 24**: the
+  opening −3.7 of 10 on average, honesty −4.3 with the planted claim listed as "not theirs" in 6 of 6, the reason
+  for the job −2.2, the close −3.3. The marks not aimed at moved under one point on average.
+- **Two reads of each live letter**: every mark within one point of itself in 16 to 18 of 18 letters, the same
+  "would reply" in 15 of 18, the score 3.6 points apart on average (largest 10). Over 18 pairs reading alone puts
+  about ±0.95 on a difference: **a wording that moves the score under about 2 points cannot be told from a second
+  read.**
+- **Against six independent readers** (Claude in the session, blind, crossed as the CV loop did: three letters of
+  each wording each, never both of one posting): over the same 36 letters, correlation 0.70, levels 61.1 and 62.8
+  of 100 (for CVs the bench's reviewer read about 11 points lower). The six were within 2 points of each other.
+
+### Every look a person can pick
+
+- The 54 letters already written, drawn in each of the six letter looks: one page in all 324, none drawn smaller.
+  Two letters in every look and every colour (96): all seven checks passed; a colour changes no word.
+- The longest letter our checks let through (320 words) fits each look's page at full size; a test holds that (at
+  450 words Tabula would already be drawn smaller).
+- **Kestrel, found on the held-out letters below:** its capitals were spaced 0.8pt on 9pt, and pdfminer split a
+  pair of narrow capitals, "ROOM AT TENDANT" and a Hungarian "TEL JESKÖRŰ" in the letter's subject. The Kestrel CV
+  has the same headings, and would have split a Hungarian CV's "VÉGZETTSÉG" or an Italian "PROGETTI". Both now
+  0.5pt; `README.md` rule 3 says why (the 0.1 of the size it allowed is not enough for every face), and
+  `test_every_look_reads_its_capitals_as_whole_words` holds all 14 looks to hard pairs in five languages (it failed
+  on the two Kestrels alone). **The Kestrel letter's contact line is now under the name**, not beside it: set
+  beside it, a line short enough to fit there (a phone, an email and a town) was read before the name by pdfminer,
+  with the company block below it. That is the README's own rule 7 ("nothing side by side"); none of the side-by-side
+  variants tried fixed it (6 to 9 of 40 readings wrong, against 0). The CV Kestrel keeps its letterhead: it reads
+  the name first.
+- The bench: `--every-look` draws each document in every look of its kind and runs the ATS checks in each
+  (`ats_every_look`); `--look` offers the letter looks too.
+
+### "Names the employer", as people write it
+
+A board's company field is often not what a person writes: "VNOM | We get the job done", "Bosch Group", "J.
+RETTENMAIER & SÖHNE GmbH + Co KG", "Alloheim Senioren-Residenzen SE". Letters naming their employer as the posting
+does were sent back by the docgen worker for not naming it, a second call (about 25 s) that could only make the
+letter stiffer: **6 of the 8 so sent back of the 36 held-out letters**. `checks.employer` writes the company as a
+sentence does (no legal form, "Group" or strapline) and `checks.names_employer` accepts that or the first word of
+it that is a name of its own, with its capital; the docgen worker and the bench's ATS check both use it. A letter
+naming nobody is still sent back, and "a person who" is not Person Centred Software. Two of 36 still fail although
+they name the employer as the posting does (LEGOLAND Windsor Resort for Merlin Entertainments, NH Collection for
+Minor Hotels Europe and Americas): accepting any name the posting uses would let the job's own title pass.
+
+### The wording loop
+
+Every wording is a file in `scripts/cvlab/variants/cover/`; `libs/prompts/write_cover.md` is not touched (CLAUDE.md
+§3a). Nine panel people, 18 real postings in nine trades (no IT), claude-haiku-5-5 at medium on the owner's linked
+Claude sign-in, each letter reviewed and checked in all six looks; pairs are the same person and posting.
+
+| wording | the one point | what moved, against the base | adopted |
+|---|---|---|---|
+| v3, from live | the opening names the job by the posting's title, word for word | the title 15 → 17 of 18 letters; ATS in every look 97.6 → 99.2; honesty +0.61 ± 0.29; nothing else | **yes** |
+| v4, from v3 | no claim bigger than their documents, no quality or wish they do not state | its target did not move (not theirs −0.33 ± 0.26); +5.5 s and +1,366 tokens a letter; the reason for the job −0.44 ± 0.18: it turned into a description of the company | no |
+| v5, from v3 | the reason: a thing of this employer's that meets something in their documents | the reason +0.28 ± 0.19, the opening −0.33 ± 0.18, the score −0.6 ± 1.1 | no |
+| v6, from v3 | the reason joined to a named piece of their own work | nothing (the reason +0.06 ± 0.19) | no |
+| v7, from v3 | say where they stand on what the reader will ask first, if their documents say | the score −2.7 ± 1.5, voice, honesty and opening lower, "would reply: yes" 2 → 0 | no |
+
+v4 to v7 were each aimed at what the reviewers said was weakest. v7 is the lesson: the readers asked for the gap
+(an Irish licence, a nurse not yet on the UK register) to be addressed, and marked a letter that named its gap lower.
+A reviewer's suggested fix is not a prediction of its score.
+
+**v3 against live, by the six blind readers**: the score +0.89 ± 1.04 (not shown to differ), the opening +0.39 ±
+0.18, the evidence −0.28 ± 0.11, honesty +0.22 ± 0.46; nothing else moved. **On 18 postings for 16 people it was
+not tuned on** (care, heating, pharmacy, conveyancing, hotel housekeeping, vehicle repair, early years, payroll, HR,
+construction, and German, Dutch, Italian and Hungarian postings, `panel/README.md`): the title 13 → 16 of 18, ATS
+in every look 93.6 → 96.0 of 100 and letters passing all seven checks in all six looks 11 → 14 (with the checks and
+looks above), sent back 7 → 6, fit −0.33 ± 0.11, the score −1.2 ± 1.5. So v3's gain is the title, a check that does
+not depend on the person, held on new people; it costs a little of the evidence or the fit by both reads.
+
+**What stays short, and is not wording:** the reason for wanting this employer, about 4 of 10 under every wording
+tried (v1's company facts included): the documents say why they want this kind of job, never this employer.
+
+**Qualitative**, from the six readers' written verdicts on 36 letters: the reason generic or the posting repeated
+(14), duties listed instead of what came of them (14), the reader's first question left unanswered (14), a weak
+close (11), template phrasing (6), a claim larger than the documents (5). Read in the chat: the office manager's v3
+letter opens on her board packs and names the company and the role, with two results and her referee's words, where
+the live one named neither; the driver's two letters are even, plain and true, neither saying where he stands on the
+licence.
+
+**Outside checker**: ATS Verification's letter checker timed out on most letters tonight (two minutes each); 13
+answers are kept (10 live, 3 v3), too few to compare, and a later run asks only for the rest.
+
+**Spent**: on the owner's linked Claude sign-in, 126 letters on Haiku and 186 reviews on Sonnet, no limit reached;
+in this session, about 930,000 tokens for the six blind readers.
+
+### Raised, unprompted (CLAUDE.md §5)
+
+- `checks.LETTER_WORDS` (180 to 320) stands beside the prompt's "220 to 280 words": a tolerance, not a second
+  source, and the looks' page test is now tied to its top.
+- `run.SHOWN` names what the reviewer is shown, and has to be edited by hand when that changes, or kept verdicts
+  would be used again by a changed reviewer.
+- The docgen worker does not check a letter for the posting's title; v3 gets it into 17 of 18. Sending back a letter
+  without it would get the rest, at a second call for about one letter in eighteen. The owner's call.
+- A Hungarian bookkeeper with B1 English is written to an English posting in Hungarian, by the prompt's language
+  rule; that letter cannot carry the English title.
+
+### Gates (local; Actions is unavailable, CLAUDE.md §7)
+`lint-imports` 2 kept, 0 broken; `ruff check .` clean; `python -m libs.db --prune` on an empty local database
+applied; the contract regenerated with no change; `npm --prefix web run build` built; `pytest tests/ -q -rfs -n 4`
+with `MONGODB_URI` (a local mongod) and `CHROME_BIN` only: **1,788 passed, 7 skipped** (five need Stripe test keys,
+one a Postgres to copy from, one the reference instance). Nothing committed, nothing pushed.
 
 ## 2026-11-18, late night — The terms are agreed to at sign-up, and nowhere else; the legal pages are plain text
 

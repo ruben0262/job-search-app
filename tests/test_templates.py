@@ -280,22 +280,73 @@ def test_a_long_contact_line_stays_on_the_page(template):
 
 @pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
 @pytest.mark.parametrize("name", ["Ciara Nolan", "Bo Li"])
-@pytest.mark.parametrize("template", templates.of_kind("cv"), ids=lambda each: each.id)
-def test_the_name_is_read_first_however_wide_the_contact_line_under_it(template, name):
+@pytest.mark.parametrize("parts", [4, 3, 1], ids=["four-parts", "three-parts", "one-part"])
+@pytest.mark.parametrize("template", templates.CATALOGUE, ids=lambda each: f"{each.kind}-{each.id}")
+def test_the_name_is_read_first_however_wide_the_contact_line_under_it(template, name, parts):
     """A look that centres the name over a contact line much wider than it had the contact line read
     first by a reader that orders text by where it sits: Ledger, for a person with a phone, an email, a
     place and a link, in 4 of 288 CVs (2026-11-15). A parser that takes the first line for the name would
-    have taken a phone number. Both readers, a long name and a short one."""
+    have taken a phone number. Both readers, a long name and a short one. The letter looks too: Ledger's
+    letter, under the same letterhead, read the contact line first in 2 of 18 letters, and Kestrel's,
+    which set a contact line short enough to fit beside the name, for a paralegal with a phone, an email
+    and a town (2026-11-18)."""
     from services.docgen import pdf
 
     html = _render(template, name=name, contact=[
         "020 917 0126", ("ciara.nolan@example.com", "mailto:ciara.nolan@example.com"), "Rathmines, Dublin",
-        ("linkedin.com/in/ciara-nolan-example", "https://linkedin.com/in/ciara-nolan-example")])
+        ("linkedin.com/in/ciara-nolan-example", "https://linkedin.com/in/ciara-nolan-example")][:parts])
     document = pdf.render(html)
     pdf._discard()
     for reader, text in _read(document).items():
         assert " ".join(text.split()).casefold().startswith(name.casefold()), (
             f"{template.id}: {reader} reads {text.strip()[:40]!r} before the name")
+
+
+@pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
+@pytest.mark.parametrize("template", templates.CATALOGUE, ids=lambda each: f"{each.kind}-{each.id}")
+def test_every_look_reads_its_capitals_as_whole_words(template):
+    """A heading or a subject the model writes, set in capitals and spaced out, read whole by both readers in
+    every language the panel writes. Kestrel's 0.8pt on 9pt split a pair of narrow capitals for pdfminer,
+    "ROOM AT TENDANT" in a letter's subject and "TEL JESKÖRŰ" in a Hungarian one, and would have split a
+    Hungarian CV's "VÉGZETTSÉG" or an Italian "PROGETTI" heading (2026-11-18), under the 0.1 of the size
+    that rule 3 allowed."""
+    from services.docgen import pdf
+
+    words = ["Room Attendant", "Settings", "Committee", "Skills", "Little", "Teljeskörű", "Végzettség",
+             "Attività", "Progetti", "Allotted", "Tattoo", "Kettle", "Yttrium", "Lettere", "Fully", "Jelly",
+             "Wavy Tyre"]
+    placed = (lambda word: _section(word, '<p class="entry-desc">Text.</p>')) if template.kind == "cv" else (
+        lambda word: f'<p class="letter-subject">{word}</p><div class="letter"><p>Text.</p></div>')
+    head, rest = _render(template).split("<body>", 1)
+    header = rest.split('<hr class="header-rule">', 1)[0] + '<hr class="header-rule">'
+    page = f"{head}<body>{header}{''.join(placed(word) for word in words)}</body></html>"
+    for reader, text in _read(pdf.render(page)).items():
+        flat = f" {' '.join(text.split()).casefold()} "
+        split = [word for word in words if f" {word.casefold()} " not in flat]
+        assert not split, f"{template.id}: {reader} split {split}"
+    pdf._discard()
+
+
+@pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
+@pytest.mark.parametrize("template", templates.of_kind("cover"), ids=lambda each: each.id)
+def test_every_letter_look_holds_the_longest_letter_the_checks_pass_on_one_page(template):
+    """A letter is one page in whichever look was picked (owner, 2026-11-18: "make sure all the formats that
+    we can choose the cover letter for also works with it"). The longest letter the docgen worker lets
+    through (`checks.LETTER_WORDS`), in six paragraphs under a two-line subject, fits each look's page
+    without being drawn smaller: a longer limit or a larger look has to be measured again."""
+    from services.docgen import checks, pdf
+
+    words = ("We count stock every week and keep the yard safe for everyone on the shift. " * 40).split()[
+        :checks.LETTER_WORDS[1]]
+    paragraphs = "".join(f"<p>{' '.join(words[at:at + 54])}</p>" for at in range(0, len(words), 54))
+    letter = ('<p class="letter-subject">Warehouse Operator, a forklift operative specialising in '
+              'counterbalance work, loading and dispatch</p><div class="letter"><p>Dear Hiring Manager,</p>'
+              + paragraphs + '<p class="closing">Kind regards,</p><p class="signature">Alex Morgan</p></div>')
+    page = re.sub(r'(?s)<p class="letter-subject">.*</div>', lambda _: letter, _render(template))
+    assert checks.letter_words(letter) == checks.LETTER_WORDS[1]
+    _, report = pdf.fitted(page, kind="cover")
+    pdf._discard()
+    assert (report.pages, report.scale) == (1, 1.0), f"{template.id}: {report}"
 
 
 @pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")

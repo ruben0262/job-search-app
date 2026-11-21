@@ -121,6 +121,61 @@ justifies *keeping* the existing wording is worth as much as one that justifies 
 
 If a prompt looks like the cause of a defect, say so and propose the wording. Do not apply it.
 
+## 3b. What a CV or cover letter change must pass (owner, 2026-11-19)
+
+The owner: "save some of these filters that we use for cv and cover letter optimizations into claude.md ...
+if we ever optimize we can always use it to make sure we have high quality, then it passes the anti AI
+language check, ATS check, other model quality checks as well."
+
+Anything that can change what a person's CV or letter says — a wording (§3a), a model, an effort, Codex's
+lean mode, a check that sends a document back — is run on the bench (`scripts/cvlab/run.py`, whose
+docstring says how; the people in `scripts/cvlab/panel/README.md`) against what runs now, and adopted only
+when it holds on every gate below. A gate that was not run is reported as not run, never as passed.
+
+1. **Fair people.** The panel's people in different trades, levels and document quality, each with an "About
+   you" as the app keeps it and typed as people type; and the held-out people the change was never tuned
+   on. Letters are measured in English for now (owner, 2026-11-19). For letters each also has a weak letter and
+   About you of their own (`scripts/cvlab/panel/letters`, `--overlay`): the site writes no letter without one, and
+   most people's are weak (owner, 2026-11-20).
+2. **A reviewer on each platform.** Claude's (`--judge`: Sonnet 5.5 reading `eval_cover.md` or `eval_cv.md`)
+   and GPT's (`--judge-provider codex --judge-model gpt-6.2-astra --judge-effort medium`: it reads as high
+   does, within high's own spread, for less of the plan; CHANGELOG 2026-11-20). Each leans to its own family,
+   so a change is better only where both say so. Read their written fixes, not only the marks.
+3. **No AI language.** No hit from the AI-language list in `services/docgen/checks.py`, which production
+   sends back too. Read the phrases one model writes for many people (`scripts/cvlab/formulas.py`): a
+   formula a recruiter would learn goes on the list.
+4. **The production checks**, as the docgen worker runs them (`checks.cv`, `checks.letter`, invented
+   numbers). Count the first drafts they send back: each is a second call on the person's plan.
+5. **ATS, in every look** (`--every-look`): every check pypdf and pdfminer make, in all six looks.
+6. **Every model a person can write with**, as production runs it: Claude Haiku 5.5 at `build.EFFORT` and
+   ChatGPT's Sol (lean for letters, `build.LEAN`); Gemini is left out for now (owner, 2026-11-21: "we only need
+   gpt and claude"). A change measured on one model has not been measured on the other.
+7. **Cost**: tokens in and out and seconds a document, by model. A change that costs more says what it
+   bought.
+8. **Language**, when letters in other languages are measured again: blind, coded reads by native-level
+   readers, every letter of a posting to the same reader, each letter read twice.
+9. **The hiring manager's read** (owner, 2026-11-21: "reverse engineering the cover letter as a hiring manager
+   would want to see it"). `--reviewer hire` (`scripts/cvlab/eval_hire.md`), Claude's and GPT's as in gate 2: it
+   works out from the title and the posting what the hire must show, then the best case this person's whole record
+   can make, and marks how much of it the letter makes, its first lines, its proof, the doubts it settles, whether
+   it stands out from the pile and its accuracy, with the chance of an interview. Selling a person is making their
+   best true case, never a bigger one.
+10. **Nothing bigger than their record** (owner, 2026-11-21: "make sure the strong points and facts about a user
+   are indeed correct"). No rank or label the record does not give ("main languages" for two of the five they
+   used), no part of a list as all of it, nothing the posting asks for claimed as theirs. Counted from both
+   reviewers' lines not theirs (`not_theirs`), each read by a person, and on the trap: a developer with Python and
+   no Go, for two postings that ask for Go (`backend-dev`). A change with more of them is worse, whatever else it
+   raises.
+
+Then §3a's rules: paired by person and posting, ± one standard error, what did not move, the numbers in
+`CHANGELOG.md`; a wording not made live kept in `libs/scaffolds/history/` with its README row.
+
+**A run that spends a person's plan is checked on its first document, not its last** (owner, 2026-11-20, after
+72 ChatGPT letters were written plain but kept as lean: twice the tokens, a plan's five hours and a night lost).
+The bench writes the first one alone and stops if it took far more than those kept for its model (`_FirstPaid`);
+read that line and the first minutes of every stream before leaving a run. What a record or folder says about
+how a document was made comes from the call that made it, never from a second rule beside it.
+
 ## 4. Measure before changing, and after
 
 The roadmap's own rule, generalised: no optimisation, filter or removal ships without the number it

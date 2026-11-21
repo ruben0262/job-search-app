@@ -713,8 +713,13 @@ out with it.
 
 - **Security headers and `allowed_hosts`** (`AUTH_REUSE.md` §5). ~~No CSP, HSTS, `X-Frame-Options`~~ **Done
   2026-11-20** (`services/api/guard.py`: HSTS, `nosniff`, `X-Frame-Options`, and a content policy that allows
-  no inline script; CHANGELOG that day, twice). Still open: no `TrustedHostMiddleware`. The tunnel being the
-  only way in is why nothing has broken, which is not the same as having decided.
+  no inline script; CHANGELOG that day, twice). `TrustedHostMiddleware` looked at 2026-11-21 and left: every
+  link the site sends is made from `PUBLIC_URL`, never from the request's `Host` (CHANGELOG that day).
+- **The 2026-11-21 review, closed** (CHANGELOG that day, twice). Done: Admin's response models, a total and
+  a way to the rest for more bookmarks than a page, the fonts asked for from the page. The owner's no
+  (2026-11-21): CVs on ChatGPT keep Codex's tools (`--codex-lean` not run), and the Jobs page is not split
+  into a page and its counts ("Any time" stays near 520 ms). Measured and left: remembered job cards, the
+  phone bar's blur, a ceiling on kept reads, `TrustedHostMiddleware`.
 - **Runbooks** (`OPERATIONS_PLAN.md` §9), still unwritten.
 - **Five dead-lettered jobs** on the box — 3 `train`, 1 `label`, 1 `process` — nobody has read.
 - **Cover letters have no trigger.** The prompt is ready; nothing says when a posting wants one.
@@ -3660,6 +3665,101 @@ work, or opening and closing sessions faster, would help):
       company's own pages only. (2) *"Why this company?"* asked once a letter in a box that can be left
       empty, before the letter is made: one more tap on the way to a letter. Or asked once in About you,
       as what they look for in an employer, and used for every letter.
+    - **2026-11-18, last of all: the measuring checked, every look, the loop, people it was not tuned on**
+      (CHANGELOG). Ten faults in the measuring and the looks fixed first, each with a test: Ledger's and
+      Kestrel's letterheads read contact-first, Kestrel's spaced capitals split for pdfminer (its CV too), two
+      counts of a letter's length, a closing paragraph the docgen worker skipped, a reviewer shown neither the
+      subject nor the job's place, a verdict cache that ignored the reviewer, and "names the employer" too
+      literal for a board's company field (6 of 8 held-out letters sent back for it wrongly). The reviewer caught
+      24 of 24 planted faults and agrees with six blind readers (0.70). **v3** (the opening names the job by the
+      posting's title) is the best wording: the title in 17 of 18 letters, ATS checks in every look 99.2 of 100,
+      and on 18 postings for 16 people it was not tuned on 96.0 and the title in 16 of 18; the score is not shown
+      to differ by any read, and both reads see a small cost in evidence or fit. v4 to v7 not adopted.
+    - **Waiting on the owner.** (1) Whether v3 becomes `write_cover.md`. (2) Whether the docgen worker sends back a
+      letter without the posting's title (a second call for about 1 letter in 18). (3) The reason for wanting
+      this employer stays near 4 of 10 under every wording tried, company facts included: what is left is the
+      person's own reason, the "Why this company?" line above, asked or not. (4) No letter ATS figure on the site
+      yet: 14 of 18 held-out letters pass all seven checks in all six looks.
+    - **2026-11-19: the title roughly, the company as people say it, reasons to join from the posting**
+      (CHANGELOG; the owner answered (3) above: the prompt finds two or three reasons, nobody is asked). Corrected
+      first, each with a test: the title check reads the title roughly; the letter's address block names the
+      company as people say it; a letter naming its employer as its own posting does ("1KOMMA5°", "AMC", "JRS") is
+      no longer sent back; a number written as another language writes it ("1 100", "1.100", "3,5") is theirs.
+      **v10** (v3; the company as people say it and the title roughly; two or three reasons particular to the
+      work there, each tied to the person) is the candidate. On the 16 held-out people: ATS checks in all six
+      looks 96.0 → 98.4, all seven in all six looks 13 → 16 of 18, the employer as people say it 4 → 8 of 8,
+      sent back 7 → 6 of 18. Six blind readers: +1.8 ± 1.0 of 100, voice +0.39 ± 0.18. The bench's reviewer: level,
+      the reason for this employer +0.14 ± 0.16 over 36 pairs. About 10% more output tokens and 2 to 3 s a letter.
+      v8 (the naming alone) is sent back least, 1 of 18 held out. v9 (the reasons as first asked) read the
+      company's own blurb back: not adopted.
+    - **Waiting on the owner (2026-11-19).** (1) v10, v8 or neither as `write_cover.md`. (2) Then GPT on the same
+      wording, on the owner's linked ChatGPT sign-in through Codex (`letters-2026-11-19/gpt.sh`); Gemini needs an
+      API key. (3) Whether code hands the writer the company's short name (`build._job`), as the address block
+      has it: that changes what every CV is written from too, so measure first. (4) Still open from 2026-11-18: a
+      send-back for a letter without the posting's title (1 of 18 under v10, on either set).
+    - **2026-11-19, later: v10 is live, and GPT measured** (CHANGELOG). The owner: "lets make v10 live and then
+      run the gpt tests as well". `write_cover.md` is v10 (`43c12b6c9150`); the old prompt and every draft are in
+      `libs/scaffolds/history/`. On the owner's ChatGPT Plus sign-in (Codex answers with gpt-6.2-sol) the same 36
+      letters: never sent back (Haiku 2 and 6), honesty about +1 of 10, half the lines that are not theirs, ATS
+      checks 100 and 99.2 in all six looks, the score level or better, 10 s faster; the opening weaker on the
+      panel. The wording needs nothing for GPT. CVs from the live CV prompt on GPT: the score +2.2 ± 0.9, but
+      more said that is not theirs (1.00 a CV against 0.44, "HGV Class 1" for an Irish C+E licence among them).
+    - **Waiting on the owner (later the same day).** (1) Whether to try one GPT-only honesty sentence in the CV
+      prompt (a prompt change, measured on GPT first). (2) A Gemini API key, for Gemini to be measured. (3) Then,
+      as the owner set the order, the layouts and the token cost. Still open: (3) and (4) of the list above.
+    - **2026-11-19, evening: which GPT, a reviewer on each platform, and a language read** (CHANGELOG). GPT's
+      Sol with Codex's own instructions and tools left out ("lean") writes letters as good as today's by both
+      reviewers, Claude's and GPT's own (gpt-6.2-astra), for about half the plan; Terra lean a quarter but weaker
+      closes and reasons; Luna out. Every test person has an About you now. Blind native-level reads of the 32
+      held-out letters not in English: Claude's (Haiku, and Sonnet too) about 4 to 5 more language errors a letter
+      than Sol lean, mostly German and Hungarian; a general language line (draft v11) moved nothing.
+    - **Waiting on the owner (evening).** (1) ChatGPT letters on Sol lean: `document_models.codex` set to
+      `gpt-6.2-sol` in Admin, lean on for letters; CVs lean are unmeasured. (2) Claude's letters in other
+      languages: code fixes the German mechanics, a measured proofreading call, measured language lines in the
+      prompt, or leave it; the Hungarian greeting translated from "Dear Hiring Manager" needs a prompt line or a
+      greeting set by code. (3) A Gemini API key, and whether the Gemini sign-in leaves Settings.
+    - **2026-11-19, night: done on the owner's word** (CHANGELOG): ChatGPT letters are written on Sol, lean (the
+      model named in `DEFAULT_DOCUMENT_MODELS`, lean by `build.LEAN`), so (1) above is done; letters are measured
+      in English for now (other languages parked, so (2) waits with them); an AI-language check sends a letter
+      back (`checks.AI_LANGUAGE`, measured: 1 of 452 bench letters, 17 of 20 AI sentences, 0 of 33 human ones);
+      `scripts/cvlab/formulas.py` finds each model's stock phrase; CLAUDE.md §3b lists the gates.
+    - **Waiting on the owner (night).** (1) A wording against each model's stock phrase ("what draws me to",
+      "I would like to bring that"), measured on Haiku and Sol lean. (2) Haiku at low effort for letters: as good
+      by both reviewers, about 30% fewer output tokens with second calls counted, but 8 of 28 sent back and one
+      incomplete letter in 29. (3) Whether letters for postings in other languages are written in English for
+      now (a `write_cover.md` line). (4) A Gemini API key.
+    - **2026-11-20: done on the owner's word.** Every letter in English: `write_cover.md` v12 live
+      (`ca6693d975c4`); level on English postings by both reviewers on Haiku and Sol lean, Sol's English letters for
+      postings in other languages −4.1 ± 1.1 by Claude's reviewer. Medium effort kept. The bench checks the first
+      document a run pays for and runs four calls at a time on a sign-in (CHANGELOG 2026-11-20).
+    - **2026-11-20, afternoon: the stock-phrase line (v13) dropped** on the owner's word ("try something
+      different"), kept in `libs/scaffolds/history/`.
+    - **2026-11-20, evening, the last iteration** (owner: options 2 and 3, tested on people with a weak letter
+      and About you of their own): a paragraph over four sentences cut in code, the bench writes only for people
+      with a letter of their own (`--overlay`, `scripts/cvlab/panel/letters/`), and v14 measured: worse nowhere,
+      better by one reviewer on each model, Haiku cheaper, the reason for this employer unmoved. **Waiting on the
+      owner (2026-11-20):** (1) v14 live, yes or no (`scripts/cvlab/out/examples-2026-11-20-v14/` to read);
+      (2) a posting's own brand beside the board's company, for the false "does not name" send-backs; (3) a
+      Gemini API key.
+    - **2026-11-21, the last iteration: v14 live, then v20, two new gates** (CHANGELOG). v14 made live on the
+      owner's word ("if v14 is better than v13 then lets make it live"), which answers (1) above; Gemini left out for
+      now ("we only need gpt and claude"), which answers (3). A hiring manager's read (`run.py --reviewer hire`) and
+      nothing bigger than the record (the two trap developers) are CLAUDE.md §3b gates 9 and 10; the employer check
+      accepts a company that writes its name in lower case. **v20 live that evening** ("if better make v20 live"),
+      by a rule written before GPT's reads: both hiring managers put it ahead on Haiku (Claude's +4.4 ± 1.4, GPT's
+      +3.9 ± 1.7 held out), accuracy up on both models by Claude's, nothing worse by either platform's readers,
+      lines not theirs 226 → 142, ATS and AI language as v14, Haiku a third more tokens out. **Waiting:** (1) GPT's
+      letter reviewer on v20 and GPT's readers on the trap after the ChatGPT week resets (2026-11-22 18:34 UTC,
+      `scripts/cvlab/out/sell-2026-11-21/gpt-now.sh v20`, some 10% of a week; two errors worse takes v20 out);
+      (2) for (2) above, the brand: the writer names the employer it wrote to and the check accepts it only as the
+      posting writes it (a prompt line); (3) Haiku's "I would like to bring that ... to", Sol's "what draws me to"
+      and both models' "the part of ... I enjoy most" on the AI-language list, or not.
+    - **2026-11-21, night: Claude models for letters** (CHANGELOG). Against Haiku at medium on v20, by Claude's
+      readers: Opus 5.5 the letter reviewer +5.0 ± 1.4*, the hiring manager +2.9 ± 1.5, 20 s a letter against 39,
+      $0.063 against $0.004 on a key, 7% of a five-hour window for 14 letters; Sonnet 5.5 more lines not theirs
+      (worse); Haiku at high nothing for twice the cost. **Waiting:** GPT's readers on Opus's letters after the
+      ChatGPT reset (gate 2, 34 reads, about 4% of a week), then the owner: Opus for letters or not (a letters-only model setting,
+      and Opus on people's own Claude plans to check).
 
 54. **Plans and the landing page: what waits for the owner** (2026-11-16, CHANGELOG).
     - At Stripe, live: a Starter product with a recurring monthly price of £2.99; its id as

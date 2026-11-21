@@ -90,3 +90,41 @@ Twelve more people, made up the same way, as the fit score's third held-out set:
 | `villanyszerelo` | Farkas Csaba, 51, electrician on industrial and residential installations | Hungary (Székesfehérvár), Hungarian | `cv.txt` | A CV typed in capitals, with date of birth, three years in Austria and a year out of work. Electrical engineer and maintenance postings sit beside his trade. |
 | `vigilante` | Antonio Jesús Moreno Castillo, licensed security guard (TIP) for eight years, a waiter before | Spain (Málaga), Spanish | `cv.txt` | A Spanish CV with date of birth and a change of trade. "Seguridad" also means health and safety at work and IT security. |
 | `groundworker` | Tyler Haworth, 25, groundworks labourer with a green CSCS card and no plant tickets | UK (Wigan), English | `cv.txt`, `reference.txt` | No headings, typos, and six months off with a broken ankle. Plant operator postings need tickets he does not have. The reference from his last employer confirms his dates and work. |
+
+## Postings for the letters' held-out set (2026-11-18)
+
+Fourteen of the people above were given one bench posting each, so that a cover letter wording can be read on people
+it was not tuned on. Each is the posting the fit evaluation's readers labelled that person's best fit (out of 10), from
+the postings drawn for them there. With the bench's own two non-English people (`konyvelo`, `elektriker`), that is 18
+postings in 16 trades and five languages. Read live against a candidate wording once, at the end of a series; nothing is
+tuned on them.
+
+| Folder | Posting fixture | The job | Fit label |
+|---|---|---|---|
+| `paralegal` | `a1-personnel-conveyancing-paralegal` | Conveyancing Paralegal, A1 Personnel (St Albans, England, United Kingdom) | 10 |
+| `payroll` | `adecco-payroll-administrator-f-m` | Payroll Administrator (f/m), Adecco (Wroclaw Metropolitan Area) | 9.5 |
+| `pflegehelferin` | `alloheim-senioren-residenzen-se-pflegefachassistenz-m-w-d` | Pflegefachassistenz (m/w/d), Alloheim Senioren-Residenzen SE (Rheinfelden (Baden), Baden-Württemberg, Germany) | 10 |
+| `kundenservice` | `bosch-group-mitarbeiter-kundenservice-f-r-krankenkassen-und` | Mitarbeiter Kundenservice für Krankenkassen und weitere Themen (w/m/div.), Bosch Group (Magdeburg, DE) | 10 |
+| `site-manager` | `dara-people-ltd-construction-manager` | Construction Manager, DARA PEOPLE LTD. (Oxford, England, United Kingdom) | 8 |
+| `vehicle-tech` | `j-petty-motors-vehicle-mechanic` | Vehicle Mechanic, J Petty Motors (Goole, England, United Kingdom) | 10 |
+| `hr-advisor` | `mediq-uk-hr-resourcing-advisor` | HR & Resourcing Advisor, Mediq UK (Castle Donington, England, United Kingdom) | 8 |
+| `housekeeper` | `merlin-entertainments-housekeeping-room-attendant` | Housekeeping - Room Attendant, Merlin Entertainments (Windsor, England, UK) | 10 |
+| `hotel-reception` | `minor-hotels-europe-and-americas-receptionist-nh-collection` | Receptionist - NH Collection Torino Santo Stefano, Minor Hotels Europe and Americas (Turin, Piedmont, Italy) | 10 |
+| `pharmacy-technician` | `montu-uk-accuracy-checking-pharmacy-technician-full-time` | Accuracy Checking Pharmacy Technician (Full-time), Montu UK (Winnersh) | 10 |
+| `nursery-practitioner` | `n-family-club-early-years-educator` | Early Years Educator, N Family Club (Maidenhead, England, United Kingdom) | 10 |
+| `care-worker` | `rushcliffe-care-limited-support-worker-beaumanor-beaumanor-c` | Support Worker - Beaumanor – Beaumanor Care Home, Rushcliffe Care Limited (Loughborough, England, UK) | 10 |
+| `plumber` | `sureserve-heating-engineer` | Heating Engineer, Sureserve (Birmingham, England, UK) | 10 |
+| `transport-planner` | `vnom-we-get-the-job-done-transportplanner-binnenland` | Transportplanner Binnenland, VNOM \| We get the job done (Bleiswijk, South Holland, Netherlands) | 10 |
+
+## Every letter-test person has an About you (2026-11-19)
+
+The owner: the tests must be fair, each person like a real account, "about you sections just like on the app".
+Of the 25 people the letter tests use (the nine panel people and the 16 held out), 9 had a `history.txt`, the
+app's "About you". The other 16 got one: warehouse, school-leaver, driver, office-senior, marketing, plumber,
+pharmacy-technician, vehicle-tech, payroll (Polish), hr-advisor, site-manager, kundenservice (German),
+transport-planner (Dutch), hotel-reception (Italian), konyvelo (Hungarian), elektriker (German). Each is written
+as a person types into the box, 65 to 157 words, in the language of their CV, some rough and some careful: what
+they want next, what their CV leaves out (a normal day, what they are proud of, a constraint), never an employer
+they apply to, and nothing their documents contradict. Where a person's home was far from the jobs they are
+tested on, they say they would move (as the nurse, chef and driver already did); the sales assistant's "anywhere
+in Greater Manchester" was changed the same way. Letters written before this day were written without them.

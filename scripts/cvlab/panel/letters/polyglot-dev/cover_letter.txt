@@ -1,0 +1,15 @@
+Joanna Pike
+07700 900417 · joanna.pike@example.com
+
+Dear Hiring Team,
+
+I am writing to apply for the Backend Engineer role. I am a passionate software engineer with 6 years experience and I have worked with many languages including Python, Go, Java and Typescript.
+
+At Northgate Payments I work on payment services and I built a reconciliation job and some internal tools. Before that I was at Halden Bank working on mortgage systems in Java.
+
+I am a fast learner and a team player and I enjoy solving complex problems. I am looking for a role where I can own a service end to end and work in a product team.
+
+I would welcome the opportunity to discuss my application.
+
+Kind regards,
+Joanna Pike

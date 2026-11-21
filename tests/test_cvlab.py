@@ -281,30 +281,110 @@ def test_the_reviewer_is_given_the_persons_documents_and_the_posting():
             asked.append(call)
             return json.dumps(REVIEW)
 
-    posting = bench.Posting({"slug": "job", "group": "g", "candidate": "x",
-                             "description": "We need a welder."})
+    posting = bench.Posting({"slug": "job", "group": "g", "candidate": "x", "title": "Welder",
+                             "location": "Leeds, England", "description": "We need a welder."})
     verdict = bench.judge_one(Client(), posting, cvchecks.text_of(CV), {"pages": 1},
                               "MIG and TIG welding at Harland Yard, 2019 to 2024.")
 
     prompt = asked[0]["messages"][0]["content"]
     assert "MIG and TIG welding at Harland Yard" in prompt and "We need a welder." in prompt
+    # The posting as its writer was given it, place and all: a reviewer not shown the place took "Screwfix in
+    # Leeds", "Prezzo in Chester" and three more for places a letter made up (5 of 34 lines, 2026-11-18).
+    assert "Location: Leeds, England" in prompt
     assert "I rebuilt a 500-component assembly" in prompt and '"pages": 1' in prompt
     assert not re.search(r"<(?:THEIR_DOCUMENTS|JOB_DESCRIPTION|CV_TEXT|DETERMINISTIC_SUMMARY)>", prompt)
     assert asked[0]["model"] == bench.JUDGE_MODEL and verdict["overall_100"] == 60
 
 
-def test_a_linked_account_writes_one_document_at_a_time():
-    """A sign-in's tool renews its session when it starts. Two at once can each renew it, and the one that
-    loses retires the sign-in: the docgen worker writes one at a time for that reason, and so does the bench
-    on a person's account. A key, or a run that calls nothing, goes as wide as asked."""
-    from scripts.cvlab.run import at_once
+def test_the_bench_writes_a_chatgpt_letter_lean_as_production_does():
+    """2026-11-19, night: the bench handed `build.draft` its lazy client, which is no `CliClient`, so 72 Sol
+    letters went to Codex plain (19,700 tokens in, not 8,800) and were kept under `+lean`. A letter on a
+    ChatGPT sign-in is written lean on the bench as in production, and is kept and recorded as lean."""
+    from libs.llm import cli
+    from scripts.cvlab import run as bench
 
-    assert at_once(SimpleNamespace(account="someone@example.com", dry_run=False, concurrency=4)) == 1
-    assert at_once(SimpleNamespace(account=None, dry_run=False, concurrency=4)) == 4
-    assert at_once(SimpleNamespace(account="someone@example.com", dry_run=True, concurrency=4)) == 4
-    # CVs already on disk, read by the reviewer on that account: nothing is written and the tool still runs.
-    assert at_once(SimpleNamespace(account="someone@example.com", dry_run=True, judge=True,
-                                   concurrency=4)) == 1
+    told = []
+
+    class Codex(cli.CliClient):
+        def complete_text(self, **call):
+            told.append(call.get("lean"))
+            return ('<letter><div class="letter"><p>Dear Hiring Manager,</p><p>I ran the ward rota.</p>'
+                    '<p class="closing">Kind regards,</p><p class="signature">Maya Example</p>'
+                    '</div></letter>')
+
+    client = bench._LazyClient(None, None, "codex")
+    client._client = Codex("codex_login", "{}", [].append)
+    candidate = bench.Candidate.__new__(bench.Candidate)
+    candidate.name, candidate.languages, candidate.documents = "maya", (), {"cv": ["Maya Example\nNurse"]}
+    candidate.user = SimpleNamespace(full_name="Maya Example", links=[])
+    posting = bench.Posting({"slug": "job", "group": "g", "candidate": "maya", "title": "Nurse",
+                             "company": "Acme", "description": "We need a nurse."})
+
+    bench.write_one(client, candidate, posting, template="Write it. {{job}} <letter></letter>",
+                    model="gpt-6.2-sol", kind="cover")
+
+    assert told == [True]
+
+
+def test_the_bench_writes_no_letter_for_someone_without_one_of_their_own_as_the_site_does(tmp_path):
+    """The site makes no cover letter for someone who has not uploaded one of their own
+    (`libs.documents.needs`), and 19 of the letter bench's 25 people had none: a case no person can reach
+    (2026-11-20). The bench refuses it as the site does. `--overlay` gives them one, and a weaker About you,
+    without changing the panel, whose people the fit score was rated on."""
+    from scripts.cvlab import run as bench
+
+    panel, overlay = tmp_path / "panel", tmp_path / "letters"
+    (panel / "maya").mkdir(parents=True)
+    (panel / "maya" / "candidate.json").write_text(json.dumps({"name": "Maya Example"}), encoding="utf-8")
+    (panel / "maya" / "cv.txt").write_text("Maya Example\nNurse", encoding="utf-8")
+    (panel / "maya" / "history.txt").write_text("A ward job in Leeds, days only.", encoding="utf-8")
+    args = SimpleNamespace(jobs_dir=str(tmp_path), out=str(tmp_path / "out"), candidates="maya",
+                           candidates_dir=str(panel), overlay=None, kind="cover")
+
+    with pytest.raises(SystemExit, match="no cover_letter of their own for maya"):
+        bench.run(args)
+
+    (overlay / "maya").mkdir(parents=True)
+    (overlay / "maya" / "cover_letter.txt").write_text("Dear Sir, I am hard working.", encoding="utf-8")
+    (overlay / "maya" / "history.txt").write_text("ward job leeds days", encoding="utf-8")
+
+    assert bench.Candidate("maya", panel, overlay).documents == {
+        "cv": ["Maya Example\nNurse"], "cover_letter": ["Dear Sir, I am hard working."],
+        "history": ["ward job leeds days"]}
+    assert bench.Candidate("maya", panel).documents["history"] == ["A ward job in Leeds, days only."]
+
+
+def test_a_run_stops_at_its_first_document_when_it_cost_far_more_than_those_kept_for_its_setup(tmp_path):
+    """2026-11-19: 72 letters were written plain and kept as lean, at twice the tokens, and spent a ChatGPT
+    plan's five hours before anyone looked. The first document a run pays for is checked alone, and the run
+    stops there; one that costs what the kept ones did lets the rest go ahead unchecked."""
+    from scripts.cvlab import run as bench
+
+    model = tmp_path / "gpt-6.2-sol+lean"
+    for at, tokens in enumerate((8_600, 8_800, 9_100)):
+        (model / "live").mkdir(parents=True, exist_ok=True)
+        kept = model / "live" / f"p{at}__live__job__1.cover.cost.json"
+        kept.write_text(json.dumps({"tokens_in": tokens}))
+    (model / "live" / "p__live__job__1.cost.json").write_text(json.dumps({"tokens_in": 1}))  # a CV's
+    new = model / "v12"
+    new.mkdir()
+    paid = []
+
+    def write(tokens):
+        return lambda: paid.append(tokens) or ("page", {"tokens_in": tokens})
+
+    plain = bench._FirstPaid()
+    with pytest.raises(SystemExit, match="19,700 tokens in where the 3 kept"):
+        plain(write(19_700), new, ".cover", SimpleNamespace())
+    with pytest.raises(SystemExit):
+        plain(write(19_700), new, ".cover", SimpleNamespace())
+    assert paid == [19_700]
+
+    lean = bench._FirstPaid()
+    assert lean(write(8_700), new, ".cover", SimpleNamespace()) == ("page", {"tokens_in": 8_700})
+    assert lean(write(30_000), new, ".cover", SimpleNamespace())[1]["tokens_in"] == 30_000
+    told = bench._FirstPaid()
+    assert told(write(19_700), new, ".cover", SimpleNamespace(costs_more=True))[1]["tokens_in"] == 19_700
 
 
 @pytest.mark.skipif(not os.path.exists(os.environ.get("CHROME_BIN", "")),
@@ -372,15 +452,43 @@ def test_a_cached_verdict_is_reused_and_costs_nothing(tmp_path):
     grid spent its whole next run re-buying judgements it already had and never progressed."""
     import json
 
-    from scripts.cvlab.run import _verdict
+    from scripts.cvlab.run import _verdict, reviewer
 
     kept = tmp_path / "cell.verdict.json"
-    kept.write_text(json.dumps({"overall_100": 61, "dimensions": {}}), encoding="utf-8")
+    kept.write_text(json.dumps({"overall_100": 61, "dimensions": {}, "reviewer": reviewer("cv")}),
+                    encoding="utf-8")
 
     # `client=None` stands in for "no credential available": a cached verdict must not need one.
     got = _verdict(None, None, "<html></html>", {}, kept=kept, judge=True, force=False)
 
     assert got["overall_100"] == 61
+
+
+def test_a_verdict_is_used_again_only_by_the_reviewer_that_wrote_it(tmp_path, monkeypatch):
+    """Letters were read without their subject line until 2026-11-18, and one subject in seven claimed a
+    speciality nobody had. A reviewer that changes (its model, its prompt, what it is shown) reads again:
+    its marks are never averaged with the last one's."""
+    import json
+
+    from scripts.cvlab import run as bench
+
+    kept = tmp_path / "cell.cover.verdict.json"
+    kept.write_text(json.dumps({"overall_100": 61, "dimensions": {}}), encoding="utf-8")
+    asked = []
+    def judge_one(client, posting, text, report, theirs, *, kind, model=None, hire=False):
+        asked.append(text)
+        return {"overall_100": 70, "dimensions": {}}
+    monkeypatch.setattr(bench, "judge_one", judge_one)
+
+    got = bench._verdict(object(), None, "Subject: x", {}, kept=kept, judge=True, force=False, kind="cover")
+    assert got["overall_100"] == 70 and asked == ["Subject: x"]
+    assert json.loads(kept.read_text(encoding="utf-8"))["reviewer"] == bench.reviewer("cover")
+    assert bench._verdict(object(), None, "Subject: x", {}, kept=kept, judge=True, force=False,
+                          kind="cover")["overall_100"] == 70 and len(asked) == 1
+    assert bench.reviewer("cover") != bench.reviewer("cv")
+    monkeypatch.setattr(bench, "JUDGE_MODEL", "another-model")
+    bench._verdict(object(), None, "Subject: x", {}, kept=kept, judge=True, force=False, kind="cover")
+    assert len(asked) == 2
 
 
 def test_asking_for_no_judgement_returns_none_rather_than_reading_the_cache():
@@ -439,6 +547,9 @@ def test_a_letter_is_pasted_as_a_person_would_paste_it():
 
     assert letter_text(LETTER_PAGE) == ("Dear Hiring Manager,\n\nFirst paragraph here.\n\nSecond one.\n\n"
                                         "Kind regards,\nMaya Example")
+    # Its reviewer reads it as the person it is sent to does: the subject line first.
+    assert letter_text(LETTER_PAGE, subject=True).startswith(
+        "Subject: Data analyst specialising in operations\n\nDear Hiring Manager,")
 
 
 def test_the_header_contact_is_read_back_as_it_was_written():
@@ -709,21 +820,112 @@ def test_a_wording_reads_what_is_known_about_the_company_or_that_nothing_is():
                     reason="needs CHROME_BIN: a real Chrome renders the PDF")
 def test_a_letter_has_ats_checks_of_its_own():
     """A letter through an ATS procedure too (owner, 2026-11-16): read whole, the name first, the employer and
-    the posting's title in it, its length, one page."""
+    the posting's title in it, its length, one page.
+
+    The employer is named in the letter's own words: the block above the subject names it in every letter,
+    since code writes it, and was the only place a letter that never named it was found to (2026-11-18). The
+    length is the one the docgen worker sends a letter back by, greeting, sign-off and name not in it: the
+    bench counted them, 6 to 39 words more than the worker over 54 letters."""
     from scripts.cvlab import run as bench
     from services.docgen import pdf
 
     posting = bench.Posting({"slug": "job", "group": "g", "candidate": "maya", "title": "Analyst (m/f/d)",
-                             "company": "Acme Ltd", "description": "We need an analyst."})
-    middle = "<p>" + "We count stock every week. " * 40 + "</p>"
-    long_enough = LETTER_PAGE.replace("<p>Second one.</p>", middle)
-    for page, failed in ((LETTER_PAGE, ["length"]), (long_enough, []),
-                         (long_enough.replace("Data analyst specialising", "Specialist"), ["title"])):
+                             "company": "Acme Group | Moving stock since 1990",
+                             "description": "We need an analyst."})
+
+    def letter(weeks: int, opening: str = "At Acme we count stock. ") -> str:
+        # Three words in the first paragraph, the opening's, then five a week.
+        middle = f"<p>{opening}{'We count stock every week. ' * weeks}</p>"
+        return LETTER_PAGE.replace("<p>Second one.</p>", middle)
+
+    long_enough = letter(40)
+    for page, failed in ((LETTER_PAGE, ["company", "length"]), (long_enough, []),
+                         (long_enough.replace("Data analyst specialising", "Specialist"), ["title"]),
+                         (letter(40, opening="We count stock. "), ["company"]),
+                         # 178 words of letter, 185 with its greeting, sign-off and name.
+                         (letter(34), ["length"]),
+                         # Named as a person writes it, not as the board's field does (2026-11-18).
+                         (letter(40, opening="At Acme Logistics we count stock. "), [])):
         document = pdf.render(page)
         report = pdf.inspect_pdf(document, kind="cover")
         passed = bench.ats_letter_checks(document, page, posting, report)
         assert [name for name, ok in passed.items() if not ok] == failed, page[:0]
     pdf._discard()
+
+
+def test_a_letter_names_the_job_roughly_as_the_posting_does():
+    """Owner, 2026-11-19: the posting's title belongs in a letter, "perhaps not the exact title but it should
+    be in there roughly the same". The bench asked for it word for word, and failed letters a person reads
+    as naming the job: four of the 36 live and v3 letters of 2026-11-18, in English and German."""
+    from scripts.cvlab.checkers import names_title
+
+    for text, title in (
+            ("why I am applying for the Clinical Nurse Specialist for Endometriosis post",
+             "Clinical Nurse Specialist Endometriosis"),
+            ("the Apprentice/Trainee Client Support Administrator role",
+             "Apprentice Client Support Administrator"),
+            ("Ich bewerbe mich als Mitarbeiterin im Kundenservice für Krankenkassen.",
+             "Mitarbeiter Kundenservice für Krankenkassen und weitere Themen (w/m/div.)"),
+            ("als Elektroniker im Bereich Gebäudetechnik",
+             "Elektriker / Elektroniker (m/w/d) im Bereich Gebäudetechnik"),
+            ("als Pflegefachassistentin bei Alloheim", "Pflegefachassistenz (m/w/d)"),
+            ("az Accounts Receivable Coordinator pozícióra", "Accounts Receivable Coordinator"),
+            ("Subject: Staff Nurse specialising in theatres", "Bank Staff Nurse/ODP")):
+        assert names_title(text, title), title
+    # Another job, the title's words apart, a shorter or a longer word, or a translation, do not name it.
+    for text, title in (
+            ("the Server role at Las Iguanas", "Waiting Team Member"),
+            ("the Vehicle Technician role", "Vehicle Mechanic"),
+            ("I supported residents as a care worker", "Support Worker - Beaumanor"),
+            ("I worked at the reception of a hotel", "Receptionist"),
+            ("I ran office management", "Office Manager - FTC 12 Months"),
+            ("as an accredited checking technician", "Accuracy Checking Pharmacy Technician (Full-time)"),
+            ("a kintlévőség-kezelési koordinátori munkakör", "Accounts Receivable Coordinator")):
+        assert not names_title(text, title), title
+
+
+def test_a_letter_is_counted_on_calling_its_employer_what_people_call_it():
+    """Owner, 2026-11-19: "not the long posted versions but from bosch group we should say bosch". Counted
+    where the board's field has something to leave out, and only there."""
+    from scripts.cvlab import run as bench
+
+    rettenmaier = "J. RETTENMAIER &amp; SÖHNE GmbH + Co KG"
+    for text, company, said in (("my work at Bosch in Magdeburg", "Bosch Group", 1),
+                                ("bei der Bosch Group in Magdeburg", "Bosch Group", 0),
+                                ("bei der RETTENMAIER & SÖHNE GmbH + Co KG", rettenmaier, 0),
+                                ("bei J. Rettenmaier & Söhne in Rosenberg", rettenmaier, 1),
+                                ("at VNOM | We get the job done", "VNOM | We get the job done", 0),
+                                ("at VNOM in Bleiswijk", "VNOM | We get the job done", 1),
+                                ("at Screwfix in Leeds", "Screwfix", None)):
+        assert bench.says_company_as_people_do(text, company) == said, text
+
+
+@pytest.mark.skipif(not os.path.exists(os.environ.get("CHROME_BIN", "")),
+                    reason="needs CHROME_BIN: a real Chrome renders the PDF")
+def test_a_letter_is_checked_in_every_look_a_person_can_pick():
+    """Owner, 2026-11-18: "make sure all the formats that we can choose the cover letter for also works with
+    it". The same letter drawn in each letter look and read as an ATS reads it, and a fault named in every
+    look it is in."""
+    from libs import templates
+    from scripts.cvlab import run as bench
+    from services.docgen import build
+
+    candidate = bench.Candidate.__new__(bench.Candidate)
+    candidate.name, candidate.languages = "maya", ()
+    candidate.user = SimpleNamespace(full_name="Maya Example", links=[])
+    candidate.documents = {"cv": ["Maya Example\nmaya@example.com\n07700 900123\nEXPERIENCE\nAnalyst, Acme"]}
+    posting = bench.Posting({"slug": "job", "group": "g", "candidate": "maya", "title": "Analyst",
+                             "company": "Acme Ltd", "description": "We need an analyst."})
+    page = build.assemble(bench.request_for(candidate, posting, None, "cover"), (
+        '<p class="letter-subject">Analyst specialising in stock</p><div class="letter">'
+        f"<p>Dear Hiring Manager,</p><p>At Acme we count stock. {'We count stock every week. ' * 40}</p>"
+        '<p class="closing">Kind regards,</p><p class="signature">Maya Example</p></div>'))
+    untitled = page.replace("Analyst specialising", "Specialist")
+
+    assert bench.every_look(candidate, posting, page, "cover") == {"ats_every_look": 100.0,
+                                                                   "looks_failed": {}}
+    assert bench.every_look(candidate, posting, untitled, "cover")["looks_failed"] == {
+        look.id: ["title"] for look in templates.of_kind("cover")}
 
 
 def test_a_cover_letter_cell_is_measured_as_a_letter(tmp_path, monkeypatch):
@@ -771,6 +973,53 @@ def test_a_cover_letter_cell_is_measured_as_a_letter(tmp_path, monkeypatch):
     assert asked[-1].path == tmp_path / "uploaded" / "maya__uploaded__job__1.cover.txt"
 
 
+def test_the_hiring_managers_read_is_kept_beside_the_letter_reviewers_with_the_chance_of_an_interview(
+        tmp_path, monkeypatch):
+    """Owner, 2026-11-21: a filter "reverse engineering the cover letter as a hiring manager would want to see
+    it", from what the posting needs and the best case the person's record makes. It is a reviewer of its own:
+    it reads its own prompt, its verdict is kept beside the letter reviewer's and never over it, it keeps only
+    its own marks, and it says the chance of an interview."""
+    from scripts.cvlab import run as bench
+
+    candidate = bench.Candidate.__new__(bench.Candidate)
+    candidate.name, candidate.languages = "maya", ()
+    candidate.user = SimpleNamespace(full_name="Maya Example", links=[])
+    candidate.documents = {"cv": ["Maya Example\nEXPERIENCE\nAnalyst"],
+                           "cover_letter": ["Dear team, my own."]}
+    posting = bench.Posting({"slug": "job", "group": "g", "candidate": "maya", "title": "Analyst",
+                             "company": "Acme", "description": "We need an analyst."})
+    wording = "Write the letter. {{job}} <letter></letter>"
+    folder = bench.kept_in(tmp_path, "claude-haiku-5-5", "medium", wording)
+    (folder / "maya__live__job__1.cover.html").write_text(LETTER_PAGE, encoding="utf-8")
+    theirs = folder / "maya__live__job__1.cover.verdict.json"
+    theirs.write_text(json.dumps({"overall_100": 50, "reviewer": bench.reviewer("cover")}), encoding="utf-8")
+    monkeypatch.setattr(bench, "rendered",
+                        lambda page, label, kind: (None, bench.pdf.PdfReport(pages=None, chars=0)))
+    line = bench.letter_text(LETTER_PAGE).splitlines()[2]
+    read = []
+
+    class HiringManager:
+        def complete_text(self, *, model, system, messages, max_tokens):
+            read.append(messages[0]["content"])
+            return json.dumps({"dimensions": {"best_case": {"score": 7, "evidence": line},
+                                              "why_here": {"score": 2, "evidence": line}},
+                               "not_theirs": [], "interview": 65, "one_line": "Likely."})
+
+    args = SimpleNamespace(kind="cover", dry_run=True, force=False, judge=True, checkers=[], reviewer="hire",
+                           model="claude-haiku-5-5", effort="medium")
+    row = bench._run_cell(None, candidate, posting, variant="live", sample=1, template=wording, out=tmp_path,
+                          args=args, judge=HiringManager())
+    assert "The hire you want" in read[0] and "Dear team, my own." in read[0]
+    assert row["interview"] == 65 and row["dimensions"] == {"best_case": 7} and row["overall_100"] == 70
+    assert json.loads(theirs.read_text(encoding="utf-8"))["overall_100"] == 50
+    kept = json.loads((folder / "maya__live__job__1.cover.hire.json").read_text(encoding="utf-8"))
+    assert kept["reviewer"] == bench.reviewer("cover", hire=True) != bench.reviewer("cover")
+    # Asked again, the kept read is used and nothing is paid for.
+    again = bench._run_cell(None, candidate, posting, variant="live", sample=1, template=wording,
+                            out=tmp_path, args=args, judge=HiringManager())
+    assert again["interview"] == 65 and len(read) == 1
+
+
 def test_what_other_tools_said_reaches_the_comparison():
     """An outside measure that moved must be in the paired table, or a prompt is judged on ours alone."""
     from scripts.cvlab.run import scoreboard
@@ -782,3 +1031,22 @@ def test_what_other_tools_said_reaches_the_comparison():
 
     assert "What tools that are not ours said" in board
     assert "| resymatch.match | +15.00" in board
+
+
+def test_a_phrase_one_model_writes_for_many_people_is_its_formula_and_one_persons_own_phrase_is_not():
+    """Owner, 2026-11-19: no AI language. A phrase in many people's letters is the model's, not theirs: Sol
+    lean wrote "what draws me to" for 8 of 19 people, Haiku "I would like to bring that" for 13."""
+    from scripts.cvlab.formulas import formulas
+
+    work = ["I drove forklifts on nights", "I ran a hotel front desk", "I cut hair in Leeds",
+            "I nursed on a ward"]
+    why = ["its depot", "its guests", "its salon", "its patients"]
+    letters = {f"p{n}/job": f"Dear Hiring Manager, {work[n]}. What draws me to you is {why[n]}."
+               for n in range(4)}
+    letters["p4/job"] = "Dear Hiring Manager, I fixed boilers for nine years and my van is my office."
+    letters["p4/other"] = "Dear Hiring Manager, I fixed boilers for nine years and my van is my office."
+
+    found = {phrase: count for count, phrase in formulas(letters)}
+
+    # The longest form, once; one person's two letters are one person; the greeting is asked for.
+    assert found == {"what draws me to you is its": 4}

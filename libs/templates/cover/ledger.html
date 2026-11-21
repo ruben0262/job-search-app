@@ -28,7 +28,10 @@ a { color: inherit; text-decoration: none; }
 
 .cv-header { text-align: center; }
 .cv-name { font-size: 20pt; font-weight: 700; color: #000; text-transform: uppercase; letter-spacing: 1pt; line-height: 1.05; }
-.cv-contact { font-size: 9.5pt; margin-top: 3pt; display: flex; justify-content: center; }
+/* Room under the name, as the Ledger CV has and for its reason: the name is centred, so a contact line
+   wider than it starts further left, and pdfminer took that line for the first thing on the page. At 3pt
+   it did so in 2 of 18 letters (2026-11-18), for a person with a phone, an email, a place and a link. */
+.cv-contact { font-size: 9.5pt; margin-top: 16pt; display: flex; justify-content: center; }
 .cv-contact span + span::before { content: "|"; margin: 0 6pt; color: #666; }
 .header-rule { border: none; border-top: 0.75pt solid #000; margin: 6pt 0 16pt; }
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import math
 import os
 import pathlib
 import re
@@ -161,15 +162,62 @@ _CONTRACT_FIRST = re.compile(r"(?i)^\s*(?:(?:bank(?=\s+staff\b)|temporary|temp|p
                              r"part[- ]time|full[- ]time|fixed[- ]term)\s+)+")
 
 
+# "m/f/d", "M/W/D": who may apply, which is no part of the title and whose strokes are not its end.
+_WHO_MAY_APPLY = re.compile(r"(?i)\(?\b[mfwdx](?:/[mfwdx]){1,3}\b\)?")
+# The little words between a title's own, in the postings' languages: "Clinical Nurse Specialist for
+# Endometriosis" names "Clinical Nurse Specialist Endometriosis".
+_LITTLE = frozenset({"the", "and", "or", "of", "for", "in", "at", "to", "with", "on",  # English
+                     "und", "für", "im", "der", "die", "das", "des", "dem", "den", "mit", "von", "zur", "zum",
+                     "bei", "en", "voor", "van", "het", "met",  # German, Dutch
+                     "di", "del", "della", "per", "al", "alla", "az", "és",  # Italian, Hungarian
+                     "et", "pour", "la", "le", "les", "du", "para", "el", "los", "las"})  # French, Spanish
+
+
 def job_title(line: str) -> str:
     """The job's title as a person would type it into a checker: a board's line without its hours, its
     contract and its place ("Retail Advisor, 38hrs 12M FTC, Aintree" is "Retail Advisor", "Bank Staff
     Nurse/ODP" is "Staff Nurse"). ResyMatch looks for the title in the CV, and found the whole line in
     none (7 of 9 CVs, 2026-11-14)."""
-    # "m/f/d", "M/W/D": who may apply, which is no part of the title and whose strokes are not its end.
-    line = re.sub(r"(?i)\(?\b[mfwdx](?:/[mfwdx]){1,3}\b\)?", " ", line)
+    line = _WHO_MAY_APPLY.sub(" ", line)
     title = re.split(r"\s+[-\u2013|]\s+|[,(/]", line, maxsplit=1)[0].strip() or line.strip()
     return _CONTRACT_FIRST.sub("", title).strip() or title
+
+
+def names_title(text: str, title: str) -> bool:
+    """Whether a letter names the job roughly as the posting does (owner, 2026-11-19: "perhaps not the exact
+    title but it should be in there roughly the same"). The title is cut as `job_title` cuts it, except that
+    either side of a stroke will do ("Elektriker / Elektroniker"); its little words do not count. It has to
+    be in one sentence of the letter or its subject, its words in their order with at most one other word
+    between two of them, each word as it is or in a form of it ("Mitarbeiterin" for "Mitarbeiter"): all of a
+    title of up to three words, three in five of a longer one ("Mitarbeiterin im Kundenservice für
+    Krankenkassen" for "... Krankenkassen und weitere Themen"). It is cut at "m/f/d" too, as at a dash: what
+    follows says where or with what ("Elektriker / Elektroniker (m/w/d) im Bereich Gebäudetechnik")."""
+    line = re.split(r"\s+[-\u2013|]\s+|[,(]", _WHO_MAY_APPLY.sub(",", title), maxsplit=1)[0]
+    line = re.sub(r"\s*/\s*", "/", _CONTRACT_FIRST.sub("", line).casefold())
+    own = [options for options in ({word for part in token.split("/") for word in re.findall(r"[^\W_]+", part)
+                                    if len(word) > 1 and word not in _LITTLE} for token in line.split())
+           if options]
+    need = len(own) if len(own) <= 3 else math.ceil(0.6 * len(own))
+    # A title has no comma or bracket in it once cut, so a phrase that names it has none either.
+    for sentence in re.split(r"(?<=[.!?])\s+|[\n,;:()]+", text.casefold()):
+        words = [word for word in re.findall(r"[^\W_]+", sentence) if len(word) > 1 and word not in _LITTLE]
+        # The longest run of the title's words ending at each place: (title word, letter word) -> length.
+        run: dict[tuple[int, int], int] = {}
+        for at, options in enumerate(own):
+            for where, word in enumerate(words):
+                if any(_form_of(word, each) for each in options):
+                    run[at, where] = 1 + max((length for (before, there), length in run.items()
+                                              if before < at and 0 < where - there <= 2), default=0)
+        if own and max(run.values(), default=0) >= need:
+            return True
+    return False
+
+
+def _form_of(word: str, own: str) -> bool:
+    """`word` is `own`, or `own` with its last letter kept or changed and up to three added ("mitarbeiterin",
+    "pflegefachassistentin", "nurses"). Not a shorter word, nor a longer one: "reception" does not name a
+    receptionist, nor "management" a manager."""
+    return word == own or (len(own) >= 4 and word.startswith(own[:-1]) and len(word) - len(own) + 1 <= 3)
 
 
 def read_resymatch(data: dict, document: Document) -> dict:
