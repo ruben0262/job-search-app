@@ -14,6 +14,25 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-22 — My documents before Alerts in the menu, and a fuller About you hint (the owner's edits)
+
+The owner's own two edits, committed on their word ("you should commit everything"):
+
+- **The menu** reads Jobs, Applied, My search, My documents, Alerts (Admin for an admin), Settings, and a phone's
+  bar Jobs, Applied, Docs, Alerts and More (`web/src/places.tsx`). The two browser tests that hold the order
+  (`test_the_tabs_in_order_and_what_each_one_is_for`, `_a_phones_bar`) now hold this one.
+- **The About you hint** asks for what a CV leaves out: projects, experience, competitions, day-to-day activities,
+  achievements, research (`ABOUT_HINT`, `web/src/pages/DocumentsPage.tsx`); "comptetitions" spelt right.
+- **The bench's copies of v14 and v20** (`scripts/cvlab/variants/cover/`), which the GPT reads still to run after
+  the ChatGPT reset ask for by name (`gpt-now.sh v20`). They are byte for byte
+  `libs/scaffolds/history/write_cover.2026-11-21.pre-v20.md` and the live `write_cover.md`: delete both once those
+  reads are done.
+
+Gates, on this tree: `lint-imports` 2 kept, 0 broken; `ruff check .` all passed; `python -m libs.db --prune` on an
+empty database of the local mongod, exit 0; the contract clean; the build built; `pytest tests/ -n 4` with only
+`MONGODB_URI` and `CHROME_BIN` set: 1,939 passed, 2 failed, 7 skipped, the two being the old menu order; with the
+order updated, `tests/test_e2e_site.py` 67 passed.
+
 ## 2026-11-21, night — Claude models for letters, measured: Opus 5.5 reads better and writes in half the time, at fifteen times Haiku's price; nothing switched
 
 The owner: "look to one or two up the current claude model see the usage and see if it pays off to use a better

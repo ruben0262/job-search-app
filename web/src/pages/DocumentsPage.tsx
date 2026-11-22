@@ -294,8 +294,7 @@ export function Files({ kind, list, onChanged }: {
   );
 }
 
-const ABOUT_HINT = "What your CV leaves out: projects, what you did day to day, what you want next. "
-  + "A sentence is enough.";
+const ABOUT_HINT = "What your CV leaves out, so your personal context such as projects, your extensive experience, competitions, day-to-day activities, achievements, research and so on.";
 
 /** The text about themselves they can always edit: what a CV leaves out. Setting up gives it a screen of its
  * own, with its own reason and button (`Onboarding`); My documents, a card. */

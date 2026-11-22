@@ -459,7 +459,7 @@ def _a_phones_bar(page) -> None:
     """An app's (owner, 2026-11-17): four places and More, each a picture over its word, the rest in More's
     sheet, More lit on one of them, and no box of the phone's own where a tab is tapped."""
     bar = page.locator("nav .places > :is(a, button):visible")
-    expect(bar).to_have_text(["Jobs", "Applied", "Alerts", "Docs", "More"], use_inner_text=True)
+    expect(bar).to_have_text(["Jobs", "Applied", "Docs", "Alerts", "More"], use_inner_text=True)
     expect(bar.locator("svg")).to_have_count(5)
     assert bar.evaluate_all("tabs => tabs.map((tab) => getComputedStyle(tab).webkitTapHighlightColor)") \
         == ["rgba(0, 0, 0, 0)"] * 5, "a tap draws the phone's own box"
@@ -1363,7 +1363,8 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         _sign_up(page, base, email, capsys)
         _onboard(page)
         tabs = page.locator("nav .places a")
-        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "Alerts", "My documents", "Settings"],
+        # My documents before Alerts: the owner's order (2026-11-22).
+        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Alerts", "Settings"],
                                   use_inner_text=True)
 
         card = page.locator("article.job-card").filter(
@@ -1389,7 +1390,7 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
         page.reload()
         expect(tabs).to_have_text(
-            ["Jobs", "Applied", "My search", "Alerts", "My documents", "Admin", "Settings"],
+            ["Jobs", "Applied", "My search", "My documents", "Alerts", "Admin", "Settings"],
             use_inner_text=True)
         tabs.filter(has_text="Admin").click()
         page.get_by_role("button", name="Messages").click()
@@ -1410,7 +1411,7 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         page.set_viewport_size({"width": 320, "height": 640})
         page.goto(f"{base}/#/")
         expect(page.locator("nav .places > :is(a, button):visible")).to_have_text(
-            ["Jobs", "Applied", "Alerts", "Docs", "More"], use_inner_text=True)
+            ["Jobs", "Applied", "Docs", "Alerts", "More"], use_inner_text=True)
         assert page.evaluate("""() => [...document.querySelectorAll("nav .places > :is(a, button)")]
             .filter((tab) => tab.getClientRects().length).every((tab) => {
                 const word = tab.querySelector(".place-short");
