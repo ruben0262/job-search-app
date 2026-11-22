@@ -3,9 +3,13 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import smtplib
 import ssl
+import string
+from datetime import UTC, datetime
 from email.message import EmailMessage
+from email.utils import format_datetime, parseaddr
 from typing import Protocol
 from urllib.parse import urlparse
 
@@ -14,6 +18,12 @@ from libs.notify import site_url
 logger = logging.getLogger(__name__)
 
 SMTP_TIMEOUT = 20.0
+
+# What an email's own id is made of before its "@": letters and digits, 24 of them. iCloud is reported to drop
+# mail it has accepted, without a word and not into Junk, over an id it dislikes: 40 characters or more before
+# the "@", or hex digits alone (2026-11-22, when people on iPhones found no confirmation email).
+_ID_LETTERS = string.ascii_letters + string.digits
+_ID_LENGTH = 24
 
 
 class MailError(RuntimeError):
@@ -39,6 +49,12 @@ class SmtpSender:
         message["From"] = self._from
         message["To"] = to
         message["Subject"] = subject
+        # Neither was set, and nothing here can tell whether the mail server adds them: the standard asks for
+        # a date (RFC 5322 §3.6), and the id is on the domain the email is from.
+        message["Date"] = format_datetime(datetime.now(UTC))
+        domain = parseaddr(self._from)[1].rpartition("@")[2] or self._host
+        own = "".join(secrets.choice(_ID_LETTERS) for _ in range(_ID_LENGTH))
+        message["Message-ID"] = f"<{own}@{domain}>"
         if reply_to:
             message["Reply-To"] = reply_to
         message.set_content(body)

@@ -143,3 +143,48 @@ def test_an_email_that_cannot_be_sent_is_printed_only_on_somebodys_own_computer(
     assert any("was not sent" in record.message and "token=" not in record.message
                for record in caplog.records)
     assert sender.sent == [("a@example.com", "Reset your password", link)]
+
+
+def test_an_email_carries_its_date_and_an_id_of_its_own_on_the_senders_domain(monkeypatch):
+    """Every email went out with no `Date` and no `Message-ID`: the standard asks for the first (RFC 5322
+    §3.6), and iCloud is reported to drop mail it has accepted, out of sight and not even in Junk, for want of
+    the second or for one it dislikes: a part before the "@" of 40 characters or more, or of hex digits alone
+    (2026-11-22: people on iPhones found no confirmation email, not even in spam). Each has one of its own,
+    short, of letters and digits, on the domain it is sent from."""
+    import re
+    import smtplib
+    from datetime import UTC, datetime
+    from email.utils import parsedate_to_datetime
+
+    sent = []
+
+    class Server:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def starttls(self, **kwargs):
+            pass
+
+        def login(self, *args):
+            pass
+
+        def send_message(self, message):
+            sent.append(message)
+
+    monkeypatch.setattr(smtplib, "SMTP", Server)
+    mailer = sender_from_env({**CONFIGURED, "MAIL_FROM": "Mahoraga <no-reply@flow-solutions.xyz>"})
+    mailer.send("someone@icloud.com", "Confirm your email", "Open the link")
+    mailer.send("someone@icloud.com", "Confirm your email", "Open the link")
+
+    first, second = sent
+    assert abs((parsedate_to_datetime(first["Date"]) - datetime.now(UTC)).total_seconds()) < 60
+    found = re.fullmatch(r"<([A-Za-z0-9]+)@flow-solutions\.xyz>", first["Message-ID"] or "")
+    assert found, first["Message-ID"]
+    assert len(found.group(1)) < 40 and not re.fullmatch(r"[0-9a-f]+", found.group(1))
+    assert first["Message-ID"] != second["Message-ID"], "one of its own each"
