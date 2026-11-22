@@ -1,6 +1,6 @@
-"""The AI accounts a person links in Settings (owner, 2026-11-09): sign-ins to their own Claude, ChatGPT
-(Codex) or Google (Gemini) account, and API keys. Several, one in use, never shown back
-(`libs.llm.accounts`). Without one in use, no CV or cover letter is made.
+"""The AI accounts a person links in Settings (owner, 2026-11-09): sign-ins to their own Claude or ChatGPT
+(Codex) account, and API keys. Several, one in use, never shown back (`libs.llm.accounts`). Without one in
+use, no CV or cover letter is made.
 
 A sign-in runs in the broker (`services/oauthbroker`), which hands the finished login here to be sealed.
 """
@@ -30,8 +30,10 @@ from services.api.deps import current_user, get_db, get_store, rate_limit
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai-accounts", tags=["ai accounts"])
 
-LoginKind = Literal["claude_login", "codex_login", "gemini_login"]
-KeyKind = Literal["claude_api", "openai_api", "gemini_api"]
+# What can be linked. Not Gemini, a sign-in or a key (owner, 2026-11-22: "its not configured and it probably
+# won't be"): one linked before is still listed, so it can be removed (`AiAccount.kind`).
+LoginKind = Literal["claude_login", "codex_login"]
+KeyKind = Literal["claude_api", "openai_api"]
 
 # The broker owns the sign-in processes; see `services/oauthbroker`.
 BROKER = os.environ.get("OAUTH_BROKER_URL", "http://oauthbroker:8100")
@@ -148,7 +150,7 @@ def start_signin(kind: LoginKind, request: Request, *,
 
 class SignInFinish(BaseModel):
     session_id: str = Field(min_length=8, max_length=128)
-    # The code Claude's or Google's page shows. None for Codex, whose code is entered on OpenAI's page.
+    # The code Claude's page shows. None for Codex, whose code is entered on OpenAI's page.
     code: str | None = Field(default=None, min_length=4, max_length=512)
 
 

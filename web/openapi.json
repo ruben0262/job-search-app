@@ -1,6 +1,30 @@
 {
   "components": {
     "schemas": {
+      "AboutLength": {
+        "description": "How much About you says, in words (`libs.documents.about`): the site asks for more until it has more\nthan `enough`, and takes up to `most`.",
+        "properties": {
+          "enough": {
+            "title": "Enough",
+            "type": "integer"
+          },
+          "most": {
+            "title": "Most",
+            "type": "integer"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "words",
+          "enough",
+          "most"
+        ],
+        "title": "AboutLength",
+        "type": "object"
+      },
       "AccountOut": {
         "properties": {
           "email": {
@@ -2810,12 +2834,27 @@
             "title": "Chars",
             "type": "integer"
           },
+          "enough": {
+            "title": "Enough",
+            "type": "integer"
+          },
+          "most": {
+            "title": "Most",
+            "type": "integer"
+          },
           "text": {
             "title": "Text",
             "type": "string"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
           }
         },
         "required": [
+          "words",
+          "enough",
+          "most",
           "text",
           "chars"
         ],
@@ -3074,8 +3113,7 @@
           "kind": {
             "enum": [
               "claude_api",
-              "openai_api",
-              "gemini_api"
+              "openai_api"
             ],
             "title": "Kind",
             "type": "string"
@@ -4386,6 +4424,13 @@
       "PlanLines": {
         "description": "What a card says of its plan: the operator's lines, ticked and crossed out by the plans\n(`lines_of`).",
         "properties": {
+          "adds": {
+            "items": {
+              "$ref": "#/components/schemas/Line"
+            },
+            "title": "Adds",
+            "type": "array"
+          },
           "bonus": {
             "default": [],
             "items": {
@@ -4436,7 +4481,8 @@
         },
         "required": [
           "gives",
-          "lacks"
+          "lacks",
+          "adds"
         ],
         "title": "PlanLines",
         "type": "object"
@@ -5007,6 +5053,9 @@
       "ReadyDashboard": {
         "description": "What every signed-in page needs before it draws. No count of matches: the jobs page is the\nfront page and counts its own list, and asking here as well was a second full match run on every\nload \u2014 /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it.",
         "properties": {
+          "about": {
+            "$ref": "#/components/schemas/AboutLength"
+          },
           "applied": {
             "title": "Applied",
             "type": "integer"
@@ -5049,7 +5098,8 @@
           "areas",
           "applied",
           "banners",
-          "job_filters"
+          "job_filters",
+          "about"
         ],
         "title": "ReadyDashboard",
         "type": "object"
@@ -8355,8 +8405,7 @@
             "schema": {
               "enum": [
                 "claude_login",
-                "codex_login",
-                "gemini_login"
+                "codex_login"
               ],
               "title": "Kind",
               "type": "string"
@@ -8403,8 +8452,7 @@
             "schema": {
               "enum": [
                 "claude_login",
-                "codex_login",
-                "gemini_login"
+                "codex_login"
               ],
               "title": "Kind",
               "type": "string"
@@ -10988,7 +11036,7 @@
         ]
       },
       "put": {
-        "description": "Their own words about themselves, typed rather than uploaded.",
+        "description": "Their own words about themselves, typed rather than uploaded: up to `about.MOST_WORDS` of them.",
         "operationId": "put_history_onboarding_history_put",
         "requestBody": {
           "content": {

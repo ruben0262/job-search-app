@@ -285,6 +285,34 @@ def test_deleting_the_cv_reopens_its_page(api):
 
 
 @needs_db
+def test_about_you_says_how_many_words_it_has_against_what_is_enough_and_the_most(api):
+    """Owner, 2026-11-22: the box shows its words as they grow, against what is enough (150) and the most it
+    takes, both as the server keeps them, so the page never has a number of its own."""
+    from libs.documents import about
+
+    http, _db, _user = api
+    assert http.get("/onboarding/history").json() == {"text": "", "chars": 0, "words": 0,
+                                                      "enough": about.ENOUGH_WORDS, "most": about.MOST_WORDS}
+    http.put("/onboarding/history", json={"text": "I lead a team of twelve\non night shifts."})
+    assert http.get("/onboarding/history").json()["words"] == 9
+
+
+@needs_db
+def test_about_you_takes_up_to_the_most_words_and_keeps_what_was_saved(api):
+    """Owner, 2026-11-22: "there should be a high word limit on it ... so people can type away". As many words
+    as the most are saved; one more is refused with what to do, and what was saved stays."""
+    from libs.documents import about
+
+    http, _db, _user = api
+    most = " ".join(["shift"] * about.MOST_WORDS)
+    assert http.put("/onboarding/history", json={"text": most}).status_code == 200
+    refused = http.put("/onboarding/history", json={"text": f"{most} lead"})
+    assert refused.status_code == 422
+    assert f"up to {about.MOST_WORDS:,} words" in refused.json()["detail"]
+    assert http.get("/onboarding/history").json()["text"] == most, "what was saved stays"
+
+
+@needs_db
 def test_the_about_you_text_replaces_rather_than_accumulates(api):
     """It is one document the user edits, and a sentence is enough."""
     from libs.db.models import UserDocument

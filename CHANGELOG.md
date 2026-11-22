@@ -14,6 +14,78 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-22 — Every email carries a date and an id of its own
+
+The owner: "on [iPhones] people don't seem to find the email even in their spam". The site's side of it works on
+an iPhone: signing up from the landing page, the confirmation link and "Send me a new link" were walked in WebKit
+(an iPhone 15's profile, over https as the live site is), the address typed as the iPhone keyboard enters it
+reaching the mailer lower-cased and trimmed, and no script error on any page.
+
+- **What went out had no `Date` and no `Message-ID`** (`libs/mail/sender.py`). The standard asks for the first
+  (RFC 5322 §3.6); iCloud, where most iPhone users' addresses are, is reported to drop mail it has accepted, out
+  of sight and not into Junk, for want of the second or for one with 40 characters or more before the "@" or of
+  hex digits alone. Whether Zoho adds them on the way cannot be seen from here. Each email now has a date and an
+  id of its own, 24 letters and digits on the domain it is sent from: verification, reset, the daily email and
+  the contact form alike.
+- The sending domain's SPF, DKIM (`zmail`) and DMARC (`p=quarantine`) are in place for Zoho: not the cause.
+- Not proven: the live server's log and Zoho's outgoing log say whether iCloud took the message. "Show original"
+  on any email the site sent says whether Zoho had been adding the two headers.
+
+## 2026-11-22, afternoon — the upgrade page says what each plan really adds, Gemini off the site, job card buttons along the foot, and About you asked for until it says enough
+
+The owner: "if i want to become a member, not a starter, then i get jobs 3 days after they are posted which is not
+true but it appears"; "remove from the frontend the opportunity for people to connect their gemini via sub and via
+api"; the "make my cv" and "apply on" rows "stuck to the bottom"; and About you: "a constant notification to users who
+have not filled out their about you sections ... 150 words or below ... a notification red circle next to the tab".
+
+- **The upgrade page lists what a plan adds to Free, worked out by the server** (`PlanLines.adds`,
+  `services/api/pricing_routes.py`). The page built Member's list from the cards: once Starter has a price, Member's
+  card is "Everything in Starter plan", so Member's list took Starter's "See new jobs after 3 days" beside its own
+  "See new jobs right away". Now each plan's list is its own wait (only where sooner than Free's), then every line of
+  what it has, its bonus last; `beyondFree` in `UpgradePage.tsx` is gone. The browser test of the page never saw the
+  fault: it patched prices into the answer after the server had worked the lines out as if Starter were not sold. It
+  now gives the server Stripe's prices (`billing_routes.plan`), so the lines are worked out as they are live.
+- **Gemini is no longer offered**, by a sign-in or a key: gone from Settings (`aiaccounts.tsx`, its mark and Google's
+  gradient with it), the Help answer, the landing page's line and `MESSAGING.md`; the API refuses `gemini_login` and
+  `gemini_api` with a 422 (`LoginKind`, `KeyKind`); the help chat's own messages name Claude or OpenAI. A Gemini
+  account linked before is still listed, so it can be removed, and the server still writes with it. **Kept on
+  purpose:** the legal pages still name Google (Gemini), as the server can still send a profile to one
+  (`test_ai_providers.py` holds the privacy policy to every provider `libs.llm.accounts` knows); Admin's "gemini"
+  model field, the setting that account reads; and `libs/prompts/support.md`, a prompt (CLAUDE.md §3a), whose
+  change is proposed to the owner.
+- **A job card's buttons sit at its foot**: two columns stretch a row's cards to one height, and the CV, cover
+  letter and Apply rows now go to the bottom of each (`.jobs > .job-card`, a column with the documents taking the
+  room left). The gaps between a card's parts are as they were (two margins that ran together are set to 0, and
+  the gap over the documents is padding). On Applied, Bookmarks, Alerts and Add a job too, which draw the same cards.
+- **About you is asked for until it has more than 150 words** (`libs/documents/about.py`: `ENOUGH_WORDS` 150,
+  `MOST_WORDS` 5,000, one definition served to the page by `/dashboard` and `/onboarding/history`): a red dot on My
+  documents in the menu and on a phone's Docs tab (it pings three times as a page opens, then rests); a note pinned
+  at the top of the bell, unread and with no ×, whose link opens My documents with the box ready to type in; a note
+  over the box; and a word meter under it, live as they type. Each says why, naming only what their plan gives ("We
+  use it to score every job for you, find more jobs that fit you and write your CVs and cover letters. Give us more
+  than 150 words of real detail, all of it true."). Saved past 150, all of them go. Setting up's About you screen
+  said "A few sentences is plenty", which now contradicted it. Above 5,000 words a save is refused (422) with what to
+  do, and the page's Save is greyed. Nothing is sent by email, push or Telegram for it. The words were run through
+  the AI-language check (pass).
+- **Cost**: `/dashboard` reads the About you text to count it: 0.4 ms with none, 0.8 ms at 150 words, 1.2 ms at
+  5,000, 3.3 ms at the 300,000-character ceiling (medians of 200, local mongod).
+
+Tests, each shown failing on the code before (a scratch worktree at `82b3195`): `test_pricing.py`
+`..._what_moving_up_from_free_adds_...` (6 cases, `adds` missing); `test_ai_accounts.py`
+`test_gemini_is_linked_neither_by_a_sign_in_nor_by_a_key` (503 from the broker, not 422);
+`test_onboarding.py` `test_about_you_says_how_many_words_...` and `..._takes_up_to_the_most_words_...` (no counts; 5,001
+words saved); `test_dashboard.py` `test_the_front_page_says_how_much_about_you_says_...`; and in
+`test_e2e_site.py` the upgrade page (9 lines, not 8), `test_the_buttons_of_jobs_side_by_side_sit_along_one_line`,
+`test_about_you_is_asked_for_until_it_says_enough` and the AI accounts card (three sign-ins, not two).
+
+Gates, on this tree (the owner's uncommitted `web/src/discord.tsx` in it too): `lint-imports` 2 kept, 0 broken;
+`ruff check .` all passed; `python -m libs.db --prune` on an empty database of the local mongod, exit 0; the contract
+regenerated, and a second dump changes nothing; the build built; `pytest tests/ -n 4` with only `MONGODB_URI` and
+`CHROME_BIN` set: 1,952 passed, 1 failed, 7 skipped. The failure, `test_every_tab_is_drawn_whole_the_moment_it_is_opened`
+(Applied not drawn from its read-ahead), passes 3 of 3 alone; the owner's dev stack was running beside the run. An
+earlier run, before the legal pages were put back, failed the privacy policy test (above) and seven browser tests
+under load, each of which passes alone.
+
 ## 2026-11-22 — My documents before Alerts in the menu, and a fuller About you hint (the owner's edits)
 
 The owner's own two edits, committed on their word ("you should commit everything"):

@@ -115,17 +115,20 @@ def test_each_card_says_how_soon_its_plan_sees_a_job_and_what_it_gives_and_lacks
         "everything_in": None, "everything": None,
         "gives": [{"text": "See new jobs after 7 days",
                    "more": "A new job joins your list 7 days after we find it."}, *EVERY],
-        "bonus": [], "lacks": [MOMENT, first("alerts"), first("match_scores"), first("cvs")]}
+        "bonus": [], "lacks": [MOMENT, first("alerts"), first("match_scores"), first("cvs")], "adds": []}
+    three_days = {"text": "See new jobs after 3 days",
+                  "more": "A new job joins your list 3 days after we find it."}
     assert lines["starter"] == {
         "everything_in": "free", "everything": everything_in("Free"),
-        "gives": [{"text": "See new jobs after 3 days",
-                   "more": "A new job joins your list 3 days after we find it."},
-                  *said("alerts"), *said("match_scores")],
-        "bonus": [], "lacks": [MOMENT, first("cvs"), first("covers"), first("add_job")]}
+        "gives": [three_days, *said("alerts"), *said("match_scores")],
+        "bonus": [], "lacks": [MOMENT, first("cvs"), first("covers"), first("add_job")],
+        "adds": [three_days, *said("alerts"), *said("match_scores")]}
     assert lines["member"] == {
         "everything_in": "free", "everything": everything_in("Free"),
         "gives": [MOMENT, *said("alerts"), *said("match_scores"), *DOCUMENTS, *said("add_job")],
-        "bonus": said("ats_checks"), "lacks": []}
+        "bonus": said("ats_checks"), "lacks": [],
+        "adds": [MOMENT, *said("alerts"), *said("match_scores"), *DOCUMENTS, *said("add_job"),
+                 *said("ats_checks")]}
 
 
 def test_once_starter_is_sold_member_has_everything_in_it_and_says_only_what_it_adds(api, monkeypatch):
@@ -263,6 +266,44 @@ def test_what_each_card_promises_is_what_an_account_on_that_plan_gets(api, monke
                 assert not (held and words in lacks), (plan, area, "crossed out what it has")
             assert (first(area) in lacks) == (shown and not held and area in picked), (plan, area)
         assert all(line in gives for line in EVERY), f"every account has these, {plan} too"
+
+
+@pytest.mark.parametrize("sold", [False, True])
+@pytest.mark.parametrize("waits", [(168, 72), (120, 0), (0, 0)])
+def test_what_moving_up_from_free_adds_is_what_that_plan_has_and_free_does_not(api, monkeypatch, waits, sold):
+    """The upgrade page's list for a plan (`adds`): how soon it sees a new job, its own wait said once and
+    only where it is sooner than Free's, then every line of what the plan has, each once, its bonus last. Put
+    together from the cards, Member's ("Everything in Starter plan" once Starter is sold) said a member sees
+    new jobs after 3 days, and right away (owner, 2026-11-22: "which is not true but it appears")."""
+    from libs.membership import delay_hours, has
+    from services.api import billing_routes
+    from services.api.billing_routes import Plan
+    from services.api.dashboard_routes import _span
+
+    http, db, *_ = api
+    if sold:
+        monkeypatch.setattr(billing_routes, "plan", lambda db, which="member": Plan(
+            amount=299, currency="gbp", interval="month", interval_count=1, trial_days=7))
+    settings.put(db, "members_channel_url", "")
+    settings.put(db, "free_delay_hours", waits[0])
+    settings.put(db, "starter_delay_hours", waits[1])
+    lines = http.get("/pricing").json()["lines"]
+    waiting = LINES["wait"]["text"].split("{wait}")[0]
+
+    assert lines["free"]["adds"] == [], "Free adds nothing to itself"
+    for plan in ("starter", "member"):
+        account, adds = on(db, plan), lines[plan]["adds"]
+        wait = delay_hours(db, account)
+        own = MOMENT if not wait else {key: line.replace("{wait}", _span(wait))
+                                       for key, line in LINES["wait"].items()}
+        soon = [line for line in adds if line == MOMENT or line["text"].startswith(waiting)]
+        assert soon == ([own] if wait < waits[0] else []), (plan, "its own wait, never the one before's")
+        held = [area for area in AREAS[1:] if area != "team_access" and has(db, account.id, area)]
+        for area in AREAS[1:]:
+            for words in said(area):
+                assert adds.count(words) == (area in held), (plan, area)
+        assert len(adds) == len(soon) + sum(len(said(area)) for area in held), (plan, "nothing else")
+    assert lines["member"]["adds"][-len(said("ats_checks")):] == said("ats_checks"), "the bonus last"
 
 
 def test_the_ats_check_is_promised_exactly_where_documents_are_made():

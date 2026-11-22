@@ -16,8 +16,8 @@ const ANSWERS: [string, string][] = [
    "can change all of them in My search."],
   // What a plan gives is `libs.membership.PLANS`: said here where people look, as the cards say it.
   ["How do I make a CV or a cover letter?",
-   "CVs and cover letters come with a membership. Link your own AI account in Settings: sign in to Claude, " +
-   "ChatGPT or Google Gemini, or add an API key. Upload your CV in My documents, and a cover letter for cover " +
+   "CVs and cover letters come with a membership. Link your own AI account in Settings: sign in to Claude or " +
+   "ChatGPT, or add an API key. Upload your CV in My documents, and a cover letter for cover " +
    "letters. Then tap “Make my CV” or “Make my cover letter” under any job. It is written with that account " +
    "and downloads as a PDF. If something is missing, the button tells you what."],
   // Nobody applies through the site (owner, 2026-11-06): it says so where people look first.

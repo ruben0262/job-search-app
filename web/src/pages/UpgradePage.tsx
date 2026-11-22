@@ -61,18 +61,11 @@ function useSwitching(count: number): ["free" | "member", (side: "free" | "membe
 type Line = Pricing["lines"]["free"]["gives"][number];
 type Paid = "starter" | "member";
 
-/** What a paid plan gives beyond Free: its own lines and its bonus, after those of the plan before it. */
-function beyondFree(lines: Pricing["lines"], plan: Paid): Line[] {
-  const said = lines[plan];
-  const own = [...said.gives, ...(said.bonus ?? [])];
-  return said.everything_in === "starter" ? [...beyondFree(lines, "starter"), ...own] : own;
-}
-
 /** What the membership gives that Starter does not: never Starter's crossed-out lines, which are a few picked
  * in Admin (owner, 2026-11-17: "3-4 negatives"), not all it adds. */
 function beyondStarter(lines: Pricing["lines"]): Line[] {
-  const had = new Set(beyondFree(lines, "starter").map((line) => line.text));
-  return beyondFree(lines, "member").filter((line) => !had.has(line.text));
+  const had = new Set(lines.starter.adds.map((line) => line.text));
+  return lines.member.adds.filter((line) => !had.has(line.text));
 }
 
 /** Back to the page they came from, or to their jobs when this page was opened on its own. */
@@ -83,7 +76,7 @@ function back(): void {
 
 export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | void }) {
   const { data: m, reload } = useKept<Membership>(MEMBERSHIP);
-  // What a membership adds: what the landing page's Member card says it gives, worked out by the server.
+  // What each plan adds to Free, worked out by the server from the plans the site keeps (`adds`).
   const pricing = useKept<Pricing>("/pricing");
   const key = m?.publishable_key ?? null;
   const portal = useAction(openPortal);
@@ -101,7 +94,7 @@ export function UpgradePage({ onChanged }: { onChanged: () => Promise<void> | vo
   // Free days on the plan being bought, for somebody who never had a subscription: the membership's, none on
   // Starter (owner, 2026-11-17).
   const days = cost && m?.trial_days ? cost.trial_days : 0;
-  const adds = pricing.data ? beyondFree(pricing.data.lines, buying) : [];
+  const adds = pricing.data?.lines[buying].adds ?? [];
   const [on, show] = useSwitching(adds.length);
 
   return (

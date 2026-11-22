@@ -3,6 +3,7 @@
  * server does not wait for: it can be skipped, so its screen says what it is for (owner, 2026-11-17). */
 import { useState } from "react";
 
+import { usesOf } from "../about";
 import { AlertsForMembers } from "../alerts";
 import { api, type Schema } from "../api";
 import { ThemeToggle } from "../theme";
@@ -18,14 +19,14 @@ const STEPS = [["documents", "Your CV"], ["about", "About you"], ["review", "You
 /** What to write about, said before the box: three things a CV leaves out. */
 const ASKS = ["The job you want next", "What you're best at", "What your CV doesn't say"];
 
-export function Onboarding({ state, member, scores, onChanged }: {
+export function Onboarding({ state, areas, onChanged }: {
   state: Schema<"OnboardingSteps">;
-  /** Their plan has alerts (`libs.membership.AREAS`); without them, `AlertsForMembers`. */
-  member: boolean;
-  /** Their plan shows a match score on each job, which About you's words feed (`libs.fit`). */
-  scores: boolean;
+  /** What their plan gives (`libs.membership.AREAS`): alerts, or `AlertsForMembers`; and what About you is
+   * for, which only names what it gives. */
+  areas: string[];
   onChanged: () => void;
 }) {
+  const member = areas.includes("alerts");
   const [viewing, setViewing] = useState<string | null>(null);
   const current = viewing ?? state.next_page ?? "done";
   const { list, reload } = useDocuments();
@@ -84,14 +85,12 @@ export function Onboarding({ state, member, scores, onChanged }: {
                 ← Your CV
               </button>
               <h1>About you</h1>
-              <p className="lede">
-                {scores ? "We use it to score every job for you and to find more jobs that fit."
-                  : "We use it to find more jobs that fit you."}
-              </p>
+              <p className="lede">We use it to {usesOf(areas)}.</p>
               <ul className="about-asks">
                 {ASKS.map((ask) => <li key={ask}>{ask}</li>)}
               </ul>
-              <AboutYou label="In your own words" action="Save and continue" main hint="A few sentences is plenty."
+              <AboutYou label="In your own words" action="Save and continue" main
+                        hint="Keep it true, and give as much detail as you can."
                         placeholder={"I want a team leader job in a warehouse near Leeds. I've run shifts of 12 "
                           + "people, I have a forklift licence and I know SAP."}
                         onSaved={() => setViewing("review")} />

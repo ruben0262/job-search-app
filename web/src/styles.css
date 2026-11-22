@@ -371,6 +371,39 @@ body {
   box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.45);
 }
 
+/* A red dot on the place that needs them (owner, 2026-11-22: "a notification red circle next to the tab"): My
+   documents, while About you says too little. A ring goes out from it a few times as a page opens, then it
+   rests, so it is seen without moving all day. */
+.place-dot {
+  position: relative;
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.place-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: dot-ring 1.6s var(--out) 0.4s 3 both;
+}
+
+@keyframes dot-ring {
+  from {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(3);
+  }
+}
+
 .place-short,
 .place-icon,
 .more-tab {
@@ -1565,6 +1598,25 @@ td.num {
   color: var(--dim);
 }
 
+/* About you's note at the top of the bell (owner, 2026-11-22): a link to its box, with no × beside it, as it
+   stays until About you says enough. */
+.bell-row.pinned {
+  background: rgba(var(--accent-rgb), 0.06);
+}
+
+.bell-row.pinned .bell-item {
+  padding-right: 1.2rem;
+  text-decoration: none;
+}
+
+.bell-go {
+  display: block;
+  margin-top: 0.45rem;
+  color: var(--accent-text);
+  font-size: var(--text-meta);
+  font-weight: 600;
+}
+
 /* The save confirmation, under the button that earned it. It was in the fold head, above a section
    long enough that nobody who had just pressed Save was still looking there. */
 .saved-flash {
@@ -2688,6 +2740,18 @@ button.toast-close:hover:not([disabled]) {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* On a tab, at its picture's top right, as an app's badge sits, ringed in the bar's colour. */
+  .places a {
+    position: relative;
+  }
+
+  .place-dot {
+    position: absolute;
+    top: 0.35rem;
+    left: calc(50% + 0.45rem);
+    box-shadow: 0 0 0 2px var(--bg);
   }
 
   .more-tab {
@@ -5130,6 +5194,76 @@ input[type="checkbox"]:disabled {
 
 .storage-bar span.full { background: var(--danger); }
 
+/* About you's note, over its box while it says too little (owner, 2026-11-22): the menu's red dot begins it, so
+   the two read as one thing. */
+.about-nudge {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.25rem 0.65rem;
+  margin-bottom: 1.15rem;
+  padding: 0.9rem 1.05rem;
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  border-radius: var(--radius);
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+.about-nudge::before {
+  content: "";
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.about-nudge strong {
+  font-size: var(--text-control);
+}
+
+.about-nudge span {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* Its words as they are typed: a bar that fills up to what is enough and turns green past it, red over the most
+   it takes, and the words that say where it stands. Close under the box it counts. */
+.word-meter {
+  display: grid;
+  gap: 0.4rem;
+  margin: -0.6rem 0 1rem;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.word-bar {
+  height: 0.375rem;
+  border-radius: 999px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+
+.word-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.3s var(--out), background-color 0.3s var(--out);
+}
+
+.word-meter.enough .word-bar span {
+  background: var(--score);
+}
+
+.word-meter.over {
+  color: var(--danger);
+}
+
+.word-meter.over .word-bar span {
+  background: var(--danger);
+}
+
 .made-list {
   list-style: none;
   margin: 0 0 1rem;
@@ -5418,6 +5552,24 @@ input[type="checkbox"]:disabled {
   .jobs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* Each card as tall as the tallest in its row, with its documents and its foot at the bottom, so a row reads
+   straight across however much each card says (owner, 2026-11-22). Laid out top to bottom, the documents
+   taking whatever room is left above them. The parts' margins no longer run together as they do down a page,
+   so the two that did go, and the gap over the documents is padding that stays when there is no room. */
+.jobs > .job-card:not(.gone) {
+  display: flex;
+  flex-direction: column;
+}
+
+.jobs > .job-card > :is(.job-meta, .why) {
+  margin-bottom: 0;
+}
+
+.jobs > .job-card > .job-docs {
+  margin-top: auto;
+  padding-top: 0.9rem;
 }
 
 /* The whole job, over the page: a tap outside it or the × closes it. */

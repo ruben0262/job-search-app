@@ -102,6 +102,19 @@ def test_alerts_that_reach_only_the_bell_are_not_nagged_about(api):
     assert http.get("/dashboard").json()["banners"] == []
 
 
+def test_the_front_page_says_how_much_about_you_says_against_what_is_enough(api):
+    """Owner, 2026-11-22: About you empty, or 150 words or fewer, and the site asks for more until it has
+    more: the menu's dot and the bell are drawn from what every page already reads, the words saved."""
+    from libs.documents import about
+
+    http, _db, _user, _ = api
+    said = {"enough": about.ENOUGH_WORDS, "most": about.MOST_WORDS}
+    assert http.get("/dashboard").json()["about"] == {"words": 0, **said}, "none written"
+    for words in (about.ENOUGH_WORDS, about.ENOUGH_WORDS + 1):
+        assert http.put("/onboarding/history", json={"text": "forklift " * words}).status_code == 200
+        assert http.get("/dashboard").json()["about"] == {"words": words, **said}
+
+
 def test_the_dashboard_requires_signing_in(api):
     http, _, _, _ = api
     http.cookies.clear()

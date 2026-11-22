@@ -436,7 +436,7 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         expect(page.locator("#how")).to_contain_text(
             "Follow a company, a city or a kind of job, and know the moment one is posted.")
         expect(page.locator("#how")).to_contain_text(
-            "CVs and cover letters are written with your own ChatGPT, Claude or Gemini account.")
+            "CVs and cover letters are written with your own ChatGPT or Claude account.")
         # A review nobody wrote never reaches a visitor: the section waits for the first real one
         # (`web/src/landing/reviews.ts`).
         expect(page.locator("[data-sample]")).to_have_count(0)
@@ -876,7 +876,10 @@ def test_setting_up_shows_the_cover_letter_and_asks_about_you_on_a_screen_of_its
         expect(steps.locator("[aria-current=step]")).to_have_text("About you")
         tops = steps.get_by_role("listitem").evaluate_all("items => items.map((item) => item.offsetTop)")
         assert len(tops) == 4 and len(set(tops)) == 1, f"the four steps are not on one line: {tops}"
-        expect(page.get_by_text("We use it to score every job for you")).to_be_visible()
+        # What it is for, naming only what their plan gives: a member's, everything (owner, 2026-11-22).
+        expect(page.get_by_text("We use it to score every job for you, find more jobs that fit you and write "
+                                "your CVs and cover letters.")).to_be_visible()
+        expect(page.locator(".word-meter")).to_have_text("Write more than 150 words.")
         save = page.get_by_role("button", name="Save and continue")
         expect(save).to_be_disabled()
         page.get_by_label("In your own words").fill(wrote)
@@ -887,6 +890,47 @@ def test_setting_up_shows_the_cover_letter_and_asks_about_you_on_a_screen_of_its
         page.get_by_role("button", name="← About you").click()
         expect(page.get_by_label("In your own words")).to_have_value(wrote)
         assert page.evaluate(FAULTS) == {"off": [], "over": []}, "About you at 390px"
+        browser.close()
+
+
+def test_about_you_is_asked_for_until_it_says_enough(site, capsys):
+    """Owner, 2026-11-22: About you empty, or 150 words or fewer, and the site keeps asking, saying why: a
+    red dot on My documents, a note pinned at the top of the bell that takes them to the box, ready to type
+    in, and one over the box. The box counts the words as they are typed. Saved past 150, all of them go."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        dot = page.locator("nav .places a", has_text="My documents").locator(".place-dot")
+        expect(dot).to_be_visible()
+
+        # The bell's note: unread, with no × to put it away, and a link to the box.
+        page.locator(".bell-wrap > button.bell").click()
+        note = page.get_by_role("dialog", name="Notifications").locator(".bell-row.pinned")
+        expect(note).to_contain_text("Tell us about yourself")
+        expect(note).to_contain_text("We use it to score every job for you, find more jobs that fit you and")
+        expect(note.locator(".bell-x")).to_have_count(0)
+        note.get_by_role("link", name=re.compile("Write it now")).click()
+        box = page.get_by_role("textbox", name="About you")
+        expect(box).to_be_focused()
+        expect(page.locator(".about-nudge")).to_contain_text("Tell us about yourself")
+
+        form, meter = page.locator("form", has=box), page.locator(".word-meter")
+        box.fill("I run night shifts in a warehouse. " * 10)
+        expect(meter).to_have_text("70 words. Write more than 150.")
+        form.get_by_role("button", name="Save").click()
+        expect(page.locator(".about-nudge")).to_contain_text("You have written 70 words.")
+        expect(dot).to_be_visible()
+
+        box.fill("I run night shifts in a warehouse. " * 25)
+        expect(meter).to_contain_text("175 words. That is enough to work with.")
+        form.get_by_role("button", name="Save").click()
+        expect(page.locator(".about-nudge")).to_have_count(0)
+        expect(dot).to_have_count(0)
+        page.locator(".bell-wrap > button.bell").click()
+        expect(page.get_by_role("dialog", name="Notifications").locator(".bell-row.pinned")).to_have_count(0)
         browser.close()
 
 
@@ -1715,10 +1759,17 @@ def test_an_ai_account_linked_in_settings_is_what_the_make_buttons_were_missing(
 
         accounts = page.locator("section.card").filter(
             has=page.get_by_role("heading", name="Your AI accounts"))
-        for provider in ("Claude", "ChatGPT", "Google Gemini"):
+        for provider in ("Claude", "ChatGPT"):
             tile = accounts.get_by_role("button", name=f"Sign in with {provider}")
             expect(tile).to_be_visible()
             expect(tile.locator(".ai-mark svg path")).to_have_count(1)
+        # Not Gemini, by a sign-in or by a key (owner, 2026-11-22: "its not configured").
+        expect(accounts.locator(".ai-provider")).to_have_count(2)
+        accounts.get_by_text("Use an API key instead").click()
+        expect(accounts.get_by_label("Which key").locator("option")).to_have_text(["Claude API key",
+                                                                                  "OpenAI API key"])
+        accounts.get_by_text("Use an API key instead").click()
+        expect(accounts.get_by_text("Gemini")).to_have_count(0)
         rows = accounts.locator(".ai-accounts li")
         _add_key(accounts, "Claude API key", key)
         expect(rows).to_have_text([re.compile("^Claude API key")])
@@ -1729,11 +1780,11 @@ def test_an_ai_account_linked_in_settings_is_what_the_make_buttons_were_missing(
         assert page.evaluate(FAULTS) == {"off": [], "over": []}, "Settings at 390px"
 
         # A second goes in use at once. Switching back is seen moving, and moves no row.
-        _add_key(accounts, "Gemini API key", "AIza" + "Qw7" * 12)
-        expect(rows).to_have_text([re.compile("^Gemini API key.*In use"), re.compile("^Claude API key.*Off")])
+        _add_key(accounts, "OpenAI API key", "sk-proj-" + "Qw7" * 12)
+        expect(rows).to_have_text([re.compile("^OpenAI API key.*In use"), re.compile("^Claude API key.*Off")])
         accounts.get_by_role("switch", name="Use Claude API key").click()
         expect(accounts.get_by_text("Turning on…")).to_be_visible()
-        expect(rows).to_have_text([re.compile("^Gemini API key.*Off"), re.compile("^Claude API key.*In use")])
+        expect(rows).to_have_text([re.compile("^OpenAI API key.*Off"), re.compile("^Claude API key.*In use")])
 
         # Their account is no longer what is missing, and a cover letter still needs one of theirs, said with
         # the one way to it.
@@ -1747,7 +1798,7 @@ def test_an_ai_account_linked_in_settings_is_what_the_make_buttons_were_missing(
         page.goto(f"{base}/#/settings")
         accounts.get_by_role("switch", name="Use Claude API key").uncheck()
         expect(accounts.get_by_text("Turning off…")).to_be_visible()
-        expect(rows).to_have_text([re.compile("^Gemini API key.*Off"), re.compile("^Claude API key.*Off")])
+        expect(rows).to_have_text([re.compile("^OpenAI API key.*Off"), re.compile("^Claude API key.*Off")])
         browser.close()
 
 
@@ -1947,41 +1998,47 @@ def test_the_match_score_filter_is_a_row_of_numbers_that_keeps_the_jobs_scored_t
         browser.close()
 
 
-def test_a_free_account_buys_starter_or_member_from_the_upgrade_page(site, capsys):
+def test_a_free_account_buys_starter_or_member_from_the_upgrade_page(site, capsys, monkeypatch):
     """Owner, 2026-11-16: "we are also selling starter". Once Starter has a price, the Upgrade page offers it
-    beside the membership, each with its price and what it adds to Free. Stripe is not set up here, so its
-    prices are added to what the server answers."""
+    beside the membership, each with its price and what it adds to Free. Stripe is not set up here, so the
+    server is given the prices Stripe would answer, and works the pricing out from them as it does live: the
+    membership's card is then "Everything in Starter plan", and the page still lists what the membership adds
+    to Free, never Starter's wait beside its own (owner, 2026-11-22: "i get jobs 3 days after they are posted
+    which is not true but it appears")."""
     from libs.db import database
+    from services.api import billing_routes
+    from services.api.billing_routes import Plan
 
     base, email, _ = site
-    # As the server says them: the membership with its 7 free days, Starter with none (owner, 2026-11-17).
-    starter = {"amount": 299, "currency": "gbp", "interval": "month", "interval_count": 1, "trial_days": 0}
-
-    def priced(route):
-        route.fulfill(json={**route.fetch().json(), "plan": {**starter, "amount": 499, "trial_days": 7},
-                            "starter": starter})
+    # As Stripe would answer: the membership with its 7 free days, Starter with none (owner, 2026-11-17).
+    month = {"currency": "gbp", "interval": "month", "interval_count": 1}
+    prices = {"member": Plan(amount=499, trial_days=7, **month),
+              "starter": Plan(amount=299, trial_days=0, **month)}
+    monkeypatch.setattr(billing_routes, "plan", lambda db, which="member": prices[which])
 
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         _sign_up(page, base, email, capsys, member=False)
         _onboard(page)
-        page.route("**/pricing", priced)
-        page.route("**/billing", priced)
         page.goto(f"{base}/#/upgrade")
         plans = page.get_by_role("group", name="Plan")
+        adds = page.locator(".adds li")
         expect(plans.get_by_role("button")).to_have_text(["Starter", "Member"])
         expect(page.get_by_role("heading", name="Become a member")).to_be_visible()
         expect(page.locator(".plan-price")).to_have_text("£4.99 a month, after 7 days free")
-        expect(page.locator(".adds li")).to_have_count(8)
-        expect(page.locator(".adds li").last).to_contain_text("Official ATS checks")
+        expect(adds).to_have_count(8)
+        expect(adds.first).to_contain_text("See new jobs right away")
+        expect(adds.filter(has_text="See new jobs after")).to_have_count(0)
+        expect(adds.last).to_contain_text("Official ATS checks")
 
         plans.get_by_role("button", name="Starter").click()
         expect(page.get_by_role("heading", name="Start with Starter")).to_be_visible()
         expect(page.locator(".plan-price")).to_have_text("£2.99 a month")
         expect(page.get_by_text("Paid securely through Stripe. Cancel any time.")).to_be_visible()
-        expect(page.locator(".adds li")).to_have_count(4)
-        expect(page.locator(".adds li").first).to_contain_text("See new jobs after 3 days")
+        expect(adds).to_contain_text(["See new jobs after 3 days", "Job alerts sent to you",
+                                      "Match score on every job", "Filter by match score"])
+        expect(adds).to_have_count(4)
 
         # On Starter: the way up says everything the membership adds to it, not the few its card crosses out.
         database().users.update_one({"email": email}, {"$set": {
@@ -1992,6 +2049,32 @@ def test_a_free_account_buys_starter_or_member_from_the_upgrade_page(site, capsy
         expect(page.locator(".adds li")).to_contain_text([
             "See new jobs right away", "A CV made for each job", "A cover letter for each job",
             "Add jobs from any site", "Official ATS checks"])
+        browser.close()
+
+
+def test_the_buttons_of_jobs_side_by_side_sit_along_one_line(site, capsys):
+    """Two columns on a laptop, each card as tall as the tallest in its row: its CV and cover letter buttons
+    and its foot sit at its bottom, so a row reads straight across however much each card says (owner,
+    2026-11-22: "larger containers with jobs might be bigger and in terms of design it looks weird"). The
+    first card is given a title over several lines here, and the second card's buttons go down with it."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        cards = page.locator(".jobs > article.job-card")
+        expect(cards).to_have_count(2)
+        before = cards.nth(1).locator(".job-docs").bounding_box()
+        cards.first.locator("h3 .title").evaluate(
+            "(title) => { title.textContent += ', ' + 'with a far longer title than the other '.repeat(6); }")
+        long, short = (cards.nth(index).bounding_box() for index in (0, 1))
+        assert abs(long["y"] - short["y"]) < 1, "one row"
+        assert abs(long["height"] - short["height"]) < 1, "as tall as each other"
+        for part in (".job-docs", ".job-bar"):
+            tops = [cards.nth(index).locator(part).bounding_box()["y"] for index in (0, 1)]
+            assert abs(tops[0] - tops[1]) < 1, f"{part}: along one line, not under the shorter card's text"
+        assert cards.nth(1).locator(".job-docs").bounding_box()["y"] > before["y"] + 40, "down with the row"
         browser.close()
 
 

@@ -94,8 +94,8 @@ def ai_status(db: Database, user: User) -> AiStatus:
     used_up = per_day and ai_requests_today(db, user.id) >= per_day
     return AiStatus(None, None, 0, per_day, (
         f"You have used today's {per_day} AI requests. They come back at midnight. To ask more "
-        "now, add your own Claude, Gemini or OpenAI key in Settings." if used_up else
-        "This site cannot pay for AI answers on your account. Add your own Claude, Gemini or "
+        "now, add your own Claude or OpenAI key in Settings." if used_up else
+        "This site cannot pay for AI answers on your account. Add your own Claude or "
         "OpenAI key in Settings, and you can ask as much as you like."))
 
 

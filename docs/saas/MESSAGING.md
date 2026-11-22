@@ -164,9 +164,9 @@ How it works (the benefits). The onboarding steps now appear once, in Get starte
      checks")*
   6. **Every application tracked.** Applied, interview, offer, the job: one tap each. No more Excel or
      Google Sheets to keep up. *(picture: the track)*
-- Under the tiles, small: *CVs and cover letters are written with your own ChatGPT, Claude or Gemini
-  account.* (owner: "worth mentioning it for sure"). It sits under the tiles, not in the CV tile, which
-  it made the tallest of its row.
+- Under the tiles, small: *CVs and cover letters are written with your own ChatGPT or Claude account.*
+  (owner: "worth mentioning it for sure"; Gemini taken off 2026-11-22). It sits under the tiles, not in the
+  CV tile, which it made the tallest of its row.
 
 ### See it working (`#live`): unchanged
 - **See it working.** This is your Jobs page. Tap **Make my CV** and watch one written for this job.

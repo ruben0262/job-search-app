@@ -1,6 +1,7 @@
 /** Routing, and the one decision the whole app hangs off: where a signed-in user belongs. */
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 
+import { needsMore } from "./about";
 import { ApiError, api, type Dashboard } from "./api";
 import { DiscordButton, sayBackFromDiscord } from "./discord";
 import { Making, forgetBuilds, resumeBuilds } from "./documents";
@@ -204,11 +205,13 @@ export function App() {
   if (path === "/upgrade") return <UpgradePage onChanged={reload} />;
   if (dashboard.stage === "onboarding") {
     // Deliberately not routable past: a half-configured account produces a bad feed and the user concludes.
-    return <Onboarding state={dashboard.onboarding} member={dashboard.areas.includes("alerts")}
-                       scores={dashboard.areas.includes("match_scores")} onChanged={reload} />;
+    return <Onboarding state={dashboard.onboarding} areas={dashboard.areas} onChanged={reload} />;
   }
 
   const focus = Number(new URLSearchParams(query).get("job")) || null;
+  // About you says too little: a red dot on My documents until it says enough (owner, 2026-11-22: "a
+  // notification red circle next to the tab that needs attention").
+  const asking = needsMore(dashboard.about);
 
   return (
     <>
@@ -231,6 +234,9 @@ export function App() {
                 <svg className="place-icon" viewBox="0 0 24 24" aria-hidden="true">{icon}</svg>
                 <span className="place-name">{label}</span>
                 <span className="place-short">{short}</span>
+                {key === "documents" && asking ? (
+                  <i className="place-dot" role="img" aria-label="About you needs more" />
+                ) : null}
               </a>
             ))}
             <More admin={dashboard.is_admin} section={section} asked={asked} />
@@ -239,7 +245,7 @@ export function App() {
             {asked ? <GetAppButton /> : null}
             <DiscordButton />
             <HelpButton />
-            <NotificationBell />
+            <NotificationBell about={dashboard.about} areas={dashboard.areas} />
             <ThemeToggle />
           </div>
         </nav>
@@ -259,7 +265,8 @@ export function App() {
           ) : section === "alerts" ? (
             <AlertsPage onChanged={reload} query={query} />
           ) : section === "documents" ? (
-            <DocumentsPage makes={dashboard.areas.includes("cvs")} />
+            <DocumentsPage areas={dashboard.areas} about={dashboard.about} onChanged={reload}
+                           focus={new URLSearchParams(query).has("about")} />
           ) : section === "settings" ? (
             <SettingsPage dashboard={dashboard} onSignedOut={reload} />
           ) : section === "admin" ? (

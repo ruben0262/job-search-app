@@ -211,7 +211,7 @@ def test_with_no_ai_left_the_page_says_why_and_what_to_do(api, monkeypatch):
     _answers(monkeypatch, Scripted(("Hello.", [])))
     monkeypatch.delenv("PLATFORM_AI_KEY")
     assert api.http.get("/support").json()["closed"] == (
-        "This site cannot pay for AI answers on your account. Add your own Claude, Gemini or "
+        "This site cannot pay for AI answers on your account. Add your own Claude or "
         "OpenAI key in Settings, and you can ask as much as you like.")
 
     monkeypatch.setenv("PLATFORM_AI_KEY", PLATFORM_KEY)
@@ -220,7 +220,7 @@ def test_with_no_ai_left_the_page_says_why_and_what_to_do(api, monkeypatch):
 
     page = api.http.get("/support").json()
     assert page["closed"] == ("You have used today's 1 AI requests. They come back at midnight. To "
-                              "ask more now, add your own Claude, Gemini or OpenAI key in Settings.")
+                              "ask more now, add your own Claude or OpenAI key in Settings.")
     assert page["ai"]["left"] == 0
     refused = api.http.post("/support/messages", json={"text": "one more"})
     assert (refused.status_code, refused.json()["detail"]) == (409, page["closed"])

@@ -25,7 +25,7 @@ from libs.contracts.onboarding import IdentitySchema, ProfileLink
 from libs.corpus.terms import learn
 from libs.db import find_one, get, insert, now
 from libs.db.models import User, UserDocument
-from libs.documents import UnsupportedDocument, extract_text
+from libs.documents import UnsupportedDocument, about, extract_text
 from libs.documents.read import LANGUAGE_NAMES, Facts, read
 from libs.matching import green_words
 from libs.obs import audit
@@ -126,7 +126,19 @@ class HistorySaved(SaveResult):
     truncated: bool
 
 
-class HistoryText(BaseModel):
+class AboutLength(BaseModel):
+    """How much About you says, in words (`libs.documents.about`): the site asks for more until it has more
+    than `enough`, and takes up to `most`."""
+    words: int
+    enough: int
+    most: int
+
+
+def about_length(words: int) -> AboutLength:
+    return AboutLength(words=words, enough=about.ENOUGH_WORDS, most=about.MOST_WORDS)
+
+
+class HistoryText(AboutLength):
     text: str
     chars: int
 
@@ -134,15 +146,19 @@ class HistoryText(BaseModel):
 # ── documents: the CV, and the "about you" text ───────────────────────────────────────────────
 
 class HistoryBody(BaseModel):
-    # Optional and theirs: a sentence is as welcome as a memoir.
+    # Theirs, and asked for in detail (`libs.documents.about`); its words are counted where it is saved.
     text: str = Field(min_length=1, max_length=400_000)
 
 
 @router.put("/history", response_model=HistorySaved)
 def put_history(body: HistoryBody, request: Request, db: Database = Depends(get_db),
                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Their own words about themselves, typed rather than uploaded."""
+    """Their own words about themselves, typed rather than uploaded: up to `about.MOST_WORDS` of them."""
     rate_limit(request, f"history:{user_id}", limit=60, per_seconds=3600)
+    if (count := about.words(body.text)) > about.MOST_WORDS:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=(
+            f"About you takes up to {about.MOST_WORDS:,} words, and this has {count:,}. "
+            "Make it a little shorter to save it."))
     try:
         extracted = extract_text("history.txt", body.text.encode("utf-8"))
     except UnsupportedDocument as exc:
@@ -168,7 +184,9 @@ def get_history(db: Database = Depends(get_db),
                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Returned in full, unlike `/documents`, because this is an edit box the user types into."""
     document = find_one(db, UserDocument, {"user_id": user_id, "kind": "history"})
-    return {"text": document.text if document else "", "chars": document.chars if document else 0}
+    text = document.text if document else ""
+    return {**about_length(about.words(text)).model_dump(), "text": text,
+            "chars": document.chars if document else 0}
 
 
 # ── review: what we found, confirmed ──────────────────────────────────────────────────────────

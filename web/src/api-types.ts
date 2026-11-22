@@ -1729,7 +1729,7 @@ export interface paths {
         get: operations["get_history_onboarding_history_get"];
         /**
          * Put History
-         * @description Their own words about themselves, typed rather than uploaded.
+         * @description Their own words about themselves, typed rather than uploaded: up to `about.MOST_WORDS` of them.
          */
         put: operations["put_history_onboarding_history_put"];
         post?: never;
@@ -2198,6 +2198,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AboutLength
+         * @description How much About you says, in words (`libs.documents.about`): the site asks for more until it has more
+         *     than `enough`, and takes up to `most`.
+         */
+        AboutLength: {
+            /** Enough */
+            enough: number;
+            /** Most */
+            most: number;
+            /** Words */
+            words: number;
+        };
         /** AccountOut */
         AccountOut: {
             /** Email */
@@ -3085,8 +3098,14 @@ export interface components {
         HistoryText: {
             /** Chars */
             chars: number;
+            /** Enough */
+            enough: number;
+            /** Most */
+            most: number;
             /** Text */
             text: string;
+            /** Words */
+            words: number;
         };
         /**
          * IdentitySchema
@@ -3219,7 +3238,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "claude_api" | "openai_api" | "gemini_api";
+            kind: "claude_api" | "openai_api";
             /** Value */
             value: string;
         };
@@ -3662,6 +3681,8 @@ export interface components {
          *     (`lines_of`).
          */
         PlanLines: {
+            /** Adds */
+            adds: components["schemas"]["Line"][];
             /**
              * Bonus
              * @default []
@@ -3904,6 +3925,7 @@ export interface components {
          *     load — /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it.
          */
         ReadyDashboard: {
+            about: components["schemas"]["AboutLength"];
             /** Applied */
             applied: number;
             /** Areas */
@@ -5476,7 +5498,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "claude_login" | "codex_login" | "gemini_login";
+                kind: "claude_login" | "codex_login";
             };
             cookie?: never;
         };
@@ -5507,7 +5529,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "claude_login" | "codex_login" | "gemini_login";
+                kind: "claude_login" | "codex_login";
             };
             cookie?: never;
         };

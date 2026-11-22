@@ -141,6 +141,11 @@ class PlanLines(BaseModel):
     bonus: list[Line] = []
     # Crossed out: what a plan after it gives and it does not.
     lacks: list[Line]
+    # What moving up to it from Free brings, in one list, as the upgrade page says it: how soon it sees a new
+    # job where that is sooner than Free, then every line of what it has, its bonus last. Never put together
+    # from the cards: Member's, "Everything in" Starter's, then said a member sees new jobs after 3 days, and
+    # right away (owner, 2026-11-22).
+    adds: list[Line]
 
 
 class PlansLines(BaseModel):
@@ -200,8 +205,9 @@ def lines_of(db: Database | settings.Snapshot, *, starter_sold: bool, words: Pri
     what it adds, but what it gives as a bonus, which it shows apart; Free's ticks how soon, and what every
     account has. Each crosses out its own choice of what its plan lacks (`PricingCard.crossed`, three or four
     of the most telling, owner 2026-11-17), each by its first line, and "right away" only while its plan
-    waits. The members' chat is said only while it has a link (`members_channel_url`): what the site cannot
-    give yet, no card promises or crosses out."""
+    waits. Each also says what it adds to Free, for the upgrade page (`PlanLines.adds`). The members' chat is
+    said only while it has a link (`members_channel_url`): what the site cannot give yet, no card promises or
+    crosses out."""
     waits = {plan: wait_hours(db, plan) for plan in PLANS}
     said = [area for area in LINED_AREAS if area != "team_access" or settings.get(db, "members_channel_url")]
     before = {FREE: None, STARTER: FREE, MEMBER: STARTER if starter_sold else FREE}
@@ -228,7 +234,11 @@ def lines_of(db: Database | settings.Snapshot, *, starter_sold: bool, words: Pri
             bonus=[line for area in bonus for line in words.areas[area]],
             # Only what its plan lacks: `PricingCards` refuses a card that crosses out anything else.
             lacks=[*([words.now] if "early_jobs" in own.crossed and waits[plan] else []),
-                   *(words.areas[area][0] for area in said if area in own.crossed)])
+                   *(words.areas[area][0] for area in said if area in own.crossed)],
+            adds=[*([soon(waits[plan])] if waits[plan] < waits[FREE] else []),
+                  *(line for area in said if area in PLANS[plan] and area not in bonus
+                    for line in words.areas[area]),
+                  *(line for area in bonus for line in words.areas[area])])
 
     return PlansLines(**{plan: card(plan) for plan in PLANS})
 

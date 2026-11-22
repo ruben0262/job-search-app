@@ -21,6 +21,7 @@ from libs.corpus.repository import TYPED
 from libs.db import get, now
 from libs.db.models import AtsToken, BuiltDocument, CorpusJob, CountryCount, User, UserJobState
 from libs.db.models.tenant import record_state
+from libs.documents import about
 from libs.documents.saved import for_jobs
 from libs.matching import Match, norm, page, scan_for
 from libs.membership import FREE, PLANS, choosing, is_admin, jobs_as_of, tier, wait_hours
@@ -30,7 +31,7 @@ from libs.settings import HARVEST_SOURCES
 from libs.tenant import applications
 from libs.tenant.filters import theirs_among, theirs_to_open
 from services.api.deps import current_user, get_db
-from services.api.onboarding_routes import OnboardingSteps
+from services.api.onboarding_routes import AboutLength, OnboardingSteps, about_length
 from services.api.saved_routes import JobDocument, job_document
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,9 @@ class ReadyDashboard(BaseModel):
     banners: list[DashboardBanner]
     # What the Jobs page opens with: theirs as they left it, or the defaults.
     job_filters: JobFilters
+    # How much their About you says: too little, and the menu, the bell and My documents ask for more (owner,
+    # 2026-11-22).
+    about: AboutLength
 
 
 class FeedSalary(BaseModel):
@@ -223,7 +227,7 @@ def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curr
     applied = db[UserJobState.COLLECTION].count_documents({"user_id": user_id, "applied_at": {"$ne": None}})
     return ReadyDashboard(stage="ready", is_admin=is_admin(user), member=member, areas=areas,
                           applied=applied, banners=_banners(db, user, plan),
-                          job_filters=_job_filters(user))
+                          job_filters=_job_filters(user), about=about_length(about.written(db, user_id)))
 
 
 def _job_filters(user: User) -> JobFilters:

@@ -1,5 +1,5 @@
-"""The AI accounts a person links in Settings (owner, 2026-11-09): sign-ins to their own Claude, ChatGPT or
-Google account, and API keys. Several, one in use, never shown back; without one in use, no document.
+"""The AI accounts a person links in Settings (owner, 2026-11-09): sign-ins to their own Claude or ChatGPT
+account, and API keys. Several, one in use, never shown back; without one in use, no document.
 The routes are the real app on the test database; the providers' checks and the sign-in broker are
 stand-ins (`tests/test_credentials.py` and `tests/test_signin.py` are theirs)."""
 from __future__ import annotations
@@ -17,7 +17,7 @@ pytest.importorskip("fastapi")
 from tests.conftest import needs_db
 
 API_KEY = "sk-ant-api03-" + "Zx9" * 20
-GEMINI_KEY = "AIzaSy" + "Gm7" * 11
+OPENAI_KEY = "sk-proj-" + "Op7" * 16
 # What a Claude sign-in leaves: Claude Code's login files, as `libs.llm.cli` keeps them.
 CLAUDE_LOGIN = json.dumps({
     ".credentials.json": json.dumps({"claudeAiOauth": {
@@ -101,14 +101,14 @@ def test_several_can_be_linked_and_switching_one_on_switches_the_others_off(api)
 
     http, db, user, _ = api
     _key(http)
-    accounts = _key(http, "gemini_api", GEMINI_KEY).json()["accounts"]
+    accounts = _key(http, "openai_api", OPENAI_KEY).json()["accounts"]
     assert [(each["kind"], each["in_use"]) for each in accounts] == [
-        ("gemini_api", True), ("claude_api", False)], "the newest is in use, and listed first"
+        ("openai_api", True), ("claude_api", False)], "the newest is in use, and listed first"
 
     claude = accounts[1]["id"]
     switched = http.put(f"/ai-accounts/{claude}", json={"in_use": True}).json()["accounts"]
     assert [(each["kind"], each["in_use"]) for each in switched] == [
-        ("gemini_api", False), ("claude_api", True)], "the switch moves, not the row"
+        ("openai_api", False), ("claude_api", True)], "the switch moves, not the row"
 
     stopped = http.put(f"/ai-accounts/{claude}", json={"in_use": False}).json()["accounts"]
     assert not any(each["in_use"] for each in stopped), "switched off, none is in use"
@@ -218,12 +218,24 @@ def test_a_sign_in_the_broker_cannot_start_says_so_and_cancel_is_not_taken_for_a
         raise httpx.ConnectError("refused")
 
     monkeypatch.setattr("services.api.ai_account_routes.httpx.post", down)
-    refused = http.post("/ai-accounts/signin/gemini_login")
+    refused = http.post("/ai-accounts/signin/claude_login")
     assert refused.status_code == 503 and "unavailable" in refused.json()["detail"]
     assert http.post("/ai-accounts/signin/telegram").status_code == 422
     monkeypatch.setattr("services.api.ai_account_routes._broker", lambda path, payload: {})
     cancelled = http.post("/ai-accounts/signin/cancel", json={"session_id": "s" * 16})
     assert cancelled.json() == {"status": "cancelled"}
+
+
+@needs_db
+def test_gemini_is_linked_neither_by_a_sign_in_nor_by_a_key(api):
+    """Owner, 2026-11-22: Gemini off the site, "its not configured and it probably won't be". The server
+    refuses it however it is asked, so a page or a script that still offers it links nothing."""
+    http, *_ = api
+    assert http.post("/ai-accounts/signin/gemini_login").status_code == 422
+    assert http.post("/ai-accounts/signin/gemini_login/finish",
+                     json={"session_id": "s" * 16, "code": "x"}).status_code == 422
+    assert _key(http, "gemini_api", "AIzaSy" + "Gm7" * 11).status_code == 422
+    assert http.get("/ai-accounts").json()["accounts"] == []
 
 
 @needs_db

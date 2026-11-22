@@ -33,7 +33,7 @@ export function sayBackFromDiscord(): void {
 
 /** Why join, in a line, for the places that show the steps. */
 export const WHY_DISCORD = "Get help with your applications, talk with other people looking for work, and tell "
-  + "the people who build Mahoraga what you want next.";
+  + "the people who what you want next.";
 
 /** Link, then join: the next one to do is the main button. Where linking is not set up here, joining alone. */
 export function DiscordSteps() {

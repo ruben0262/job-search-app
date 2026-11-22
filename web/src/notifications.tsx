@@ -1,6 +1,7 @@
 /** The bell. */
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { type AboutLength, needsMore, nudge } from "./about";
 import { api, type Schema } from "./api";
 import { ago, useNow } from "./time";
 import { BinIcon } from "./ui";
@@ -21,7 +22,12 @@ export function notificationsChanged(): void {
   bells.forEach((reload) => reload());
 }
 
-export function NotificationBell() {
+export function NotificationBell({ about, areas }: {
+  /** How much their About you says (`/dashboard`): too little, and a note is pinned at the top. */
+  about: AboutLength;
+  /** What their plan gives, which is all the note names. */
+  areas: string[];
+}) {
   const [feed, setFeed] = useState<Feed>({ unread: 0, notifications: [] });
   const [open, setOpen] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
@@ -89,16 +95,21 @@ export function NotificationBell() {
     }
   };
 
+  // Pinned at the top while About you says too little, unread and with no ×: it goes once it says enough, and
+  // only then (owner, 2026-11-22: "a constant notification to users who have not filled out their about you").
+  const asking = needsMore(about) ? nudge(about, areas) : null;
+  const unread = feed.unread + (asking ? 1 : 0);
+
   return (
     <div className="bell-wrap" ref={panel}>
       <button
         type="button"
         className="bell"
-        aria-label={feed.unread ? `${feed.unread} unread notifications` : "Notifications"}
+        aria-label={unread ? `${unread} unread notifications` : "Notifications"}
         onClick={() => setOpen(!open)}
       >
         <BellIcon />
-        {feed.unread > 0 ? <span className="bell-dot" aria-hidden="true" /> : null}
+        {unread > 0 ? <span className="bell-dot" aria-hidden="true" /> : null}
       </button>
 
       {open ? (
@@ -133,10 +144,21 @@ export function NotificationBell() {
           </div>
           {/* The part that scrolls, under the head (`styles.css`, a rounded box that scrolls). */}
           <div className="bell-list">
+            {asking ? (
+              <div className="bell-row unread error pinned">
+                <a className="bell-item" href="/documents?about" onClick={() => setOpen(false)}>
+                  <span className="bell-title">{asking.title}</span>
+                  <span className="bell-body">{asking.body}</span>
+                  <span className="bell-go">Write it now</span>
+                </a>
+              </div>
+            ) : null}
             {feed.notifications.length === 0 ? (
-              <p className="muted small" style={{ padding: "1rem 1.2rem" }}>
-                Nothing yet. Anything worth knowing about your account lands here.
-              </p>
+              asking ? null : (
+                <p className="muted small" style={{ padding: "1rem 1.2rem" }}>
+                  Nothing yet. Anything worth knowing about your account lands here.
+                </p>
+              )
             ) : (
               feed.notifications.map((item) => (
                 // A row rather than one button: the dismiss control has to live inside the item.

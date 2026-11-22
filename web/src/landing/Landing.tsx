@@ -312,7 +312,7 @@ export function Landing() {
           {/* Whose AI writes them, since they bring their own (owner, 2026-11-17 night: "worth mentioning it for
               sure"): under the tiles, below the CV's on a laptop, rather than in its tile, which it made the
               tallest of its row and left the two beside it with empty feet. */}
-          <p className="lp-note">CVs and cover letters are written with your own ChatGPT, Claude or Gemini account.</p>
+          <p className="lp-note">CVs and cover letters are written with your own ChatGPT or Claude account.</p>
         </section>
 
         <section id="live" className="section">

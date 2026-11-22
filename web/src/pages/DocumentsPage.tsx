@@ -2,8 +2,9 @@
  *
  * `Files` and `AboutYou` are also onboarding's first screen.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { AboutNudge, type AboutLength, countWords, needsMore } from "../about";
 import { api, type Schema } from "../api";
 import { useKept } from "../kept";
 import { TemplatePicks } from "../templates";
@@ -32,10 +33,17 @@ async function suggested(): Promise<Set<string>> {
   return new Set([...body.green, ...body.red].map((each) => each.term));
 }
 
-export function DocumentsPage({ makes }: {
-  /** Their plan makes CVs (`libs.membership.PLANS`): a membership's. Without it, where the documents are. */
-  makes: boolean;
+export function DocumentsPage({ areas, about, focus, onChanged }: {
+  /** What their plan gives (`libs.membership.PLANS`): a membership's makes CVs; without it, where they are. */
+  areas: string[];
+  /** How much their About you says (`/dashboard`): too little, and a note over its box asks for more. */
+  about: AboutLength;
+  /** Sent here to write About you (`?about`, from the bell's note): its box, ready to type in. */
+  focus: boolean;
+  /** About you saved: the dashboard read again, so the menu's dot and the bell's note go once it says enough. */
+  onChanged: () => void;
 }) {
+  const makes = areas.includes("cvs");
   const { list, reload } = useDocuments();
   const [before, setBefore] = useState<Set<string> | null>(null);
 
@@ -62,9 +70,14 @@ export function DocumentsPage({ makes }: {
       <Card title="Your name and links">
         <Identity />
       </Card>
-      {/* Untitled: the box's own label says "About you". */}
+      {/* Untitled: the box's own label says "About you". While it says too little, a note over it says why it
+          matters (owner, 2026-11-22). */}
       <Card>
-        <AboutYou onSaved={saved} />
+        {needsMore(about) ? <AboutNudge about={about} areas={areas} /> : null}
+        <AboutYou focus={focus} onSaved={() => {
+          void saved();
+          onChanged();
+        }} />
       </Card>
       <Card title="How your CVs and cover letters look">
         <TemplatePicks />
@@ -297,9 +310,10 @@ export function Files({ kind, list, onChanged }: {
 const ABOUT_HINT = "What your CV leaves out, so your personal context such as projects, your extensive experience, competitions, day-to-day activities, achievements, research and so on.";
 
 /** The text about themselves they can always edit: what a CV leaves out. Setting up gives it a screen of its
- * own, with its own reason and button (`Onboarding`); My documents, a card. */
+ * own, with its own reason and button (`Onboarding`); My documents, a card. Its words are counted as they are
+ * typed, against what is enough and the most it takes (owner, 2026-11-22). */
 export function AboutYou({ onSaved, label = "About you", action = "Save", main = false, hint = ABOUT_HINT,
-                           placeholder }: {
+                           placeholder, focus = false }: {
   onSaved: () => void;
   label?: string;
   action?: string;
@@ -307,11 +321,19 @@ export function AboutYou({ onSaved, label = "About you", action = "Save", main =
   main?: boolean;
   hint?: string;
   placeholder?: string;
+  /** The box, ready to type in, as soon as it is drawn. */
+  focus?: boolean;
 }) {
   const { data, reload } = useKept<Schema<"HistoryText">>(HISTORY);
   // What they typed, until it is saved: a fresh read never writes over it.
   const [typed, setText] = useState<string | null>(null);
   const text = typed ?? data?.text ?? null;
+  const box = useRef<HTMLTextAreaElement>(null);
+  const drawn = text !== null;
+  useEffect(() => {
+    // A frame on: a new page is put back at its top as it opens, which would take the box off screen again.
+    if (focus && drawn) requestAnimationFrame(() => box.current?.focus());
+  }, [focus, drawn]);
   const save = useAction(async () => {
     await api.put(HISTORY, { text });
     await reload();
@@ -319,7 +341,8 @@ export function AboutYou({ onSaved, label = "About you", action = "Save", main =
     onSaved();
   });
 
-  if (text === null) return null;
+  if (text === null || !data) return null;
+  const words = countWords(text);
   return (
     <form
       onSubmit={(event) => {
@@ -328,13 +351,34 @@ export function AboutYou({ onSaved, label = "About you", action = "Save", main =
       }}
     >
       <Field label={label} hint={hint}>
-        <textarea value={text} placeholder={placeholder} onChange={(event) => setText(event.target.value)} />
+        <textarea ref={box} value={text} placeholder={placeholder} onChange={(event) => setText(event.target.value)} />
       </Field>
+      <WordMeter words={words} enough={data.enough} most={data.most} />
       <Error>{save.error}</Error>
-      <button type="submit" className={main ? "main" : "secondary"} disabled={save.busy || !text.trim()}>
+      <button type="submit" className={main ? "main" : "secondary"}
+              disabled={save.busy || !text.trim() || words > data.most}>
         {save.busy ? "Saving…" : action}
       </button>
     </form>
+  );
+}
+
+/** How much the box holds as it is typed: a bar that fills up to what is enough and turns green past it, and
+ * the words that say where it stands. */
+function WordMeter({ words, enough, most }: { words: number; enough: number; most: number }) {
+  const state = words > most ? "over" : words > enough ? "enough" : "short";
+  const count = `${words.toLocaleString()} ${words === 1 ? "word" : "words"}`;
+  return (
+    <p className={`word-meter ${state}`}>
+      <span className="word-bar" aria-hidden="true">
+        <span style={{ width: `${Math.min(words / enough, 1) * 100}%` }} />
+      </span>
+      <span>
+        {state === "over" ? `${count}. The most is ${most.toLocaleString()}, so make it a little shorter to save it.`
+          : state === "enough" ? `${count}. That is enough to work with. You can write up to ${most.toLocaleString()}.`
+            : words ? `${count}. Write more than ${enough}.` : `Write more than ${enough} words.`}
+      </span>
+    </p>
   );
 }
 
