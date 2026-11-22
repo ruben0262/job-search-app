@@ -14,6 +14,17 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-22, evening — the help chat's prompt names Claude or OpenAI, and About you's note in the owner's words
+
+- **`libs/prompts/support.md`**, on the owner's yes (CLAUDE.md §3a): "In Settings they can add their own Claude or
+  OpenAI key", not "Claude, Gemini or OpenAI", as Gemini is no longer linked. That line only. Not measured: no page on
+  the site opens the help chat, and the change takes a provider that cannot be linked out of a list; the rest of the
+  prompt, out of date in other places too ("the instant version", "I applied"), is unchanged.
+- **About you's note** (`web/src/about.tsx`), the owner's own edit: "Give us more than 150 words of detail.", in place
+  of "... of real detail, all of it true."
+- Kept, on the owner's word: the server's Gemini code and the legal pages' Google (Gemini) line, and About you's
+  limits as constants in `libs/documents/about.py`, not Admin settings.
+
 ## 2026-11-22 — Every email carries a date and an id of its own
 
 The owner: "on [iPhones] people don't seem to find the email even in their spam". The site's side of it works on

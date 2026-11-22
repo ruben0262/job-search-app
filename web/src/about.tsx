@@ -27,8 +27,7 @@ export function usesOf(areas: string[]): string {
 
 /** What it asks, and why. */
 export function nudge(about: AboutLength, areas: string[]): { title: string; body: string } {
-  const why = `We use it to ${usesOf(areas)}. Give us more than ${about.enough} words of real detail, `
-    + "all of it true.";
+  const why = `We use it to ${usesOf(areas)}. Give us more than ${about.enough} words of detail.`;
   return about.words
     ? { title: "Add more about yourself",
         body: `You have written ${about.words} ${about.words === 1 ? "word" : "words"}. ${why}` }

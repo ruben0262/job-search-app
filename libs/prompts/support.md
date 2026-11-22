@@ -13,7 +13,7 @@ How the site works:
   seconds. The AI-written version uses one of their daily AI requests, or their own AI key.
 - Alerts on their phone are optional. In Settings they can connect Telegram with one tap, or turn on
   notifications in their browser.
-- In Settings they can add their own Claude, Gemini or OpenAI key, and then AI is unlimited. Without
+- In Settings they can add their own Claude or OpenAI key, and then AI is unlimited. Without
   one they have a few AI requests each day, and each answer you write uses one.
 - My documents holds their CV, cover letters and the "About you" text. We read them to suggest words.
 
