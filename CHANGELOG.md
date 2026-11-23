@@ -14,6 +14,41 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-23, afternoon — why six sources showed nothing: Workday's boards learned unreadable, The Muse's API gone; Teamtailor read as a tenth company-board system; Jooble and Motorsport Jobs looked into
+
+The owner, of Admin's sources ("nothing" for Adzuna, Findwork, Reed, The Muse, Workable and Workday): "lets check on these
+sources see why they are not showing any work that is coming in ... then lets add jooble to the source list, and
+motorsport.com as well ... if you have any other suggestions i'm happy to add them as well".
+
+- **What "nothing" is there:** no new job stored in 24 hours (`libs.ops.pipeline.sources`). Adzuna, Findwork and Reed
+  run only with their key. Workable answered here (four boards, the newest job of 19 November): ten small boards with
+  nothing new in a day. The commands that tell which on the server are in ROADMAP item 56.
+- **Workday read nothing from the day its boards were first learned** (`libs.corpus.ats_urls`). A Workday link's board
+  was kept as its tenant alone ("zf"), and the reader needs tenant, data centre and site ("zf:wd3:zf_careers"), so it
+  turned every board learned from a link away as none, and each was marked dead when first polled: here all 16. The
+  pattern keeps all three, and a site named "careers" is no longer taken for the vendor's own page (only the company
+  part is judged). The test that held the tenant alone passed throughout; a new one asks the reader to read what
+  discovery learns. Read live: Procter & Gamble's board 20 jobs a page, Motorola Solutions' 20, Relativity's 3.
+- **The Muse removed:** its public API answers every page, in every form tried, with its site's "not found", and its
+  developer page no longer names it. Its adapter logged a warning a page and listed nothing. Its jobs were mostly the
+  US's remote ones, about 38 a day. Its stored jobs keep their board's name until they age out.
+- **Teamtailor, a tenth company-board system** (`ats.fetch_teamtailor`): each company's public feed
+  (`<company>.teamtailor.com/jobs.rss`, which Teamtailor documents for job boards to read, and its `robots.txt`
+  allows), a repeat answered 304 with no body, a company that is not there 404. Each job with its whole text, its time
+  to the second and its places. Learned from links as the others are, and looked for by a company's name. The 17
+  companies our stored postings name, read live: 993 jobs in 17 s, 991 with their whole text, 984 in Sweden (care
+  homes, restaurants, builders), 40 inside the family's 72-hour window.
+- **Once, after the deploy:** a run learns boards from the last 48 hours' postings only, so one command learns
+  Workday's and Teamtailor's from every posting stored (ROADMAP item 56). Here it added 34.
+- **Jooble, not added:** its API's documentation marks the search word as required, and no word goes to a board (owner,
+  2026-11-04), which is why it went on 2026-11-06. Its API page answers a Cloudflare check, and a third party reports
+  500 requests a key for good (not confirmed). With a key, whether an empty word lists a country can be measured.
+- **motorsport.com, not added:** its jobs board, motorsportjobs.com (Motorsport Network's, about 1,766 jobs), answers an
+  automated client with an AWS WAF challenge (202, to a browser's headers) or a CloudFront 403 (to a client naming
+  itself), though its `robots.txt` allows everything. The way in is Motorsport Network's to open: a feed, or our
+  address let through.
+- Requests made: Workday 6, The Muse 6, Teamtailor about 25, motorsportjobs.com 3, Jooble 1.
+
 ## 2026-11-23 — the way up to the membership: a bar across the top of every page for Free and Starter, and one button wherever the membership is offered
 
 The owner: "educate, inform and motivate users on the Free and Starter plan to upgrade to Member ... tell them that

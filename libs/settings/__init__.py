@@ -27,7 +27,6 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     "justjoinit": 12,
     "workingnomads": 24,
     "jobicy": 24,
-    "themuse": 24,
     # Newest first by when a posting went up or was renewed: everything renewed in the last hour is on its
     # first four pages, and a run walks until a page has nothing inside the window (measured 2026-11-04).
     "nofluffjobs": 2,
@@ -43,7 +42,7 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     "reed": 48,
     # Company boards, reached when our token list gets there.
     "greenhouse": 72, "ashby": 72, "lever": 72, "smartrecruiters": 72,
-    "recruitee": 72, "breezy": 72, "workday": 168, "personio": 72, "workable": 72,
+    "recruitee": 72, "breezy": 72, "workday": 168, "personio": 72, "workable": 72, "teamtailor": 72,
 }
 
 # Anything not named above (Findwork). A setting until 2026-11-21, with no control in Admin from the day it
@@ -56,9 +55,7 @@ HARVEST_SOURCES: tuple[str, ...] = (
     "himalayas", "workingnomads", "jobicy", "remoteok",
     # ATS boards, polled directly per company.
     "greenhouse", "ashby", "lever", "smartrecruiters", "recruitee",
-    "breezy", "workday", "personio", "workable",
-    # Aggregators.
-    "themuse",
+    "breezy", "workday", "personio", "workable", "teamtailor",
     # European boards, Sweden's public employment service among them.
     "nofluffjobs", "profession", "justjoinit", "arbeitnow", "platsbanken", "reed",
     # Key-gated, enabled only with a credential.
@@ -116,9 +113,6 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
     # Newest-first at 20 a page, about 2,000 new jobs a day: five pages are its last hour, and a run comes
     # every fifteen minutes (measured 2026-11-03). It was asked once per word, 20 jobs each.
     "himalayas": 5,
-    # In no date order, ~38 new a day anywhere among them (measured 2026-11-03), and no page served past
-    # the 100th (2026-11-04): 100 a run read all it serves, 400 requests an hour of the 500 it allows.
-    "themuse": 100,
     # Newest first, and the walk stops at a page with nothing new: four pages hold the last hour
     # (measured 2026-11-04). The most a run walks, if the harvest was down a while.
     "nofluffjobs": 10,
@@ -237,13 +231,13 @@ SOURCE_MIN_AGE_HOURS: dict[str, int] = {
     "smartrecruiters": 72,  # 118 at 6h, 257 at 72h
     "recruitee": 72,        # 10 at 6h, 16 at 72h
     "personio": 72,
+    "teamtailor": 72,
     # Weekly batches and slow boards. A tighter window here is not stricter, it is off.
     "workday": 168,         # 6 at 24h, 133 at 168h
     "breezy": 168,          # 4 at 6h, 21 at 168h
     "jobicy": 168,          # 3 at 12h, 13 at 168h
     "workingnomads": 168,   # nothing inside 72h, 14 at 168h
     "workable": 168,
-    "themuse": 168,
     "findwork": 168,        # a developer board, and a thin one
 }
 

@@ -1094,7 +1094,7 @@ def test_the_admin_chart_counts_every_job_board_at_first_and_only_those_ticked(s
 
 def test_admin_shows_every_sources_controls_at_the_values_the_harvest_reads(site, capsys):
     """Every source has its row in Admin → Settings, each control at the value a run reads. The choices for
-    pages went to 20 and no further, so Platsbanken's 10 and The Muse's 100 were shown as something the
+    pages went to 20 and no further, so Platsbanken's and No Fluff Jobs' 10 were shown as something the
     harvest does not read (2026-11-23)."""
     from libs.settings import DEFAULT_SOURCE_FRESHNESS_HOURS, DEFAULT_SOURCE_PAGES_PER_CYCLE
 
@@ -1105,7 +1105,7 @@ def test_admin_shows_every_sources_controls_at_the_values_the_harvest_reads(site
         for name in ("arbeitnow", "remoteok", "platsbanken", "reed"):
             expect(page.get_by_label(f"{name} freshness")).to_have_value(
                 str(DEFAULT_SOURCE_FRESHNESS_HOURS[name]))
-        for name in ("platsbanken", "themuse", "arbeitnow", "reed"):
+        for name in ("platsbanken", "nofluffjobs", "arbeitnow", "reed"):
             expect(page.get_by_label(f"{name} pages per cycle")).to_have_value(
                 str(DEFAULT_SOURCE_PAGES_PER_CYCLE[name]))
         browser.close()

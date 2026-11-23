@@ -116,7 +116,49 @@ def test_only_the_ats_family_needs_the_token_and_etag_repository():
     """Everything else is stateless."""
     needing = {s.key for s in REGISTRY.values() if s.needs_ats_repo}
     assert needing == {"greenhouse", "ashby", "lever", "smartrecruiters", "recruitee",
-                       "breezy", "workday", "personio", "workable"}
+                       "breezy", "workday", "personio", "workable", "teamtailor"}
+
+
+TEAMTAILOR_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:tt="https://teamtailor.com/locations"><channel><title>Vardaga</title>
+<item><title>Undersköterska</title><link>https://vardaga.teamtailor.com/jobs/1-underskoterska</link>
+<pubDate>Mon, 23 Nov 2026 13:58:33 +0100</pubDate>
+<description>&lt;p&gt;Vi söker en undersköterska.&lt;/p&gt;</description><remoteStatus>none</remoteStatus>
+<tt:locations><tt:location><tt:name>Pilfinksgården</tt:name><tt:city>Västerås</tt:city>
+<tt:country>Sweden </tt:country></tt:location></tt:locations></item>
+<item><title>Support Agent</title><link>https://vardaga.teamtailor.com/jobs/2-support</link>
+<pubDate>Sun, 22 Nov 2026 09:00:00 +0100</pubDate><description>Answer families by phone.</description>
+<remoteStatus>fully</remoteStatus><tt:locations></tt:locations></item>
+</channel></rss>"""
+
+
+def test_a_teamtailor_board_is_read_from_its_feed_each_job_whole_with_its_places(monkeypatch):
+    """Teamtailor publishes every company's jobs as a feed for job boards to read. Our postings named 17
+    companies on it, care homes, restaurants and builders among them, and none was read (2026-11-23)."""
+    from datetime import UTC, datetime
+
+    from libs.corpus.filters import parse_date
+    from libs.corpus.geo import posting_country
+    from services.harvester.sources import ats
+
+    def teamtailor(request: httpx.Request) -> httpx.Response:
+        if request.url.host != "vardaga.teamtailor.com":
+            return httpx.Response(404)
+        if request.headers.get("if-none-match") == 'W/"v1"':
+            return httpx.Response(304)
+        return httpx.Response(200, text=TEAMTAILOR_FEED, headers={"etag": 'W/"v1"'})
+
+    monkeypatch.setattr(ats, "_CLIENT", httpx.Client(transport=httpx.MockTransport(teamtailor)))
+    jobs, etag = ats.fetch_teamtailor("vardaga")
+
+    assert [(job.title, job.company, job.location) for job in jobs] == [
+        ("Undersköterska", "Vardaga", "Västerås, Sweden"), ("Support Agent", "Vardaga", "")]
+    assert posting_country(jobs[0].location) == "SE"
+    assert (jobs[0].is_remote, jobs[1].is_remote) == (None, True)
+    assert parse_date(jobs[0].date_posted) == datetime(2026, 11, 23, 12, 58, 33, tzinfo=UTC)
+    assert jobs[0].snippet == "Vi söker en undersköterska." and jobs[0].source == "teamtailor"
+    assert ats.fetch_teamtailor("vardaga", etag)[0] is None, "unchanged since: not modified"
+    assert ats.fetch_teamtailor("nosuchcompany")[0] is ats.GONE
 
 
 def test_every_registry_entry_is_callable_and_well_formed():
@@ -586,11 +628,6 @@ def _feed_job(name: str, request) -> httpx.Response:
         return httpx.Response(200, json={"jobs": [{
             "url": url, "jobTitle": "Registered Nurse", "companyName": "Mercy", "jobGeo": "USA",
             "pubDate": posted.isoformat(), "jobDescription": "<p>Ward nursing, nights.</p>"}]})
-    if name == "themuse":
-        return httpx.Response(200, json={"page_count": 308, "results": [{
-            "refs": {"landing_page": url}, "name": "Registered Nurse", "company": {"name": "Mercy"},
-            "publication_date": posted.isoformat(), "locations": [{"name": "Flexible / Remote"}],
-            "contents": "<p>Ward nursing, nights.</p>"}]})
     if name == "workingnomads":
         return httpx.Response(200, json=[{
             "url": url, "title": "Registered Nurse", "company_name": "Mercy", "location": "Remote",
@@ -614,7 +651,7 @@ def _feed(monkeypatch, name: str, requests: list):
     return getattr(http_apis, f"gather_{name}")
 
 
-@pytest.mark.parametrize("name", ["jobicy", "themuse", "workingnomads", "profession"])
+@pytest.mark.parametrize("name", ["jobicy", "workingnomads", "profession"])
 def test_a_feed_keeps_a_job_nobody_has_a_word_for_yet(monkeypatch, name):
     """The word added tomorrow finds today's jobs: a feed no longer drops what today's words miss.
     A Jobicy job only open in the USA is kept too: where it may be done is each person's countries'
@@ -637,17 +674,6 @@ def test_profession_is_read_in_one_request_however_many_words_people_have(monkey
     links = _feed(monkeypatch, "profession", requests)(
         build_source_configs(configs, env={})["profession"], logging.getLogger("test"))
     assert len(requests) == 1 and len(links) == 1
-
-
-def test_the_muse_reads_the_pages_the_operator_set_in_every_job_category(monkeypatch):
-    """It read a key no setting wrote, and asked for software and data jobs only."""
-    from services.harvester.source_config import build_source_configs
-
-    requests: list = []
-    _feed(monkeypatch, "themuse", requests)(
-        build_source_configs({}, env={}, pages={"themuse": 3})["themuse"], logging.getLogger("test"))
-    assert len(requests) == 3
-    assert not any("category" in request.url.params for request in requests)
 
 
 def _himalayas(monkeypatch, *, old_from_page: int = 99,
@@ -702,42 +728,21 @@ def test_himalayas_stops_at_the_first_page_older_than_the_window(monkeypatch):
     assert len(requests) == 2 and len(links) == 20
 
 
-def test_a_list_in_no_date_order_is_read_whole_over_a_round_of_runs(monkeypatch):
-    """The Muse holds its ~38 new jobs a day anywhere in its list. A run reads its first page and the next
-    slice of the rest, counted on the platform's own clock: one round of runs reads them all."""
+def test_a_list_read_a_slice_a_run_is_read_whole_over_a_round_of_runs():
+    """More company boards than a run may poll, or more countries than Adzuna's free calls allow, are read a
+    slice a run, counted on the platform's own clock (`base.turn`): one round of runs reads each once. Held
+    through The Muse's pages until its API went (2026-11-23)."""
     import math
 
     from libs.settings import PLATFORM_TICK_MIN
-    from services.harvester.source_config import build_source_configs
     from services.harvester.sources import base
 
-    cfg = build_source_configs({}, env={}, pages={"themuse": 26})["themuse"]
-    requests: list = []
-    gather = _feed(monkeypatch, "themuse", requests)
-    runs = math.ceil(99 / 25)
-    for run in range(runs):
-        monkeypatch.setattr(base.time, "time", lambda run=run: run * PLATFORM_TICK_MIN * 60.0)
-        gather(cfg, logging.getLogger("test"))
+    count, per_run = 99, 25
+    runs = math.ceil(count / per_run)
+    read = [index for run in range(runs)
+            for index in base.turn(count, per_run, now=run * PLATFORM_TICK_MIN * 60.0)]
 
-    pages = [int(request.url.params["page"]) for request in requests]
-    assert len(pages) == runs * 26 - (runs * 25 - 99), "26 a run, the last slice shorter"
-    assert set(pages) == set(range(100)), f"{runs} runs read every page it serves"
-
-
-def test_the_muse_is_never_asked_a_page_it_does_not_serve_and_reads_all_it_does_each_run(monkeypatch):
-    """It says 309 pages and answers "Value `page` is too high" past the 100th (2026-11-04): a slice of
-    the rest asked pages 104 to 207 and read nothing at all. 500 requests an hour without a key, by its
-    own header: all 100 pages a run, four runs an hour, stay inside it."""
-    from libs.settings import PLATFORM_TICK_MIN, Snapshot, pages_per_cycle
-    from services.harvester.source_config import build_source_configs
-
-    pages = pages_per_cycle(Snapshot(), "themuse")
-    requests: list = []
-    _feed(monkeypatch, "themuse", requests)(
-        build_source_configs({}, env={}, pages={"themuse": pages})["themuse"], logging.getLogger("t"))
-
-    assert sorted(int(request.url.params["page"]) for request in requests) == list(range(100))
-    assert pages * 60 // PLATFORM_TICK_MIN <= 500
+    assert sorted(read) == list(range(count)), f"{runs} runs read every one once"
 
 
 def _nofluffjobs(monkeypatch, renewed_hours: dict[int, float], *, posted_days_ago: float = 0) -> list:
@@ -941,7 +946,7 @@ def test_a_board_is_given_up_only_when_its_ats_says_it_is_not_there(db, monkeypa
 
 @pytest.mark.parametrize(("board", "cfg"), [
     ("himalayas", {}), ("justjoinit", {}), ("nofluffjobs", {}), ("workingnomads", {}), ("jobicy", {}),
-    ("themuse", {}), ("findwork", {"api_key": "k"}),
+    ("findwork", {"api_key": "k"}),
     ("adzuna", {"app_id": "a", "app_key": "k", "countries": ["gb"]}),
 ])
 def test_a_board_that_refuses_says_so_instead_of_having_no_jobs_today(board, cfg, monkeypatch, caplog):

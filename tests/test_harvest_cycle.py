@@ -441,7 +441,7 @@ def test_the_operators_result_and_company_ceilings_reach_the_adapters():
         assert built[name]["max_companies"] == 750
 
     # A source with no result key must not silently acquire one.
-    assert "themuse" not in RESULT_KEYS
+    assert "himalayas" not in RESULT_KEYS
     assert "workingnomads" not in RESULT_KEYS
 
 

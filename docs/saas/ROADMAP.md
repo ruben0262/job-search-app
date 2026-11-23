@@ -3861,11 +3861,40 @@ work, or opening and closing sessions faster, would help):
     | Just Join IT (PL) | none | newest first until older than 12 h, 5 pages at most |
     | No Fluff Jobs (PL) | none | newest first by renewal until a page has nothing in 2 h, 10 pages at most |
     | Profession (HU) | none | its 15 newest, about 3 h |
-    | The Muse | none | every page it serves, every run |
     | Working Nomads | none | the whole list |
     | Jobicy | none | its 50 newest, about 6 h |
     | Findwork | none | newest first, 5 pages (not read: no key) |
-    | Company boards (9 ATS) | none | each board whole, up to 400 a run per ATS (the laptop's 587 all every run) |
+    | Company boards (10 ATS) | none | each board whole, up to 400 a run per ATS (the laptop's 587 all every run) |
+
+    **2026-11-23, afternoon** (owner: why six sources showed nothing; Jooble and motorsport.com; other suggestions):
+    Workday's boards were learned unreadable and The Muse's API is gone (both fixed, CHANGELOG); Teamtailor became a
+    tenth company-board system; Jooble (a search word required) and motorsportjobs.com (an AWS WAF challenge) are not
+    added. Waiting besides NAV: ReliefWeb's humanitarian jobs, which need an app name it approves on request.
+
+    On the server, from the checkout: which keyed boards have a key, what the last runs said of the six, Workday's
+    boards, and one real cycle with an account of each board (`check_sources.py`, right after a timer run, as the run
+    holds the harvest's lock):
+
+    ```
+    grep -E '^(ADZUNA_APP_ID|ADZUNA_APP_KEY|FINDWORK_API_KEY|REED_API_KEY)=' certificates/server.env | sed -E 's/=.+/= set/; s/=$/= EMPTY/'
+    grep -hE "sources enabled|themuse page|source (themuse|workday|workable|adzuna|findwork|reed)" logs/harvester.log | tail -25 | cut -c1-200
+    deploy/compose.sh run --rm --entrypoint python harvester -c "from libs.db import database; from libs.db.models import AtsToken; c = database()[AtsToken.COLLECTION]; print('workday boards', c.count_documents({'ats': 'workday'}), 'alive', c.count_documents({'ats': 'workday', 'dead_at': None}), 'bare names', c.count_documents({'ats': 'workday', 'token': {'\$not': {'\$regex': ':'}}}))"
+    deploy/compose.sh run --rm -v "$PWD/deploy/scripts:/app/deploy/scripts:ro" --entrypoint python harvester deploy/scripts/check_sources.py
+    ```
+
+    Once, after deploying the Workday fix and Teamtailor (a run learns boards from the last 48 hours' postings only):
+
+    ```
+    deploy/compose.sh run --rm --entrypoint python harvester -c "
+    from libs.db import database
+    from libs.db.models import CorpusJob
+    from libs.corpus.ats import AtsRepository
+    from libs.corpus.ats_urls import tokens_from_urls
+    db = database()
+    urls = (u for r in db[CorpusJob.COLLECTION].find({}, {'url': 1, 'application_url': 1}) for u in (r.get('url'), r.get('application_url')) if u)
+    pairs = [p for p in tokens_from_urls(urls) if p[0] in ('workday', 'teamtailor')]
+    print('boards added:', AtsRepository(db).add_tokens(pairs), 'of', len(pairs))"
+    ```
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

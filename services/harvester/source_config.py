@@ -12,8 +12,10 @@ from services.harvester.fetch import REED_KEY
 from services.harvester.sources import REGISTRY
 
 # Removed 2026-08-04, with the measurement that removed them. Arbeitnow and Remote OK came back as feeds on
-# 2026-11-22, no board being asked a word since 2026-11-04.
-DEFERRED_SOURCES = ("remotive", "dreamjobs", "consider", "getro", "nofluffjobs_hu", "weworkremotely")
+# 2026-11-22, no board being asked a word since 2026-11-04. The Muse went on 2026-11-23: its public API
+# answers every page with its site's "not found", and its developer page no longer names it.
+DEFERRED_SOURCES = ("remotive", "dreamjobs", "consider", "getro", "nofluffjobs_hu", "weworkremotely",
+                    "themuse")
 
 
 # The config key each adapter reads for "how many results".
@@ -52,7 +54,7 @@ PLATFORM_DEFAULTS: dict[str, dict] = {
         ats: {"max_companies": 400, "posted_within_hours": 72, "use_harvested": True,
               "conditional": True}
         for ats in ("greenhouse", "ashby", "lever", "smartrecruiters", "breezy",
-                    "workday", "personio")
+                    "workday", "personio", "teamtailor")
     },
     # Recruitee answers a burst from one IP with 429s — lower concurrency, from the reference.
     "recruitee": {"max_companies": 400, "posted_within_hours": 72, "use_harvested": True,

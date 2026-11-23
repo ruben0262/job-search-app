@@ -29,6 +29,7 @@ REGISTRY: dict[str, Source] = {
         Source("workday", ats.gather_workday, needs_ats_repo=True),
         Source("personio", ats.gather_personio, needs_ats_repo=True),
         Source("workable", ats.gather_workable, needs_ats_repo=True),
+        Source("teamtailor", ats.gather_teamtailor, needs_ats_repo=True),
 
         # Board APIs — feed-shaped, so they need no query set at all (HARVESTER_PLAN.md §1).
         Source("nofluffjobs", http_apis.gather_nofluffjobs),
@@ -37,7 +38,6 @@ REGISTRY: dict[str, Source] = {
         Source("himalayas", http_apis.gather_himalayas),
         Source("workingnomads", http_apis.gather_workingnomads),
         Source("jobicy", http_apis.gather_jobicy),
-        Source("themuse", http_apis.gather_themuse),
         Source("findwork", http_apis.gather_findwork),
         Source("adzuna", http_apis.gather_adzuna),
         Source("arbeitnow", http_apis.gather_arbeitnow),

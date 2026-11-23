@@ -1660,7 +1660,7 @@ function Pages({ source, save }: {
 }
 
 /** A select's choices with the value in force among them. A source's own default or a value saved elsewhere was
- * missing from them, so Admin showed something the harvest does not read: Platsbanken's 10 pages, The Muse's 100. */
+ * missing from them, so Admin showed something the harvest does not read: Platsbanken's and No Fluff Jobs' 10 pages. */
 function choices(fixed: number[], current: number): number[] {
   return [...new Set([...fixed, current])].sort((a, b) => a - b);
 }

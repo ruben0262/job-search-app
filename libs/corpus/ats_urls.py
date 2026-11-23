@@ -27,7 +27,8 @@ import re
 from collections.abc import Iterable
 
 # One pattern per ATS, each anchored on that vendor's own host so a lookalike path cannot match.
-# The captured group is the board token as the vendor's API expects it.
+# The captured groups, joined by ":", are the board token as the vendor's API expects it: one name, but
+# Workday's three, its tenant, data centre and site, which its reader splits (`sources.ats.fetch_workday`).
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # boards.greenhouse.io/acme/jobs/123, job-boards.greenhouse.io/acme/jobs/123
     ("greenhouse", re.compile(r"https?://(?:[\w-]+\.)?greenhouse\.io/(?:embed/job_board\?for=)?"
@@ -46,10 +47,14 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # apply.workable.com/acme/j/ABC — the bare `acme.workable.com` host is legacy but still seen.
     ("workable", re.compile(r"https?://apply\.workable\.com/([A-Za-z0-9_-]+)"
                             r"|https?://([A-Za-z0-9_-]+)\.workable\.com", re.I)),
-    # acme.wd3.myworkdayjobs.com/en-US/board/job/…
-    ("workday", re.compile(r"https?://([A-Za-z0-9_-]+)\.[\w-]*\.?myworkdayjobs\.com", re.I)),
+    # acme.wd3.myworkdayjobs.com/en-US/board/job/… — the tenant alone was kept until 2026-11-23, which the
+    # reader turns away as no board: each Workday board learned from a link was marked dead when first polled.
+    ("workday", re.compile(r"https?://([A-Za-z0-9_-]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z]{2}-[a-z]{2}/)?"
+                           r"([A-Za-z0-9_-]+)", re.I)),
     # acme.jobs.personio.de / .com
     ("personio", re.compile(r"https?://([A-Za-z0-9_-]+)\.jobs\.personio\.[a-z]{2,3}", re.I)),
+    # acme.teamtailor.com/jobs/123-role (Teamtailor's own `career.` and `app.` are not companies)
+    ("teamtailor", re.compile(r"https?://([A-Za-z0-9-]+)\.teamtailor\.com", re.I)),
 )
 
 # Path segments that are part of the vendor's own site rather than a company's board. Matching one
@@ -69,10 +74,11 @@ def token_from_url(url: str | None) -> tuple[str, str] | None:
         found = pattern.search(url)
         if not found:
             continue
-        # `workable` has two alternatives, so take whichever group matched.
-        token = next((group for group in found.groups() if group), "")
-        token = token.strip().strip(".-").lower()
-        if not token or token in _NOT_A_COMPANY or len(token) < 2:
+        # `workable` has two alternatives, of which one matched; Workday's three parts all do. Only the
+        # company part can be the vendor's own page: a Workday site is the company's to name, often "careers".
+        token = ":".join(group for group in found.groups() if group).strip().strip(".-").lower()
+        company, *rest = token.split(":")
+        if company in _NOT_A_COMPANY or len(company) < 2 or "job" in rest:
             continue
         return ats, token
     return None

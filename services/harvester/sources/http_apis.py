@@ -342,68 +342,6 @@ def gather_jobicy(cfg: dict[str, Any], logger) -> list[JobLink]:
     return out
 
 
-# ── The Muse ──────────────────────────────────────────────────────────
-
-# The last page The Muse answers: past it, "Value `page` is too high", whatever its `page_count` says
-# (measured 2026-11-04, with and without a location). A vendor fact, beside the vendor's adapter.
-MUSE_LAST_PAGE = 99
-
-def gather_themuse(cfg: dict[str, Any], logger) -> list[JobLink]:
-    """The Muse public API (www.themuse.com/api/public/jobs) — free, no auth.
-
-    Requests the 'Flexible / Remote' location in every category: about 38 new a day (measured
-    2026-11-03). It asked for "Software Engineering" and "Data Science" only, so a nurse or an
-    accountant never had a Muse job. Its list is in no date order, with the new ones anywhere among them,
-    and it answers no page past `MUSE_LAST_PAGE`, however many it says there are (6,174 jobs over 309
-    pages on 2026-11-04): a run reads its first page and the next `max_pages` of the rest it will serve
-    (`turn`), all 100 at the default, 400 requests an hour of the 500 it allows. url is
-    refs.landing_page; is_remote is set only when a location name actually reads Remote/Flexible (a Muse
-    job can carry multiple locations). Every job is kept.
-    """
-    endpoint = cfg.get("endpoint", "https://www.themuse.com/api/public/jobs")
-    max_age = cfg.get("max_age_hours", 24)
-    pages = int(cfg.get("max_pages", 1))
-    categories: list[str] = cfg.get("categories", [])
-    locations: list[str] = cfg.get("locations", ["Flexible / Remote"])
-    out: list[JobLink] = []
-    seen: set[str] = set()
-    def page_of(client, page: int) -> dict:
-        # Repeated category=/location= params -> list of tuples (httpx encodes each).
-        params: list[tuple[str, Any]] = [("page", page), ("descending", "true")]
-        params += [("category", c) for c in categories]
-        params += [("location", loc) for loc in locations]
-        try:
-            return client.get(endpoint, params=params).raise_for_status().json()
-        except Exception as exc:
-            logger.warning("themuse page %d failed: %s", page, exc)
-            return {}
-
-    with make_shared_client() as client:
-        first = page_of(client, 0)
-        served = min(int(first.get("page_count") or 1), MUSE_LAST_PAGE + 1)
-        bodies = [first] + [page_of(client, 1 + page) for page in turn(served - 1, pages - 1)]
-        for body in bodies:
-            for j in body.get("results") or []:
-                url = ((j.get("refs") or {}).get("landing_page") or "").strip()
-                if not url or url in seen:
-                    continue
-                iso = j.get("publication_date")
-                if not is_within_hours(iso, max_age):
-                    continue
-                locs = [(l or {}).get("name", "") for l in (j.get("locations") or [])]
-                loc_str = ", ".join([l for l in locs if l]) or "Remote"
-                remote = any("remote" in l.lower() or "flexible" in l.lower() for l in locs)
-                title = j.get("name", "")
-                desc = _striptags(j.get("contents"))
-                seen.add(url)
-                out.append(JobLink(
-                    url=url, title=title, company=(j.get("company") or {}).get("name", ""),
-                    location=loc_str, source="themuse", date_posted=iso,
-                    snippet=desc, is_remote=(True if remote else None),
-                ))
-    return out
-
-
 # ── Findwork.dev ──────────────────────────────────────────────────────
 
 def gather_findwork(cfg: dict[str, Any], logger) -> list[JobLink]:

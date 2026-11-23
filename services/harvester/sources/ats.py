@@ -9,6 +9,7 @@ import unicodedata
 import defusedxml.ElementTree as ET   # not stdlib ET: these parse third-party feeds
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from functools import partial
 from typing import Any, Callable
 
@@ -393,13 +394,64 @@ def fetch_workable(token: str, etag: str | None = None) -> tuple[list[JobLink] |
     return out, new_etag
 
 
+# A Teamtailor feed's own fields, and its pages: 100 jobs each, `offset` for the next (Teamtailor's help, "RSS
+# feed how-to guide").
+_TT = "{https://teamtailor.com/locations}"
+_TT_PAGE, _TT_PAGES = 100, 5
+
+
+def fetch_teamtailor(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
+    """A company's public feed (`<token>.teamtailor.com/jobs.rss`), which Teamtailor publishes for job boards to
+    read, ETag-capable, and a 404 for a company that is not there: each job with its whole text, its time to the
+    second and every place it is in, the company as the feed's title names it. Measured 2026-11-23: care homes,
+    restaurants and builders in Sweden among the 17 our postings named."""
+    r, new_etag, status = _conditional_get(f"https://{token}.teamtailor.com/jobs.rss", etag)
+    if status != "ok":
+        return (None if status == "304" else GONE), new_etag
+    out: list[JobLink] = []
+    for page in range(_TT_PAGES):
+        if page:
+            r = _http().get(f"https://{token}.teamtailor.com/jobs.rss", params={"offset": page * _TT_PAGE},
+                            timeout=_TIMEOUT)
+            if r.status_code != 200:
+                break
+        try:
+            channel = ET.fromstring(r.content).find("channel")
+        except ET.ParseError:
+            break
+        items = channel.findall("item") if channel is not None else []
+        for item in items:
+            url, title = (item.findtext("link") or "").strip(), (item.findtext("title") or "").strip()
+            if not url or not title:
+                continue
+            places = dict.fromkeys(", ".join(part for part in (
+                (place.findtext(f"{_TT}city") or "").strip(), (place.findtext(f"{_TT}country") or "").strip())
+                if part) for place in item.iter(f"{_TT}location"))
+            out.append(JobLink(url=url, title=title, company=(channel.findtext("title") or token).strip(),
+                               location="; ".join(each for each in places if each), source="teamtailor",
+                               date_posted=_rss_time(item.findtext("pubDate")),
+                               snippet=strip_html(item.findtext("description") or ""),
+                               is_remote=True if (item.findtext("remoteStatus") or "").strip() == "fully" else None))
+        if len(items) < _TT_PAGE:
+            break
+    return out, new_etag
+
+
+def _rss_time(text: str | None) -> str | None:
+    """An RSS time ("Mon, 23 Nov 2026 13:58:33 +0100") as ISO, or `None` where it gives none."""
+    try:
+        return parsedate_to_datetime((text or "").strip()).isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
 # The ATS whose board is one name, which a company's own name can be tried as: by the seed list
 # (`deploy/scripts/seed_ats.py`) and by the names postings carry (`cycle._boards_by_name`). Workday needs a
 # tenant, a data centre and a site, so it is found from postings' links only.
 FETCHERS: dict[str, Callable[[str], tuple[list[JobLink] | None, str | None]]] = {
     "greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby, "workable": fetch_workable,
     "recruitee": fetch_recruitee, "personio": fetch_personio, "smartrecruiters": fetch_smartrecruiters,
-    "breezy": fetch_breezy}
+    "breezy": fetch_breezy, "teamtailor": fetch_teamtailor}
 
 
 def spellings(name: str) -> list[str]:
@@ -446,5 +498,9 @@ def gather_personio(cfg: dict[str, Any], logger, repo: AtsRepository) -> list[Jo
 
 def gather_workable(cfg: dict[str, Any], logger, repo: AtsRepository) -> list[JobLink]:
     return gather_ats(cfg, logger, repo=repo, ats="workable", fetch_company=fetch_workable)
+
+
+def gather_teamtailor(cfg: dict[str, Any], logger, repo: AtsRepository) -> list[JobLink]:
+    return gather_ats(cfg, logger, repo=repo, ats="teamtailor", fetch_company=fetch_teamtailor)
 
 

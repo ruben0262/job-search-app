@@ -35,11 +35,34 @@ from services.harvester.cycle import _discover_ats_tokens
     ("https://williamsracing.recruitee.com/o/design-engineer", ("recruitee", "williamsracing")),
     ("https://acme.breezy.hr/p/1234", ("breezy", "acme")),
     ("https://apply.workable.com/jaguarlandrover/j/ABC123", ("workable", "jaguarlandrover")),
-    ("https://zf.wd3.myworkdayjobs.com/en-US/ZF_Careers/job/Engineer", ("workday", "zf")),
+    ("https://zf.wd3.myworkdayjobs.com/en-US/ZF_Careers/job/Engineer", ("workday", "zf:wd3:zf_careers")),
+    ("https://pg.wd5.myworkdayjobs.com/1000/job/WARSAW-PLANT/Data-Engineer_R1", ("workday", "pg:wd5:1000")),
     ("https://acme.jobs.personio.de/job/123", ("personio", "acme")),
+    ("https://vardaga.teamtailor.com/jobs/8780666-underskoterska", ("teamtailor", "vardaga")),
 ])
 def test_a_posting_url_names_its_company_board(url, expected):
     assert token_from_url(url) == expected
+
+
+def test_a_workday_board_learned_from_a_link_is_one_its_reader_can_read(monkeypatch):
+    """Workday's board is its tenant, data centre and site. Its pattern kept the tenant alone, which the
+    reader turns away as no board at all, so every Workday board learned from a link was marked dead the first
+    time it was polled, and Workday read nothing while the test above held the tenant alone (2026-11-23)."""
+    import httpx
+
+    from services.harvester.sources import ats
+
+    asked: list[str] = []
+
+    def workday(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        return httpx.Response(200, json={"jobPostings": []})
+
+    monkeypatch.setattr(ats, "_CLIENT", httpx.Client(transport=httpx.MockTransport(workday)))
+    board, token = token_from_url("https://zf.wd3.myworkdayjobs.com/en-US/ZF_Careers/job/Engineer")
+
+    assert board == "workday" and ats.fetch_workday(token)[0] is not ats.GONE
+    assert asked == ["https://zf.wd3.myworkdayjobs.com/wday/cxs/zf/zf_careers/jobs"]
 
 
 @pytest.mark.parametrize("url", [
@@ -59,9 +82,10 @@ def test_the_vendors_own_pages_are_not_mistaken_for_companies():
     """`boards.greenhouse.io/embed/...` and friends are the ATS, not somebody's board."""
     for url in ("https://boards.greenhouse.io/search?q=x",
                 "https://jobs.ashbyhq.com/api/non-user-graphql",
-                "https://careers.smartrecruiters.com/company/about"):
+                "https://careers.smartrecruiters.com/company/about",
+                "https://app.teamtailor.com/companies/1", "https://www.teamtailor.com/en/pricing"):
         pair = token_from_url(url)
-        assert pair is None or pair[1] not in {"search", "api", "company"}
+        assert pair is None or pair[1] not in {"search", "api", "company", "app", "www"}
 
 
 def test_the_same_board_seen_twice_is_one_token():
@@ -137,7 +161,7 @@ def test_a_board_a_posting_is_applied_to_is_one_we_poll(db):
 
     _discover_ats_tokens(db, AtsRepository(db))
 
-    assert token in AtsRepository(db).live_tokens("workday")
+    assert f"{token}:wd3:careers" in AtsRepository(db).live_tokens("workday")
 
 
 def test_linkedin_postings_with_no_apply_link_do_not_crowd_out_the_ones_that_name_a_board(db, monkeypatch):
