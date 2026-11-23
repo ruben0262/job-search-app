@@ -31,8 +31,11 @@ class MailError(RuntimeError):
 
 
 class EmailSender(Protocol):
+    """`send` answers with the email's `Message-ID`, which finds it in the mail server's own log, or `None`
+    where nothing was sent."""
+
     def send(self, to: str, subject: str, body: str, *, reply_to: str | None = None,
-             html: str | None = None) -> None: ...
+             html: str | None = None) -> str | None: ...
 
 
 class SmtpSender:
@@ -44,7 +47,7 @@ class SmtpSender:
         self._from = sender
 
     def send(self, to: str, subject: str, body: str, *, reply_to: str | None = None,
-             html: str | None = None) -> None:
+             html: str | None = None) -> str:
         message = EmailMessage()
         message["From"] = self._from
         message["To"] = to
@@ -69,6 +72,7 @@ class SmtpSender:
         except Exception as exc:
             # The address is logged; the subject and body are not.
             raise MailError(f"could not send to {to}: {type(exc).__name__}") from exc
+        return message["Message-ID"]
 
 
 # Where the site is somebody's own computer, and an email printed in its terminal is how they read it.

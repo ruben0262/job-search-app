@@ -15,6 +15,7 @@ from itertools import groupby
 
 VERIFY_SUBJECT = "Confirm your email"
 RESET_SUBJECT = "Reset your password"
+EXISTING_SUBJECT = "You already have an account"
 
 BRAND = "Mahoraga"
 # The site's purple (`web/src/styles.css`, `--accent`), white on it 5:1.
@@ -145,6 +146,37 @@ this link.
                        "email: your password hasn't changed, and nobody can change it without this link.")),
         footer=_FOOTER)
     return RESET_SUBJECT, text, html
+
+
+def existing_account_email(sign_in: str, reset: str, ttl: timedelta) -> tuple[str, str, str]:
+    """Subject, text and HTML of the email to an address that asked to sign up, or for a new confirmation
+    link, and already has an account: the way in, and a new password with the `reset` link (working `ttl`).
+    The page says the same to everybody, so this email is the only place that tells them."""
+    lasts = _lasts(ttl)
+    text = f"""\
+Hi,
+
+Someone asked to sign up with this address, and it already has a {BRAND} account. Sign in here:
+
+  {sign_in}
+
+Forgot your password? Choose a new one (the link works once and expires in {lasts}):
+
+  {reset}
+
+If that was not you, ignore this. Nothing has changed.
+"""
+    html = _page(
+        preview=f"This address already has a {BRAND} account. Sign in.",
+        heading="You already have an account",
+        body=(_para(f"Someone asked to sign up with this address, and it already has a {BRAND} account. "
+                    "Sign in with your password:")
+              + _button("Sign in", sign_in)
+              + _para(f'Forgot your password? <a href="{escape(reset)}">Choose a new one</a>.')
+              + _small(f"The password link works once and expires in {lasts}. If it wasn't you, ignore this "
+                       "email: nothing has changed.")),
+        footer=_FOOTER)
+    return EXISTING_SUBJECT, text, html
 
 
 @dataclass(frozen=True)

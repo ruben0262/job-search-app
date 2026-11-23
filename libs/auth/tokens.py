@@ -22,19 +22,26 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def issue_token(db: Database, user_id: _uuid.UUID, purpose: str) -> str:
-    """Mint a token, store only its hash, and return the plaintext for the email. Any earlier token
-    for the same purpose is spent, so only the newest link works."""
+def issue_token(db: Database, user_id: _uuid.UUID, purpose: str, *, spend_older: bool = True) -> str:
+    """Mint a token, store only its hash, and return the plaintext for the email. Any earlier token for the
+    same purpose is spent, so only the newest link works, unless `spend_older` is false: a new confirmation
+    link asked for changes nothing an older one would confirm."""
     if purpose not in TOKEN_PURPOSES:
         raise ValueError(f"{purpose!r} is not one of {TOKEN_PURPOSES}")
 
-    db[AuthToken.COLLECTION].update_many({"user_id": user_id, "purpose": purpose, "used_at": None},
-                                         {"$set": {"used_at": now()}})
+    if spend_older:
+        spend_all(db, user_id, purpose)
     token = secrets.token_urlsafe(32)
     ttl = RESET_TTL if purpose == "reset_password" else VERIFICATION_TTL
     insert(db, AuthToken(id=hash_token(token), user_id=user_id, purpose=purpose,
                          expires_at=now() + ttl))
     return token
+
+
+def spend_all(db: Database, user_id: _uuid.UUID, purpose: str) -> None:
+    """Every link of this account's for this purpose stops working."""
+    db[AuthToken.COLLECTION].update_many({"user_id": user_id, "purpose": purpose, "used_at": None},
+                                         {"$set": {"used_at": now()}})
 
 
 def consume_token(db: Database, token: str, purpose: str) -> _uuid.UUID | None:

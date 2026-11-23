@@ -71,16 +71,33 @@ export async function request<T>(path: string, options: Options = {}): Promise<T
     throw new ApiError(
       response.status,
       // FastAPI's validation errors arrive as a list of objects.
-      typeof detail === "string" ? detail : detailMessage(detail) ?? response.statusText,
+      typeof detail === "string" ? detail : detailMessage(detail) ?? unsaid(response),
       detail,
     );
   }
   return payload as T;
 }
 
+/** What a refusal says when it says nothing itself, such as an answer that is not the server's own. It said
+ * the status's words, which over HTTP/2 and 3, as browsers reach the site through Cloudflare, are none: a form
+ * showed nothing and its button stopped (2026-11-22). Cloudflare marks a check it wants the browser to pass
+ * (`cf-mitigated: challenge`), which a page load can pass and a request from the page cannot. */
+function unsaid(response: Response): string {
+  return response.headers.get("cf-mitigated") === "challenge"
+    ? "The site needs to check this browser first. Reload the page, then try again."
+    : `Something went wrong (error ${response.status}). Reload the page and try again.`;
+}
+
 function detailMessage(detail: unknown): string | undefined {
   if (detail && typeof detail === "object" && "message" in detail) {
     return String((detail as { message: unknown }).message);
+  }
+  // What is wrong with one field, as the password rules say it (`{"password": ["is too common"]}`): it said
+  // nothing at all, and people whose password was refused saw the sign-up button stop (2026-11-22).
+  const [field, problems] = detail && typeof detail === "object" && !Array.isArray(detail)
+    ? Object.entries(detail)[0] ?? [] : [];
+  if (field && Array.isArray(problems) && problems.length) {
+    return `${field.charAt(0).toUpperCase()}${field.slice(1)} ${problems.join(" and ")}.`;
   }
   if (Array.isArray(detail) && detail.length > 0) {
     const first = detail[0] as { loc?: unknown[]; msg?: string };

@@ -3846,3 +3846,73 @@ def test_the_fonts_the_site_is_set_in_are_asked_for_from_the_page_itself(site):
         assert all(asked.index(font) < asked.index("/dashboard") for font in named), (
             "before the script that draws the page had asked for anything")
         browser.close()
+
+
+def test_a_sign_up_refused_by_something_other_than_the_site_says_so_and_what_to_do(site):
+    """An answer that is not the server's own, such as Cloudflare's, carries no message of ours, and the form
+    showed the status's words: none at all over HTTP/2 and 3, as Safari reaches the site. Its button stopped,
+    nothing was said, and no email came (2026-11-22: iPhone Safari users, whose requests come through iCloud
+    Private Relay). A check Cloudflare wants the browser to pass says to reload, where a page load can pass
+    it; anything else says what went wrong, with its code; and the same form then signs up as ever."""
+    base, email, _ = site
+
+    def answered(status: int, headers: dict):
+        def answer(route) -> None:
+            route.fulfill(status=status, headers=headers, content_type="text/html",
+                          body="<!DOCTYPE html><title>Just a moment...</title>")
+        return answer
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_page()
+        page.goto(f"{base}/signup")
+        page.get_by_label("Email").fill(email)
+        page.get_by_label(re.compile(r"^Password")).fill(PASSWORD)
+        page.get_by_label("Confirm password").fill(PASSWORD)
+        page.get_by_label(re.compile(r"^I agree to the Terms, including the limits on our liability")).check()
+        create = page.get_by_role("button", name="Create account")
+
+        page.route("**/auth/signup", answered(403, {"cf-mitigated": "challenge"}))
+        create.click()
+        expect(page.locator("p.error")).to_have_text(
+            "The site needs to check this browser first. Reload the page, then try again.")
+
+        page.unroute("**/auth/signup")
+        page.route("**/auth/signup", answered(502, {}))
+        create.click()
+        expect(page.locator("p.error")).to_have_text(
+            "Something went wrong (error 502). Reload the page and try again.")
+
+        page.unroute("**/auth/signup")
+        create.click()
+        expect(page.get_by_role("heading", name="Check your email")).to_be_visible()
+        browser.close()
+
+
+def test_a_refused_password_says_why_and_a_spent_link_offers_the_way_in(site):
+    """The password rules answer with what is wrong (`{"password": [...]}`), which the sign-up form could not
+    say: nothing showed, the button stopped, and the live log had eight refused sign-ups in an evening, each
+    with no email to wait for (2026-11-22). And a link opened after the address was confirmed is spent, so its
+    page offers signing in, where it offered only another link."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_page()
+        page.goto(f"{base}/signup")
+        # Under 20 characters with the address's own name in it, which the rules refuse.
+        _fill_password_and_terms(page, email, email.split("@")[0] + "1")
+        page.get_by_role("button", name="Create account").click()
+        expect(page.locator("p.error")).to_have_text("Password must not contain your email address.")
+
+        page.goto(f"{base}/verify#token=spent")
+        expect(page.get_by_role("heading", name="That link did not work")).to_be_visible()
+        page.get_by_role("link", name="Sign in").click()
+        expect(page).to_have_url(f"{base}/signin")
+        browser.close()
+
+
+def _fill_password_and_terms(page, email: str, password: str) -> None:
+    page.get_by_label("Email").fill(email)
+    page.get_by_label(re.compile(r"^Password")).fill(password)
+    page.get_by_label("Confirm password").fill(password)
+    page.get_by_label(re.compile(r"^I agree to the Terms, including the limits on our liability")).check()

@@ -274,8 +274,11 @@ def test_a_suspended_account_is_not_signed_in_by_its_link(client):
     assert "access_token" not in {c.name for c in http.cookies.jar}
 
 
-def test_a_new_link_can_be_sent_and_only_the_newest_works(client):
-    """"Check your email" had no way to send another, and its advice — sign up again — sent nothing."""
+def test_a_new_link_can_be_sent_and_the_older_still_works_until_one_confirms(client):
+    """"Check your email" had no way to send another, and its advice — sign up again — sent nothing. And a new
+    link spent the older: an iPhone's Mail shows the emails of one subject as one conversation, the oldest
+    first, and the link people opened was the spent one, over and over until the resend limit refused them
+    (the live log, 2026-11-22). Any of them confirms; once one has, the rest are spent: each signs in."""
     http, _db, mailer = client
     email = _email()
     _signup(http, email)
@@ -285,8 +288,50 @@ def test_a_new_link_can_be_sent_and_only_the_newest_works(client):
 
     assert response.status_code == 202
     assert len(mailer.sent) == 2, "a second email went out"
+    newest = _link_token(mailer)
+    assert http.post("/auth/verify", json={"token": first}).status_code == 200, "the oldest confirms"
+    assert http.post("/auth/verify", json={"token": newest}).status_code == 400, "then the rest are spent"
+
+
+def test_a_second_sign_up_with_a_new_password_spends_the_links_before_it(client):
+    """A sign-up for an address still waiting is the newest password, and only its link confirms: an older
+    one, perhaps a stranger's sign-up with this address, does not confirm the account under the new one."""
+    http, _db, mailer = client
+    email = _email()
+    _signup(http, email)
+    first = _link_token(mailer)
+    _signup(http, email, password="another-fine-passphrase")
+
     assert http.post("/auth/verify", json={"token": first}).status_code == 400
     assert http.post("/auth/verify", json={"token": _link_token(mailer)}).status_code == 200
+
+
+def test_an_address_with_an_account_is_told_so_by_email_and_the_page_says_what_it_says_to_all(client):
+    """Signing up again, or asking for a new link, with an address already confirmed sent nothing, while the
+    page said "check your email" as it does for everybody: people who had confirmed waited for an email that
+    never came (the live log, 2026-11-22). Their inbox is told, with the way in and a new password, and the
+    answer is the same as for anybody, so it still says nothing about who has an account here."""
+    http, _db, mailer = client
+    confirmed = _email()
+    _signup(http, confirmed)
+    http.post("/auth/verify", json={"token": _link_token(mailer)})
+    http.cookies.clear()
+
+    def resend():
+        return http.post("/auth/resend", json={"email": confirmed})
+
+    for again in (lambda: _signup(http, confirmed), resend):
+        before = len(mailer.sent)
+        answer = again()
+        assert (answer.status_code, answer.json()) == (202, {"status": "check your email"})
+        assert len(mailer.sent) == before + 1
+        to, subject, body = mailer.sent[-1]
+        assert (to, subject) == (confirmed, "You already have an account")
+        assert "/signin" in body
+
+    reset = _link_token(mailer)
+    chosen = http.post("/auth/reset", json={"token": reset, "new_password": "a-brand-new-passphrase"})
+    assert chosen.status_code == 200, "its new-password link works"
 
 
 def test_resend_answers_the_same_whoever_asks(client):
@@ -298,11 +343,12 @@ def test_resend_answers_the_same_whoever_asks(client):
     sent = len(mailer.sent)
 
     unknown = http.post("/auth/resend", json={"email": _email()})
+    assert len(mailer.sent) == sent, "an address with no account is sent nothing"
     known = http.post("/auth/resend", json={"email": verified})
 
     assert unknown.status_code == known.status_code == 202
     assert unknown.json() == known.json()
-    assert len(mailer.sent) == sent
+    assert [to for to, _, _ in mailer.sent[sent:]] == [verified], "a confirmed one is told it has an account"
 
 
 def test_the_emailed_token_is_not_what_is_stored(client):
@@ -518,7 +564,8 @@ def test_an_unconfirmed_address_is_whoever_signs_up_for_it_last_and_a_confirmed_
     assert (signs_in(strangers), signs_in(PASSWORD)) == (401, 200)
 
     assert _signup(_browser(), email, strangers).status_code == 202
-    assert len(mailer.sent) == 2, "nothing is mailed about an address that is somebody's"
+    # Its owner is told somebody tried, in their own inbox; the account is as it was.
+    assert [(to, subject) for to, subject, _ in mailer.sent[2:]] == [(email, "You already have an account")]
     assert (signs_in(strangers), signs_in(PASSWORD)) == (401, 200)
 
 
@@ -824,3 +871,96 @@ def test_signup_and_forgot_answer_before_the_email_is_sent(db, monkeypatch):
     finally:
         server.should_exit = True
         app.dependency_overrides.clear()
+
+
+_IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+IPHONE_SAFARI = f"{_IPHONE} Version/18.5 Mobile/15E148 Safari/604.1"
+IPHONE_CHROME = f"{_IPHONE} CriOS/131.0.6778.73 Mobile/15E148 Safari/604.1"
+
+
+def test_each_sign_up_says_which_browser_asked_and_the_id_its_email_left_with(client, caplog):
+    """Confirmations that never came, all on iPhones, from Safari and not from Chrome on the same phone
+    (2026-11-22), and the log could not say which browser had asked or whether an email had left: it wrote a
+    line for a send that failed and none for one that went. Each sign-up and each resend now says the device
+    and browser it came from and what was done, and each confirmation the id it was handed to the mail server
+    with, which finds it in that server's own log."""
+    import logging
+
+    from services.api import deps
+    from services.api.app import app
+
+    http, _db, _ = client
+    caplog.set_level(logging.INFO, logger="services.api.auth_routes")
+
+    class Handed:
+        """Answers as the real mailer does: with the id it gave the email."""
+
+        def send(self, to, subject, body, *, reply_to=None, html=None):
+            return "<IQ6AA3RdXirFrFu0HEbmPhlL@flow-solutions.xyz>"
+
+    app.dependency_overrides[deps.get_mailer] = Handed
+    safari, chrome = f"{uuid.uuid4().hex[:10]}@icloud.com", f"{uuid.uuid4().hex[:10]}@gmail.com"
+    for email, agent in ((safari, IPHONE_SAFARI), (chrome, IPHONE_CHROME)):
+        answer = http.post("/auth/signup", headers={"user-agent": agent},
+                           json={"email": email, "password": PASSWORD, "consent_version": LEGAL_VERSION})
+        assert answer.status_code == 202
+    http.post("/auth/resend", headers={"user-agent": IPHONE_SAFARI}, json={"email": _email()})
+
+    said = caplog.messages
+    assert "signup: an address at icloud.com, from iPhone Safari: a link is being sent" in said
+    assert "signup: an address at gmail.com, from iPhone Chrome: a link is being sent" in said
+    assert (f"verification email to {safari} handed to the mail server as "
+            "<IQ6AA3RdXirFrFu0HEbmPhlL@flow-solutions.xyz>") in said
+    assert "resend: an address at example.com, from iPhone Safari: nothing sent, no account" in said
+
+
+def test_why_a_sign_up_a_link_or_a_sign_in_was_refused_is_in_the_log(client, caplog):
+    """An evening's live log had eight refused sign-ups and a run of refused links, and could say why for none
+    of them (2026-11-22): the visitor was told, the log was not. Each refusal now says its reason, with the
+    address's domain and what asked, and never the address."""
+    import logging
+
+    http, _db, mailer = client
+    caplog.set_level(logging.INFO, logger="services.api.auth_routes")
+    email, phone = _email(), {"user-agent": IPHONE_SAFARI}
+
+    def sign_up(password: str) -> int:
+        return http.post("/auth/signup", headers=phone, json={
+            "email": email, "password": password, "consent_version": LEGAL_VERSION}).status_code
+
+    def verify(token: str) -> int:
+        return http.post("/auth/verify", headers=phone, json={"token": token}).status_code
+
+    assert (sign_up("password123"), sign_up(PASSWORD)) == (400, 202)
+    link = _link_token(mailer)
+    assert (verify("nothing-we-sent"), verify(link), verify(link)) == (400, 200, 400)
+    http.cookies.clear()
+    wrong = {"email": email, "password": "not-the-one-123"}
+    assert http.post("/auth/login", headers=phone, json=wrong).status_code == 401
+
+    said = [record.getMessage() for record in caplog.records if record.name == "services.api.auth_routes"]
+    at = "an address at example.com, from iPhone Safari"
+    for line in (f"signup refused: {at}: password is too common",
+                 "verify refused, from iPhone Safari: a link unknown, or expired",
+                 f"verify: {at}: confirmed and signed in",
+                 "verify refused, from iPhone Safari: a used link, the account confirmed already",
+                 f"login refused: {at}: wrong password"):
+        assert line in said, line
+    assert not [line for line in said if email in line], "the address itself is in none of them"
+
+
+def test_a_limit_that_stops_somebody_is_said_once_a_window(limited, caplog):
+    """A refusal for asking too often was in the request log as a bare 429 and nowhere else, saying not which
+    limit (2026-11-22). The first refusal of a window names the limit; the rest of the window is quiet,
+    or a script's every try would be a line."""
+    import logging
+
+    http, _db, _ = limited
+    caplog.set_level(logging.WARNING, logger="services.api.deps")
+    email = _email()
+
+    answers = [http.post("/auth/resend", json={"email": email}).status_code for _ in range(5)]
+
+    assert answers == [202, 202, 202, 429, 429]
+    said = [record.getMessage() for record in caplog.records if record.name == "services.api.deps"]
+    assert said == ["limit reached: resend, more than 3 in 3600 s"]

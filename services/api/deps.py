@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import time
 import uuid
@@ -19,6 +20,8 @@ from libs.db.models import RateCount
 from libs.mail import EmailSender, sender_from_env
 from libs.membership import has
 from libs.secrets import SecretStore
+
+logger = logging.getLogger(__name__)
 
 _MAILER: EmailSender | None = None
 
@@ -99,5 +102,10 @@ def rate_limit(request: Request, key: str, *, limit: int, per_seconds: int) -> N
         row = counts.find_one_and_update({"_id": counted}, once_more, upsert=True,
                                          return_document=ReturnDocument.AFTER)
     if row["count"] > limit:
+        # Once a window, the first time it is passed: what stopped somebody, by the limit's name alone (after
+        # its ":" is an address or an account), and never a line for each try of a script.
+        if row["count"] == limit + 1:
+            logger.warning("limit reached: %s, more than %d in %d s", key.partition(":")[0], limit,
+                           per_seconds)
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
                             detail="too many attempts — wait and try again")

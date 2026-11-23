@@ -47,6 +47,10 @@ export function Verify({ onDone }: { onDone: () => void | Promise<void> }) {
         {failed}
       </p>
       <ResendLink email="" plan={planAsked()} />
+      {/* A link opened after the address was confirmed is spent, and the way in is signing in. */}
+      <p className="facts" style={{ marginTop: "1.75rem" }}>
+        Already confirmed your email? <a href="/signin">Sign in</a>
+      </p>
     </AuthShell>
   );
 }

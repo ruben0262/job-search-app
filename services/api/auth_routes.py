@@ -28,11 +28,18 @@ from libs.auth import (
 )
 from libs.auth.access import issue_access_token
 from libs.auth.sessions import ACCESS_COOKIE, ACCESS_TTL, REFRESH_COOKIE, REFRESH_TTL, session_owner
-from libs.auth.tokens import RESET_TTL, VERIFICATION_TTL
+from libs.auth.tokens import RESET_TTL, VERIFICATION_TTL, hash_token, spend_all
 from libs.db import find_one, get, insert, now
-from libs.db.models import User
+from libs.db.models import AuthToken, User
 from libs.legal import LEGAL_VERSION
-from libs.mail import EmailSender, MailError, reset_email, send_within_cap, verification_email
+from libs.mail import (
+    EmailSender,
+    MailError,
+    existing_account_email,
+    reset_email,
+    send_within_cap,
+    verification_email,
+)
 from libs.notify import site_url
 from libs.secrets import redacting
 from services.api.deps import get_db, get_mailer, rate_limit
@@ -58,6 +65,42 @@ LOGINS_PER_EMAIL = 10
 # Sign-ups for one email in an hour. Each for an unconfirmed address mails it a link, as `/auth/resend` does
 # with the same limit; counted for every email alike, so the limit does not say which have an account.
 SIGNUPS_PER_EMAIL = 3
+
+# The device and the browser a request says it comes from, looked for in this order: Chrome on an iPhone says
+# "Safari" too, and Chrome anywhere does. Said beside each sign-up, because a confirmation that never came on
+# iPhones came from Safari and not from Chrome on the same phone, and nothing in the log could tell the two
+# apart (2026-11-22).
+_DEVICES = (("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("Macintosh", "Mac"),
+            ("Windows", "Windows"))
+_BROWSERS = (("CriOS", "Chrome"), ("FxiOS", "Firefox"), ("EdgiOS", "Edge"), ("Instagram", "Instagram"),
+             ("FBAN", "Facebook"), ("GSA/", "the Google app"), ("Edg/", "Edge"), ("Chrome/", "Chrome"),
+             ("Firefox/", "Firefox"), ("Safari/", "Safari"))
+
+
+def _asked_from(request: Request) -> str:
+    """"iPhone Safari", "iPhone Chrome", "Windows Edge": what asked, in two words."""
+    said = request.headers.get("user-agent", "")
+    device = next((name for token, name in _DEVICES if token in said), "an unknown device")
+    return f"{device} {next((name for token, name in _BROWSERS if token in said), 'an unknown browser')}"
+
+
+def _who(request: Request, email: str) -> str:
+    """Who asked, as the log says it: the address's domain, never the rest of it, and what asked."""
+    return f"an address at {email.lower().rpartition('@')[2]}, from {_asked_from(request)}"
+
+
+def _why_refused(db: Database, token: str, purpose: str) -> str:
+    """Why a link did not work, for the log, told apart where what the person needs differs: a used link
+    whose account is confirmed means signing in; one replaced by a newer link means opening that one."""
+    row = db[AuthToken.COLLECTION].find_one({"_id": hash_token(token), "purpose": purpose},
+                                            {"user_id": 1, "used_at": 1})
+    if row is None or row.get("used_at") is None:
+        return "a link unknown, or expired"
+    owner = get(db, User, row["user_id"])
+    if purpose == "verify_email" and owner is not None and owner.status == "active":
+        return "a used link, the account confirmed already"
+    return "a link used already, or replaced by a newer one"
+
 
 # The response every signup and every failed login gets, whatever actually happened.
 OPAQUE_SIGNUP = {"status": "check your email"}
@@ -123,12 +166,16 @@ def signup(body: SignupRequest, request: Request, background: BackgroundTasks,
     rate_limit(request, "signup", limit=20, per_seconds=3600)
 
     if not body.consent_version:
+        logger.info("signup refused: %s: the terms box not ticked", _who(request, body.email))
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Tick the box to agree to the Terms.")
     if body.consent_version != LEGAL_VERSION:
+        logger.info("signup refused: %s: terms changed since the page opened", _who(request, body.email))
         raise HTTPException(status.HTTP_409_CONFLICT,
                             detail="Our terms changed since this page opened. Reload it and read them again.")
     problems = password_problems(body.password, email=body.email)
     if problems:
+        # What the eight refused sign-ups of one evening were for, which nothing said (2026-11-22).
+        logger.info("signup refused: %s: password %s", _who(request, body.email), " and ".join(problems))
         # The password rules are told to the caller: they are about the value they just chose.
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail={"password": problems})
@@ -146,7 +193,16 @@ def signup(body: SignupRequest, request: Request, background: BackgroundTasks,
             {"$set": {"password_hash": password_hash, "processing_consent_at": now(),
                       "processing_consent_version": LEGAL_VERSION, "updated_at": now()}}, {"_id": 1})
         if waiting is None:
-            logger.info("signup for an address that has an account; answering opaquely")
+            # Confirmed already, and told so in their inbox with the way in, where it was told nothing: the
+            # page says the same to everybody, and people who had confirmed signed up again and waited for an
+            # email that never came (2026-11-22).
+            user = find_one(db, User, {"email": email})
+            told = user is not None and user.status == "active"
+            if told:
+                background.add_task(_send_existing, db, mailer, email,
+                                    issue_token(db, user.id, "reset_password"))
+            logger.info("signup: %s, which has an account: %s", _who(request, email),
+                        "told so by email" if told else "nothing sent")
             return OPAQUE_SIGNUP
         user_id = waiting["_id"]
     else:
@@ -156,6 +212,7 @@ def signup(body: SignupRequest, request: Request, background: BackgroundTasks,
 
     token = issue_token(db, user_id, "verify_email")
     background.add_task(_send_verification, db, mailer, email, token, body.plan)
+    logger.info("signup: %s: a link is being sent", _who(request, email))
     return OPAQUE_SIGNUP
 
 
@@ -176,12 +233,17 @@ def resend(body: ResendRequest, request: Request, background: BackgroundTasks,
     rate_limit(request, f"resend:{email}", limit=3, per_seconds=3600)
 
     user = find_one(db, User, {"email": email})
-    if user is not None and user.status == "pending_verification":
-        # Issuing revokes the older links, so the newest one in the inbox is the one that works.
+    waiting = user is not None and user.status == "pending_verification"
+    confirmed = user is not None and user.status == "active"
+    if waiting:
+        # The older links go on working: an iPhone's Mail shows the emails of one subject as one conversation,
+        # the oldest first, and the link opened was the one a newer had spent, over and over (2026-11-22).
         background.add_task(_send_verification, db, mailer, email,
-                            issue_token(db, user.id, "verify_email"), body.plan)
-    else:
-        logger.info("verification resend for an unknown or verified address; answering opaquely")
+                            issue_token(db, user.id, "verify_email", spend_older=False), body.plan)
+    elif confirmed:
+        background.add_task(_send_existing, db, mailer, email, issue_token(db, user.id, "reset_password"))
+    logger.info("resend: %s: %s", _who(request, email), "a new link is being sent" if waiting
+                else "told it has an account" if confirmed else "nothing sent, no account")
     return AuthStatus(**OPAQUE_SIGNUP)
 
 
@@ -195,6 +257,8 @@ def verify(body: VerifyRequest, request: Request, response: Response,
     """Redeem a verification link and sign in: opening it proves the inbox, as a password would."""
     user_id = consume_token(db, body.token, "verify_email")
     if user_id is None:
+        logger.info("verify refused, from %s: %s", _asked_from(request),
+                    _why_refused(db, body.token, "verify_email"))
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="this link is invalid or has expired — request another")
 
@@ -205,7 +269,10 @@ def verify(body: VerifyRequest, request: Request, response: Response,
     if user.status in ("suspended", "deleted"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="this account is not active")
     _verified(db, user)
+    # Confirmed: the links still out there have nothing left to confirm, and each would sign in.
+    spend_all(db, user.id, "verify_email")
     _sign_in(request, response, db, user)
+    logger.info("verify: %s: confirmed and signed in", _who(request, user.email))
     return AuthStatus(status="verified")
 
 
@@ -242,10 +309,13 @@ def reset(body: ResetRequest, request: Request, db: Database = Depends(get_db)) 
     # Looked at, not spent, until the new password passes: a refused password keeps the link working.
     user = get(db, User, token_owner(db, body.token, "reset_password"))
     if user is None:
+        logger.info("reset refused, from %s: %s", _asked_from(request),
+                    _why_refused(db, body.token, "reset_password"))
         raise expired
 
     problems = password_problems(body.new_password, email=user.email)
     if problems:
+        logger.info("reset refused: %s: password %s", _who(request, user.email), " and ".join(problems))
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"password": problems})
     if consume_token(db, body.token, "reset_password") != user.id:
         raise expired
@@ -256,6 +326,7 @@ def reset(body: ResetRequest, request: Request, db: Database = Depends(get_db)) 
     # Arriving here also proves control of the inbox, which is what verification proves.
     if user.email_verified_at is None:
         _verified(db, user)
+    logger.info("reset: %s: a new password set", _who(request, user.email))
     return {"status": "reset"}
 
 
@@ -270,12 +341,17 @@ def login(body: LoginRequest, request: Request, response: Response,
     # The hash is verified even when the user does not exist, so timing reveals no addresses.
     stored = user.password_hash if user else _DUMMY_HASH
     if not verify_password(stored, body.password) or user is None:
+        # The visitor is told the same either way; the log, which of the two.
+        logger.info("login refused: %s: %s", _who(request, body.email),
+                    "no account" if user is None else "wrong password")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=OPAQUE_LOGIN_ERROR)
 
     if user.status == "pending_verification":
+        logger.info("login refused: %s: not confirmed yet", _who(request, body.email))
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail="confirm your email address first")
     if user.status in ("suspended", "deleted"):
+        logger.info("login refused: %s: the account is %s", _who(request, body.email), user.status)
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="this account is not active")
 
     if needs_rehash(user.password_hash):
@@ -365,30 +441,41 @@ def logout_everywhere(request: Request, response: Response,
 # message, and an address with an account answered that much slower than one without: the timing told
 # what the opaque answer was written to hide.
 
-def _send_verification(db: Database, mailer: EmailSender, email: str, token: str, plan: Plan) -> None:
-    """Send the link, and treat any delivery failure as recoverable."""
-    # The SPA's hash route, not the API's path; for a membership, on to the payment form once it is opened.
-    # The token after the "#", the part of an address a browser keeps to itself: it is in no request, so in
-    # no log of ours or of anything between, and in no address another site is told the visitor came from.
-    url = site_url(f"/verify#token={token}" + ("" if plan == "free" else f"&plan={plan}"))
-    subject, body, html = verification_email(url, VERIFICATION_TTL)
-    # The token grants access to the account, so it is scrubbed from anything logged in flight.
+def _send(db: Database, mailer: EmailSender, email: str, token: str, *, what: str, purpose: str,
+          mail: tuple[str, str, str]) -> None:
+    """One email carrying a link, within the platform's cap, any failure recoverable: they can ask again. The
+    token grants access to the account, so it is scrubbed from anything logged in flight; the id the email
+    leaves with finds it in the mail server's own log, whether it left and what the other end said."""
+    subject, body, html = mail
     with redacting(token):
         try:
-            send_within_cap(db, mailer, email, subject, body, purpose="verify_email", html=html)
+            sent = send_within_cap(db, mailer, email, subject, body, purpose=purpose, html=html)
         except MailError:
-            logger.warning("verification email to %s failed; the account still exists", email,
-                           exc_info=True)
+            logger.warning("%s email to %s failed; they can ask again", what, email, exc_info=True)
+            return
+    if sent:
+        logger.info("%s email to %s handed to the mail server as %s", what, email, sent)
+
+
+def _send_verification(db: Database, mailer: EmailSender, email: str, token: str, plan: Plan) -> None:
+    # The token after the "#", the part of an address a browser keeps to itself: it is in no request, so in
+    # no log of ours or of anything between, and in no address another site is told the visitor came from.
+    # For a membership, on to the payment form once the page is opened.
+    url = site_url(f"/verify#token={token}" + ("" if plan == "free" else f"&plan={plan}"))
+    _send(db, mailer, email, token, what="verification", purpose="verify_email",
+          mail=verification_email(url, VERIFICATION_TTL))
 
 
 def _send_reset(db: Database, mailer: EmailSender, email: str, token: str) -> None:
-    """Send the reset link, and treat any delivery failure as recoverable: they can ask again."""
-    subject, body, html = reset_email(site_url(f"/reset#token={token}"), RESET_TTL)
-    with redacting(token):
-        try:
-            send_within_cap(db, mailer, email, subject, body, purpose="reset_password", html=html)
-        except MailError:
-            logger.warning("reset email failed; the user can ask again", exc_info=True)
+    _send(db, mailer, email, token, what="reset", purpose="reset_password",
+          mail=reset_email(site_url(f"/reset#token={token}"), RESET_TTL))
+
+
+def _send_existing(db: Database, mailer: EmailSender, email: str, token: str) -> None:
+    """To an address that asked to sign up, or for a new confirmation link, and has an account: the way in,
+    and a new password by the reset link it carries, so it is counted as one."""
+    _send(db, mailer, email, token, what="already-an-account", purpose="reset_password",
+          mail=existing_account_email(site_url("/signin"), site_url(f"/reset#token={token}"), RESET_TTL))
 
 
 # A real argon2 hash of a value nobody has.

@@ -13,7 +13,13 @@ from libs.mail.sender import (
     SmtpSender,
     sender_from_env,
 )
-from libs.mail.templates import DigestJob, digest_email, reset_email, verification_email
+from libs.mail.templates import (
+    DigestJob,
+    digest_email,
+    existing_account_email,
+    reset_email,
+    verification_email,
+)
 
 __all__ = [
     "DEFAULT_DAILY_CAP",
@@ -25,6 +31,7 @@ __all__ = [
     "SmtpSender",
     "daily_cap",
     "digest_email",
+    "existing_account_email",
     "reset_email",
     "send_within_cap",
     "sender_from_env",
