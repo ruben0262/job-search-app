@@ -8,7 +8,7 @@ from uuid import UUID
 from libs import settings
 from libs.contracts.config import migrate_config
 from libs.corpus.geo import allows, wanted_countries
-from services.harvester.fetch import REED_KEY
+from services.harvester.fetch import NAV_KEY, REED_KEY
 from services.harvester.sources import REGISTRY
 
 # Removed 2026-08-04, with the measurement that removed them. Arbeitnow and Remote OK came back as feeds on
@@ -37,11 +37,13 @@ KEY_GATED = {
     "findwork": "FINDWORK_API_KEY",
     "adzuna": "ADZUNA_APP_ID",
     "reed": REED_KEY,
+    "nav": NAV_KEY,
 }
 
 # Boards that list one country's jobs alone, each read only while somebody has picked that country, the only
 # one whose jobs would be kept (owner, 2026-11-04; `cycle._ingest`). The others list many countries at once.
-ONE_COUNTRY = {"reed": "GB", "platsbanken": "SE", "profession": "HU", "nofluffjobs": "PL", "justjoinit": "PL"}
+ONE_COUNTRY = {"reed": "GB", "teachingvacancies": "GB", "platsbanken": "SE", "nav": "NO", "feinaactiva": "ES",
+               "profession": "HU", "nofluffjobs": "PL", "justjoinit": "PL"}
 
 # Endpoints and rate limits: genuinely platform-level, lifted from the reference's config.yaml.
 PLATFORM_DEFAULTS: dict[str, dict] = {

@@ -14,6 +14,51 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-23, night — England's school jobs and Catalonia's public employment service read every run, Norway's NAV built and waiting for its token, a withdrawn ad closed, and what the rest of Europe has
+
+The owner: "lets go through each major european country and grab as many job sources as we can that we don't have at
+the moment, firstly like linkedin where there's lots of jobs, and we have access to them, then ones with api after as
+well, and make sure we put them through the same checks as the other job sources we recently added as well".
+
+Like LinkedIn, with lots of jobs and open to us: none. Each country's big private board (Indeed, StepStone, InfoJobs,
+Pracuj, jobs.cz, Profesia, kariera.gr, jobs.bg) is behind a bot wall, bars its API in robots.txt, or has no API that
+lets another site show its jobs. With an API or open data, three are built:
+
+- **Teaching Vacancies (England's schools, `teachingvacancies`).** The Department for Education's open API: every
+  school job in England, 100 a page newest first, each with its whole text, no key, under the Open Government Licence
+  (its one condition for a job site: no fee for contacting, interviewing or hiring somebody who answered a listing).
+  Read newest first until a page reaches past the window, 48 h because a date has no time, 10 pages at most.
+  Measured: 364 jobs in 7.5 s, 352 with 200 characters of text or more, all new to the laptop's 47,268. Read only
+  while somebody has picked the UK.
+- **Feina Activa (Catalonia, `feinaactiva`, shown as "Feina Activa (SOC)").** The SOC's open-data file of every offer
+  it publishes, 4,949 on the day, made when it is asked for (116 dated that day by 17:00). The Generalitat's open
+  licence allows reuse, commercial too, if the SOC is credited and the text left as it is: the board's name credits
+  it, and the text is the offer's own parts one after another (the job, experience, languages and permits, studies,
+  contract, hours). Measured: 143 offers in the 48 h window in 5.8 s, all new. The whole file through the ingest
+  (no request): 4,949 offers became 4,825 jobs (124 the same offer twice), 4,625 with 200 characters or more from
+  the file alone (4,417 without contract and hours). The other 200 have their page read, from the offer's own part
+  (`postings._PAGE_PART`): read whole, 40% of one offer's page was the site's menus and foot. **Its cost:** 7.5 MB a read, not compressed, with no date to ask from and nothing to say it has not changed: about 720 MB
+  a day from the Generalitat's server at a read every 15 minutes. Read only while somebody has picked Spain.
+- **NAV (Norway, `nav`), built and not yet read.** NAV's official feed of most of Norway's job ads, asked for what
+  changed since a moment (If-Modified-Since), page after page. Its terms let a job site show the ads, and ask that a
+  withdrawn one go at once. Its token is asked of NAV by email (`NAV_API_TOKEN`; deploy/server.env.example says how),
+  and until it is in, the board is skipped and its log line says so. Measured with the public token NAV offers for
+  trying the feed: the 2 h window held 65 ads (75 entries) and took 0.7 s, a day 1,844 (1,614 live) in 2.0 s; 12 ads'
+  text read from their entries in 1.8 s, all 200 characters or more. Each change is an entry, so an ad changed twice
+  in the window is listed twice: only its last state is passed on, or an ad withdrawn after it went up stayed up.
+- **A withdrawn ad is closed** (`JobLink.closed`, `cycle._ingest`): when a board says an ad was withdrawn, a stored
+  copy is closed and an unstored one is not stored. NAV is the first board to say so. The page reader reads NAV's
+  ads from their feed entries (`postings._nav_ad`): text, when it went up, its own link to apply, and gone when
+  withdrawn.
+- **Checked and not built** (ROADMAP item 56 has each, and what would open it): Czechia's labour office open data
+  (no rights reserved, about 300 new ads a weekday, 59% with text, one SPARQL query, but no public page for one ad
+  that "Apply" could open); Murcia's employment service (a Radware captcha page); Poland's CBOP (a signed
+  application); Spain's InfoJobs and Portugal's ITJobs.pt (written permission); Croatia's HZZ feeds (no licence
+  stated); stale: Lithuania's (308 new in November), Castilla y León's (last 27 October), Catalonia's Socrata copy
+  (2023).
+- Requests: NAV's feed about 40 and 12 entries; Feina Activa's file twice; Czechia's file once and six SPARQL
+  queries; the ministry's portal page and its scripts once.
+
 ## 2026-11-23, evening — every company board on every run, a board that did not answer asked once more, and Greenhouse's jobs with their text
 
 The owner: "can we do a quick check on the company job boards with the ats stuff like greenhouse make sure we are always

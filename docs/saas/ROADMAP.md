@@ -3836,8 +3836,11 @@ work, or opening and closing sessions faster, would help):
       Indeed by getting past its refusal of automated clients, the bypass this item rules out.
 56. **Free sources, read every run** (owner, 2026-11-22: "which sources can we use to get real time jobs in as fast
     as possible every 15 mins, for free?"). Built the same day: Arbeitnow, Remote OK and Sweden's Platsbanken
-    (CHANGELOG 2026-11-22, late), then Reed on the owner's key (2026-11-23). Waiting:
-    - **NAV (Norway):** a free feed of changes, its token asked for by email (plattform.for.arbeidsmarkedet@nav.no).
+    (CHANGELOG 2026-11-22, late), then Reed on the owner's key (2026-11-23), then England's Teaching Vacancies and
+    Catalonia's Feina Activa (2026-11-23, night). Waiting:
+    - **NAV (Norway):** built, and skipped until its token is in server.env (`NAV_API_TOKEN`). The token is asked for
+      by email to nav.team.arbeidsplassen@nav.no, with the terms (arbeidsplassen.nav.no/vilkar-api) accepted in
+      writing, the company's name, a contact email, a phone number and a contact person.
     - **Germany's employment agency:** no open API, and the unofficial key its GitHub documentation gives answered
       403. Theirs to open.
     - **France Travail:** left out (owner, 2026-11-22).
@@ -3845,7 +3848,7 @@ work, or opening and closing sessions faster, would help):
       its partners may extract).
 
     **What each source can be asked by time, and how a run every 15 minutes reaches what went up since the last**
-    (owner, 2026-11-23). Only three take a time: the rest are read for their window (Admin → Settings, "fresh", any
+    (owner, 2026-11-23). Only four take a time: the rest are read for their window (Admin → Settings, "fresh", any
     hours) by each posting's own time, as deep as the column says. A one-country board is read only while somebody
     has picked its country (`source_config.ONE_COUNTRY`).
 
@@ -3853,10 +3856,13 @@ work, or opening and closing sessions faster, would help):
     |---|---|---|
     | LinkedIn | seconds (`f_TPR`) | every picked country, back to its last full read; 1,000 a list at most |
     | Platsbanken (SE) | minutes (`published-after`) | the last 2 h, newest first, every page |
+    | NAV (NO) | seconds (`If-Modified-Since`) | everything changed in the last 2 h, every page; a withdrawn ad closed |
     | Adzuna | days (`max_days_old`) | 2 countries a run on the free tier, each its newest 50: not all |
     | Reed (UK) | none, and no sort | its first 3 pages in its own order: every job made in 15 min was on the first |
+    | Teaching Vacancies (UK) | none | newest first until a page passes 48 h (a day has no time), 10 pages at most |
     | Arbeitnow | none | its first 3 pages, in no date order: the last hour's were on the first two |
     | Remote OK | none | the whole board |
+    | Feina Activa (ES) | none | the whole file every run (7.5 MB), its last 48 h kept (a day has no time) |
     | Himalayas | none | newest first until older than 12 h, 5 pages at most |
     | Just Join IT (PL) | none | newest first until older than 12 h, 5 pages at most |
     | No Fluff Jobs (PL) | none | newest first by renewal until a page has nothing in 2 h, 10 pages at most |
@@ -3864,7 +3870,7 @@ work, or opening and closing sessions faster, would help):
     | Working Nomads | none | the whole list |
     | Jobicy | none | its 50 newest, about 6 h |
     | Findwork | none | newest first, 5 pages (not read: no key) |
-    | Company boards (10 ATS) | none | each board whole, up to 400 a run per ATS (the laptop's 587 all every run) |
+    | Company boards (10 ATS) | none | every board whole, every run (Admin: "Every company"): the laptop's 626 in 71 s |
 
     **2026-11-23, afternoon** (owner: why six sources showed nothing; Jooble and motorsport.com; other suggestions):
     Workday's boards were learned unreadable and The Muse's API is gone (both fixed, CHANGELOG); Teamtailor became a
@@ -3876,7 +3882,7 @@ work, or opening and closing sessions faster, would help):
     holds the harvest's lock):
 
     ```
-    grep -E '^(ADZUNA_APP_ID|ADZUNA_APP_KEY|FINDWORK_API_KEY|REED_API_KEY)=' certificates/server.env | sed -E 's/=.+/= set/; s/=$/= EMPTY/'
+    grep -E '^(ADZUNA_APP_ID|ADZUNA_APP_KEY|FINDWORK_API_KEY|REED_API_KEY|NAV_API_TOKEN)=' certificates/server.env | sed -E 's/=.+/= set/; s/=$/= EMPTY/'
     grep -hE "sources enabled|themuse page|source (themuse|workday|workable|adzuna|findwork|reed)" logs/harvester.log | tail -25 | cut -c1-200
     deploy/compose.sh run --rm --entrypoint python harvester -c "from libs.db import database; from libs.db.models import AtsToken; c = database()[AtsToken.COLLECTION]; print('workday boards', c.count_documents({'ats': 'workday'}), 'alive', c.count_documents({'ats': 'workday', 'dead_at': None}), 'bare names', c.count_documents({'ats': 'workday', 'token': {'\$not': {'\$regex': ':'}}}))"
     deploy/compose.sh run --rm -v "$PWD/deploy/scripts:/app/deploy/scripts:ro" --entrypoint python harvester deploy/scripts/check_sources.py
@@ -3895,6 +3901,37 @@ work, or opening and closing sessions faster, would help):
     pairs = [p for p in tokens_from_urls(urls) if p[0] in ('workday', 'teamtailor')]
     print('boards added:', AtsRepository(db).add_tokens(pairs), 'of', len(pairs))"
     ```
+
+    **2026-11-23, night** (owner: each major European country, as many sources as we can, those like LinkedIn
+    first, then those with an API). Like LinkedIn, with lots of jobs and open to us: none (item 55). With an API or
+    open data: Teaching Vacancies and Feina Activa built, NAV built and waiting for its token. What each other one
+    would need:
+
+    - **Czechia, the labour office's open data** (data.mpsv.cz): no rights reserved, about 300 new ads a weekday (59%
+      with 200 characters of text), one SPARQL query a run for what was added since a day. Missing: a public page for
+      one ad, for "Apply" to open and for a job here to be known by; the ministry's portal shows none we could find.
+      Ask data.mpsv.cz which address shows one vacancy (its `portalId`). Its ads also hold a contact person's name,
+      email and phone, which would not be stored.
+    - **Poland, CBOP / ePraca:** a free API by application: a signed form (a Polish trusted profile or qualified
+      e-signature, Polish company numbers), 20 requests a night, the CBOP logo on every offer.
+    - **Spain, InfoJobs:** an API with a time filter, but no API terms, and the site's terms forbid reuse without
+      permission: ask in writing. **Portugal, ITJobs.pt** (IT jobs only): the same.
+    - **Croatia, HZZ:** county RSS feeds with text and no licence stated: ask HZZ. **Net-Empregos (Portugal):** ask
+      for a partner feed (its RSS gives 300 characters, and its terms forbid commercial use).
+    - North and west, the same day: England's NHS Jobs (an agreement), Find an apprenticeship (a key the owner
+      makes), Belgium's VDAB (partners only), Finland and Denmark (applications with national ids), Germany's
+      employment agency (its terms forbid automated reading), Austria and Switzerland (their terms forbid it),
+      service.bund.de (its text carries the site's menus), Karriere.NRW (no text or link), Choisir le service public
+      (its feed answers 404).
+    - Not taken: Murcia's employment service (a Radware captcha page); Lanbide (refused connections); stale:
+      Lithuania (308 new in November, from 10,187 in August), Castilla y León (last 27 October), Catalonia's Socrata
+      copy (2023), Galicia (404), Sicily (2022); no feed of jobs: Estonia, Portugal's IEFP, Romania, Slovenia,
+      Slovakia, Hungary's NFSZ, Greece, Italy, Spain's SEPE; Latvia's has no text.
+
+    Once, after deploying (a run reads only its window), the week's jobs: Admin → Settings, for one run, Teaching
+    Vacancies fresh 168 h and 20 pages, Feina Activa fresh 168 h; then back to 48 h and 10. For NAV once its token is
+    in, 48 h and 8 pages for one run, then back to 2 h and 5: its ads' text is read 200 a run, newest first, so a
+    longer catch-up only waits longer.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

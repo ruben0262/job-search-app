@@ -422,9 +422,47 @@ def test_reed_is_read_pages_deep_its_teaser_never_taken_for_the_text(monkeypatch
     assert links[0].date_posted == date.today().isoformat()
 
 
-def test_reeds_key_goes_to_its_api_and_nowhere_else(monkeypatch):
-    """Reed takes its key as a basic-auth user name. Added where every client is built, so the page reader can
-    ask Reed's details API without holding it, and sent to no other site, Reed's own pages included."""
+def test_teaching_vacancies_is_read_newest_first_until_its_pages_pass_the_window(monkeypatch):
+    """England's school jobs, the Department for Education's open API: 100 a page, newest first, each a
+    schema.org JobPosting with its whole text (6,370 on 2026-11-23, its first two pages that day's). A date
+    has no time, so two days hold today's and yesterday's; the walk ends at the page reaching past them."""
+    from datetime import UTC, datetime, timedelta
+
+    from libs.corpus.geo import posting_country
+    from services.harvester.sources import http_apis
+
+    def job(n: int, days_ago: int) -> dict:
+        return {"url": f"https://teaching-vacancies.service.gov.uk/jobs/teacher-{n}",
+                "title": "Science Teacher", "description": "<p>Teach science to Key Stage 3 and 4.</p>",
+                "datePosted": (datetime.now(UTC).date() - timedelta(days=days_ago)).isoformat(),
+                "hiringOrganization": {"name": "Harris Academy"},
+                "jobLocation": {"address": {"addressLocality": "Royal Leamington Spa"}}}
+
+    pages = {1: [job(1, 0), job(2, 0)], 2: [job(3, 1), job(4, 9)], 3: [job(5, 0)]}
+    asked: list[int] = []
+
+    def api(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/jobs.json"
+        asked.append(int(request.url.params["page"]))
+        return httpx.Response(200, json={"data": pages[asked[-1]], "meta": {"totalPages": 64}})
+
+    monkeypatch.setattr(http_apis, "TEACHING_PAGE", 2)
+    monkeypatch.setattr(http_apis, "make_shared_client",
+                        lambda **_: httpx.Client(transport=httpx.MockTransport(api)))
+
+    links = http_apis.gather_teachingvacancies({"max_pages": 10, "max_age_hours": 48}, logging.getLogger("t"))
+
+    assert asked == [1, 2], "the second page reached past the window, so no third was asked for"
+    assert [link.url.rsplit("-", 1)[1] for link in links] == ["1", "2", "3"]
+    assert (links[0].company, links[0].location) == ("Harris Academy", "Royal Leamington Spa, United Kingdom")
+    assert posting_country(links[0].location) == "GB"
+    assert links[0].snippet == "Teach science to Key Stage 3 and 4."
+
+
+def test_each_boards_key_goes_to_its_own_api_and_nowhere_else(monkeypatch):
+    """Reed takes its key as a basic-auth user name, NAV its token as a bearer. Added where every client is
+    built, so the page reader can ask each one's API without holding a key, and sent to no other site, the
+    boards' own pages included."""
     import base64
 
     from services.harvester.fetch import make_shared_client
@@ -436,15 +474,100 @@ def test_reeds_key_goes_to_its_api_and_nowhere_else(monkeypatch):
         return httpx.Response(200)
 
     monkeypatch.setenv("REED_API_KEY", "a-reed-key")
+    monkeypatch.setenv("NAV_API_TOKEN", "a-nav-token")
     with make_shared_client(transport=httpx.MockTransport(record)) as client:
         for url in ("https://www.reed.co.uk/api/1.0/jobs/1", "https://www.reed.co.uk/jobs/a/1",
+                    "https://pam-stilling-feed.nav.no/api/v1/feed", "https://arbeidsplassen.nav.no/stillinger",
                     "https://example.com/api/1.0/jobs/1"):
             client.get(url)
 
     basic = "Basic " + base64.b64encode(b"a-reed-key:").decode()
-    assert heard == {"https://www.reed.co.uk/api/1.0/jobs/1": basic,
-                     "https://www.reed.co.uk/jobs/a/1": None, "https://example.com/api/1.0/jobs/1": None}
+    assert heard == {"https://www.reed.co.uk/api/1.0/jobs/1": basic, "https://www.reed.co.uk/jobs/a/1": None,
+                     "https://pam-stilling-feed.nav.no/api/v1/feed": "Bearer a-nav-token",
+                     "https://arbeidsplassen.nav.no/stillinger": None,
+                     "https://example.com/api/1.0/jobs/1": None}
 
+
+def test_nav_is_read_from_what_changed_inside_the_window_a_withdrawn_ad_passed_on_closed(monkeypatch):
+    """NAV's official feed of Norway's job ads: everything changed since a moment (If-Modified-Since), page
+    after page (86 changes in two hours of a Monday afternoon, 76 live; 2026-11-23). A withdrawn ad is passed
+    on closed, as NAV's terms ask that it leave at once; a live one's text is read from its entry after. Each
+    change is an entry, so an ad changed twice is listed twice (75 entries for 65 ads in two hours, measured
+    live 2026-11-23): it is passed on once, as it stands last, or one withdrawn after it went up stays up."""
+    from libs.corpus.geo import posting_country
+    from services.harvester.sources import http_apis
+
+    def entry(uuid: str, status: str) -> dict:
+        return {"url": f"/api/v1/feedentry/{uuid}", "_feed_entry": {
+            "uuid": uuid, "status": status, "title": "Sjåfør", "businessName": "Arnesen Transport",
+            "municipal": "SØR-VARANGER", "sistEndret": "2026-11-23T15:38:16+01:00"}}
+
+    pages = {"/api/v1/feed": {"items": [entry("a" * 36, "ACTIVE"), entry("b" * 36, "INACTIVE")],
+                              "next_url": "/api/v1/feed/next"},
+             "/api/v1/feed/next": {"items": [entry("a" * 36, "INACTIVE"), entry("c" * 36, "ACTIVE")],
+                                   "next_url": "/api/v1/feed/last"},
+             "/api/v1/feed/last": {"items": [], "next_url": "/api/v1/feed/last"}}
+    asked: list[tuple[str, str | None]] = []
+
+    def feed(request: httpx.Request) -> httpx.Response:
+        asked.append((request.url.path, request.headers.get("If-Modified-Since")))
+        return httpx.Response(200, json=pages[request.url.path])
+
+    monkeypatch.setattr(http_apis, "make_shared_client",
+                        lambda **_: httpx.Client(transport=httpx.MockTransport(feed)))
+
+    links = http_apis.gather_nav({"max_pages": 5, "max_age_hours": 2}, logging.getLogger("test"))
+
+    assert [path for path, _since in asked] == ["/api/v1/feed", "/api/v1/feed/next", "/api/v1/feed/last"]
+    assert asked[0][1] and asked[0][1].endswith("GMT"), "the first page is asked from the moment"
+    assert asked[1][1] is None, "the next page's address carries its own place"
+    assert [(link.url.rsplit("/", 1)[1][:1], link.closed) for link in links] == [
+        ("a", True), ("b", True), ("c", False)], "an ad listed twice is passed on once, as it stands last"
+    assert (links[2].company, links[2].location) == ("Arnesen Transport", "Sør-Varanger, Norway")
+    assert posting_country(links[2].location) == "NO" and links[2].snippet == ""
+
+
+def test_feina_activa_reads_catalonias_offers_inside_the_window_with_their_whole_text(monkeypatch):
+    """Catalonia's public employment service (the SOC) publishes every offer in one XML file made as it is
+    asked, in two lists, its board's and its offices', each dated without a time (4,949 offers, 116 dated
+    that day by 17:00; 2026-11-23). One inside the window is passed on with its parts, in order, as its
+    text, and its town in Spain as it is said ("Albi, L'" is L'Albi); an older one, or one no longer
+    published, is not."""
+    from datetime import UTC, datetime, timedelta
+
+    from libs.corpus.geo import posting_country
+    from services.harvester.sources import http_apis
+
+    today, old = (f"{datetime.now(UTC) - timedelta(days=days):%d/%m/%Y}" for days in (0, 10))
+
+    def ad(ad_id: str, day: str, town: str = "CALELLA", status: str = "PUBLISHED") -> str:
+        return (f"<ad><id>{ad_id}</id><url>https://feinaactiva.gencat.cat/search/offers/detail/{ad_id}</url>"
+                "<title>CAMBRER/A MENJADOR</title>"
+                "<content>Retirar platos de las mesas, servir bebidas.</content>"
+                "<company>Empresa de restauració</company><experience>Experiència 0 anys.</experience>"
+                "<requirements>anglès (parlat Baix, escrit Baix)</requirements><studies></studies>"
+                "<contract>Contracte laboral temporal (2 mesos)</contract>"
+                "<workingHours>Jornada completa</workingHours>"
+                f"<date>{day}</date>"
+                f"<city>{town}</city><region>BARCELONA</region><status>{status}</status></ad>")
+
+    board = f"{ad('FA1', today)}{ad('FA2', old)}{ad('FA3', today, status='CLOSED')}"
+    offices = ad("0920", today, town="ALBI, L&apos;")
+    body = f"<ofertes><feinaactiva>{board}</feinaactiva><sicas>{offices}</sicas></ofertes>"
+    monkeypatch.setattr(http_apis, "make_shared_client", lambda **_: httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200, text=body))))
+
+    links = http_apis.gather_feinaactiva({"max_age_hours": 48}, logging.getLogger("test"))
+
+    assert [link.url.rsplit("/", 1)[1] for link in links] == ["FA1", "0920"]
+    assert links[0].snippet.split("\n\n") == [
+        "Retirar platos de las mesas, servir bebidas.", "Experiència 0 anys.",
+        "anglès (parlat Baix, escrit Baix)", "Contracte laboral temporal (2 mesos)", "Jornada completa",
+    ], "its parts in order, with contract and hours: half the thin offers were not thin with them"
+    assert (links[0].company, links[0].location, links[1].location) == (
+        "Empresa de restauració", "Calella, Spain", "L'Albi, Spain")
+    assert posting_country(links[0].location) == "ES"
+    assert links[0].date_posted == f"{datetime.now(UTC):%Y-%m-%d}", "the day it went up, in ISO"
 
 def test_platsbanken_reads_what_went_up_inside_the_window_in_stockholm_time(monkeypatch):
     """Sweden's public employment service (JobTech's JobSearch, ads under CC0): what went up in the window's

@@ -1,6 +1,7 @@
 """What a job posting's own page says, past what the source's listing API told us."""
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import html
 import json
@@ -63,6 +64,8 @@ _NOFLUFF_SLUG = re.compile(r"^https?://(?:www\.)?nofluffjobs\.com/(?:[a-z]{2}/)?
 # Reed job's, which Reed's does.
 _PLATSBANKEN_ID = re.compile(r"^https?://(?:www\.)?arbetsformedlingen\.se/platsbanken/annonser/(\d+)")
 _REED_ID = re.compile(r"^https?://(?:www\.)?reed\.co\.uk/jobs/[^/?#]+/(\d+)")
+# A NAV ad's id, which its feed's entry answers for.
+_NAV_ID = re.compile(r"^https?://arbeidsplassen\.nav\.no/stillinger/stilling/([0-9a-f-]{36})")
 _LINKEDIN_HOSTS = {"linkedin.com", "www.linkedin.com"}
 
 _APPLICANTS = re.compile(r"num-applicants__caption[^>]*>\s*([^<]+)<")
@@ -531,6 +534,11 @@ def fetch_job(url: str, *, client: httpx.Client, snippet: str = "", title: str =
                            tally=tally)
 
 
+# A board whose page holds its posting in one element, read from that alone: the rest is the site's menus and
+# its foot, 40% of a Feina Activa offer's page (2026-11-23). Without it there, the whole page is read.
+_PAGE_PART = {"feinaactiva.gencat.cat": "content-detail"}
+
+
 def _fetch_board(url: str, *, client: httpx.Client, snippet: str, title: str,
                  out: Posting, tally) -> Posting:
     """Anything that is not LinkedIn: one request, JSON-LD preferred, page strip as the fallback."""
@@ -555,7 +563,7 @@ def _fetch_board(url: str, *, client: httpx.Client, snippet: str, title: str,
                 out["application_url"] = extract_ats_url(response.text)
                 out["workplace"] = parse_workplace(response.text)
                 body = jsonld_description(response.text)
-                text = body or strip_html(response.text)
+                text = body or strip_html(response.text, _PAGE_PART.get(httpx.URL(url).host))
                 if len(text) > len(snippet):
                     tally("jsonld_ok" if body else "generic_ok")
                     out["description"] = text
@@ -596,6 +604,19 @@ def _platsbanken_ad(ad: dict, _out: Posting) -> str | None:
     return None if ad.get("removed") else strip_html((ad.get("description") or {}).get("text") or "")
 
 
+def _nav_ad(entry: dict, out: Posting) -> str | None:
+    """An ad from NAV's feed entry, which keeps one it has withdrawn as INACTIVE, with no ad: its text, when
+    it went up (an ad without the time is kept all the same) and its own link to apply."""
+    ad = entry.get("ad_content") or {}
+    if entry.get("status") != "ACTIVE" or not ad:
+        return None
+    if str(ad.get("applicationUrl") or "").startswith("http"):
+        out["application_url"] = ad["applicationUrl"]
+    with contextlib.suppress(KeyError, TypeError, ValueError):
+        out["posted_at"] = dt.datetime.fromisoformat(ad["published"]).astimezone(dt.UTC)
+    return strip_html(ad.get("description") or "")
+
+
 def _reed_job(job: dict, out: Posting) -> str | None:
     """A job from Reed's details API, which answers one it no longer has with a blank job numbered 0
     (2026-11-23), and names where an outside one is applied to."""
@@ -632,12 +653,13 @@ def _nofluff_text(posting: dict) -> str:
 # script ("JavaScript is required…" was stored as the text until 2026-11-02). Platsbanken's are a script and a
 # cookie notice, 1,720 characters of which were read as a short ad's text (2026-11-22), and look the same for
 # an ad that has gone. Reed's `/jobs/` are closed to crawlers by its `robots.txt`, and its key opens its API
-# (`services.harvester.fetch`).
+# (`services.harvester.fetch`). NAV's feed is what its terms let a job site read, its token what opens it.
 _FROM_API = (
     ("nofluff", _NOFLUFF_SLUG, "https://nofluffjobs.com/api/posting/{}",
      lambda posting, _out: _nofluff_text(posting)),
     ("platsbanken", _PLATSBANKEN_ID, "https://jobsearch.api.jobtechdev.se/ad/{}", _platsbanken_ad),
     ("reed", _REED_ID, "https://www.reed.co.uk/api/1.0/jobs/{}", _reed_job),
+    ("nav", _NAV_ID, "https://pam-stilling-feed.nav.no/api/v1/feedentry/{}", _nav_ad),
 )
 
 

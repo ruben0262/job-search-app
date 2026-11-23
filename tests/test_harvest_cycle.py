@@ -72,6 +72,25 @@ def test_a_board_keeps_only_jobs_in_a_country_somebody_picked_and_any_it_cannot_
     assert (report.new_jobs, report.elsewhere) == (2, 2)
 
 
+def test_a_job_its_board_says_was_withdrawn_is_closed_here(ctx):
+    """NAV's feed reports a withdrawn ad, and its terms ask that it leave at once (2026-11-23): the job stored
+    from it is closed, so it is shown to nobody, and a withdrawn ad never stored is not stored then."""
+    from dataclasses import replace
+
+    from libs.corpus.repository import CorpusRepository
+    from libs.db.models import CorpusJob
+    from services.harvester.cycle import CycleReport, _ingest
+
+    corpus, report = CorpusRepository(ctx), CycleReport()
+    live, never = _link(), _link()
+    assert _ingest(corpus, [live], report) == 1
+
+    assert _ingest(corpus, [replace(live, closed=True), replace(never, closed=True)], report) == 0
+    assert ctx[CorpusJob.COLLECTION].find_one({"url": live.url})["closed_at"] is not None
+    assert ctx[CorpusJob.COLLECTION].find_one({"url": never.url}) is None
+    assert report.closed == 1
+
+
 def test_the_same_job_twice_is_ingested_once(ctx):
     """Two sources listing one posting is the normal case, not the exception."""
     s = ctx

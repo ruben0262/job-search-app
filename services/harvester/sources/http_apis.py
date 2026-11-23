@@ -45,8 +45,8 @@ import json
 import os
 import re
 import defusedxml.ElementTree as ET   # not stdlib ET: these parse third-party feeds
-from datetime import datetime
-from email.utils import parsedate_to_datetime
+from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime, parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -689,3 +689,109 @@ def _reed_day(day: str | None) -> str | None:
         return datetime.strptime(day or "", "%d/%m/%Y").date().isoformat()
     except ValueError:
         return None
+
+
+# ── Teaching Vacancies (England's schools, the Department for Education) ─────
+
+TEACHING_PAGE = 100
+
+
+def gather_teachingvacancies(cfg: dict[str, Any], logger) -> list[JobLink]:
+    """The Department for Education's open API of every school job in England: 100 a page, newest first, each a
+    schema.org JobPosting with its whole text, no key, under the Open Government Licence (its one exception: no
+    fee for contacting, interviewing or hiring somebody who answered a listing). 6,370 jobs on 2026-11-23, its
+    first two pages that day's. A date has no time, so a window counts from midnight; the walk ends at the
+    page that reaches past it."""
+    max_age = cfg.get("max_age_hours", 48)
+    out: list[JobLink] = []
+    with make_shared_client(headers=_JSON) as client:
+        for page in range(1, int(cfg.get("max_pages", 1)) + 1):
+            try:
+                jobs = client.get("https://teaching-vacancies.service.gov.uk/api/v1/jobs.json",
+                                  params={"page": page}).raise_for_status().json().get("data") or []
+            except Exception as exc:
+                logger.warning("teachingvacancies page %d failed: %s", page, exc)
+                break
+            fresh = [j for j in jobs if j.get("url") and is_within_hours(j.get("datePosted"), max_age)]
+            for j in fresh:
+                town = (((j.get("jobLocation") or {}).get("address") or {}).get("addressLocality") or "").strip()
+                out.append(JobLink(
+                    url=j["url"], title=j.get("title") or "",
+                    company=(j.get("hiringOrganization") or {}).get("name") or "",
+                    location=f"{town}, United Kingdom".lstrip(", "), source="teachingvacancies",
+                    date_posted=j.get("datePosted"), snippet=_striptags(j.get("description"))))
+            if len(jobs) < TEACHING_PAGE or len(fresh) < len(jobs):
+                break
+    return out
+
+
+# ── NAV Arbeidsplassen (Norway's public employment service) ───────────
+
+NAV_FEED = "https://pam-stilling-feed.nav.no"
+
+
+def gather_nav(cfg: dict[str, Any], logger) -> list[JobLink]:
+    """Norway's job ads, most of those advertised in the country, from NAV's official feed: everything changed
+    since the window (If-Modified-Since), page after page (86 changes in two hours of a Monday afternoon, 76
+    live; 2026-11-23). Its terms let a job site show the ads, and ask that a withdrawn one leave at once: it is
+    passed on closed. Its token (`NAV_API_TOKEN`, asked of NAV by email) is added by the fetch layer. A live ad's
+    text, when it went up and its link to apply are read from its entry (`libs.corpus.postings`), once. Each
+    change is an entry, so an ad changed twice in the window is in it twice (75 entries for 65 ads in two hours,
+    2026-11-23): it is passed on once, as it stands at the last."""
+    since = format_datetime(datetime.now(UTC) - timedelta(hours=int(cfg.get("max_age_hours", 2))), usegmt=True)
+    address, headers, latest = f"{NAV_FEED}/api/v1/feed", {"If-Modified-Since": since}, {}
+    with make_shared_client(headers=_JSON) as client:
+        for _page in range(int(cfg.get("max_pages", 1))):
+            try:
+                page = client.get(address, headers=headers).raise_for_status().json()
+            except Exception as exc:
+                logger.warning("nav feed failed: %s", exc)
+                break
+            for item in page.get("items") or []:
+                entry = item.get("_feed_entry") or {}
+                if entry.get("uuid"):
+                    latest[entry["uuid"]] = JobLink(
+                        url=f"https://arbeidsplassen.nav.no/stillinger/stilling/{entry['uuid']}",
+                        title=entry.get("title") or "", company=entry.get("businessName") or "",
+                        location=f"{(entry.get('municipal') or '').title()}, Norway".lstrip(", "), source="nav",
+                        closed=entry.get("status") != "ACTIVE")
+            if not page.get("items") or not page.get("next_url"):
+                break
+            address, headers = f"{NAV_FEED}{page['next_url']}", {}
+    return list(latest.values())
+
+
+# ── Feina Activa (Catalonia's public employment service, the SOC) ─────
+
+FEINA_ACTIVA = "https://feinaactiva.gencat.cat/api/offers/offers-xml"
+
+
+def gather_feinaactiva(cfg: dict[str, Any], logger) -> list[JobLink]:
+    """Catalonia's public employment service (the SOC): every offer it publishes, in one XML file made as it is
+    asked, in two lists, its board's and its offices' (4,949 offers on 2026-11-23, 116 dated that day by 17:00).
+    Under the Generalitat's open licence: reuse, commercial too, crediting the SOC and leaving the text as it
+    is. 7.5 MB a read, not compressed and with nothing to ask from, so the whole file each run. A date has no
+    time, so a window counts from midnight. Its text is the offer's own parts, one after another, contract and
+    hours with them: 420 of 4,949 had under 200 characters without, 208 with."""
+    try:
+        with make_shared_client() as client:
+            root = ET.fromstring(client.get(FEINA_ACTIVA).raise_for_status().content)
+    except Exception as exc:
+        logger.warning("feinaactiva failed: %s", exc)
+        return []
+    out: list[JobLink] = []
+    for ad in root.iter("ad"):
+        day, url = (ad.findtext("date") or "").strip().split("/"), (ad.findtext("url") or "").strip()
+        posted = "-".join(reversed(day)) if len(day) == 3 else None
+        if (not url.startswith("https://") or ad.findtext("status") != "PUBLISHED"
+                or not is_within_hours(posted, cfg.get("max_age_hours", 48))):
+            continue
+        # The catalogue's way of writing a town with its article ("Albi, L'"), turned the way it is said.
+        name, _, article = (ad.findtext("city") or "").strip().title().partition(", ")
+        town = f"{article}{'' if article.endswith("'") else ' '}{name}" if article else name
+        parts = ((ad.findtext(part) or "").strip()
+                 for part in ("content", "experience", "requirements", "studies", "contract", "workingHours"))
+        out.append(JobLink(url=url, title=(ad.findtext("title") or "").strip(),
+                           company=(ad.findtext("company") or "").strip(), location=f"{town}, Spain".lstrip(", "),
+                           source="feinaactiva", date_posted=posted, snippet="\n\n".join(p for p in parts if p)))
+    return out

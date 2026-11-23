@@ -40,6 +40,11 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     "platsbanken": 2,
     # A job's date has no time, so a window counts from midnight: two days hold today's and yesterday's.
     "reed": 48,
+    "teachingvacancies": 48,
+    # Feina Activa's offers are dated without a time too; its file is made as asked, so today's are in it.
+    "feinaactiva": 48,
+    # NAV's feed is asked for what changed since then, every fifteen minutes: two hours of overlap.
+    "nav": 2,
     # Company boards, reached when our token list gets there.
     "greenhouse": 72, "ashby": 72, "lever": 72, "smartrecruiters": 72,
     "recruitee": 72, "breezy": 72, "workday": 168, "personio": 72, "workable": 72, "teamtailor": 72,
@@ -57,7 +62,8 @@ HARVEST_SOURCES: tuple[str, ...] = (
     "greenhouse", "ashby", "lever", "smartrecruiters", "recruitee",
     "breezy", "workday", "personio", "workable", "teamtailor",
     # European boards, Sweden's public employment service among them.
-    "nofluffjobs", "profession", "justjoinit", "arbeitnow", "platsbanken", "reed",
+    "nofluffjobs", "profession", "justjoinit", "arbeitnow", "platsbanken", "reed", "teachingvacancies", "nav",
+    "feinaactiva",
     # Key-gated, enabled only with a credential.
     "findwork", "adzuna",
     # The per-user tier, on the user's own proxy.
@@ -130,6 +136,11 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
     # 100 a page in an order of its own: the 15 jobs made in 15.7 minutes were all on its first page, and the
     # 79 older ones that rose into its first thousand on the first three (2026-11-23, a Monday, 08:30 UTC).
     "reed": 3,
+    # 100 a page, newest first, the walk ending at the page past the window: a Monday's first two pages were
+    # that day's (2026-11-23). The most a run reads, after a stoppage.
+    "teachingvacancies": 10,
+    # Up to 1,000 changes a page; two hours of a Monday afternoon were 86: one page, then the feed's end.
+    "nav": 5,
 }
 
 # How long a posting stays in the corpus before it is archived to a file and deleted

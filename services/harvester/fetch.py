@@ -7,6 +7,7 @@ LinkedIn search is pooled across people (2026-11-03), nothing is fetched on one 
 """
 from __future__ import annotations
 
+import base64
 import os
 from typing import Any
 
@@ -19,21 +20,31 @@ PROXIED_HOSTS = ("linkedin.com",)
 
 DEFAULT_TIMEOUT = 25
 
-# Reed's key, the user name of a basic-auth header, as its documentation asks. Added here, the one place a
-# client is built, and sent to Reed's API alone: its search (`sources.http_apis.gather_reed`) and a job's
-# details, which the page reader asks for (`libs.corpus.postings`) without ever holding the key.
-REED_KEY = "REED_API_KEY"
+# The boards whose API takes a key of ours: Reed's as the user name of a basic-auth header, NAV's as a bearer
+# token, as each one's documentation asks. Added here, the one place a client is built, and sent to that API
+# alone: its list (`sources.http_apis`) and a job's details, which the page reader asks for
+# (`libs.corpus.postings`) without ever holding a key.
+REED_KEY, NAV_KEY = "REED_API_KEY", "NAV_API_TOKEN"
 
 
-class _ReedKey(httpx.Auth):
-    def __init__(self, key: str):
-        self._basic = httpx.BasicAuth(key, "")
+class _BoardKeys(httpx.Auth):
+    def __init__(self, headers: dict[tuple[str, str], str]):
+        self._headers = headers
 
     def auth_flow(self, request: httpx.Request):
-        if request.url.host == "www.reed.co.uk" and request.url.path.startswith("/api/"):
-            yield from self._basic.auth_flow(request)
-        else:
-            yield request
+        for (host, path), value in self._headers.items():
+            if request.url.host == host and request.url.path.startswith(path):
+                request.headers["Authorization"] = value
+        yield request
+
+
+def _board_keys() -> _BoardKeys | None:
+    """The `Authorization` each keyed board's API is sent, by its host and path, for the keys that are set."""
+    reed, nav = os.environ.get(REED_KEY, "").strip(), os.environ.get(NAV_KEY, "").strip()
+    headers = {**({("www.reed.co.uk", "/api/"): "Basic " + base64.b64encode(f"{reed}:".encode()).decode()}
+                  if reed else {}),
+               **({("pam-stilling-feed.nav.no", "/api/"): f"Bearer {nav}"} if nav else {})}
+    return _BoardKeys(headers) if headers else None
 
 
 def _mounts(proxy_url: str,
@@ -58,10 +69,10 @@ def _options(kwargs: dict[str, Any]) -> dict[str, Any]:
     # Every request carries `PAGE_HEADERS`, and an adapter passes only what it adds: a JSON `Accept`, a
     # token. `headers=` used to replace them, so four adapters wrote out a User-Agent of their own.
     headers = {**PAGE_HEADERS, **kwargs.pop("headers", {})}
-    key = os.environ.get(REED_KEY, "").strip()
+    keys = _board_keys()
     # `trust_env=False`: a stray HTTP_PROXY on the box must not route the boards through anything.
     return {"timeout": DEFAULT_TIMEOUT, "follow_redirects": True, "trust_env": False,
-            **({"auth": _ReedKey(key)} if key else {}), **kwargs, "headers": headers}
+            **({"auth": keys} if keys else {}), **kwargs, "headers": headers}
 
 
 def make_shared_client(**kwargs: Any) -> httpx.Client:

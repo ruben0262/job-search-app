@@ -44,6 +44,9 @@ REGISTRY: dict[str, Source] = {
         Source("remoteok", http_apis.gather_remoteok),
         Source("platsbanken", http_apis.gather_platsbanken),
         Source("reed", http_apis.gather_reed),
+        Source("teachingvacancies", http_apis.gather_teachingvacancies),
+        Source("nav", http_apis.gather_nav),
+        Source("feinaactiva", http_apis.gather_feinaactiva),
     )
 }
 

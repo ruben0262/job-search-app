@@ -41,6 +41,8 @@ services:
       # Reed's free jobseeker key: the UK's jobs, and each one's text from its details API. Unset, Reed is
       # not read (`services/harvester/source_config.py`).
       REED_API_KEY: ${REED_API_KEY:-}
+      # NAV's token for its job feed, Norway's ads, asked of NAV by email (nav.team.arbeidsplassen@nav.no).
+      NAV_API_TOKEN: ${NAV_API_TOKEN:-}
       # LinkedIn is searched for members' countries only (`libs.membership`), and the admins are members.
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       # Inside the container; bind-mounted to ./logs on the host below. Without the mount a

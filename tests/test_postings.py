@@ -310,6 +310,46 @@ def test_a_reed_job_is_read_whole_from_its_details_api_with_where_it_is_applied_
     assert result["application_url"] == "https://careers.example.co.uk/apply/1"
 
 
+NAV_AD = "https://arbeidsplassen.nav.no/stillinger/stilling/f387cf21-95ff-48ed-86c0-0717bb0dc3c5"
+
+
+def test_a_nav_ad_is_read_whole_from_its_feed_entry_with_when_it_went_up_and_where_to_apply():
+    """NAV's feed entry holds the ad: its text, when it was published and its own link to apply."""
+    client, asked = _api_and_pages(httpx.Response(200, json={"status": "ACTIVE", "ad_content": {
+        "description": "<p>Kjør varebil i Kirkenes.</p>" * 10, "published": "2026-11-23T00:00:00+01:00",
+        "applicationUrl": "https://jobs.example.no/apply/7"}}))
+    result = postings.fetch_job(NAV_AD, client=client, title="Sjåfør")
+    assert asked == ["https://pam-stilling-feed.nav.no/api/v1/feedentry/f387cf21-95ff-48ed-86c0-0717bb0dc3c5"]
+    assert result.description.startswith("Kjør varebil i Kirkenes.")
+    assert result["application_url"] == "https://jobs.example.no/apply/7"
+    assert result["posted_at"] == dt.datetime(2026, 11, 22, 23, 0, tzinfo=dt.UTC)
+
+
+def test_a_nav_ad_it_has_withdrawn_is_gone():
+    client, _ = _api_and_pages(httpx.Response(200, json={"status": "INACTIVE"}))
+    assert postings.fetch_job(NAV_AD, client=client)["accepting"] is False
+
+
+FEINA_ACTIVA_PAGE = """<html><body><header><a>Ets una empresa? Entra aquí</a><a>Cerques feina? Registra't</a>
+<nav><ul><li>Inici</li><li>Ofertes</li></ul></nav></header><main class="content-wrapper">
+<fa-detail-content class="content-detail col-xl-9"><h3>Descripció de l'oferta</h3>
+<p>Es necessiten administratius/ives a jornada completa.</p><h3>Detall de les funcions del lloc de feina</h3>
+<p>Tasques administratives i atenció al client.</p><h3>Condicions del lloc de treball</h3>
+<ul><li>Contracte laboral indefinit</li><li>Jornada completa</li></ul></fa-detail-content></main>
+<footer><a>Textos legals</a><a>Política de galetes</a></footer></body></html>"""
+
+
+def test_a_feina_activa_offer_is_read_from_its_own_part_of_the_page_not_the_menus_round_it():
+    """Feina Activa's file gives some offers a line of text, and their page puts the offer between the site's
+    menus and its foot: read whole, 40% of one offer's 1,664 characters were "Ets una empresa? Entra aquí",
+    "Textos legals" and the like (2026-11-23)."""
+    client = httpx.Client(transport=httpx.MockTransport(
+        lambda _request: httpx.Response(200, text=FEINA_ACTIVA_PAGE)))
+    text = postings.fetch_job("https://feinaactiva.gencat.cat/search/offers/detail/FA92327399", client=client,
+                              snippet="Tasques administratives i atenció al client.")["description"]
+    assert "Es necessiten administratius/ives" in text and "• Contracte laboral indefinit" in text
+    assert "Ets una empresa" not in text and "Textos legals" not in text
+
 def test_a_reed_job_it_no_longer_has_is_gone():
     """Reed answers a job it no longer has with a blank one numbered 0, not a 404 (2026-11-23)."""
     blank = {"jobId": 0, "jobTitle": None, "jobDescription": None}

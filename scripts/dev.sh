@@ -46,6 +46,8 @@ if [ -e certificates/smtp.env ]; then set -a; . certificates/smtp.env; set +a; f
 if [ -e certificates/stripe.env ]; then set -a; . certificates/stripe.env; set +a; fi
 # Reed's key (`REED_API_KEY`), once it is in this file: the UK's jobs are then read here as on the server.
 if [ -e certificates/reed.env ]; then set -a; . certificates/reed.env; set +a; fi
+# NAV's token (`NAV_API_TOKEN`), once NAV has given one: Norway's jobs.
+if [ -e certificates/nav.env ]; then set -a; . certificates/nav.env; set +a; fi
 PORT=5180
 export PUBLIC_URL=http://localhost:$PORT  # where the sign-up link points
 

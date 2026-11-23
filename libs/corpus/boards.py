@@ -9,7 +9,10 @@ BOARD_NAMES = {"linkedin": "LinkedIn", "justjoinit": "Just Join IT", "nofluffjob
                "workingnomads": "Working Nomads", "themuse": "The Muse",
                "smartrecruiters": "SmartRecruiters", LINK: "Added by link",
                # Remote OK's terms ask for its name as it writes it.
-               "remoteok": "Remote OK", "platsbanken": "Platsbanken"}
+               "remoteok": "Remote OK", "platsbanken": "Platsbanken",
+               "teachingvacancies": "Teaching Vacancies", "nav": "NAV Arbeidsplassen",
+               # Catalonia's public employment service, which its licence asks to be credited.
+               "feinaactiva": "Feina Activa (SOC)"}
 
 
 def board_name(source: str) -> str:

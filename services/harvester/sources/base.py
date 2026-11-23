@@ -44,6 +44,8 @@ class JobLink:
     # The search term that returned this link. Not the posting's title: on LinkedIn the two
     # are often unrelated, and that difference is the thing nobody could see.
     found_via: str = ""
+    # The board says the job was withdrawn (NAV's feed): closed if stored, and not stored if not.
+    closed: bool = False
 
     def as_corpus_row(self) -> dict[str, Any]:
         """Keyword arguments for `CorpusRepository.add()`."""

@@ -50,6 +50,8 @@ class CycleReport:
     new_jobs: int = 0
     # Postings in a country nobody picked, not stored (owner, 2026-11-04).
     elsewhere: int = 0
+    # Stored jobs their board said were withdrawn, closed (NAV's terms ask that they leave at once).
+    closed: int = 0
     # Rows whose thin snippet was replaced by the posting's own text.
     described: int = 0
     describe_outcomes: dict[str, int] = field(default_factory=dict)
@@ -153,14 +155,15 @@ def run_cycle(
                 until=min(monotonic() + BOARD_LOOKUP_BUDGET_SECONDS, started + HARVEST_CYCLE_BUDGET_SECONDS))
 
     logger.info(
-        "harvest: %d links, %d duplicates, %d in no country anybody picked, %d new, %d described",
-        report.links_found, report.duplicates_total, report.elsewhere, report.new_jobs, report.described)
+        "harvest: %d links, %d duplicates, %d in no country anybody picked, %d new, %d withdrawn and closed, "
+        "%d described", report.links_found, report.duplicates_total, report.elsewhere, report.new_jobs,
+        report.closed, report.described)
     report_timings(report.timings, event="harvest.timing", log=logger,
                    links=report.links_found, new=report.new_jobs)
 
     _warn_if_near_budget(monotonic() - started, report)
     audit(logger, "harvest.cycle", links=report.links_found,
-          new=report.new_jobs, elsewhere=report.elsewhere, described=report.described,
+          new=report.new_jobs, elsewhere=report.elsewhere, closed=report.closed, described=report.described,
           ats_tokens_found=report.ats_tokens_found, ats_boards_by_name=report.ats_boards_by_name,
           archived=report.archived,
           failed_sources=len(report.source_failures),
@@ -250,6 +253,11 @@ def _ingest(corpus: CorpusRepository, links: Iterable[JobLink], report: CycleRep
     stored = corpus.stored_urls(link.url for link in links)
     for link in links:
         if not link.url:
+            continue
+        if link.closed:
+            if link.url in stored and (found := corpus.find_duplicate(link.url)) is not None:
+                corpus.mark_closed(found.job_id)
+                report.closed += 1
             continue
         if not allows(posting_country(link.location, title=link.title), wanted):
             report.elsewhere += 1
