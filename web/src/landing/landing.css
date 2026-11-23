@@ -1901,8 +1901,7 @@
   font-size: var(--text-control);
 }
 
-.landing .community .btn svg,
-.lp-foot .foot-social svg {
+.landing .community .btn svg {
   width: 20px;
   height: 20px;
 }
@@ -1971,10 +1970,34 @@
   color: var(--ink);
 }
 
-.lp-foot .foot-row .foot-social {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+/* Everywhere else the site is (`socials.tsx`): a circle each, a thumb's size, in the foot's own colour. */
+.lp-foot .foot-social {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.lp-foot .foot-social a {
+  display: grid;
+  place-items: center;
+  width: var(--control);
+  height: var(--control);
+  border: 1px solid var(--glass-line);
+  border-radius: 50%;
+  color: var(--muted);
+  transition: color 0.3s, border-color 0.3s;
+}
+
+.lp-foot .foot-social a:hover {
+  border-color: var(--dim);
+  color: var(--ink);
+}
+
+.lp-foot .foot-social svg {
+  width: 20px;
+  height: 20px;
 }
 
 @media (min-width: 1024px) {

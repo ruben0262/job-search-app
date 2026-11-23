@@ -14,6 +14,32 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-23 — The landing page's foot links Facebook, TikTok and Instagram beside Discord, and nothing else does
+
+The owner gave the site's Facebook, TikTok and Instagram: "lets add these socials to the landing page at the bottom
+on the footer, they don't need to be mentioned anywhere else."
+
+- **The same setting as Discord** (`libs.settings.SOCIAL_NETWORKS`, `DEFAULT_SOCIALS`), so Admin → Settings → Social
+  links has a box for each, starting at the owner's links, and `GET /socials` returns all four.
+- **The foot draws them as a row of circles**, a thumb's size, below its words: Discord, Facebook, TikTok,
+  Instagram. Each is in the foot's own colour (TikTok's own is black, which the dark theme would hide) and opens in
+  a tab of its own. Discord moved out of the words into the row.
+- **Nowhere else.** The card under the Ask and the Help card showed every network with a link; each now picks
+  Discord by name. The top bar's button and Settings were Discord's already.
+- **A network added later shows even where the links were saved before it.** A `socials` setting saved in Admin
+  while Discord was the only network holds no line for the three. `libs.settings.social_links` fills each missing
+  network from its default, and both `GET /socials` and Admin read it, so they cannot disagree. A save that names
+  only some networks keeps the others' links; only an empty box hides one (until now a network left out of a save
+  was emptied).
+- The marks are Simple Icons' (CC0), drawn on the site: nothing of Facebook's, TikTok's or Instagram's loads, so the
+  Cookie Policy's "no social media buttons ... that track you" holds.
+- Tests:
+  - `test_socials.py`: all four for anybody. A save naming Discord alone keeps the other three, and emptying two
+    hides those two. A setting saved with Discord alone still shows the three, on the site and in Admin. That last
+    test fails on the last commit.
+  - The landing walk checks the foot's four links and that the three are nowhere in the page's body or in Help. The
+    foot's words no longer list Discord.
+
 ## 2026-11-23, afternoon — why six sources showed nothing: Workday's boards learned unreadable, The Muse's API gone; Teamtailor read as a tenth company-board system; Jooble and Motorsport Jobs looked into
 
 The owner, of Admin's sources ("nothing" for Adzuna, Findwork, Reed, The Muse, Workable and Workday): "lets check on these

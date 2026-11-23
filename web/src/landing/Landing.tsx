@@ -396,12 +396,18 @@ export function Landing() {
           <a href="/signin">Sign in</a>
           <LegalLinks />
           <a href="#ask" onClick={jump("ask")}>Contact</a>
-          {socials.map((social) => (
-            <a key={social.network} className="foot-social" href={social.url} target="_blank" rel="noreferrer">
-              <SocialMark social={social} />{social.name}
-            </a>
-          ))}
         </div>
+        {/* Everywhere else the site is, a picture each in the foot's own colour (owner, 2026-11-23). */}
+        {socials.length ? (
+          <div className="foot-social">
+            {socials.map((social) => (
+              <a key={social.network} href={social.url} target="_blank" rel="noreferrer" aria-label={social.name}
+                 title={social.name}>
+                <SocialMark social={social} plain />
+              </a>
+            ))}
+          </div>
+        ) : null}
       </footer>
     </div>
   );
@@ -539,7 +545,7 @@ function AtsArt() {
  * inside the app, so users can freely ask any questions they like"). Two fields and one button, and the
  * receipt where the form was. */
 function Ask() {
-  const socials = useSocials();
+  const discord = useSocials().find((social) => social.network === "discord");
   const [email, setEmail] = useState("");
   const [question, setQuestion] = useState("");
   const [sent, setSent] = useState<Schema<"ContactReceipt"> | null>(null);
@@ -585,20 +591,20 @@ function Ask() {
       </div>
       {/* The people who build it, and each other, a tap away (owner, 2026-11-18). Drawn when its link has come,
           after the reveals are counted: it is not one of them. */}
-      {socials.map((social) => (
-        <div key={social.network} className="tile community">
-          <span className="social-chip" style={{ color: social.colour }}>
-            <SocialMark social={social} />
+      {discord ? (
+        <div className="tile community">
+          <span className="social-chip" style={{ color: discord.colour }}>
+            <SocialMark social={discord} />
           </span>
           <div>
-            <h3>Join us on {social.name}</h3>
+            <h3>Join us on Discord</h3>
             <p>Tell us what you think, ask for what you want next, and talk with the people who build Mahoraga.</p>
           </div>
-          <a className="btn btn-glass" href={social.url} target="_blank" rel="noreferrer">
-            <SocialMark social={social} />{social.join}
+          <a className="btn btn-glass" href={discord.url} target="_blank" rel="noreferrer">
+            <SocialMark social={discord} />{discord.join}
           </a>
         </div>
-      ))}
+      ) : null}
     </section>
   );
 }

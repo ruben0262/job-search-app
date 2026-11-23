@@ -426,14 +426,19 @@ DEFAULT_PRICING_LINES: dict[str, object] = {
 # the Member card does not promise it.
 DEFAULT_MEMBERS_CHANNEL_URL = ""
 
-# The site's own places on social networks, for everybody: the landing page's foot and its Ask, and Help
-# and More in the app, so people join, say what they think and ask the people who build it for what they
-# want (owner, 2026-11-18: "users can join and share their thoughts as well as their requests to the
-# devs"). A link each, the operator's in Admin → Settings, the owner's Discord to begin with; empty is not
-# shown. A network's name and picture are the site's (`web/src/socials.tsx`): another network is a line
-# there and a name here.
-SOCIAL_NETWORKS = ("discord",)
-DEFAULT_SOCIALS: dict[str, str] = {"discord": "https://discord.gg/UR3FNC4gyT"}
+# The site's own places on social networks, for everybody. Discord is where people join, say what they think
+# and ask the people who build it for what they want (owner, 2026-11-18: "users can join and share their
+# thoughts as well as their requests to the devs"): under the landing page's Ask and in the app. The others
+# are at the landing page's foot alone (owner, 2026-11-23: "they don't need to be mentioned anywhere else").
+# A link each, the operator's in Admin → Settings, the owner's to begin with; empty is not shown. A network's
+# name and picture are the site's (`web/src/socials.tsx`): another network is a line there and a name here.
+SOCIAL_NETWORKS = ("discord", "facebook", "tiktok", "instagram")
+DEFAULT_SOCIALS: dict[str, str] = {
+    "discord": "https://discord.gg/UR3FNC4gyT",
+    "facebook": "https://www.facebook.com/profile.php?id=61596985945304",
+    "tiktok": "https://www.tiktok.com/@mahoraga.cc",
+    "instagram": "https://www.instagram.com/mahoraga.cc/",
+}
 
 # The price each plan is shown as reduced from, in the smallest unit of the plan's currency (2999 is 29.99),
 # the operator's in Admin → Subscriptions; 0 shows none. The card crosses it out beside Stripe's price and
@@ -499,7 +504,15 @@ def get(db: Database | Snapshot, key: str) -> object:
 def all_settings(db: Database) -> dict[str, object]:
     """Every setting with its current value — what the admin panel renders."""
     stored = snapshot(db)
-    return {key: stored.get(key, default) for key, default in DEFAULTS.items()}
+    values = {key: stored.get(key, default) for key, default in DEFAULTS.items()}
+    return values | {"socials": social_links(stored)}
+
+
+def social_links(db: Database | Snapshot) -> dict[str, str]:
+    """Each network's link (`SOCIAL_NETWORKS`): the operator's where they saved one, else the default. A
+    setting saved before a network was added holds no line for it, and the network shows all the same."""
+    stored = get(db, "socials") or {}
+    return {network: stored.get(network, DEFAULT_SOCIALS[network]) for network in SOCIAL_NETWORKS}
 
 
 def put(db: Database, key: str, value: object, *, by: str | None = None) -> None:

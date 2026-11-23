@@ -72,6 +72,7 @@ from libs.settings import (
     queries_per_cycle,
     results_per_query,
     snapshot,
+    social_links,
     source_min_ages,
 )
 from libs.tenant import applications
@@ -537,7 +538,9 @@ def write_setting(key: str, body: SettingPatch, db: Database = Depends(get_db),
                     "https://")) for link in links.values()):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=(
                 "A social link must be a web address starting with https://, or empty."))
-        body.value = {network: links.get(network, "").strip() for network in SOCIAL_NETWORKS}
+        # A network not named keeps its link: only "" hides one.
+        now = social_links(db)
+        body.value = {network: links.get(network, now[network]).strip() for network in SOCIAL_NETWORKS}
     if key == "members_channel_url" and body.value and not str(body.value).startswith("https://"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="The members' chat link must be a web address starting with https://")

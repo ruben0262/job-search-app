@@ -1,7 +1,7 @@
 """The site's places on social networks (owner, 2026-11-18): "we need to add socials to the site in
 general ... so users can join and share their thoughts as well as their requests to the devs". The owner's
-Discord is there from the start, for anybody; the admin changes it or empties it, and only a web address is
-kept."""
+Discord is there from the start, for anybody, and since 2026-11-23 the site's Facebook, TikTok and Instagram;
+the admin changes or empties each, and only a web address is kept."""
 from __future__ import annotations
 
 import os
@@ -13,6 +13,10 @@ from libs.db.models import User
 
 ADMIN = "operator@example.com"
 DISCORD = "https://discord.gg/UR3FNC4gyT"
+# The owner's, in the order the foot shows them.
+OTHERS = [{"network": "facebook", "url": "https://www.facebook.com/profile.php?id=61596985945304"},
+          {"network": "tiktok", "url": "https://www.tiktok.com/@mahoraga.cc"},
+          {"network": "instagram", "url": "https://www.instagram.com/mahoraga.cc/"}]
 
 
 @pytest.fixture()
@@ -40,7 +44,7 @@ def _sign_in(http, user: User) -> None:
 
 def test_the_discord_is_there_for_anybody_and_the_admin_changes_or_hides_it(db, http):
     signed_out = http.get("/socials").json()
-    assert signed_out == [{"network": "discord", "url": DISCORD}], "for anybody, from the start"
+    assert signed_out == [{"network": "discord", "url": DISCORD}, *OTHERS], "for anybody, from the start"
 
     admin = _person(db, ADMIN)
     _sign_in(http, _person(db, "someone@example.com"))
@@ -54,8 +58,21 @@ def test_the_discord_is_there_for_anybody_and_the_admin_changes_or_hides_it(db, 
     moved = "https://discord.com/invite/mahoraga"
     assert http.put("/admin/settings/socials", json={"value": {"discord": f" {moved} "}}).status_code == 200
     http.cookies.clear()
-    assert http.get("/socials").json() == [{"network": "discord", "url": moved}]
+    assert http.get("/socials").json() == [{"network": "discord", "url": moved}, *OTHERS], "the others kept"
 
     _sign_in(http, admin)
-    assert http.put("/admin/settings/socials", json={"value": {"discord": ""}}).status_code == 200
-    assert http.get("/socials").json() == [], "emptied, it is not shown"
+    emptied = {"discord": "", "tiktok": ""}
+    assert http.put("/admin/settings/socials", json={"value": emptied}).status_code == 200
+    assert http.get("/socials").json() == [OTHERS[0], OTHERS[2]], "emptied, it is not shown"
+
+
+def test_a_network_added_after_the_links_were_saved_shows_all_the_same(db, http):
+    """Saved in Admin while Discord was the only network, the setting holds no line for the three added on
+    2026-11-23: each shows with the owner's link, on the site and in Admin alike."""
+    from libs import settings
+
+    settings.put(db, "socials", {"discord": DISCORD})
+    assert http.get("/socials").json() == [{"network": "discord", "url": DISCORD}, *OTHERS]
+    _sign_in(http, _person(db, ADMIN))
+    assert http.get("/admin/settings").json()["settings"]["socials"] == {
+        "discord": DISCORD, **{other["network"]: other["url"] for other in OTHERS}}

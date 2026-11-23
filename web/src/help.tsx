@@ -71,7 +71,7 @@ function HelpAndContact() {
   useEffect(() => {
     api.get<Schema<"ContactAddress">>("/contact").then(setReach).catch(() => undefined);
   }, []);
-  const socials = useSocials();
+  const discord = useSocials().find((social) => social.network === "discord");
   const send = useAction(async () => {
     setSent(await api.post<Receipt>("/contact", { subject: subject.trim(), message: message.trim() }));
     setSubject("");
@@ -112,25 +112,21 @@ function HelpAndContact() {
       ) : null}
 
       {/* Everybody's way to the people who build it, and to each other (owner, 2026-11-18). */}
-      {socials.map((social) => (
-        <section key={social.network} className="contact social">
+      {discord ? (
+        <section className="contact social">
           <div className="contact-head">
-            <span className="contact-icon social" style={{ color: social.colour }} aria-hidden="true">
-              <SocialMark social={social} />
+            <span className="contact-icon social" style={{ color: discord.colour }} aria-hidden="true">
+              <SocialMark social={discord} />
             </span>
             <div>
-              <h3>Join us on {social.name}</h3>
+              <h3>Join us on Discord</h3>
               <p>{WHY_DISCORD}</p>
             </div>
           </div>
           {/* Discord's link first, so the server gives their plan's role (`discord.tsx`). */}
-          {social.network === "discord" ? <DiscordSteps /> : (
-            <a className="button secondary contact-send" href={social.url} target="_blank" rel="noreferrer">
-              {social.join}
-            </a>
-          )}
+          <DiscordSteps />
         </section>
-      ))}
+      ) : null}
 
       {/* Its own card: a person at the other end, said so, and a receipt once it is sent. */}
       <section className="contact">

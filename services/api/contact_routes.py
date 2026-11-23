@@ -60,7 +60,7 @@ class SocialLink(BaseModel):
 @router.get("/socials")
 def socials(db: Database = Depends(get_db)) -> list[SocialLink]:
     """The site's places on social networks that have a link, for anybody, signed in or not (`socials`)."""
-    links = settings.get(db, "socials") or {}
+    links = settings.social_links(db)
     return [SocialLink(network=network, url=links[network]) for network in settings.SOCIAL_NETWORKS
             if links.get(network)]
 

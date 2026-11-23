@@ -274,7 +274,8 @@ def test_the_discord_is_under_the_landing_pages_question_and_at_its_foot_and_in_
     appropriate like at the bottom, and somewhere in the app as well, so users can join and share their
     thoughts as well as their requests to the devs". The owner's Discord: under the landing page's question
     and in its foot, and in the app in More and in Help, for every plan, Free too. Each opens in a tab of its
-    own."""
+    own. The site's Facebook, TikTok and Instagram are in the foot and nowhere else (owner, 2026-11-23: "they
+    don't need to be mentioned anywhere else")."""
     from libs.settings import DEFAULT_SOCIALS
 
     base, email, _ = site
@@ -284,10 +285,15 @@ def test_the_discord_is_under_the_landing_pages_question_and_at_its_foot_and_in_
         page = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True,
                                    is_mobile=True).new_page()
         page.goto(f"{base}/")
-        for link in (page.locator("#ask").get_by_role("link", name="Join our Discord"),
-                     page.get_by_role("contentinfo").get_by_role("link", name="Discord")):
-            expect(link).to_have_attribute("href", discord)
+        foot = page.get_by_role("contentinfo")
+        for link, href in ((page.locator("#ask").get_by_role("link", name="Join our Discord"), discord),
+                           *((foot.get_by_role("link", name=name, exact=True), DEFAULT_SOCIALS[name.lower()])
+                             for name in ("Discord", "Facebook", "TikTok", "Instagram"))):
+            expect(link).to_have_attribute("href", href)
             expect(link).to_have_attribute("target", "_blank")
+        expect(page.locator("#ask .tile.community")).to_have_count(1)
+        elsewhere = "a[href*='facebook'], a[href*='tiktok'], a[href*='instagram']"
+        expect(page.locator("main").locator(elsewhere)).to_have_count(0)
         for width in (320, 390):
             page.set_viewport_size({"width": width, "height": 844})
             assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"the landing page at {width}px"
@@ -303,6 +309,7 @@ def test_the_discord_is_under_the_landing_pages_question_and_at_its_foot_and_in_
         page.get_by_role("dialog", name="More").get_by_role("button", name="Help and contact").click()
         help_sheet = page.get_by_role("dialog", name="Help and contact")
         expect(help_sheet.get_by_role("link", name="Join our Discord")).to_have_attribute("href", discord)
+        expect(page.locator(elsewhere)).to_have_count(0)
         browser.close()
 
 
@@ -488,7 +495,7 @@ def test_a_visitor_asks_a_person_a_question_from_the_foot_of_the_landing_page(si
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         page.goto(f"{base}/#/")
         expect(page.locator(".foot-row a")).to_have_text(
-            ["Sign in", "Terms", "Privacy", "Cookies", "Data use", "Contact", "Discord"])
+            ["Sign in", "Terms", "Privacy", "Cookies", "Data use", "Contact"])
         page.locator(".foot-row").get_by_role("link", name="Contact").click()
         ask = page.locator("#ask")
         expect(ask.get_by_role("heading", name="Got a question? Ask us.")).to_be_in_viewport()

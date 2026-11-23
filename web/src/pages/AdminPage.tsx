@@ -599,8 +599,8 @@ export function AdminPage({ tab: asked }: { tab: string }) {
 
           <p className="label" style={{ marginTop: "1.5rem" }}>Social links</p>
           <span className="hint">
-            Shown to everybody: under the question and at the foot of the landing page, and in Help and More in
-            the app. Empty hides it.
+            Shown to everybody at the foot of the landing page. Discord also under its question, and in the app's
+            bar, Settings and Help. Empty hides one.
           </span>
           {Object.keys(settings.socials).map((network) => (
             <input key={network} type="url" placeholder="https://" maxLength={300}
