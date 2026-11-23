@@ -49,20 +49,18 @@ PLATFORM_DEFAULTS: dict[str, dict] = {
     # RemoteOK rate-limits a burst from one IP; the delay is from the reference and is not a guess.
     "workingnomads": {"endpoint": "https://www.workingnomads.com/api/exposed_jobs/"},
     "jobicy": {"count": 50},
-    # The direct-ATS family.
+    # The direct-ATS family. How many boards a run polls is the operator's (`ats_companies_per_cycle`) alone:
+    # a 400 here as well was what a stored "every board" fell back to (2026-11-23).
     **{
-        ats: {"max_companies": 400, "posted_within_hours": 72, "use_harvested": True,
-              "conditional": True}
+        ats: {"posted_within_hours": 72, "use_harvested": True, "conditional": True}
         for ats in ("greenhouse", "ashby", "lever", "smartrecruiters", "breezy",
                     "workday", "personio", "teamtailor")
     },
     # Recruitee answers a burst from one IP with 429s — lower concurrency, from the reference.
-    "recruitee": {"max_companies": 400, "posted_within_hours": 72, "use_harvested": True,
-                  "conditional": True, "concurrency": 8},
+    "recruitee": {"posted_within_hours": 72, "use_harvested": True, "conditional": True, "concurrency": 8},
     # Workable more so: 16 at once got 490 refusals of 555, and then even one at a time was refused for
     # hours (2026-11-02). The harvest asked 30 at once.
-    "workable": {"max_companies": 400, "posted_within_hours": 72, "use_harvested": True,
-                 "conditional": True, "concurrency": 2},
+    "workable": {"posted_within_hours": 72, "use_harvested": True, "conditional": True, "concurrency": 2},
 }
 
 
@@ -130,8 +128,8 @@ def build_source_configs(
         depth = (results or {}).get(source)
         if depth and source in RESULT_KEYS:
             cfg[RESULT_KEYS[source]] = int(depth)
-        # How many company boards one ATS cycle polls.
-        if ats_companies and source in ATS_SOURCES:
+        # How many company boards one ATS cycle polls, 0 being every one: passed on as set, 0 included.
+        if ats_companies is not None and source in ATS_SOURCES:
             cfg["max_companies"] = int(ats_companies)
         # How deep a paginated source walks.
         page_depth = (pages or {}).get(source)

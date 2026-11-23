@@ -815,6 +815,57 @@ def _boards(count: int):
     return Boards()
 
 
+def test_a_board_that_did_not_answer_is_asked_again_once_after_the_rest(caplog):
+    """Of one run's boards that "did not answer", nearly all were the resolver giving up on a burst of new
+    addresses (2026-11-23: Recruitee 26, Teamtailor 19, Lever 5, against one timeout and one error), and they
+    answered a moment later. Asked again after the rest, their jobs come in this run, not the next; one that
+    fails twice is named in one line with the reason, not a line a board."""
+    from datetime import UTC, datetime
+
+    from services.harvester.sources.ats import gather_ats
+
+    asked: list[str] = []
+
+    def fetch(token, _etag):
+        asked.append(token)
+        if (token == "company001" and asked.count(token) == 1) or token == "company002":
+            raise httpx.ConnectError("[Errno -3] Temporary failure in name resolution")
+        return [JobLink(url=f"https://example.com/{token}", title="Nurse",
+                        date_posted=datetime.now(UTC).isoformat())], None
+
+    with caplog.at_level(logging.WARNING):
+        links = gather_ats({}, logging.getLogger("test"), ats="greenhouse", repo=_boards(3),
+                           fetch_company=fetch)
+
+    assert sorted(link.url.rsplit("/", 1)[1] for link in links) == ["company000", "company001"]
+    assert [asked.count(f"company{n:03d}") for n in range(3)] == [1, 2, 2]
+    failures = [record.getMessage() for record in caplog.records if "did not answer" in record.getMessage()]
+    assert len(failures) == 1 and "name resolution" in failures[0]
+
+
+def test_a_greenhouse_board_gives_each_job_its_whole_text_in_the_one_answer(monkeypatch):
+    """Its list asked with `content=true` carries every job's text, and still answers 304 when nothing changed
+    (2026-11-23). Without it each job was a title, read a page at a time by a reader that reads 200 a run, and
+    one run's 381 Greenhouse jobs waited behind it."""
+    from services.harvester.sources import ats
+
+    asked: list[httpx.URL] = []
+
+    def greenhouse(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url)
+        return httpx.Response(200, json={"jobs": [{
+            "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/1", "title": "Field Engineer",
+            "location": {"name": "Berlin"}, "updated_at": "2026-11-23T09:00:00-05:00",
+            "content": "&lt;p&gt;Install and service wind turbines.&lt;/p&gt;"
+                       "&lt;ul&gt;&lt;li&gt;Travel&lt;/li&gt;&lt;/ul&gt;"}]})
+
+    monkeypatch.setattr(ats, "_CLIENT", httpx.Client(transport=httpx.MockTransport(greenhouse)))
+    jobs, _ = ats.fetch_greenhouse("acme")
+
+    assert asked[0].params.get("content") == "true"
+    assert jobs[0].snippet == "Install and service wind turbines.\n\n• Travel"
+
+
 def test_every_company_board_is_polled_over_a_round_of_runs_not_only_the_first_few(monkeypatch):
     """A run polls `max_companies` boards: it was always the first ones, and a board past them was never
     polled. Now the next ones each run, on the platform's clock."""

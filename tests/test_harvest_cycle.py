@@ -446,12 +446,29 @@ def test_the_operators_result_and_company_ceilings_reach_the_adapters():
 
 
 def test_an_unset_ceiling_leaves_the_platform_default_alone():
-    """An operator who has tuned nothing must get exactly the behaviour the code ships with."""
-    from services.harvester.source_config import PLATFORM_DEFAULTS, build_source_configs
+    """An operator who has tuned nothing gets the behaviour the code ships with: every company board, every
+    run (owner, 2026-11-23). The source config kept a 400 of its own beside the setting's, the copy that a
+    stored 0 fell back to."""
+    from libs.settings import DEFAULT_ATS_COMPANIES_PER_CYCLE, Snapshot, ats_companies_per_cycle
+    from services.harvester.source_config import ATS_SOURCES, build_source_configs
 
-    built = build_source_configs({}, env={})
-    assert built["greenhouse"]["max_companies"] == PLATFORM_DEFAULTS["greenhouse"]["max_companies"]
+    unset = ats_companies_per_cycle(Snapshot())
+    built = build_source_configs({}, env={}, ats_companies=unset)
+    assert unset == DEFAULT_ATS_COMPANIES_PER_CYCLE == 0
+    assert {built[name].get("max_companies", 0) for name in ATS_SOURCES} == {0}
     assert "per_page" not in built["justjoinit"], "no result key until somebody sets one"
+
+
+def test_every_company_every_run_stays_every_company_once_set():
+    """0 is every company board, every run. Read back, `... or 400` turned it into 400, and a 0 passed on was
+    dropped for the source config's own 400: no value an operator could store reached every board."""
+    from libs.settings import Snapshot, ats_companies_per_cycle
+    from services.harvester.source_config import ATS_SOURCES, build_source_configs
+
+    stored = Snapshot({"ats_companies_per_cycle": 0})
+    built = build_source_configs({}, env={}, ats_companies=ats_companies_per_cycle(stored))
+    assert {built[name].get("max_companies", 0) for name in ATS_SOURCES} == {0}
+    assert build_source_configs({}, env={}, ats_companies=300)["teamtailor"]["max_companies"] == 300
 
 
 def test_a_removed_source_cannot_be_quietly_switched_back_on():

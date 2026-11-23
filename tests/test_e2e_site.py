@@ -1115,6 +1115,10 @@ def test_admin_shows_every_sources_controls_at_the_values_the_harvest_reads(site
         for name in ("platsbanken", "nofluffjobs", "arbeitnow", "reed"):
             expect(page.get_by_label(f"{name} pages per cycle")).to_have_value(
                 str(DEFAULT_SOURCE_PAGES_PER_CYCLE[name]))
+        # Every company board, every run (owner, 2026-11-23), which the choices could not say.
+        boards = page.get_by_label("ATS company boards per cycle")
+        expect(boards).to_have_value("0")
+        expect(boards.locator("option:checked")).to_have_text("Every company")
         browser.close()
 
 

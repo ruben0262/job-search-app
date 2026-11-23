@@ -413,7 +413,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
                 The ATS family polls one company board at a time. We hold{" "}
                 <strong>{ats.companies_held.toLocaleString()}</strong> company tokens, collected
                 automatically from apply links we have seen. A cycle that polls fewer than we hold
-                reaches the rest on later cycles.
+                reaches the rest on later cycles; “Every company” polls them all on every cycle.
               </span>
               <div className="row" style={{ marginTop: "0.6rem", alignItems: "center" }}>
                 <select
@@ -423,11 +423,11 @@ export function AdminPage({ tab: asked }: { tab: string }) {
                   onChange={(event) => void saveAtsCompanies.run(Number(event.target.value))}
                   style={{ maxWidth: "10rem" }}
                 >
-                  {[100, 200, 400, 800, 1500, 3000].map((n) => (
-                    <option key={n} value={n}>{n.toLocaleString()}</option>
+                  {choices([0, 100, 200, 400, 800, 1500, 3000], ats.companies_per_cycle).map((n) => (
+                    <option key={n} value={n}>{n === 0 ? "Every company" : n.toLocaleString()}</option>
                   ))}
                 </select>
-                <span className={ats.companies_held > ats.companies_per_cycle
+                <span className={ats.companies_per_cycle > 0 && ats.companies_held > ats.companies_per_cycle
                   ? "small behind" : "small muted"}>
                   of {ats.companies_held.toLocaleString()} held
                 </span>

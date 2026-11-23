@@ -80,8 +80,12 @@ DEFAULT_SOURCE_RESULTS_PER_QUERY: dict[str, int] = {
     "jobicy": 50,
 }
 
-# How many company boards the ATS family polls in one cycle.
-DEFAULT_ATS_COMPANIES_PER_CYCLE = 400
+# How many company boards each ATS polls in one cycle, the rest on the next cycles in turn; 0 is every board,
+# every cycle (owner, 2026-11-23: over 3,000 companies, "we need to search all of them"). Measured that day,
+# every ATS at once with no ceiling: 626 boards in 71 s once their answers were known (519 unchanged), about
+# 8.8 a second, so 3,000 take about six of a run's eleven minutes. A number here again if the run's warning
+# says it nears its budget.
+DEFAULT_ATS_COMPANIES_PER_CYCLE = 0
 
 # How far back the cycle reads posting URLs looking for company boards it does not already poll,
 # and how many rows it will read. Both are guards rather than tuning: the pass is idempotent —
@@ -550,8 +554,9 @@ def results_per_query(db: Database | Snapshot, source: str) -> int | None:
 
 
 def ats_companies_per_cycle(db: Database | Snapshot) -> int:
-    """How many company boards the ATS family polls in one cycle."""
-    return int(get(db, "ats_companies_per_cycle") or DEFAULT_ATS_COMPANIES_PER_CYCLE)
+    """How many company boards each ATS polls in one cycle, 0 being every board. Read as stored: `... or the
+    default` read a stored 0 as 400, so every board was a value nobody could set."""
+    return int(get(db, "ats_companies_per_cycle"))
 
 
 def describe_per_cycle(db: Database) -> int:

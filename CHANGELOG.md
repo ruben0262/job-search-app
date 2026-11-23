@@ -14,6 +14,29 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-23, evening — every company board on every run, a board that did not answer asked once more, and Greenhouse's jobs with their text
+
+The owner: "can we do a quick check on the company job boards with the ats stuff like greenhouse make sure we are always
+getting the jobs, and we also have a limit in admin about the companies we can search and we should add an unlimited
+amount there because we have over 3000 companies now and we need to search all of them, in time as well".
+
+- **Every company, every run** (`ats_companies_per_cycle` 0, the default now; Admin → Settings, "Every company"). 0 was
+  a value nobody could set: read back it became 400 (`... or the default`), and the source config kept a 400 of its
+  own (`PLATFORM_DEFAULTS`) that a 0 fell back to; the setting is now its one definition. Measured on the laptop's
+  626 boards, every ATS at once: 71 s once their answers were known (519 unchanged, 304), about 8.8 boards a second,
+  so 3,000 take about six of a run's eleven minutes. The first run after this change took 348 s, every Greenhouse
+  answer being new. A value saved in Admin still wins: where one was saved, "Every company" is picked there once.
+- **A board that did not answer is asked once more, after the rest** (`ats.gather_ats`). In one run of 638 boards
+  about one in eight had not answered (Recruitee 26, Teamtailor 19, Lever 5, Personio 1), nearly all the resolver
+  giving up on a burst of new addresses ("Temporary failure in name resolution"), and they answered a moment
+  later. After: 46 asked twice, 1 still unanswered (a 403), 0.2% of 626. What still fails is one warning line with
+  its reasons, not a line a board.
+- **Greenhouse gives each job's text in its one answer** (`content=true`, still 304 when nothing changed): one run's
+  381 Greenhouse jobs were titles, each waiting for its page at 200 pages a run. SmartRecruiters, Workday, Breezy and
+  Workable still give titles: their pages are read whole (Workday's from its JSON-LD), 200 a run (Admin →
+  "Descriptions fetched per cycle"); here 1,036 waited after the first full read.
+- Requests: about 2,600 to company boards over four full reads of the laptop's boards.
+
 ## 2026-11-23 — The landing page's foot links Facebook, TikTok and Instagram beside Discord, and nothing else does
 
 The owner gave the site's Facebook, TikTok and Instagram: "lets add these socials to the landing page at the bottom

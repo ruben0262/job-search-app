@@ -7,6 +7,7 @@ import re
 import threading
 import unicodedata
 import defusedxml.ElementTree as ET   # not stdlib ET: these parse third-party feeds
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -99,42 +100,51 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
     # its address written as words.
     names = repo.names(ats)
 
-    def _one(token: str) -> tuple[str, Any, str | None]:
+    def _one(token: str) -> tuple[str, Any, str | None, str]:
         try:
             with _BOARD_TURNS:
                 jobs, etag = fetch_company(token, etags.get(token) if use_cond else None)
-            return token, jobs, etag
+            return token, jobs, etag, ""
         except Exception as exc:
-            logger.warning("%s: %s failed: %s", ats, token, exc)
-            return token, _FAILED, None
+            # Why, without the board's own address, so the boards that failed alike are counted together.
+            return token, _FAILED, None, re.sub(r"https?://\S+", "<url>", f"{type(exc).__name__}: {exc}")[:90]
 
     out: list[JobLink] = []
     seen: set[str] = set()
-    unchanged = failed = 0
+    unchanged = 0
     # Per-board outcomes, applied to the repository after the pool drains.
     outcomes: list[tuple[str, str | None, bool]] = []
     # Per-ATS worker cap: some boards (Recruitee) answer 429 to a burst, so `concurrency` goes lower.
     workers = int(cfg.get("concurrency", 30))
     with ThreadPoolExecutor(max_workers=max(1, min(len(companies), workers))) as pool:
-        for token, jobs, etag in pool.map(_one, companies):
-            if jobs is _FAILED:                   # no answer: nothing learnt about the board
-                failed += 1
-                continue
-            if use_cond:
-                outcomes.append((token, etag, jobs is not GONE))
-            if jobs is None:                      # 304 Not Modified -> nothing new to ingest
-                unchanged += 1
-                continue
-            for jl in jobs:
-                jl.company = jl.company or names.get(token) or token.replace("-", " ").title()
-                if is_within_hours(jl.date_posted, max_age) and jl.url and jl.url not in seen:
-                    seen.add(jl.url)
-                    out.append(jl)
+        answers = list(pool.map(_one, companies))
+        # A board that did not answer is asked once more, after the rest: of one run's, nearly all were the
+        # resolver giving up on a burst of new addresses, and answered a moment later (2026-11-23).
+        again = [token for token, jobs, _etag, _why in answers if jobs is _FAILED]
+        answers = [answer for answer in answers if answer[1] is not _FAILED] + list(pool.map(_one, again))
+    unanswered: Counter[str] = Counter()
+    for token, jobs, etag, why in answers:
+        if jobs is _FAILED:                       # no answer, twice: nothing learnt about the board
+            unanswered[why] += 1
+            continue
+        if use_cond:
+            outcomes.append((token, etag, jobs is not GONE))
+        if jobs is None:                          # 304 Not Modified -> nothing new to ingest
+            unchanged += 1
+            continue
+        for jl in jobs:
+            jl.company = jl.company or names.get(token) or token.replace("-", " ").title()
+            if is_within_hours(jl.date_posted, max_age) and jl.url and jl.url not in seen:
+                seen.add(jl.url)
+                out.append(jl)
     if use_cond:
         for token, etag, alive in outcomes:
             repo.record_poll(ats, token, etag=etag, alive=alive)
-    logger.info("%s: polled %d companies (%d unchanged/304, %d did not answer) -> %d relevant recent jobs",
-                ats, len(companies), unchanged, failed, len(out))
+    if unanswered:
+        logger.warning("%s: %d of %d boards did not answer twice, and are asked next run: %s", ats,
+                       sum(unanswered.values()), len(companies), dict(unanswered.most_common(3)))
+    logger.info("%s: polled %d companies (%d unchanged/304, %d asked twice, %d did not answer) -> %d relevant "
+                "recent jobs", ats, len(companies), unchanged, len(again), sum(unanswered.values()), len(out))
     return out
 
 # ── per-ATS fetch: (token, prev_etag) -> (jobs|None, new_etag) ────────────
@@ -154,7 +164,10 @@ def _conditional_get(url: str, etag: str | None,
 
 
 def fetch_greenhouse(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
-    r, new_etag, status = _conditional_get(f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs", etag)
+    """A board's jobs with each one's whole text (`content=true`), which still answers 304 when nothing changed
+    (2026-11-23). A title alone left each job to be read a page at a time, 200 pages a run for every board."""
+    r, new_etag, status = _conditional_get(
+        f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true", etag)
     if status != "ok":
         return (None if status == "304" else GONE), new_etag
     out = []
@@ -166,7 +179,8 @@ def fetch_greenhouse(token: str, etag: str | None = None) -> tuple[list[JobLink]
         out.append(JobLink(url=url, title=(j.get("title") or "").strip(),
                            company=(j.get("company_name") or token).strip(), location=loc,
                            source="greenhouse", date_posted=(j.get("first_published") or j.get("updated_at")),
-                           snippet=(j.get("title") or ""), is_remote=(True if "remote" in loc.lower() else None)))
+                           snippet=strip_html(j.get("content") or "") or (j.get("title") or ""),
+                           is_remote=(True if "remote" in loc.lower() else None)))
     return out, new_etag
 
 
