@@ -507,9 +507,9 @@ def test_a_free_account_sees_each_job_a_week_late_until_it_leaves_everybodys_lis
     assert http.put(f"/jobs/{new}/applied").status_code == 404
     assert http.get(f"/jobs/{week_old}/description").status_code == 200
     assert http.put(f"/jobs/{week_old}/applied").status_code == 200
-    [banner] = http.get("/dashboard").json()["banners"]
-    assert banner["key"] == "free"
-    assert banner["text"] == "Members see new jobs right away, and can apply among the first."
+    # How late, for the bar at the top of every page, and no banner of its own on the Jobs page (2026-11-23).
+    front = http.get("/dashboard").json()
+    assert (front["wait_hours"], front["banners"]) == (168, [])
 
 
 def test_starter_sees_each_job_three_days_late_and_the_operator_sets_how_late(db, http):
@@ -522,12 +522,28 @@ def test_starter_sees_each_job_three_days_late_and_the_operator_sets_how_late(db
     assert (http.get(f"/jobs/{yesterday}/description").status_code,
             http.put(f"/jobs/{yesterday}/bookmarked").status_code) == (404, 404)
     assert http.get(f"/jobs/{three_days}/description").status_code == 200
-    assert "free" not in [banner["key"] for banner in http.get("/dashboard").json()["banners"]], \
-        "a paying account is not called free"
+    assert http.get("/dashboard").json()["wait_hours"] == 72, "the bar at the top says Starter's own wait"
 
     settings.put(db, "starter_delay_hours", 12)
     assert listed(http) & {yesterday, three_days} == {yesterday, three_days}
     assert http.get("/feed").json()["delay_hours"] == 12
+
+
+def test_a_plan_that_waits_is_told_how_many_of_its_jobs_members_see_now(db, http):
+    """Owner, 2026-11-23: "they are seeing x old posts but if they upgrade they get to see it instantly". The
+    count is of the jobs a member with the same search has now and their list does not have yet: a week's for
+    Free, three days' for Starter; none for a member, who waits for nothing. Counted by the Jobs list's own
+    read with no wait, so it is exactly what moving up would add to their list."""
+    today, two_days, five_days, nine_days = (insert(db, posting(days)).id for days in (0.1, 2, 5, 9))
+
+    sign_in(http, searching(db))
+    assert http.get("/feed/waiting").json() == {"jobs": 3}
+    assert listed(http) & {today, two_days, five_days, nine_days} == {nine_days}, "not the three it counts"
+    sign_in(http, on_starter(db))
+    assert http.get("/feed/waiting").json() == {"jobs": 2}
+    assert listed(http) & {today, two_days, five_days, nine_days} == {five_days, nine_days}
+    sign_in(http, searching(db, subscription_status="active"))
+    assert http.get("/feed/waiting").json() == {"jobs": 0}
 
 
 def test_the_operator_sets_how_far_behind_a_free_account_is(db, http):
@@ -537,8 +553,7 @@ def test_the_operator_sets_how_far_behind_a_free_account_is(db, http):
     assert new not in listed(http)
     settings.put(db, "free_delay_hours", 0)
     assert new in listed(http) and http.get("/feed").json()["delay_hours"] == 0
-    assert http.get("/dashboard").json()["banners"][0]["text"] == \
-        "Alerts, match scores, CVs and cover letters come with a membership."
+    assert http.get("/dashboard").json()["wait_hours"] == 0, "the bar at the top says no wait, only the rest"
 
 
 def test_a_shelf_no_longer_than_a_plans_wait_is_refused_and_starter_never_waits_longer_than_free(db, http):

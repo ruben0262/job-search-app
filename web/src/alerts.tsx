@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api, type Schema } from "./api";
 import { openInstall, standalone, useInstallable } from "./install";
+import { MemberLock } from "./membership";
 import { enablePush, pushState, testPush, type PushState } from "./push";
 import { Error, useAction } from "./ui";
 
@@ -195,12 +196,7 @@ export function TelegramSetup({ onChanged }: { onChanged: () => void }) {
  * channel set up without it would wait in silence, with nothing to say why. A button, not a link in the sentence
  * (owner, 2026-11-13), and a quiet one: it sits under the page's own main button, as on onboarding's last step. */
 export function AlertsForMembers() {
-  return (
-    <div className="row">
-      <span className="small">Alerts come with a membership.</span>
-      <a className="button secondary small" href="/upgrade">Become a member</a>
-    </div>
-  );
+  return <MemberLock>Alerts come with a membership.</MemberLock>;
 }
 
 /** The site as an app: the sheet that says why and how (`install.tsx`), on a phone or wherever the browser

@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 
 import { api, type Schema } from "../api";
+import { MemberLock } from "../membership";
 import { Banner, Error, Field, useAction } from "../ui";
 import { JobsTabs, useJobList } from "./JobsPage";
 
@@ -15,11 +16,13 @@ export const ADDED = "/jobs/added";
 type Answer = Schema<"LinkAnswer">;
 type Draft = Schema<"Draft">;
 
-export function AddJobPage({ onChanged, can }: {
+export function AddJobPage({ onChanged, can, starter }: {
   /** "Mark as applied" changed the count the dashboard keeps. */
   onChanged: () => void;
   /** Their plan has Add a job (`libs.membership.AREAS`): a membership's, since 2026-11-16 (owner). */
   can: boolean;
+  /** On Starter, whose way up is moving up. */
+  starter: boolean;
 }) {
   const [link, setLink] = useState("");
   const [answer, setAnswer] = useState<Answer | null>(null);
@@ -56,10 +59,7 @@ export function AddJobPage({ onChanged, can }: {
         </form>
       ) : (
         // What it is stays said; the way to it is one button (CLAUDE.md §0).
-        <div className="row">
-          <span className="small">Adding a job by its link comes with a membership.</span>
-          <a className="button secondary small" href="/upgrade">Become a member</a>
-        </div>
+        <MemberLock starter={starter}>Adding a job by its link comes with a membership.</MemberLock>
       )}
       <Error>{find.error}</Error>
 

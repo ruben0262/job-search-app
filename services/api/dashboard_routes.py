@@ -107,6 +107,11 @@ class ReadyDashboard(BaseModel):
     # How much their About you says: too little, and the menu, the bell and My documents ask for more (owner,
     # 2026-11-22).
     about: AboutLength
+    # Their plan (`libs.membership.tier`), and how long after a member a new job reaches their list, in
+    # hours (`libs.membership.wait_hours`): 0 for a member. What the bar at the top of every page says to a
+    # plan that is not the membership, and which way up its button names (owner, 2026-11-23).
+    plan: Literal["free", "starter", "member"]
+    wait_hours: int
 
 
 class FeedSalary(BaseModel):
@@ -226,8 +231,9 @@ def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curr
 
     applied = db[UserJobState.COLLECTION].count_documents({"user_id": user_id, "applied_at": {"$ne": None}})
     return ReadyDashboard(stage="ready", is_admin=is_admin(user), member=member, areas=areas,
-                          applied=applied, banners=_banners(db, user, plan),
-                          job_filters=_job_filters(user), about=about_length(about.written(db, user_id)))
+                          applied=applied, banners=_banners(user, plan),
+                          job_filters=_job_filters(user), about=about_length(about.written(db, user_id)),
+                          plan=plan, wait_hours=wait_hours(db, plan))
 
 
 def _job_filters(user: User) -> JobFilters:
@@ -302,18 +308,12 @@ def _span(hours: int) -> str:
     return f"{hours} hours" if hours < 48 or hours % 24 else f"{hours // 24} days"
 
 
-def _banners(db: Database, user: User, plan: str) -> list[DashboardBanner]:
-    """What the jobs page says above the list, one thing at a time: a Telegram that stopped, never an offer to
-    turn alerts on, which a member's are from the start, to the bell at least (owner, 2026-11-18), and each
-    with its own switch (2026-11-19). A free account is told first what it is looking at, and what a
-    membership adds."""
-    if plan == FREE:
-        # How long they wait is said under the page's title, beside how long a job stays (`JobsPage`).
-        text = "Alerts, match scores, CVs and cover letters come with a membership."
-        if wait_hours(db, plan):
-            text = "Members see new jobs right away, and can apply among the first."
-        return [DashboardBanner(level="info", key="free", text=text)]
-    if user.telegram_status == "broken":
+def _banners(user: User, plan: str) -> list[DashboardBanner]:
+    """What the jobs page says above the list: a Telegram that stopped, never an offer to turn alerts on,
+    which a member's are from the start, to the bell at least (owner, 2026-11-18), and each with its own
+    switch (2026-11-19). Nothing for a free account, whose Telegram sends nothing: what a membership would
+    give a plan that waits is said at the top of every page instead (`wait_hours`, `/feed/waiting`)."""
+    if plan != FREE and user.telegram_status == "broken":
         return [DashboardBanner(level="warning", key="telegram_broken",
                                 text="Telegram stopped taking our messages.")]
     return []
@@ -420,6 +420,29 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
                                   jobs=count) for slug, count in found.cities],
                 as_of=as_of, shelf_hours=shortest, shelf_longest_hours=longest, delay_hours=delay,
                 cut=found.cut, match_scores=mine is not None)
+
+
+class Waiting(BaseModel):
+    # How many jobs a member with their words and filters sees now that their own list does not have yet.
+    jobs: int
+
+
+@router.get("/feed/waiting")
+def waiting(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> Waiting:
+    """What a plan that waits is waiting for (owner, 2026-11-23: "they are seeing x old posts but if they
+    upgrade they get to see it instantly"): the jobs a member's list would have now and theirs does not, the
+    ones that reached it after their list's moment (`jobs_as_of`), counted by the Jobs list's own read with no
+    wait. As much as a count of their list costs, 0.2-0.8 s on the dev copy (2026-11-23), so a page asks once,
+    after the list has answered; 0 at once for a plan that does not wait."""
+    user, plan = get(db, User, user_id), tier(db, user_id)
+    delay = wait_hours(db, plan)
+    if not delay:
+        return Waiting(jobs=0)
+    windows = platform_windows(db)
+    found = page(db, user, since=None, scan=scan_for(shelf_life(windows)[1]), wanted={}, order="best",
+                 offset=0, limit=0, found_after=jobs_as_of(db, user, delay), counts=True, delay=0,
+                 windows=windows)
+    return Waiting(jobs=found.arrived or 0)
 
 
 def bookmarked(db: Database, user_id: _uuid.UUID, ids: list[int]) -> set[int]:

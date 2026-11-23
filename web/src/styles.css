@@ -25,6 +25,10 @@
   --accent-ink: #ffffff;
   /* The same purple as small text on graphite, light enough to read (7.5:1). */
   --accent-text: #ba8cff;
+  /* Where the purple runs to on the way up to the membership (`.member-button`): white reads on it at 4.7:1,
+     and on the purple at 5:1, so on every part of the gradient. */
+  --member: #c026d3;
+  --member-rgb: 192, 38, 211;
   /* Frosted panels: what floats over the page (the bars, a dialog), not every card on it. */
   --glass: rgba(23, 24, 29, 0.72);
   --glass-line: rgba(255, 255, 255, 0.1);
@@ -751,6 +755,174 @@ button[disabled] {
 .banner.info {
   border-left-color: var(--faint);
   color: var(--muted);
+}
+
+/* ── the way up to the membership (owner, 2026-11-23) ───────────────────────────────────────
+
+   One button wherever it is: a pill, so it is never taken for a page's own main button, in the purple
+   running into pink, with a bolt. And the bar across the top of every page for a plan that waits: where they
+   are and where they could be, in a line, the button at its end. */
+.member-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: var(--control);
+  padding: 0.55rem 1.2rem;
+  border-radius: 999px;
+  background: linear-gradient(120deg, var(--accent), var(--member));
+  color: var(--accent-ink);
+  font-size: var(--text-control);
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-decoration: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 10px 24px -12px rgba(var(--member-rgb), 0.95);
+  transition: box-shadow 0.3s var(--ease), transform 0.35s var(--spring);
+}
+
+.member-button:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 0 0 4px rgba(var(--member-rgb), 0.22),
+    0 14px 28px -12px rgba(var(--member-rgb), 1);
+}
+
+.member-button:active {
+  transform: scale(0.96);
+}
+
+.member-button.small {
+  padding: 0.4rem 1rem;
+  font-size: var(--text-sm);
+}
+
+.member-button svg {
+  flex: none;
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+}
+
+/* Where something on a page comes with the membership: a lock, what it is, and the way up. */
+.member-lock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0.75rem 0;
+  font-size: var(--text-sm);
+}
+
+/* The button right after what it is for, not at the far end of a wide page. */
+.member-lock span {
+  flex: 0 1 auto;
+}
+
+.member-lock svg {
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: none;
+  stroke: var(--accent-text);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+.upgrade-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem 0.75rem;
+  margin: 0 0 var(--gap);
+  padding: 0.6rem 0.5rem 0.6rem 0.75rem;
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(100deg, rgba(var(--accent-rgb), 0.16), rgba(var(--member-rgb), 0.07)),
+    var(--bg-raised);
+}
+
+.upgrade-bar-icon {
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0.45rem;
+  border-radius: 50%;
+  background: rgba(var(--accent-rgb), 0.18);
+  fill: none;
+  stroke: var(--accent-text);
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.upgrade-bar p {
+  flex: 1 1 18rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.upgrade-bar strong {
+  color: var(--ink);
+  font-size: var(--text-control);
+  font-weight: 650;
+}
+
+/* How many of their jobs a member sees now: a green light beside it, as for something live. */
+.upgrade-bar-count {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent-text);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  animation: upgrade-count-in 0.5s var(--out) both;
+}
+
+.upgrade-bar-count::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--score);
+}
+
+.upgrade-bar-count b {
+  color: var(--ink);
+}
+
+@keyframes upgrade-count-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem);
+  }
+}
+
+/* A phone: two rows, what they are missing, then the count and the button side by side; what members have
+   is the upgrade page's to say. */
+@media (max-width: 720px) {
+  .upgrade-bar {
+    flex-wrap: wrap;
+  }
+
+  .upgrade-bar p {
+    flex-basis: calc(100% - 3.5rem);
+  }
+
+  .upgrade-bar p span,
+  .upgrade-bar-jobs {
+    display: none;
+  }
+
+  .upgrade-bar .member-button {
+    margin-left: auto;
+    padding: 0.4rem 1rem;
+    font-size: var(--text-sm);
+  }
 }
 
 /* ── onboarding ──────────────────────────────────────────────────────────────────────────────

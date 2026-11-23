@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { AboutNudge, type AboutLength, countWords, needsMore } from "../about";
 import { api, type Schema } from "../api";
 import { useKept } from "../kept";
+import { MemberLock } from "../membership";
 import { TemplatePicks } from "../templates";
 import { ago, useNow } from "../time";
 import { toast } from "../toast";
@@ -33,7 +34,7 @@ async function suggested(): Promise<Set<string>> {
   return new Set([...body.green, ...body.red].map((each) => each.term));
 }
 
-export function DocumentsPage({ areas, about, focus, onChanged }: {
+export function DocumentsPage({ areas, about, focus, onChanged, starter }: {
   /** What their plan gives (`libs.membership.PLANS`): a membership's makes CVs; without it, where they are. */
   areas: string[];
   /** How much their About you says (`/dashboard`): too little, and a note over its box asks for more. */
@@ -42,6 +43,8 @@ export function DocumentsPage({ areas, about, focus, onChanged }: {
   focus: boolean;
   /** About you saved: the dashboard read again, so the menu's dot and the bell's note go once it says enough. */
   onChanged: () => void;
+  /** On Starter, whose way up is moving up. */
+  starter: boolean;
 }) {
   const makes = areas.includes("cvs");
   const { list, reload } = useDocuments();
@@ -83,7 +86,7 @@ export function DocumentsPage({ areas, about, focus, onChanged }: {
         <TemplatePicks />
       </Card>
       <Card title="CVs and cover letters we made for you">
-        <Made makes={makes} />
+        <Made makes={makes} starter={starter} />
       </Card>
       <Card title="Your CV">
         <p className="small muted">Used to find your words and to make your CVs and cover letters.</p>
@@ -103,7 +106,7 @@ const MADE: [string, number | null][] = [["Made any time", null], ["Made over a 
 /** The documents made for jobs and kept: how full the storage is, and the documents themselves, folded
  * until opened (owner, 2026-11-02). A search and an age pick some out, to download or to delete: the
  * old ones go, the newest stay. Any made before stay theirs; new ones are a membership's. */
-function Made({ makes }: { makes: boolean }) {
+function Made({ makes, starter }: { makes: boolean; starter: boolean }) {
   const { data: kept, set } = useKept<Schema<"SavedDocuments">>(SAVED);
   const [query, setQuery] = useState("");
   const [older, setOlder] = useState<number | null>(null);
@@ -147,10 +150,7 @@ function Made({ makes }: { makes: boolean }) {
       ) : null}
       {!makes ? (
         // What it is stays said; the way to it is one button (CLAUDE.md §0).
-        <div className="row">
-          <span className="small">CVs and cover letters for each job come with a membership.</span>
-          <a className="button secondary small" href="/upgrade">Become a member</a>
-        </div>
+        <MemberLock starter={starter}>CVs and cover letters for each job come with a membership.</MemberLock>
       ) : null}
       {kept.documents.length === 0 ? (
         <p className="muted">None yet.{makes ? " Tap “Make my CV” under a job, and it is kept here." : ""}</p>

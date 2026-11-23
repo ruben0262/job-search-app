@@ -1,16 +1,83 @@
 /** The membership (Stripe, owner 2026-11-11): Stripe's own checkout inside the site's page (owner, 2026-11-12:
  * "it needs to be stripes payment page"), Stripe's portal behind a button, and where a membership stands in
  * words. Stripe decides all of it (`billing_routes.py`); this says it. */
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { Stripe, StripeEmbeddedCheckout } from "@stripe/stripe-js";
 
-import { ApiError, api, type Membership, type Plan } from "./api";
+import { ApiError, api, type Membership, type Plan, type Schema } from "./api";
 import { useKept } from "./kept";
-import { day } from "./time";
+import { day, span } from "./time";
 import { Card, Error, useAction } from "./ui";
 
 /** What Settings and the membership page read, as `kept.ts` keeps it. */
 export const MEMBERSHIP = "/billing";
+/** How many of their jobs a member sees now that a plan which waits does not (`/feed/waiting`). */
+export const WAITING = "/feed/waiting";
+
+/** A bolt: each job the moment it is found. */
+const BOLT = "M13.3 2.5L5 13.6h6.2l-1.4 7.9 8.3-11.2h-6.2z";
+/** A clock: how late a new job comes. */
+const CLOCK = "M12 3.5a8.5 8.5 0 110 17 8.5 8.5 0 010-17zM12 7.6V12l2.9 1.9";
+/** A lock: what comes with the membership. */
+const LOCK = "M7.5 10.5V8a4.5 4.5 0 019 0v2.5M5.5 10.5h13v9.5h-13z";
+
+/** The way up to the membership, drawn the same wherever it is (owner, 2026-11-23: "upgrading the design of
+ * the becoming a member button all over the site"): a pill in the purple running into pink, with a bolt for a
+ * job seen the moment it is found, never taken for a page's own main button. Free becomes a member; Starter
+ * moves up. */
+export function MemberButton({ starter = false, small = false }: { starter?: boolean; small?: boolean }) {
+  return (
+    <a className={small ? "member-button small" : "member-button"} href="/upgrade">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d={BOLT} /></svg>
+      {starter ? "Move up to Member" : "Become a member"}
+    </a>
+  );
+}
+
+/** Where something on a page comes with the membership: what it is, in a line, and the way up. */
+export function MemberLock({ starter = false, children }: { starter?: boolean; children: ReactNode }) {
+  return (
+    <div className="member-lock">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d={LOCK} /></svg>
+      <span>{children}</span>
+      <MemberButton starter={starter} small />
+    </div>
+  );
+}
+
+/** For a plan that is not the membership, across the top of every page (owner, 2026-11-23: "short, snappy,
+ * and informs clearly and encourages users to upgrade"): where they are, how late a new job reaches them, and
+ * where they could be, what a member has and how many of their jobs a member sees now, with the way up. The
+ * count is asked for once the page has its own answer (`ahead`): it costs a read of their list. */
+export function PlanBar({ plan, wait, ahead }: { plan: "free" | "starter"; wait: number; ahead: boolean }) {
+  const more = plan === "starter" ? "a CV and cover letter for each job" : "alerts and a CV for each job";
+  return (
+    <aside className="upgrade-bar" aria-label="Your plan">
+      <svg className="upgrade-bar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={wait ? CLOCK : LOCK} /></svg>
+      <p>
+        {wait ? (
+          <><strong>You see new jobs {span(wait)} late.</strong> <span>Members see them right away, with {more}.</span></>
+        ) : <strong>{more.charAt(0).toUpperCase()}{more.slice(1)} come with a membership.</strong>}
+      </p>
+      {ahead && wait ? <Waiting /> : null}
+      <MemberButton starter={plan === "starter"} />
+    </aside>
+  );
+}
+
+/** How many of their jobs a member sees now: nothing until it is known, or when there are none. */
+function Waiting() {
+  const { data } = useKept<Schema<"Waiting">>(WAITING);
+  if (!data?.jobs) return null;
+  return (
+    <span className="upgrade-bar-count">
+      <span>
+        <b>{data.jobs.toLocaleString()}</b><span className="upgrade-bar-jobs"> new {data.jobs === 1 ? "job" : "jobs"}</span>
+        {" "}waiting
+      </span>
+    </span>
+  );
+}
 
 /** Whether this page was opened by Stripe sending them back (`billing_routes.BACK`). Taken off the address,
  * so that reloading the page does not ask Stripe again. */
@@ -193,8 +260,8 @@ export function MembershipCard() {
         </p>
       ) : null}
       <div className="row">
-        {!data.member && data.can_start ? <a className="button" href="/upgrade">Become a member</a> : null}
-        {data.tier === "starter" ? <a className="button" href="/upgrade">Move up to Member</a> : null}
+        {!data.member && data.can_start ? <MemberButton /> : null}
+        {data.tier === "starter" ? <MemberButton starter /> : null}
         {data.can_manage ? (
           <button type="button" className="secondary" disabled={manage.busy} onClick={() => void manage.run()}>
             {manage.busy ? "Opening Stripe…" : data.can_start ? "Your invoices" : "Manage membership"}

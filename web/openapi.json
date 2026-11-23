@@ -5085,10 +5085,23 @@
             "title": "Member",
             "type": "boolean"
           },
+          "plan": {
+            "enum": [
+              "free",
+              "starter",
+              "member"
+            ],
+            "title": "Plan",
+            "type": "string"
+          },
           "stage": {
             "const": "ready",
             "title": "Stage",
             "type": "string"
+          },
+          "wait_hours": {
+            "title": "Wait Hours",
+            "type": "integer"
           }
         },
         "required": [
@@ -5099,7 +5112,9 @@
           "applied",
           "banners",
           "job_filters",
-          "about"
+          "about",
+          "plan",
+          "wait_hours"
         ],
         "title": "ReadyDashboard",
         "type": "object"
@@ -7035,6 +7050,19 @@
           "token"
         ],
         "title": "VerifyRequest",
+        "type": "object"
+      },
+      "Waiting": {
+        "properties": {
+          "jobs": {
+            "title": "Jobs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "title": "Waiting",
         "type": "object"
       },
       "WordSuggestion": {
@@ -10263,6 +10291,28 @@
           }
         },
         "summary": "Save Job Filters",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/feed/waiting": {
+      "get": {
+        "description": "What a plan that waits is waiting for (owner, 2026-11-23: \"they are seeing x old posts but if they\nupgrade they get to see it instantly\"): the jobs a member's list would have now and theirs does not, the\nones that reached it after their list's moment (`jobs_as_of`), counted by the Jobs list's own read with no\nwait. As much as a count of their list costs, 0.2-0.8 s on the dev copy (2026-11-23), so a page asks once,\nafter the list has answered; 0 at once for a plan that does not wait.",
+        "operationId": "waiting_feed_waiting_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Waiting"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Waiting",
         "tags": [
           "dashboard"
         ]

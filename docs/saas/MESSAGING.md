@@ -78,7 +78,10 @@ on 2026-11-17. Each figure is linked to its source.
   ([ISE 2024](https://ise.org.uk/knowledge/insights/410/record_graduate_job_applications),
   [ISE survey 2025](https://ise.org.uk/knowledge/insights/498/5_trends_you_need_to_know_from_ises_recruitment_survey_2025/)).
 - About **60% of hirers** find someone to interview in a job's **first week**
-  ([LinkedIn, Jan 2026](https://news.linkedin.com/2026/LinkedIn-Research-Talent-2026)).
+  ([LinkedIn, Jan 2026](https://news.linkedin.com/2026/LinkedIn-Research-Talent-2026)). **Read again on
+  2026-11-23: not a measure of hiring in general.** The page says "Nearly 60% of hirers find a candidate to
+  interview within the first week" in a bullet about LinkedIn's Hiring Pro product, with no survey or sample
+  given for it. Not for the site in any form.
 - A job draws about **twice the applications** in its first week as in each week after
   ([Ashby, 13M applications](https://ashbyhq.com/blog/recruiting/operationalizing-2023-application-per-job-report)).
 - UK entry-level vacancies are reported at their lowest since 2018 (Adzuna, as reported), and graduates now

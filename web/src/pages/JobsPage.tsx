@@ -383,9 +383,7 @@ export function JobsPage({ dashboard, focus, onChanged, onRead }: {
       {dashboard.banners.map((banner) => (
         <Banner key={banner.key} level={banner.level}>
           <span>{banner.text}</span>{" "}
-          <a className="button small" href={banner.key === "free" ? "/upgrade" : "/alerts"}>
-            {banner.key === "free" ? "Become a member" : "Fix it in Alerts"}
-          </a>
+          <a className="button small" href="/alerts">Fix it in Alerts</a>
         </Banner>
       ))}
 

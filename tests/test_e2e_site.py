@@ -113,6 +113,8 @@ def test_a_new_person_goes_from_sign_up_to_their_jobs(site, capsys):
 
         # Their jobs: the two that match, each saying why, and not the one that does not.
         expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+        # A member waits for nothing and has everything: no bar asking them to move up (owner, 2026-11-23).
+        expect(page.get_by_role("complementary", name="Your plan")).to_have_count(0)
         # And how long a job stays, as Admin sets it: thirty days, unless Admin says otherwise.
         expect(page.get_by_text("Jobs stay here for 30 days.")).to_be_visible()
         cards = page.locator("article.job-card")
@@ -2072,7 +2074,19 @@ def test_a_free_account_buys_starter_or_member_from_the_upgrade_page(site, capsy
         expect(page.locator(".adds li")).to_contain_text([
             "See new jobs right away", "A CV made for each job", "A cover letter for each job",
             "Add jobs from any site", "Official ATS checks"])
+        page.goto(f"{base}/jobs")
+        _the_way_up(page, "3 days", "Move up to Member")
         browser.close()
+
+
+def _the_way_up(page, late: str, button: str) -> None:
+    """Across the top of every page for a plan that is not the membership (owner, 2026-11-23: "they are seeing
+    x old posts but if they upgrade they get to see it instantly"): how late, how many of theirs a member sees
+    now (the two jobs the site found today), and the plan's own way up."""
+    bar = page.get_by_role("complementary", name="Your plan")
+    expect(bar).to_contain_text(f"You see new jobs {late} late.")
+    expect(bar.locator(".upgrade-bar-count")).to_have_text("2 new jobs waiting")
+    expect(bar.get_by_role("link", name=button)).to_have_attribute("href", "/upgrade")
 
 
 def test_the_buttons_of_jobs_side_by_side_sit_along_one_line(site, capsys):
@@ -2473,8 +2487,7 @@ def test_a_free_account_sees_each_job_a_week_late_and_the_way_to_a_membership_wh
 
         # The week-old job, and not the three found today.
         expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()
-        expect(page.get_by_text("Members see new jobs right away, and can apply among the first.")) \
-            .to_be_visible()
+        _the_way_up(page, "7 days", "Become a member")
         expect(page.get_by_text("You see new jobs after 7 days. Jobs stay here for 30 days.")).to_be_visible()
         expect(page.get_by_label("Posted").locator("option")).to_have_text(["Any time", "Last 2 weeks"])
         page.get_by_role("button", name="Make my CV").click()

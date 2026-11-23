@@ -1403,6 +1403,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/feed/waiting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Waiting
+         * @description What a plan that waits is waiting for (owner, 2026-11-23: "they are seeing x old posts but if they
+         *     upgrade they get to see it instantly"): the jobs a member's list would have now and theirs does not, the
+         *     ones that reached it after their list's moment (`jobs_as_of`), counted by the Jobs list's own read with no
+         *     wait. As much as a count of their list costs, 0.2-0.8 s on the dev copy (2026-11-23), so a page asks once,
+         *     after the list has answered; 0 at once for a plan that does not wait.
+         */
+        get: operations["waiting_feed_waiting_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -3938,10 +3962,17 @@ export interface components {
             /** Member */
             member: boolean;
             /**
+             * Plan
+             * @enum {string}
+             */
+            plan: "free" | "starter" | "member";
+            /**
              * Stage
              * @constant
              */
             stage: "ready";
+            /** Wait Hours */
+            wait_hours: number;
         };
         /** ResendRequest */
         ResendRequest: {
@@ -4558,6 +4589,11 @@ export interface components {
         VerifyRequest: {
             /** Token */
             token: string;
+        };
+        /** Waiting */
+        Waiting: {
+            /** Jobs */
+            jobs: number;
         };
         /** WordSuggestion */
         WordSuggestion: {
@@ -6739,6 +6775,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    waiting_feed_waiting_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Waiting"];
                 };
             };
         };

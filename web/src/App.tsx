@@ -8,7 +8,7 @@ import { Making, forgetBuilds, resumeBuilds } from "./documents";
 import { HelpButton } from "./help";
 import { GetAppButton, InstallSheet, useAsked } from "./install";
 import { forgetMarks } from "./marks";
-import { MEMBERSHIP, backFromStripe } from "./membership";
+import { MEMBERSHIP, PlanBar, backFromStripe } from "./membership";
 import { forgetKept, readAhead } from "./kept";
 import { ADDED, AddJobPage } from "./pages/AddJobPage";
 import { ALERTS, AlertsPage } from "./pages/AlertsPage";
@@ -252,10 +252,13 @@ export function App() {
         {/* No fade between places: it began each one invisible, and switching tabs showed nothing for
             a moment (owner, 2026-11-03). Each page draws at once from what it read last (`kept.ts`). */}
         <main className={section === "admin" ? "admin" : undefined}>
+          {dashboard.plan === "member" ? null
+            : <PlanBar plan={dashboard.plan} wait={dashboard.wait_hours} ahead={ahead} />}
           <Making />
           {path.startsWith("/add") ? (
             // A tab of Jobs, not a place of its own; and so is the next.
-            <AddJobPage onChanged={reload} can={dashboard.areas.includes("add_job")} />
+            <AddJobPage onChanged={reload} can={dashboard.areas.includes("add_job")}
+                        starter={dashboard.plan === "starter"} />
           ) : path.startsWith("/bookmarks") ? (
             <BookmarksPage onChanged={reload} />
           ) : section === "applied" ? (
@@ -266,7 +269,7 @@ export function App() {
             <AlertsPage onChanged={reload} query={query} />
           ) : section === "documents" ? (
             <DocumentsPage areas={dashboard.areas} about={dashboard.about} onChanged={reload}
-                           focus={new URLSearchParams(query).has("about")} />
+                           focus={new URLSearchParams(query).has("about")} starter={dashboard.plan === "starter"} />
           ) : section === "settings" ? (
             <SettingsPage dashboard={dashboard} onSignedOut={reload} />
           ) : section === "admin" ? (

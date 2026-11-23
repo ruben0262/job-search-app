@@ -14,6 +14,44 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-23 — the way up to the membership: a bar across the top of every page for Free and Starter, and one button wherever the membership is offered
+
+The owner: "educate, inform and motivate users on the Free and Starter plan to upgrade to Member ... tell them that
+they are seeing x old posts but if they upgrade they get to see it instantly ... small short and clear, perhaps we
+can relocate it ... maybe a large bar at the top".
+
+- **A bar across the top of every page** for a plan that is not the membership (`PlanBar`, `web/src/membership.tsx`):
+  "You see new jobs 7 days late. Members see them right away, with alerts and a CV for each job." (Starter: "3 days",
+  "a CV and cover letter for each job"), how many of their jobs a member sees now ("2 new jobs waiting", with a green
+  light), and the way up. One line on a laptop; on a phone the line, then the count and the button side by side.
+  With no wait set in Admin it says what the membership adds instead. It replaces the Jobs page's Free banner, which
+  Starter never had; `_banners` no longer makes it.
+- **The count is the Jobs list's own read with no wait** (`GET /feed/waiting`): the jobs that reached a member's list
+  after their own list's moment, so it is exactly what moving up adds. It costs about what a count of their list
+  costs, 0.2 s for a narrow search and 0.8 s for a broad one on the dev copy (1,185 waiting at 7 days, 252 at 3;
+  medians of 7, 2026-11-23), so the page asks once, after the list has answered, and a member is never asked.
+- **One button wherever the membership is offered** (`MemberButton`): a pill in the purple running into pink
+  (`--member`, white on both ends at 4.7:1 or more), with a bolt, "Become a member" or, on Starter, "Move up to
+  Member". On My documents, Add a job and Alerts it sits right after its sentence with a lock (`MemberLock`), and in
+  Settings. The dashboard now says the plan and its wait (`plan`, `wait_hours`).
+- **No "your chances go up by X%"**: nothing measured says it, and the site says no outcome we have not measured
+  (`docs/saas/MESSAGING.md` §6). The "about 60% of hirers find someone to interview in a job's first week" noted in
+  MESSAGING.md §5 is, at its source, a line about hirers using LinkedIn's Hiring Pro product, with no survey behind
+  it (LinkedIn, 7 January 2026): it is not used.
+- The words passed the AI-language check.
+
+Tests, each shown failing on `9bfe74a` in a scratch worktree but the member's guard (no bar, which nothing showed
+before): `test_billing.py` `test_a_plan_that_waits_is_told_how_many_of_its_jobs_members_see_now` (3 for Free, 2
+for Starter, 0 for a member; 404 before) and the three plan tests now reading `plan` and `wait_hours`;
+`test_e2e_site.py`, Free's and Starter's bars (`_the_way_up`).
+
+Gates, on this tree: `lint-imports` 2 kept, 0 broken; `ruff check .` all passed; `python -m libs.db --prune` on an
+empty database of the local mongod, exit 0; the contract regenerated, and a fresh dump changes nothing; the build
+built; `pytest tests/ -n 4` with only `MONGODB_URI` and `CHROME_BIN` set: 1,974 passed, 1 failed, 7 skipped. The
+failure, `test_a_look_just_picked_is_not_undone_by_an_answer_asked_for_before_it`, passes 3 of 3 alone, and failed
+the same way in a full run on 2026-11-22: it waits for a request the page may not need to send while its read
+ahead is still on its way, a race in the test, left for its own change.
+
 ## 2026-11-23 — Reed read every run, a one-country board read only for its country, and Admin showing each source's controls as the harvest reads them
 
 The owner: "lets add reed as well, and make sure that all the jobs the sources that we have added, we can control in
