@@ -275,6 +275,178 @@ def test_just_join_it_is_read_page_by_page_until_its_offers_are_older_than_the_w
     assert [link.url.rsplit("-", 1)[1] for link in kept] == ["1", "2"], "a failed page keeps the ones before"
 
 
+def test_arbeitnow_is_read_pages_deep_because_its_pages_are_in_no_date_order(monkeypatch):
+    """Page 2 held a job 0.9 hours old beside ones 83 hours old, and every job listed in the last hour was on
+    the first two pages (2026-11-22). So a run reads the first `max_pages` whatever their dates say, and keeps
+    each job listed inside the window."""
+    from datetime import UTC, datetime, timedelta
+
+    from services.harvester.sources import http_apis
+
+    def job(name: str, hours_ago: float, remote: bool = False) -> dict:
+        return {"url": f"https://www.arbeitnow.com/jobs/companies/acme/{name}", "title": "Pflegekraft",
+                "company_name": "Acme Pflege GmbH", "location": "Munich", "remote": remote,
+                "created_at": int((datetime.now(UTC) - timedelta(hours=hours_ago)).timestamp()),
+                "description": "<p>Pflege im Nachtdienst.</p><ul><li>Vollzeit</li></ul>"}
+
+    pages = {1: [job("new", 0.5, remote=True), job("old", 30)], 2: [job("newer", 0.2)],
+             3: [job("two-hours", 2)], 4: [job("past-the-pages", 0.1)]}
+    asked: list[int] = []
+
+    def api(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "www.arbeitnow.com" and request.url.path == "/api/job-board-api"
+        page = int(request.url.params["page"])
+        asked.append(page)
+        return httpx.Response(200, json={"data": pages[page], "links": {"next": f"?page={page + 1}"}})
+
+    monkeypatch.setattr(http_apis, "make_shared_client",
+                        lambda **_: httpx.Client(transport=httpx.MockTransport(api)))
+
+    links = http_apis.gather_arbeitnow({"max_pages": 3, "max_age_hours": 24}, logging.getLogger("test"))
+
+    assert asked == [1, 2, 3]
+    assert [link.url.rsplit("/", 1)[1] for link in links] == ["new", "newer", "two-hours"]
+    assert links[0].is_remote is True and links[1].is_remote is None, "not remote may be hybrid: unknown"
+    assert links[0].source == "arbeitnow" and links[0].company == "Acme Pflege GmbH"
+    assert "Pflege im Nachtdienst." in links[0].snippet and "• Vollzeit" in links[0].snippet
+
+
+def test_remote_ok_is_read_whole_in_one_request_and_named_as_its_terms_ask(monkeypatch):
+    """Its whole board, newest first, in one request. The first item is its terms: a link back to the job on
+    Remote OK and its name shown, which a card's "Apply on Remote OK" is."""
+    from datetime import UTC, datetime, timedelta
+
+    from libs.corpus.boards import apply_on
+    from services.harvester.sources import http_apis
+
+    def job(slug: str, hours_ago: float, location: str = "") -> dict:
+        return {"id": slug, "url": f"https://remoteOK.com/remote-jobs/{slug}", "position": "Support Agent",
+                "company": "Acme", "location": location, "description": "<p>Answer customers by email.</p>",
+                "date": (datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat()}
+
+    asked: list[str] = []
+
+    def api(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        return httpx.Response(200, json=[{"legal": "API Terms of Service: Please link back ..."},
+                                         job("fresh", 1), job("europe", 3, "Europe"), job("stale", 50)])
+
+    monkeypatch.setattr(http_apis, "make_shared_client",
+                        lambda **_: httpx.Client(transport=httpx.MockTransport(api)))
+
+    links = http_apis.gather_remoteok({"max_age_hours": 24}, logging.getLogger("test"))
+
+    assert asked == ["https://remoteok.com/api"]
+    assert [link.url.rsplit("/", 1)[1] for link in links] == ["fresh", "europe"]
+    assert links[0].location == "Remote" and links[1].location == "Europe"
+    assert all(link.is_remote and link.source == "remoteok" for link in links)
+    assert apply_on("remoteok") == "Remote OK"
+
+
+def test_reed_is_read_pages_deep_its_teaser_never_taken_for_the_text(monkeypatch):
+    """Reed offers no filter by time and no sort, and its order is its own, so a run reads its first pages
+    with no word and keeps what is dated inside the window. A date has no time: two days hold today's and
+    yesterday's. Its search's text, a 450-character teaser ending "...", is left out so the whole is read."""
+    from datetime import UTC, date, datetime, timedelta
+
+    from libs.corpus.geo import posting_country
+    from services.harvester.sources import http_apis
+
+    def job(n: int, days_ago: int, where: str = "Glasgow") -> dict:
+        day = (datetime.now(UTC).date() - timedelta(days=days_ago)).strftime("%d/%m/%Y")
+        return {"jobId": n, "jobUrl": f"https://www.reed.co.uk/jobs/support-worker/{n}",
+                "jobTitle": "Support Worker", "employerName": "Acme Care", "locationName": where, "date": day,
+                "jobDescription": "Support adults with learning disabilities in their own homes..."}
+
+    pages = {0: [job(1, 0), job(2, 1500)], 2: [job(3, 1, "Chippenham")], 4: [job(4, 0)]}
+    asked: list[dict] = []
+
+    def api(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/1.0/search"
+        asked.append(dict(request.url.params))
+        return httpx.Response(200, json={"results": pages[int(request.url.params["resultsToSkip"])]})
+
+    monkeypatch.setattr(http_apis, "REED_PAGE", 2)
+    monkeypatch.setattr(http_apis, "make_shared_client",
+                        lambda **_: httpx.Client(transport=httpx.MockTransport(api)))
+
+    links = http_apis.gather_reed({"max_pages": 5, "max_age_hours": 48}, logging.getLogger("test"))
+
+    assert [each["resultsToSkip"] for each in asked] == ["0", "2"], "a short page ends the walk"
+    assert all("keywords" not in each for each in asked)
+    assert [link.url.rsplit("/", 1)[1] for link in links] == ["1", "3"], "today's and yesterday's"
+    assert links[1].location == "Chippenham, United Kingdom" and posting_country(links[1].location) == "GB"
+    assert all(link.snippet == "" and link.source == "reed" for link in links)
+    assert links[0].date_posted == date.today().isoformat()
+
+
+def test_reeds_key_goes_to_its_api_and_nowhere_else(monkeypatch):
+    """Reed takes its key as a basic-auth user name. Added where every client is built, so the page reader can
+    ask Reed's details API without holding it, and sent to no other site, Reed's own pages included."""
+    import base64
+
+    from services.harvester.fetch import make_shared_client
+
+    heard: dict[str, str | None] = {}
+
+    def record(request: httpx.Request) -> httpx.Response:
+        heard[str(request.url)] = request.headers.get("Authorization")
+        return httpx.Response(200)
+
+    monkeypatch.setenv("REED_API_KEY", "a-reed-key")
+    with make_shared_client(transport=httpx.MockTransport(record)) as client:
+        for url in ("https://www.reed.co.uk/api/1.0/jobs/1", "https://www.reed.co.uk/jobs/a/1",
+                    "https://example.com/api/1.0/jobs/1"):
+            client.get(url)
+
+    basic = "Basic " + base64.b64encode(b"a-reed-key:").decode()
+    assert heard == {"https://www.reed.co.uk/api/1.0/jobs/1": basic,
+                     "https://www.reed.co.uk/jobs/a/1": None, "https://example.com/api/1.0/jobs/1": None}
+
+
+def test_platsbanken_reads_what_went_up_inside_the_window_in_stockholm_time(monkeypatch):
+    """Sweden's public employment service (JobTech's JobSearch, ads under CC0): what went up in the window's
+    minutes, newest first, 100 a page until a short one. Its times are Stockholm's, written without an offset
+    (an ad read at 19:51 UTC said 20:36, 2026-11-22): read as UTC, it would look an hour younger."""
+    from datetime import UTC, datetime
+
+    from libs.corpus.filters import parse_date
+    from libs.corpus.geo import posting_country
+    from services.harvester.sources import http_apis
+
+    def ad(n: int) -> dict:
+        return {"webpage_url": f"https://arbetsformedlingen.se/platsbanken/annonser/{n}",
+                "headline": "Undersköterska", "employer": {"name": "Vara kommun"},
+                "workplace_address": {"municipality": "Vara", "country": "Sverige"},
+                "publication_date": "2026-11-22T20:36:58",
+                "description": {"text": "Vi söker en undersköterska.\nHeltid, dagtid."},
+                "application_details": {"url": f"https://jobs.example.se/apply/{n}" if n % 2 else None}}
+
+    asked: list[dict] = []
+
+    def api(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "jobsearch.api.jobtechdev.se" and request.url.path == "/search"
+        asked.append(dict(request.url.params))
+        offset = int(request.url.params["offset"])
+        count = 100 if offset == 0 else 1
+        return httpx.Response(200, json={"hits": [ad(n) for n in range(offset, offset + count)]})
+
+    monkeypatch.setattr(http_apis, "make_shared_client",
+                        lambda **_: httpx.Client(transport=httpx.MockTransport(api)))
+
+    links = http_apis.gather_platsbanken({"max_pages": 10, "max_age_hours": 2}, logging.getLogger("test"))
+
+    assert [(each["offset"], each["published-after"], each["sort"]) for each in asked] == [
+        ("0", "120", "pubdate-desc"), ("100", "120", "pubdate-desc")], "a short page ends the walk"
+    assert len(links) == 101
+    one = links[1]
+    assert (one.title, one.company, one.source) == ("Undersköterska", "Vara kommun", "platsbanken")
+    assert parse_date(one.date_posted) == datetime(2026, 11, 22, 19, 36, 58, tzinfo=UTC)
+    assert posting_country(one.location) == "SE", "kept for the people who picked Sweden"
+    assert one.application_url == "https://jobs.example.se/apply/1" and links[0].application_url is None
+    assert one.snippet == "Vi söker en undersköterska.\nHeltid, dagtid."
+
+
 def test_a_job_carries_its_companys_own_name_where_the_board_does_not_say_it(monkeypatch):
     """Ashby and Lever name no company, so cards read "Openai" and "Elevenlabs". The name the board was
     stored with fills it; a board found from a link has its address in words. SmartRecruiters says

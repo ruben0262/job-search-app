@@ -44,6 +44,8 @@ if [ -e certificates/smtp.env ]; then set -a; . certificates/smtp.env; set +a; f
 # start here with test cards, and `stripe listen --forward-to localhost:8000/billing/webhook` brings Stripe's
 # webhooks. Without it, an account opens only by admin or free access.
 if [ -e certificates/stripe.env ]; then set -a; . certificates/stripe.env; set +a; fi
+# Reed's key (`REED_API_KEY`), once it is in this file: the UK's jobs are then read here as on the server.
+if [ -e certificates/reed.env ]; then set -a; . certificates/reed.env; set +a; fi
 PORT=5180
 export PUBLIC_URL=http://localhost:$PORT  # where the sign-up link points
 

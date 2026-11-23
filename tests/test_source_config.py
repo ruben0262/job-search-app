@@ -128,3 +128,43 @@ def test_the_call_budget_has_one_definition():
     assert not hasattr(http_apis, "DEFAULT_ADZUNA_QUERIES"), (
         "the adapter restated the ceiling; a second copy drifts silently")
     assert DEFAULT_SOURCE_QUERIES_PER_CYCLE["adzuna"] == 2
+
+
+def test_every_per_source_setting_names_a_source_the_harvest_reads():
+    """A window, floor or budget kept for a source nothing reads is a setting with no consumer, and the
+    reader that one day takes the name inherits a value chosen for something else. `"indeed": 6` was the
+    window of JobSpy's word search, removed with it on 2026-11-06, and an Indeed reader would have picked it
+    up unseen. `HARVEST_SOURCES` is the one list of sources; every map keyed by a source keeps to it."""
+    from libs import settings
+    from services.harvester.source_config import PLATFORM_DEFAULTS
+
+    maps = {"DEFAULT_SOURCE_FRESHNESS_HOURS": settings.DEFAULT_SOURCE_FRESHNESS_HOURS,
+            "SOURCE_MIN_AGE_HOURS": settings.SOURCE_MIN_AGE_HOURS,
+            "DEFAULT_SOURCE_QUERIES_PER_CYCLE": settings.DEFAULT_SOURCE_QUERIES_PER_CYCLE,
+            "DEFAULT_SOURCE_RESULTS_PER_QUERY": settings.DEFAULT_SOURCE_RESULTS_PER_QUERY,
+            "DEFAULT_SOURCE_PAGES_PER_CYCLE": settings.DEFAULT_SOURCE_PAGES_PER_CYCLE,
+            "PLATFORM_DEFAULTS": PLATFORM_DEFAULTS}
+    strays = {name: sorted(set(keyed) - set(settings.HARVEST_SOURCES)) for name, keyed in maps.items()}
+    assert not any(strays.values()), f"kept for a source the harvest does not read: {strays}"
+
+
+def test_a_one_country_board_is_read_only_while_somebody_has_picked_its_country():
+    """Reed lists the UK's jobs alone, Platsbanken Sweden's, Profession Hungary's, No Fluff Jobs and Just Join
+    IT Poland's. A run asked them while nobody had picked their country, and kept none of what they listed:
+    only the countries somebody picked are kept (`cycle._ingest`). A board of many countries is read whatever
+    was picked, and every board while nobody has picked a country at all."""
+    import uuid
+
+    from services.harvester.source_config import build_source_configs
+
+    env = {"REED_API_KEY": "x"}
+
+    def read(*places: str) -> set[str]:
+        configs = {uuid.uuid4(): {"sections": [{"locations": list(places)}]}}
+        return set(build_source_configs(configs, env=env))
+
+    one_country = {"reed", "platsbanken", "profession", "nofluffjobs", "justjoinit"}
+    assert not one_country & read("germany")
+    assert {"arbeitnow", "remoteok", "himalayas"} <= read("germany")
+    assert read("united_kingdom", "sweden") & one_country == {"reed", "platsbanken"}
+    assert one_country <= set(build_source_configs({}, env=env)), "nobody has picked a country: all of them"

@@ -199,8 +199,8 @@ How it works (the benefits). The onboarding steps now appear once, in Get starte
 
 ## 8. Open for the owner
 
-- **"Every job site."** Left as it is for now (owner, 2026-11-17). The site reads LinkedIn, Adzuna, 19
-  sources and company career pages. It does not read Indeed, Reed, Totaljobs or StepStone directly. A
+- **"Every job site."** Left as it is for now (owner, 2026-11-17). The site reads LinkedIn, Adzuna, 22
+  sources in all (2026-11-22) and company career pages. It does not read Indeed, Reed, Totaljobs or StepStone directly. A
   truer line that keeps the hook, if it is ever wanted: *"LinkedIn, job boards and company career pages.
   One list for you."*
 - **Freshness: "5 minutes".** The owner means how fresh a job is when somebody first sees it. Today a job is

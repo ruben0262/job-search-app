@@ -256,6 +256,67 @@ def test_a_no_fluff_jobs_posting_that_is_gone_is_said_so_by_its_api():
     assert client.requested == ["https://nofluffjobs.com/api/posting/gone"], "asked once, of the API"
 
 
+# A Platsbanken ad's own page, whatever the ad: a script and a cookie notice.
+COOKIES = "På arbetsformedlingen.se använder vi kakor (cookies). " * 30
+PLATSBANKEN_PAGE = f"<html><title>Sök lediga jobb i Platsbanken</title><body><p>{COOKIES}</p></body></html>"
+PLATSBANKEN_AD = "https://arbetsformedlingen.se/platsbanken/annonser/"
+SHORT_AD = "-Demontering av väggar\n-Sortering av byggavfall"
+
+
+def _api_and_pages(api: httpx.Response) -> tuple[httpx.Client, list[str]]:
+    """A board's API answering `api`, and every page of it a script and a cookie notice."""
+    asked: list[str] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        if request.url.host == "jobsearch.api.jobtechdev.se" or request.url.path.startswith("/api/"):
+            return api
+        return httpx.Response(200, text=PLATSBANKEN_PAGE)
+
+    return httpx.Client(transport=httpx.MockTransport(answer)), asked
+
+
+def test_a_short_platsbanken_ad_is_read_from_its_api_never_its_cookie_notice():
+    """Its page is a script and a cookie notice, 1,720 characters of which were read as a short ad's text
+    and would have shown it (2026-11-22). JobTech's API holds the ad: a short one stays short, and is not
+    shown."""
+    client, asked = _api_and_pages(httpx.Response(200, json={"description": {"text": SHORT_AD}}))
+    result = postings.fetch_job(f"{PLATSBANKEN_AD}31763442", client=client, snippet=SHORT_AD,
+                                title="Rivningsarbetare")
+    assert "kakor" not in result.description and result.description == SHORT_AD
+    assert asked == ["https://jobsearch.api.jobtechdev.se/ad/31763442"]
+
+
+def test_a_platsbanken_ad_that_is_gone_is_said_so_by_its_api():
+    """The page answers the same for an ad that has gone, so only the API can say it is."""
+    client, _ = _api_and_pages(httpx.Response(404, json={"message": "Ad not found.", "status": 404}))
+    result = postings.fetch_job(f"{PLATSBANKEN_AD}1", client=client, snippet="x")
+    assert result["accepting"] is False
+
+
+REED_JOB = "https://www.reed.co.uk/jobs/support-worker/57600493"
+
+
+def test_a_reed_job_is_read_whole_from_its_details_api_with_where_it_is_applied_to():
+    """Its search gives a 450-character teaser, and its `/jobs/` pages are closed to crawlers by its
+    `robots.txt`: the details API, which its key opens, has the whole text and the outside link to apply."""
+    client, asked = _api_and_pages(httpx.Response(200, json={
+        "jobId": 57600493, "jobDescription": "<p>Support adults in their own homes.</p>" * 10,
+        "externalUrl": "https://careers.example.co.uk/apply/1"}))
+    result = postings.fetch_job(REED_JOB, client=client, title="Support Worker")
+    assert asked == ["https://www.reed.co.uk/api/1.0/jobs/57600493"]
+    assert result.description.startswith("Support adults in their own homes.")
+    assert "kakor" not in result.description
+    assert result["application_url"] == "https://careers.example.co.uk/apply/1"
+
+
+def test_a_reed_job_it_no_longer_has_is_gone():
+    """Reed answers a job it no longer has with a blank one numbered 0, not a 404 (2026-11-23)."""
+    blank = {"jobId": 0, "jobTitle": None, "jobDescription": None}
+    client, _ = _api_and_pages(httpx.Response(200, json=blank))
+    assert postings.fetch_job(REED_JOB, client=client)["accepting"] is False
+
+
 def test_a_throttled_linkedin_fetch_is_retried_and_then_falls_back_to_the_snippet():
     """A job whose fetch fails still has to be scored, and it is said that no answer came."""
     client = FakeClient(*[FakeResponse("", 429) for _ in range(postings.LI_RETRIES)])

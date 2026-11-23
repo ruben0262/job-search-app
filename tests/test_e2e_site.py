@@ -1056,7 +1056,11 @@ def test_the_admin_chart_counts_every_job_board_at_first_and_only_those_ticked(s
     sources were among them; one left out takes its jobs out of the lines. Its dropdown and the countries'
     are the size of the selects and buttons beside them (owner, 2026-11-10)."""
     from libs.db import database
+    from libs.settings import HARVEST_SOURCES
 
+    # Every source on the one list, and the jobs whose source was never recorded: 20 when it was typed here,
+    # and wrong the day three sources were added (2026-11-22).
+    boards = len(HARVEST_SOURCES) + 1
     _counted_by_country(database())
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
@@ -1070,19 +1074,38 @@ def test_the_admin_chart_counts_every_job_board_at_first_and_only_those_ticked(s
 
         total = page.locator(".trend-head strong")
         everything = int(total.text_content().replace(",", ""))
-        page.locator("summary", has_text="All 20").click()
+        page.locator("summary", has_text=f"All {boards}").click()
         sources = page.locator(".country-table").filter(has_text="Source")
-        expect(sources.get_by_role("checkbox")).to_have_count(21)
+        expect(sources.get_by_role("checkbox")).to_have_count(boards + 1)
         for box in sources.get_by_role("checkbox").all():
             expect(box).to_be_checked()
         expect(sources.locator("tr", has_text="LinkedIn")).to_contain_text("8")
         sources.get_by_role("checkbox", name="Not recorded").uncheck()
         expect(total).to_have_text("8")
-        expect(page.locator("summary", has_text="19 of 20")).to_be_visible()
+        expect(page.locator("summary", has_text=f"{boards - 1} of {boards}")).to_be_visible()
         sources.get_by_role("checkbox", name="All sources").check()
         expect(total).to_have_text(f"{everything:,}")
         sources.get_by_role("checkbox", name="All sources").uncheck()
         expect(page.get_by_text("No source is ticked.")).to_be_visible()
+        browser.close()
+
+
+def test_admin_shows_every_sources_controls_at_the_values_the_harvest_reads(site, capsys):
+    """Every source has its row in Admin → Settings, each control at the value a run reads. The choices for
+    pages went to 20 and no further, so Platsbanken's 10 and The Muse's 100 were shown as something the
+    harvest does not read (2026-11-23)."""
+    from libs.settings import DEFAULT_SOURCE_FRESHNESS_HOURS, DEFAULT_SOURCE_PAGES_PER_CYCLE
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = _admin_corpus(browser, site, capsys)
+        page.get_by_role("button", name="Settings").click()
+        for name in ("arbeitnow", "remoteok", "platsbanken", "reed"):
+            expect(page.get_by_label(f"{name} freshness")).to_have_value(
+                str(DEFAULT_SOURCE_FRESHNESS_HOURS[name]))
+        for name in ("platsbanken", "themuse", "arbeitnow", "reed"):
+            expect(page.get_by_label(f"{name} pages per cycle")).to_have_value(
+                str(DEFAULT_SOURCE_PAGES_PER_CYCLE[name]))
         browser.close()
 
 

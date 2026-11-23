@@ -14,6 +14,135 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-23 — Reed read every run, a one-country board read only for its country, and Admin showing each source's controls as the harvest reads them
+
+The owner: "lets add reed as well, and make sure that all the jobs the sources that we have added, we can control in
+the admins tab, and that we find out what are the latest filters we can apply in terms of time for them ... when we
+run our search every 15mins, we need to be pulling the latest jobs from each country I think, or in case of reed or
+over, regional locked sources we only pull from there, but all the jobs that have been posted in the last 15 mins".
+
+- **Reed** (`gather_reed`), the UK's jobs, on the owner's free key (`REED_API_KEY`: `certificates/reed.env` here,
+  ignored by git).
+  - Its API offers no filter by time and no sort. A search with no word lists 97,507 jobs in an order of its own:
+    today's mostly near the front, dates back to 2022.
+  - Two reads of its first 1,000, 15.7 minutes apart (a Monday, 08:18 and 08:33 UTC): the 15 jobs made in between
+    were all on page 1, and the 79 older ones that rose into the first thousand were on pages 1 to 3. A run reads 3
+    pages and keeps what is dated today or yesterday (a date has no time; window 48 h).
+  - Its search's text is a 450-character teaser ending "...". The whole text, and the outside link to apply, come
+    from its details API, read by the harvest's text reader. One run: 125 jobs dated in the window in 0.8 s, all in
+    the UK, all new; five texts read, 1,146 to 3,433 characters, each with its outside link.
+  - Its location is mostly a postcode ("NN11DE"): alone, 168 of 200 could not be placed and one was placed in the
+    US. ", United Kingdom" is added, and all 200 read as the UK.
+  - Its `/jobs/` pages are closed to crawlers in its `robots.txt`; the key opens its API. It answers a job it no
+    longer has with a blank one numbered 0, read as gone.
+  - The key goes on requests in the fetch layer, to Reed's API alone (`fetch._ReedKey`), so the text reader in
+    `libs` never holds it.
+  - **On the server:** `REED_API_KEY` in `certificates/server.env`. Compose now hands it to the harvester
+    (`deploy/compose.yml`); without that line a key set there never arrives, and its board is left out of every run
+    with nothing said. `test_every_key_a_board_runs_on_reaches_the_harvester` holds it for every keyed board, and it
+    failed on the compose file before. `scripts/dev.sh` reads `certificates/reed.env`.
+- **A one-country board is read only for its country** (`source_config.ONE_COUNTRY`): Reed (the UK), Platsbanken
+  (Sweden), Profession (Hungary), No Fluff Jobs and Just Join IT (Poland) are asked only while somebody has picked that
+  country, by the rule that keeps a job (`geo.allows`). Asked otherwise, everything they listed was dropped as in a
+  country nobody picked. While nobody has picked a country, every board is read.
+- **Admin shows each source's controls as the harvest reads them.** The choices for pages a run went 1 to 20, so
+  Platsbanken's 10 showed as 1, and The Muse's 100 and No Fluff Jobs' 10 alike; every choice list (fresh, keep,
+  calls, results, pages) now holds the value in force (`choices`, `AdminPage.tsx`). Each new source has its row.
+- **Three readers made one** (`postings._from_api`): No Fluff Jobs, Platsbanken and Reed each had one of their own
+  for the same thing, a board whose pages hold no text to rely on. One table names each board's posting address,
+  its API and how the answer reads.
+- **What each source can be asked by time** (ROADMAP item 56): LinkedIn in seconds, Platsbanken in minutes, Adzuna in
+  days. No other board offers a filter by time; each is read for its window (Admin → Settings, in hours) by every
+  posting's own time.
+- Requests made to measure Reed: about 35 to its API and 3 to its site (the documentation, `robots.txt`, a job page).
+
+## 2026-11-22, late — three free sources read every run: Arbeitnow, Remote OK and Sweden's Platsbanken
+
+The owner: "which sources can we use to get real time jobs in as fast as possible every 15 mins, for free?", then "If
+we can easily implement the rest of the sources lets go ahead with those right now, exept the france travail access
+one". Also asked for, and not done: reverse-engineering an Apify Indeed crawler or the GitHub Indeed scrapers, which
+read Indeed by getting past its refusal of automated clients (ROADMAP item 55).
+
+- **Arbeitnow** (`gather_arbeitnow`): jobs across Europe, 300 a page with the whole text, no key ("a free public API
+  for jobs, please do not abuse"). Its pages are in no date order: every job listed in the last hour was on the first
+  two (53 and 9 of 62), so a run reads three (`source_pages_per_cycle`) and keeps what went up in the last 24 hours.
+  One run: 566 jobs in 4.8 s, all with their text; Germany 261, the UK 147, France 64, Switzerland 27, the
+  Netherlands 12, 52 with no country; 536 in a country somebody picked, 15 already stored, 521 new.
+- **Remote OK** (`gather_remoteok`): the whole board in one request, 100 remote jobs with their text. Its terms ask
+  for a link back to the job on Remote OK and its name shown: a card's "Apply on Remote OK" (`libs.corpus.boards`).
+  Its window is 72 hours: the newest job was 33 hours old on a Sunday evening, and a day's window kept none. One
+  run: 100, 66 of them open only in the US; 30 kept, all new.
+- **Platsbanken** (`gather_platsbanken`), Sweden's public employment service, through JobTech's official JobSearch
+  API: no key, the ads under CC0 (the API's own description says so). What went up in the last two hours, newest
+  first, 100 a page. Its times are Stockholm's, written without an offset (an ad read at 19:51 UTC said 20:36), and
+  are read as such. One run, a Sunday evening: 17, 5 with their own link to apply, all new.
+  - **A short ad is read from the API, never its page** (`postings._fetch_platsbanken`). The page is a script and a
+    cookie notice: for the one ad under 200 characters, the harvest's page reader would have stored 1,720 characters
+    of that notice as its text, and shown it. The API also says when an ad has gone (404); the page does not.
+- **Back from the removed list:** Arbeitnow and Remote OK went on 2026-08-04 for answering every search word alike
+  (ROADMAP 6t), and no board has been sent a word since 2026-11-04. Remotive stays out: its terms forbid showing its
+  jobs on another job site, and hold them back a day. The Admin test that a removed source offers no control now
+  names Remotive.
+- **Not added:** NAV (Norway) needs a token asked for by email, Reed (UK) a key; Germany's employment agency answered
+  the unofficial key its GitHub documentation gives with 403, and has no open API; EURES lets only its partners
+  extract; France Travail is left out (owner). ROADMAP item 56.
+- The three are on `HARVEST_SOURCES`: the landing page's count of sources (`/stats`) goes from 19 to 22, Admin has a
+  row for each, and the alerts' source picker offers them.
+- **Gates, run locally:** lint-imports 2 kept; ruff clean; the schema applied to an empty database; the contract
+  unchanged by regeneration; the build passes. The full suite on four workers, with only `MONGODB_URI` and `CHROME_BIN`:
+  - First run: 1 failed, 1,959 passed, 7 skipped. The failure was the Admin chart's browser test, which had the number
+    of sources typed in ("All 20"); it now counts `HARVEST_SOURCES`.
+  - Second run: 2 failed, 1,958 passed, 7 skipped (the usual seven). A CV look test ran out of its 5 s wait under load.
+    The Telegram flood-wait test stands in for `notifier.time.sleep`, which is the process's own `time.sleep`, so
+    another test's thread in the same worker filled it with 259,865 half-second waits. Both pass alone, and neither
+    touches what changed here.
+
+## 2026-11-22, night — Indeed and HelloWork looked into: neither lets an honest client through where it matters, so nothing reads them yet; three settings nothing read, removed
+
+The owner: "I'm trying to add indeed to the platform as a source, please complete the research, we have permission
+to use the backend, just like linkedin to host the jobs being posted on indeed ... We could do the same with hello
+work as well". What each asks of the site before it can be read, and how each is read then: ROADMAP item 55.
+
+- **Indeed refuses any automated client that says what it is, on every page.** From the laptop, a home address and
+  so not a datacenter's: its search of France's last day (`fr.indeed.com/jobs?q=&l=France&sort=date&fromage=1`)
+  and its home page answered 403 `cf-mitigated: challenge` ("Security Check", "Additional Verification Required"),
+  both to the harvest's own page headers and to a client naming itself a bot. Only `robots.txt` answered.
+  - Its `robots.txt`, for anyone it does not name: search results to page 10 (`start=0` to `90`) and no further, and
+    `/viewjob` (a job's own page, the one with its text), `/rss` and `/graphql` disallowed.
+  - It has no API that reads jobs for us. The Publisher API is closed to new publishers (since 2022, 2023 or 2024
+    by different accounts; Indeed never announced it), and the partner APIs (Job Sync, Disposition Sync, Sponsored
+    Jobs, Employer Data) post and manage an employer's own jobs.
+  - What JobSpy and the scrapers sold on Apify read is, by their own descriptions, the iPhone app's GraphQL
+    (`apis.indeed.com/graphql`), sending the key built into Indeed's app and the app's name: Indeed's app,
+    pretended. Not used, as Hiring Cafe's forged headers were not (ROADMAP item 15).
+- **HelloWork opens its job pages and closes every complete way of finding them.**
+  - A job's page (`/fr-fr/emplois/<id>.html`) answered 200 to both clients. The platform reads it whole with no
+    change: a live one gave its title, company, a place read as France, 6,821 characters of text and "still open"
+    to Add a job (`read_link`) and to the harvest's text reader alike. Its JSON-LD also has the time it went up, to
+    the second (`datePosted`), which neither reads.
+  - Finding them: the sitemap its `robots.txt` names (`/fr-fr/horizon.xml`) answered Cloudflare's "Sorry, you have
+    been blocked" to both clients; its search, API and RSS are disallowed to anyone not named. The lists per sector,
+    city and word are open, but each shows 20 offers, not newest first (ids 83,632,386 to 85,769,864 on one), and
+    goes on only through the search page. The per-word ones would send a word besides (owner, 2026-11-04).
+  - Its size: ids go up by one, 199,401 between two offers 100.8 hours apart (2026-11-16 16:43 to 2026-11-20 21:31
+    UTC), about 47,000 a day, 500 a run, more than the offers if the ids number other things too. A job's page is
+    about 230 KB, so reading every new one would be about 115 MB a run.
+  - No API or feed for others is published. HelloWork makes feeds for the job boards its recruiters send their
+    offers to (Buddi), and a JSON feed for an employer's own careers page.
+- **What was sent:** 16 requests, each one GET at least 2 s apart, none retried and no check answered. Indeed 7:
+  three `robots.txt`, two searches, two home pages. HelloWork 9: `robots.txt`, the sitemap twice, a closed offer
+  twice, three open offers and one sector list.
+- **Three settings nothing read, removed** (`libs/settings`): `"indeed": 6` and `"google": 6` in the harvest windows,
+  JobSpy's, which went on 2026-11-06, and `"arbeitnow": 168` in the delivery floors, gone since 2026-08-04.
+  `freshness_hours` gave 6 for "indeed" with the entry or without it, and an Indeed reader would have taken a window
+  chosen for a word search with nobody seeing it. `test_every_per_source_setting_names_a_source_the_harvest_reads`
+  holds every map keyed by a source to `HARVEST_SOURCES`; it failed before the removal, on exactly these three. The
+  test that a slow source keeps its week's floor under a six-hour window now uses Working Nomads (a week, read
+  today) where it used Arbeitnow.
+- **Gates, run locally:** lint-imports 2 kept; ruff clean; the schema applied to an empty database; the contract
+  unchanged by regeneration; the build passes; full suite 1,955 passed, 7 skipped (the usual seven: no Postgres
+  copy source, no reference instance, no Stripe test keys), with only `MONGODB_URI` and `CHROME_BIN` set.
+
 ## 2026-11-22, evening — the help chat's prompt names Claude or OpenAI, and About you's note in the owner's words
 
 - **`libs/prompts/support.md`**, on the owner's yes (CLAUDE.md §3a): "In Settings they can add their own Claude or

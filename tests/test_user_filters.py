@@ -261,16 +261,17 @@ def test_a_slow_source_is_not_silenced_by_a_tight_global_window(db):
 
     Measured on the live corpus 2026-08-09 with the operator's window at six hours: fifteen of
     seventeen sources returned nothing at all. `arbeitnow` held 2,691 open jobs and none inside 72
-    hours — harvested every cycle and discarded in full.
+    hours — harvested every cycle and discarded in full. Arbeitnow is gone (2026-08-04); Working Nomads,
+    read today, posts as seldom and has the same week's floor.
     """
 
     now = datetime.now(UTC)
-    slow = _row(db, source="arbeitnow", posted_at=now - timedelta(hours=100))
+    slow = _row(db, source="workingnomads", posted_at=now - timedelta(hours=100))
     fast = _row(db, source="linkedin", posted_at=now - timedelta(hours=100))
 
     kept = _survivors(db, built(config(), max_age_hours=6))
 
-    assert slow.id in kept, "arbeitnow's floor is a week; six hours must not delete it"
+    assert slow.id in kept, "workingnomads' floor is a week; six hours must not delete it"
     assert fast.id not in kept, "linkedin sustains an hour, so 100 hours is genuinely stale"
 
 

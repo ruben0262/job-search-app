@@ -422,7 +422,7 @@ def test_the_source_list_names_every_board_with_its_window(api):
 
     assert "linkedin" in names and "himalayas" in names
     # A source the platform no longer harvests must not offer a control that changes nothing.
-    assert "arbeitnow" not in names, "removed 2026-08-04 — it ignores the search parameter"
+    assert "remotive" not in names, "its terms forbid showing its jobs on another job site (2026-11-22)"
     assert all(isinstance(row["hours"], int) and row["hours"] > 0 for row in body)
     assert next(row for row in body if row["name"] == "linkedin")["hours"] == 4
 

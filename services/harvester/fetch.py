@@ -7,6 +7,7 @@ LinkedIn search is pooled across people (2026-11-03), nothing is fetched on one 
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
@@ -17,6 +18,22 @@ from libs.corpus.postings import PAGE_HEADERS
 PROXIED_HOSTS = ("linkedin.com",)
 
 DEFAULT_TIMEOUT = 25
+
+# Reed's key, the user name of a basic-auth header, as its documentation asks. Added here, the one place a
+# client is built, and sent to Reed's API alone: its search (`sources.http_apis.gather_reed`) and a job's
+# details, which the page reader asks for (`libs.corpus.postings`) without ever holding the key.
+REED_KEY = "REED_API_KEY"
+
+
+class _ReedKey(httpx.Auth):
+    def __init__(self, key: str):
+        self._basic = httpx.BasicAuth(key, "")
+
+    def auth_flow(self, request: httpx.Request):
+        if request.url.host == "www.reed.co.uk" and request.url.path.startswith("/api/"):
+            yield from self._basic.auth_flow(request)
+        else:
+            yield request
 
 
 def _mounts(proxy_url: str,
@@ -41,9 +58,10 @@ def _options(kwargs: dict[str, Any]) -> dict[str, Any]:
     # Every request carries `PAGE_HEADERS`, and an adapter passes only what it adds: a JSON `Accept`, a
     # token. `headers=` used to replace them, so four adapters wrote out a User-Agent of their own.
     headers = {**PAGE_HEADERS, **kwargs.pop("headers", {})}
+    key = os.environ.get(REED_KEY, "").strip()
     # `trust_env=False`: a stray HTTP_PROXY on the box must not route the boards through anything.
-    return {"timeout": DEFAULT_TIMEOUT, "follow_redirects": True, "trust_env": False, **kwargs,
-            "headers": headers}
+    return {"timeout": DEFAULT_TIMEOUT, "follow_redirects": True, "trust_env": False,
+            **({"auth": _ReedKey(key)} if key else {}), **kwargs, "headers": headers}
 
 
 def make_shared_client(**kwargs: Any) -> httpx.Client:

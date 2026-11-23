@@ -38,6 +38,9 @@ services:
       ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}
       ADZUNA_APP_KEY: ${ADZUNA_APP_KEY:-}
       FINDWORK_API_KEY: ${FINDWORK_API_KEY:-}
+      # Reed's free jobseeker key: the UK's jobs, and each one's text from its details API. Unset, Reed is
+      # not read (`services/harvester/source_config.py`).
+      REED_API_KEY: ${REED_API_KEY:-}
       # LinkedIn is searched for members' countries only (`libs.membership`), and the admins are members.
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       # Inside the container; bind-mounted to ./logs on the host below. Without the mount a

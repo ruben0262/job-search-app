@@ -369,7 +369,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
                   onChange={(event) =>
                     void saveFreshness.run(source.name, Number(event.target.value))}
                 >
-                  {[1, 2, 4, 6, 12, 24, 48, 72, 168].map((hours) => (
+                  {choices([1, 2, 4, 6, 12, 24, 48, 72, 168], source.hours).map((hours) => (
                     <option key={hours} value={hours}>{hours}h</option>
                   ))}
                 </select>
@@ -380,7 +380,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
                   onChange={(event) =>
                     void saveMinAge.run(source.name, Number(event.target.value))}
                 >
-                  {[1, 2, 4, 6, 12, 24, 48, 72, 168].map((hours) => (
+                  {choices([1, 2, 4, 6, 12, 24, 48, 72, 168], source.min_age_hours).map((hours) => (
                     <option key={hours} value={hours}>{hours}h</option>
                   ))}
                 </select>
@@ -394,7 +394,7 @@ export function AdminPage({ tab: asked }: { tab: string }) {
                     aria-label={`${source.name} calls a run`}
                     onChange={(event) => void saveQueries.run(source.name, Number(event.target.value))}
                   >
-                    {[1, 2, 3, 4, 6, 8, 12].map((n) => (
+                    {choices([1, 2, 3, 4, 6, 8, 12], source.queries_per_cycle).map((n) => (
                       <option key={n} value={n}>{n}</option>
                     ))}
                   </select>
@@ -1630,7 +1630,7 @@ function Results({ source, save }: {
       aria-label={`${source.name} results per query`}
       onChange={(event) => void save.run(source.name, Number(event.target.value))}
     >
-      {[20, 30, 40, 50, 100, 200].map((n) => (
+      {choices([20, 30, 40, 50, 100, 200], source.results_per_query).map((n) => (
         <option key={n} value={n}>{n}</option>
       ))}
     </select>
@@ -1652,10 +1652,16 @@ function Pages({ source, save }: {
       aria-label={`${source.name} pages per cycle`}
       onChange={(event) => void save.run(source.name, Number(event.target.value))}
     >
-      {[1, 2, 3, 5, 8, 12, 20].map((n) => (
+      {choices([1, 2, 3, 5, 8, 12, 20], source.pages_per_cycle).map((n) => (
         <option key={n} value={n}>{n}</option>
       ))}
     </select>
   );
+}
+
+/** A select's choices with the value in force among them. A source's own default or a value saved elsewhere was
+ * missing from them, so Admin showed something the harvest does not read: Platsbanken's 10 pages, The Muse's 100. */
+function choices(fixed: number[], current: number): number[] {
+  return [...new Set([...fixed, current])].sort((a, b) => a - b);
 }
 

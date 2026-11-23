@@ -25,6 +25,19 @@ def test_every_setting_compose_reads_is_in_the_server_template():
     assert missing == [], f"read by compose, named nowhere: {missing}"
 
 
+def test_every_key_a_board_runs_on_reaches_the_harvester():
+    """A board runs only with its key (`source_config.KEY_GATED`), and the harvester's container is given each
+    setting by name: a key put in the server's settings and not named here never arrives, and its board is
+    left out of every run with nothing to say which (Reed's, 2026-11-23)."""
+    import yaml
+
+    from services.harvester.source_config import KEY_GATED
+
+    services = yaml.safe_load((DEPLOY / "compose.yml").read_text(encoding="utf-8"))["services"]
+    given = set(services["harvester"]["environment"])
+    assert sorted(set(KEY_GATED.values()) - given) == []
+
+
 def test_every_compose_command_goes_through_the_wrapper():
     """A bare `docker compose` reads no settings: every `${VAR:?}` fails and nothing starts."""
     for path in (DEPLOY / "deploy.sh", *DEPLOY.glob("*.service")):

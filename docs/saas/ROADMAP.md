@@ -1646,7 +1646,8 @@ target is volume rather than coverage.
 
 **Post-beta, in this order.** 1. Arbeitnow and RemoteOK back as *pure feeds* — one unqueried fetch
 per cycle each, targeted by the corpus filter in 6u rather than by a query. That is 4,469 rows for
-two requests. 2. Consider and Getro need board lists before they can return anything. 3. JobSpy
+two requests (*done 2026-11-22, Phase 8 item 56: Arbeitnow now three pages a run*). 2. Consider and Getro
+need board lists before they can return anything. 3. JobSpy
 already reaches **Indeed and Google** through the same adapter as LinkedIn, which is the cheapest
 real coverage increase available and needs only enabling and measuring.
 
@@ -3784,6 +3785,87 @@ work, or opening and closing sessions faster, would help):
       the score and its filter (item 52) are committed with them: they reach the live site in one deploy.
     - **Starter is sold on Upgrade too** (owner, 2026-11-16: "yes we are also selling starter"): a free account
       picks Starter or Member there once Starter has a price at Stripe.
+55. **Indeed and HelloWork as sources** (owner, 2026-11-22: "we have permission to use the backend, just like
+    linkedin to host the jobs being posted on indeed ... We could do the same with hello work as well"). Looked
+    into the same day (CHANGELOG 2026-11-22, night). **Blocked on both, as Hiring Cafe was (items 15, 50):** a
+    permission has to reach the site's wall before anything here can read past it. Hiring Cafe gave its
+    permission on 2026-11-14 and its wall went on refusing.
+    - **Asked of Indeed, one of:** our addresses let through its Cloudflare check (the server's, or the site
+      proxy's if Indeed is read through it); a token in a header the check lets through; or credentials for an
+      API that reads jobs. Whichever it is should name `/viewjob`, a job's own page: a job is shown here only
+      once its text is read, and that page holds the text, disallowed in `robots.txt` to anyone not named. And
+      the rate we may read at.
+    - **Asked of HelloWork, one of:** a feed of every offer with its text, the best by far (about 47,000 new ids
+      a day, and no page read for any of them); or our client let through to `/fr-fr/horizon.xml` and the
+      sitemaps under it, with the rate at which we may read job pages (open to everybody in `robots.txt`
+      already, but about 500 of 230 KB each a run).
+    - **How Indeed is read once it answers**, in the LinkedIn pass's shape (`services/harvester/linkedin.py`):
+      every country somebody picked, each on Indeed's site for it (`fr.indeed.com`, `de.indeed.com`, ...), with
+      no word, newest first, every job stored, and the text read by a describer as LinkedIn's is. Measured on
+      the first day, before anything is built past it: whether `sort=date` holds on a list with no word
+      (LinkedIn's `sortBy` does not, 2026-11-13, `linkedin.sweep_places`), how many jobs a country lists in 15
+      minutes against how far one list can be read, and what a page holds. `fromage` counts days, so a run
+      reads back to the jobs it has already stored rather than to a window.
+    - **How HelloWork is read once it answers:** a board in the shared run (`services/harvester/sources`), read
+      while somebody has picked France: each new offer's text from the feed, or from its page's JSON-LD, which
+      the harvest's text reader already takes (`postings._fetch_board`); the time it went up from `datePosted`.
+    - **Not before then:** neither goes on `HARVEST_SOURCES`. That list is the landing page's count of sources,
+      the alerts' source picker and Admin's rows, so a board on it that reads nothing is a promise kept by
+      nothing (CLAUDE.md §6). A source's window and floor arrive with it, measured
+      (`test_every_per_source_setting_names_a_source_the_harvest_reads`).
+    - **Meanwhile:** a HelloWork job pasted into Add a job is read whole already (title, company, a place read
+      as France, the text). HelloWork's recruiters can send their offers on to Adzuna (its Buddi multiposting),
+      whose French list the harvest reads with `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` set; how many arrive that
+      way is not measured. The landing page's line that it does not read Indeed (MESSAGING.md §8) stays true.
+    - **Other ways in, looked at the same day** (owner: "try something along these lines ... or do research to try
+      and find working solutions on github"):
+      - *GitHub:* one Indeed reader that works, JobSpy (4,816 stars, pushed 2026-11-20), and it works by sending the
+        key built into Indeed's iPhone app and calling itself that app (`jobspy/indeed/constant.py`: `indeed-api-key`,
+        `appid=com.indeed.jobsearch; os=ios`). The rest are tutorials, or untouched since 2020 to 2024. Nothing kept
+        up reads HelloWork; one small aggregator asks its search page (disallowed) for words.
+      - *Scraping on order* (HasData, Apify's Indeed and HelloWork actors, ScrapingBee, Oxylabs): every request we
+        send is fetched past the site's check for us. The bypass this item rules out, bought instead of built.
+      - *Jobs a vendor has already collected* (Bright Data's Indeed dataset, up to $0.0025 a job with a $250 minimum;
+        TheirStack, about $0.04 a job on its smallest plan; JobsPipe): our code would only call their API with our
+        key, as the Adzuna adapter does. None says where its Indeed jobs come from, and showing a job board's
+        listings here is what the EU's database right can forbid without the board's leave (CJEU C-762/19,
+        *CV-Online Latvia v Melons*, 2021). A dataset is a day or more old, not 15 minutes. The owner's call, and
+        measured first on a free sample or trial: jobs a day per country, how many are new after dedup, how many
+        have their text, how late they arrive, and what each new one costs.
+    - *Reverse-engineering an Apify Indeed crawler or the GitHub scrapers* (owner, 2026-11-22): not done. They read
+      Indeed by getting past its refusal of automated clients, the bypass this item rules out.
+56. **Free sources, read every run** (owner, 2026-11-22: "which sources can we use to get real time jobs in as fast
+    as possible every 15 mins, for free?"). Built the same day: Arbeitnow, Remote OK and Sweden's Platsbanken
+    (CHANGELOG 2026-11-22, late), then Reed on the owner's key (2026-11-23). Waiting:
+    - **NAV (Norway):** a free feed of changes, its token asked for by email (plattform.for.arbeidsmarkedet@nav.no).
+    - **Germany's employment agency:** no open API, and the unofficial key its GitHub documentation gives answered
+      403. Theirs to open.
+    - **France Travail:** left out (owner, 2026-11-22).
+    - Out: Remotive (its terms forbid showing its jobs on another job site, and hold them back a day); EURES (only
+      its partners may extract).
+
+    **What each source can be asked by time, and how a run every 15 minutes reaches what went up since the last**
+    (owner, 2026-11-23). Only three take a time: the rest are read for their window (Admin → Settings, "fresh", any
+    hours) by each posting's own time, as deep as the column says. A one-country board is read only while somebody
+    has picked its country (`source_config.ONE_COUNTRY`).
+
+    | Source | Time it can be asked for | A run reaches |
+    |---|---|---|
+    | LinkedIn | seconds (`f_TPR`) | every picked country, back to its last full read; 1,000 a list at most |
+    | Platsbanken (SE) | minutes (`published-after`) | the last 2 h, newest first, every page |
+    | Adzuna | days (`max_days_old`) | 2 countries a run on the free tier, each its newest 50: not all |
+    | Reed (UK) | none, and no sort | its first 3 pages in its own order: every job made in 15 min was on the first |
+    | Arbeitnow | none | its first 3 pages, in no date order: the last hour's were on the first two |
+    | Remote OK | none | the whole board |
+    | Himalayas | none | newest first until older than 12 h, 5 pages at most |
+    | Just Join IT (PL) | none | newest first until older than 12 h, 5 pages at most |
+    | No Fluff Jobs (PL) | none | newest first by renewal until a page has nothing in 2 h, 10 pages at most |
+    | Profession (HU) | none | its 15 newest, about 3 h |
+    | The Muse | none | every page it serves, every run |
+    | Working Nomads | none | the whole list |
+    | Jobicy | none | its 50 newest, about 6 h |
+    | Findwork | none | newest first, 5 pages (not read: no key) |
+    | Company boards (9 ATS) | none | each board whole, up to 400 a run per ATS (the laptop's 587 all every run) |
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

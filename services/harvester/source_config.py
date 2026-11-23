@@ -7,11 +7,13 @@ from uuid import UUID
 
 from libs import settings
 from libs.contracts.config import migrate_config
+from libs.corpus.geo import allows, wanted_countries
+from services.harvester.fetch import REED_KEY
 from services.harvester.sources import REGISTRY
 
-# Removed 2026-08-04, with the measurement that removed them.
-DEFERRED_SOURCES = ("arbeitnow", "remotive", "remoteok", "dreamjobs",
-                    "consider", "getro", "nofluffjobs_hu", "weworkremotely")
+# Removed 2026-08-04, with the measurement that removed them. Arbeitnow and Remote OK came back as feeds on
+# 2026-11-22, no board being asked a word since 2026-11-04.
+DEFERRED_SOURCES = ("remotive", "dreamjobs", "consider", "getro", "nofluffjobs_hu", "weworkremotely")
 
 
 # The config key each adapter reads for "how many results".
@@ -32,7 +34,12 @@ DEFAULT_HARVEST_WINDOW_HOURS = 72
 KEY_GATED = {
     "findwork": "FINDWORK_API_KEY",
     "adzuna": "ADZUNA_APP_ID",
+    "reed": REED_KEY,
 }
+
+# Boards that list one country's jobs alone, each read only while somebody has picked that country, the only
+# one whose jobs would be kept (owner, 2026-11-04; `cycle._ingest`). The others list many countries at once.
+ONE_COUNTRY = {"reed": "GB", "platsbanken": "SE", "profession": "HU", "nofluffjobs": "PL", "justjoinit": "PL"}
 
 # Endpoints and rate limits: genuinely platform-level, lifted from the reference's config.yaml.
 PLATFORM_DEFAULTS: dict[str, dict] = {
@@ -91,13 +98,16 @@ def build_source_configs(
     """Platform defaults plus the union-derived filters, for every enabled source."""
     env = env if env is not None else os.environ
     locations = union_locations(configs)
+    wanted = wanted_countries(locations)
 
     # Every board in `HARVEST_SOURCES`, the one list, which Admin's per-source controls read too, with an
     # adapter here: LinkedIn is a pass of its own. A board needing a key only with it: one that 401s every
     # cycle drowns real failures. Here as a second, hand-kept list until 2026-11-06, which only care kept
     # agreeing, and the key alone switched a board on even once that list had dropped it (Jooble, 2026-08).
+    # A board of one country's jobs only while somebody has picked that country (`ONE_COUNTRY`).
     active = [name for name in settings.HARVEST_SOURCES
-              if name in REGISTRY and (name not in KEY_GATED or env.get(KEY_GATED[name]))]
+              if name in REGISTRY and (name not in KEY_GATED or env.get(KEY_GATED[name]))
+              and allows(ONE_COUNTRY.get(name), wanted)]
 
     # The widest window any active user asked for.
     windows = []
@@ -150,7 +160,6 @@ def adzuna_countries(locations: list[str]) -> list[str]:
     rather than restated: a second mapping is the defect this project ships most often. Adzuna
     serves a subset, so the result is intersected with what the vendor answers for.
     """
-    from libs.corpus.geo import wanted_countries  # noqa: PLC0415 - one caller, kept local
     from services.harvester.sources.http_apis import ADZUNA_COUNTRIES  # noqa: PLC0415
 
     wanted = wanted_countries(locations) or frozenset()

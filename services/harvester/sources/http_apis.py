@@ -9,6 +9,10 @@ Field maps and quirks below were confirmed against the live APIs (2026-06/07):
   NoFluffJobs      POST search/posting (rawSearch body)          posted (epoch ms)              nofluffjobs.com/job/url fullyRemote=bool
   WorkingNomads    GET  RSS feed per category                    pubDate (RFC 2822)             <link>                  (all remote)
   Profession.hu    GET  /allasok/1,0,0,<kw>?rss (keyword RSS)    pubDate (RFC 2822)             <guid>                  (HU on-site mostly)
+  Arbeitnow        GET  api/job-board-api?page= (no date order)   created_at (epoch s)           job["url"]              (Europe, DE most)
+  Remote OK        GET  api (the whole board, its terms first)   date (ISO)                     job["url"]              (all remote)
+  Platsbanken      GET  search?published-after=&sort=pubdate-desc  publication_date (Stockholm)  webpage_url             (Sweden, CC0)
+  Reed             GET  api/1.0/search?resultsToSkip= (own order) date (dd/mm/yyyy, no time)     jobUrl                  (UK, key)
 
 Every adapter applies the client-side recency filter (max_age_hours) on the
 source's own date field, never raises (logs + returns [] on failure), and caps
@@ -19,7 +23,9 @@ DreamJobs — along with the VC-board module. Each was pinged from the productio
 keyword, an unrelated one and nonsense, and answered identically to all three, or had stopped
 publishing. A source that cannot be asked for anything is not part of a targeted harvest
 (ROADMAP 6t), and an adapter nothing calls reads as current. They are recoverable from this
-commit if any of them is ever brought back as a pure feed.
+commit if any of them is ever brought back as a pure feed. Arbeitnow and Remote OK were, on 2026-11-22, no board
+being asked a word since 2026-11-04. Remotive stays out: its terms forbid showing its jobs on another job site, and
+it holds them back a day.
 
 --- ported from the reference instance, 2026-07-27 ---
 
@@ -39,9 +45,11 @@ import json
 import os
 import re
 import defusedxml.ElementTree as ET   # not stdlib ET: these parse third-party feeds
+from datetime import datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -594,3 +602,152 @@ def gather_profession(cfg: dict[str, Any], logger) -> list[JobLink]:
             is_remote=(True if ("remote" in low or "távmunka" in low) else None),
         ))
     return out
+
+
+# ── Arbeitnow ─────────────────────────────────────────────────────────
+
+def gather_arbeitnow(cfg: dict[str, Any], logger) -> list[JobLink]:
+    """Arbeitnow's free API: jobs across Europe, Germany's most, 300 a page with the whole text, no key. Its terms:
+    "a free public API for jobs, please do not abuse", a link back appreciated (a card's "Apply on Arbeitnow").
+
+    Its pages are in no date order: page 2 held a job 0.9 hours old beside ones 83 hours old, and every job listed
+    in the last hour was on the first two (53 and 9 of 62; measured 2026-11-22). So a run reads the first
+    `max_pages` whatever their dates say, keeping each job listed inside the window, and a page that fails keeps
+    the ones before it."""
+    max_age = cfg.get("max_age_hours", 24)
+    out: list[JobLink] = []
+    with make_shared_client(headers=_JSON) as client:
+        for page in range(1, int(cfg.get("max_pages", 1)) + 1):
+            try:
+                body = client.get("https://www.arbeitnow.com/api/job-board-api", params={"page": page}
+                                  ).raise_for_status().json()
+            except Exception as exc:
+                logger.warning("arbeitnow page %d failed: %s", page, exc)
+                break
+            for j in body.get("data") or []:
+                iso = epoch_to_iso(j.get("created_at"))
+                if j.get("url") and is_within_hours(iso, max_age):
+                    out.append(JobLink(
+                        url=j["url"], title=j.get("title", ""), company=j.get("company_name", ""),
+                        location=j.get("location", ""), source="arbeitnow", date_posted=iso,
+                        snippet=_striptags(j.get("description")),
+                        # Not remote could be hybrid: unknown, not on-site.
+                        is_remote=True if j.get("remote") else None))
+            if not (body.get("links") or {}).get("next"):
+                break
+    return out
+
+
+# ── Remote OK ─────────────────────────────────────────────────────────
+
+def gather_remoteok(cfg: dict[str, Any], logger) -> list[JobLink]:
+    """Remote OK's free API: its whole board, newest first with each job's text, in one request (100 jobs over a
+    day and a half, 2026-11-22). The first item is its terms: a link back to the job on Remote OK and its name
+    shown, which a card's "Apply on Remote OK" is (`libs.corpus.boards`)."""
+    max_age = cfg.get("max_age_hours", 24)
+    try:
+        with make_shared_client(headers=_JSON) as client:
+            data = client.get("https://remoteok.com/api").raise_for_status().json()
+    except Exception as exc:
+        logger.warning("remoteok fetch failed: %s", exc)
+        return []
+    return [JobLink(url=j["url"], title=j.get("position", ""), company=j.get("company", ""),
+                    location=j.get("location") or "Remote", source="remoteok", date_posted=j.get("date"),
+                    snippet=_striptags(j.get("description")), is_remote=True)
+            for j in data if isinstance(j, dict) and j.get("url") and is_within_hours(j.get("date"), max_age)]
+
+
+# ── Platsbanken (Sweden's public employment service) ─────────────────
+
+# Its times are Stockholm's, written without an offset: an ad read at 19:51 UTC said it went up at 20:36
+# (2026-11-22). The search reads no further than its 2,000th ad.
+_STOCKHOLM = ZoneInfo("Europe/Stockholm")
+PLATSBANKEN_PAGE, PLATSBANKEN_LAST = 100, 2000
+
+
+def gather_platsbanken(cfg: dict[str, Any], logger) -> list[JobLink]:
+    """Every ad Sweden's public employment service published in the window, newest first, 100 a page until a short
+    one, each with its whole text and its own link to apply: JobTech's official JobSearch API, no key, the ads
+    under CC0. 148 went up in the 27 hours to a Sunday evening (2026-11-22). The window is asked in minutes, so the
+    API's clock decides it, not ours."""
+    window = int(cfg.get("max_age_hours", 2)) * 60
+    out: list[JobLink] = []
+    with make_shared_client(headers=_JSON) as client:
+        for page in range(min(int(cfg.get("max_pages", 1)), PLATSBANKEN_LAST // PLATSBANKEN_PAGE + 1)):
+            try:
+                hits = client.get("https://jobsearch.api.jobtechdev.se/search", params={
+                    "published-after": window, "sort": "pubdate-desc", "limit": PLATSBANKEN_PAGE,
+                    "offset": page * PLATSBANKEN_PAGE}).raise_for_status().json().get("hits") or []
+            except Exception as exc:
+                logger.warning("platsbanken page %d failed: %s", page, exc)
+                break
+            for ad in hits:
+                if not ad.get("webpage_url"):
+                    continue
+                where = ad.get("workplace_address") or {}
+                country = where.get("country")
+                posted = ad.get("publication_date")
+                apply = (ad.get("application_details") or {}).get("url") or ""
+                out.append(JobLink(
+                    url=ad["webpage_url"], title=ad.get("headline", ""),
+                    company=(ad.get("employer") or {}).get("name", ""),
+                    location=", ".join(part for part in (
+                        where.get("municipality"), "Sweden" if country in (None, "", "Sverige") else country) if part),
+                    source="platsbanken", snippet=_striptags((ad.get("description") or {}).get("text")),
+                    date_posted=_in_stockholm(posted) if posted else None,
+                    application_url=apply if apply.startswith("http") else None))
+            if len(hits) < PLATSBANKEN_PAGE:
+                break
+    return out
+
+
+def _in_stockholm(posted: str) -> str:
+    """A Platsbanken time as one with its offset: Stockholm's where it gives none."""
+    when = datetime.fromisoformat(posted)
+    return (when if when.tzinfo else when.replace(tzinfo=_STOCKHOLM)).isoformat()
+
+
+# ── Reed (the UK) ─────────────────────────────────────────────────────
+
+# 100 a page, the most its search answers, in an order of its own: not by date, though most of its first pages had
+# gone up that day (2026-11-23). It offers no filter by time and no sort.
+REED_PAGE = 100
+
+
+def gather_reed(cfg: dict[str, Any], logger) -> list[JobLink]:
+    """Reed's jobseeker API: the UK's jobs with no search word, the first `max_pages` in its own order, each dated
+    inside the window kept. Its key (`REED_API_KEY`) is added by the fetch layer, for its API alone. A job's date has
+    no time, so a window counts from midnight. The search's text is a teaser of 450 characters ending "...", left
+    out on purpose: the whole text is read from Reed's details API (`libs.corpus.postings`), with where the job is
+    applied to."""
+    max_age = cfg.get("max_age_hours", 48)
+    out: list[JobLink] = []
+    with make_shared_client(headers=_JSON) as client:
+        for page in range(int(cfg.get("max_pages", 1))):
+            try:
+                results = client.get("https://www.reed.co.uk/api/1.0/search", params={
+                    "resultsToTake": REED_PAGE, "resultsToSkip": page * REED_PAGE}
+                ).raise_for_status().json().get("results") or []
+            except Exception as exc:
+                logger.warning("reed page %d failed: %s", page, exc)
+                break
+            for j in results:
+                posted = _reed_day(j.get("date"))
+                where = j.get("locationName") or ""
+                if j.get("jobUrl") and is_within_hours(posted, max_age):
+                    out.append(JobLink(
+                        url=j["jobUrl"], title=j.get("jobTitle") or "", company=j.get("employerName") or "",
+                        # A town the place list does not know is still in the UK, the only country Reed lists.
+                        location=where if "united kingdom" in where.lower() else f"{where}, United Kingdom".lstrip(", "),
+                        source="reed", date_posted=posted))
+            if len(results) < REED_PAGE:
+                break
+    return out
+
+
+def _reed_day(day: str | None) -> str | None:
+    """Reed's "23/11/2026" as an ISO date, or `None` where it gives none."""
+    try:
+        return datetime.strptime(day or "", "%d/%m/%Y").date().isoformat()
+    except ValueError:
+        return None

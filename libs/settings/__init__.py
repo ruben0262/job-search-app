@@ -15,8 +15,6 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     # full read, however long ago, as far as a job is still shown
     # (`services.harvester.linkedin.sweep_window`).
     "linkedin": 4,
-    "indeed": 6,
-    "google": 6,
     # Not a statement about Adzuna, which is a live feed — 27 postings inside sixty minutes when
     # probed directly. It is a statement about *us*: the free tier allows ~250 calls a day against
     # ninety-six cycles, so each (country, keyword) pair is asked roughly once every twenty-four
@@ -34,6 +32,15 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     # first four pages, and a run walks until a page has nothing inside the window (measured 2026-11-04).
     "nofluffjobs": 2,
     "profession": 24,
+    # Its first three pages, in no date order, held every job listed in the last hour (2026-11-22).
+    "arbeitnow": 24,
+    # The whole board in one request, so a wider window costs nothing: 100 jobs over a day and a half, the
+    # newest 33 hours old on a Sunday evening, when a day's window kept none (2026-11-22).
+    "remoteok": 72,
+    # What went up in the last two hours, newest first, asked every fifteen minutes, as No Fluff Jobs is.
+    "platsbanken": 2,
+    # A job's date has no time, so a window counts from midnight: two days hold today's and yesterday's.
+    "reed": 48,
     # Company boards, reached when our token list gets there.
     "greenhouse": 72, "ashby": 72, "lever": 72, "smartrecruiters": 72,
     "recruitee": 72, "breezy": 72, "workday": 168, "personio": 72, "workable": 72,
@@ -46,14 +53,14 @@ DEFAULT_FRESHNESS_HOURS = 6
 # Every source the harvester collects from.
 HARVEST_SOURCES: tuple[str, ...] = (
     # Remote-work aggregators.
-    "himalayas", "workingnomads", "jobicy",
+    "himalayas", "workingnomads", "jobicy", "remoteok",
     # ATS boards, polled directly per company.
     "greenhouse", "ashby", "lever", "smartrecruiters", "recruitee",
     "breezy", "workday", "personio", "workable",
     # Aggregators.
     "themuse",
-    # European boards.
-    "nofluffjobs", "profession", "justjoinit",
+    # European boards, Sweden's public employment service among them.
+    "nofluffjobs", "profession", "justjoinit", "arbeitnow", "platsbanken", "reed",
     # Key-gated, enabled only with a credential.
     "findwork", "adzuna",
     # The per-user tier, on the user's own proxy.
@@ -117,6 +124,14 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
     "nofluffjobs": 10,
     # Newest first, unmeasured (no key here); the walk stops once a page is older than the window.
     "findwork": 5,
+    # 300 a page in no date order: every job listed in the last hour was on the first two (53 and 9 of 62,
+    # 2026-11-22), so three, one to spare.
+    "arbeitnow": 3,
+    # 100 a page, newest first, the walk ending at a short page: the most a run reads, after a stoppage.
+    "platsbanken": 10,
+    # 100 a page in an order of its own: the 15 jobs made in 15.7 minutes were all on its first page, and the
+    # 79 older ones that rose into its first thousand on the first three (2026-11-23, a Monday, 08:30 UTC).
+    "reed": 3,
 }
 
 # How long a posting stays in the corpus before it is archived to a file and deleted
@@ -226,7 +241,6 @@ SOURCE_MIN_AGE_HOURS: dict[str, int] = {
     "workday": 168,         # 6 at 24h, 133 at 168h
     "breezy": 168,          # 4 at 6h, 21 at 168h
     "jobicy": 168,          # 3 at 12h, 13 at 168h
-    "arbeitnow": 168,       # nothing at all inside 72h, 1,075 at 168h
     "workingnomads": 168,   # nothing inside 72h, 14 at 168h
     "workable": 168,
     "themuse": 168,

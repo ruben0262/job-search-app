@@ -59,6 +59,10 @@ MIN_SNIPPET = 200
 _LINKEDIN_ID = re.compile(r"^https?://(?:[\w-]+\.)*linkedin\.com/jobs/view/(\d+)")
 # A No Fluff Jobs posting's slug, which its API answers for.
 _NOFLUFF_SLUG = re.compile(r"^https?://(?:www\.)?nofluffjobs\.com/(?:[a-z]{2}/)?job/([^/?#]+)")
+# A Platsbanken ad's number, which JobTech's API answers for (`services.harvester.sources.http_apis`), and a
+# Reed job's, which Reed's does.
+_PLATSBANKEN_ID = re.compile(r"^https?://(?:www\.)?arbetsformedlingen\.se/platsbanken/annonser/(\d+)")
+_REED_ID = re.compile(r"^https?://(?:www\.)?reed\.co\.uk/jobs/[^/?#]+/(\d+)")
 _LINKEDIN_HOSTS = {"linkedin.com", "www.linkedin.com"}
 
 _APPLICANTS = re.compile(r"num-applicants__caption[^>]*>\s*([^<]+)<")
@@ -516,9 +520,10 @@ def fetch_job(url: str, *, client: httpx.Client, snippet: str = "", title: str =
     out = Posting(description="", applicants=None, reposted=None, workplace=None,
                   posted_at=None, application_url=None, easy_apply=None, accepting=None)
 
-    if (nofluff := _NOFLUFF_SLUG.search(url or "")) is not None:
-        return _fetch_nofluff(nofluff.group(1), client=client, snippet=snippet, title=title, out=out,
-                              tally=tally)
+    for board, posting_address, api, read in _FROM_API:
+        if (found := posting_address.search(url or "")) is not None:
+            return _from_api(board, api.format(found.group(1)), read, client=client, snippet=snippet,
+                             title=title, out=out, tally=tally)
     if not job_id:
         return _fetch_board(url, client=client, snippet=snippet, title=title, out=out, tally=tally)
 
@@ -563,29 +568,41 @@ def _fetch_board(url: str, *, client: httpx.Client, snippet: str, title: str,
     return out
 
 
-def _fetch_nofluff(slug: str, *, client: httpx.Client, snippet: str, title: str,
-                   out: Posting, tally) -> Posting:
-    """No Fluff Jobs builds its pages with a script, so a page holds its menus and nothing of the job
-    ("JavaScript is required for the page…", stored as the text until 2026-11-02). Its own API holds
-    the posting: what it is, what it asks for, the daily tasks and the pay."""
+def _from_api(board: str, address: str, read, *, client: httpx.Client, snippet: str, title: str,
+              out: Posting, tally) -> Posting:
+    """A posting from its board's API, for a board whose page holds no text to rely on (`_FROM_API`). `read`
+    turns the answer into the text, or `None` for a posting the board no longer has, as a 404 or a 410 says
+    too. A text no longer than the one stored stays as it is: a short one is not shown."""
     try:
-        response = client.get(f"https://nofluffjobs.com/api/posting/{slug}")
-        if response.status_code in (404, 410):
+        response = client.get(address)
+        text = read(json.loads(response.text), out) if response.status_code == 200 else None
+        if response.status_code in (404, 410) or (response.status_code == 200 and text is None):
             out["accepting"] = False
-            tally(f"nofluff_http_{response.status_code}")
-        elif response.status_code == 200:
-            text = _nofluff_text(json.loads(response.text))
-            if len(text) > len(snippet):
-                tally("nofluff_ok")
-                out["description"] = text
-                return out
-            tally("nofluff_empty")
+            tally(f"{board}_gone")
+        elif text is not None and len(text) > len(snippet):
+            tally(f"{board}_ok")
+            out["description"] = text
+            return out
         else:
-            tally(f"nofluff_http_{response.status_code}")
+            tally(f"{board}_same" if text is not None else f"{board}_http_{response.status_code}")
     except Exception:
-        tally("nofluff_error")
+        tally(f"{board}_error")
     out["description"] = snippet or title
     return out
+
+
+def _platsbanken_ad(ad: dict, _out: Posting) -> str | None:
+    """An ad from JobTech's API, which may mark one removed."""
+    return None if ad.get("removed") else strip_html((ad.get("description") or {}).get("text") or "")
+
+
+def _reed_job(job: dict, out: Posting) -> str | None:
+    """A job from Reed's details API, which answers one it no longer has with a blank job numbered 0
+    (2026-11-23), and names where an outside one is applied to."""
+    if not job.get("jobId"):
+        return None
+    out["application_url"] = job.get("externalUrl") or None
+    return strip_html(job.get("jobDescription") or "")
 
 
 def _nofluff_text(posting: dict) -> str:
@@ -608,6 +625,20 @@ def _nofluff_text(posting: dict) -> str:
         section("Nice to have:", [each.get("value") for each in needs.get("nices") or []]),
         section("Daily tasks:", (posting.get("specs") or {}).get("dailyTasks") or []),
     ) if part)
+
+
+# Boards whose pages hold no text to rely on, each with the API that holds its postings: the board, a
+# posting's address, the API's, and how its answer reads (`_from_api`). No Fluff Jobs builds its pages with a
+# script ("JavaScript is required…" was stored as the text until 2026-11-02). Platsbanken's are a script and a
+# cookie notice, 1,720 characters of which were read as a short ad's text (2026-11-22), and look the same for
+# an ad that has gone. Reed's `/jobs/` are closed to crawlers by its `robots.txt`, and its key opens its API
+# (`services.harvester.fetch`).
+_FROM_API = (
+    ("nofluff", _NOFLUFF_SLUG, "https://nofluffjobs.com/api/posting/{}",
+     lambda posting, _out: _nofluff_text(posting)),
+    ("platsbanken", _PLATSBANKEN_ID, "https://jobsearch.api.jobtechdev.se/ad/{}", _platsbanken_ad),
+    ("reed", _REED_ID, "https://www.reed.co.uk/api/1.0/jobs/{}", _reed_job),
+)
 
 
 def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: str,

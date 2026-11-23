@@ -469,9 +469,10 @@ def test_the_boards_a_run_reads_are_the_boards_admin_lists():
     but LinkedIn, a pass of its own. A second, hand-kept list in the harvester agreed with it only by care
     until 2026-11-06, and a board on one list and not the other got controls that changed nothing."""
     from libs.settings import HARVEST_SOURCES
-    from services.harvester.source_config import build_source_configs
+    from services.harvester.source_config import KEY_GATED, build_source_configs
 
-    built = build_source_configs({}, env={"ADZUNA_APP_ID": "x", "FINDWORK_API_KEY": "x"})
+    # Every board's key set, from the one map of them: two named here left Reed out when it came (2026-11-23).
+    built = build_source_configs({}, env=dict.fromkeys(KEY_GATED.values(), "x"))
 
     assert list(built) == [name for name in HARVEST_SOURCES if name != "linkedin"]
 

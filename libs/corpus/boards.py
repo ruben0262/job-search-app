@@ -7,7 +7,9 @@ from libs.corpus.repository import LINK, TYPED
 # Anything not listed is its own name, capitalised.
 BOARD_NAMES = {"linkedin": "LinkedIn", "justjoinit": "Just Join IT", "nofluffjobs": "No Fluff Jobs",
                "workingnomads": "Working Nomads", "themuse": "The Muse",
-               "smartrecruiters": "SmartRecruiters", LINK: "Added by link"}
+               "smartrecruiters": "SmartRecruiters", LINK: "Added by link",
+               # Remote OK's terms ask for its name as it writes it.
+               "remoteok": "Remote OK", "platsbanken": "Platsbanken"}
 
 
 def board_name(source: str) -> str:
