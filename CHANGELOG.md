@@ -14,6 +14,19 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-23, late night — Greenhouse's lists asked without their jobs' text again: up to 17 times the bytes
+
+The evening's change asked each Greenhouse board for its jobs with their text (`content=true`), measured for time
+and not for size. Measured after: the largest boards answer 12 to 17 times as much (SpaceX 2.7 MB → 33 MB, Anduril
+2.8 → 46 MB, Databricks 0.8 → 9.7 MB, Stripe 0.5 → 6.1 MB), and a board is sent whole again whenever one of its
+jobs changes (19 of 221 in one steady run). The laptop's 221 boards are 28.9 MB without text, so a few GB a day
+with it, and tens at the server's scale. So the list is a title again, and a new job's text is read from its page
+once, as before: 1,551 of the 1,761 Greenhouse jobs stored before this day had theirs that way (88%).
+
+What the evening's change keeps: every board every run, and a board that did not answer asked once more. With the
+address as it was, the tags the server has stored for its boards still hold, so its first run does not read them
+all in full again.
+
 ## 2026-11-23, night — England's school jobs and Catalonia's public employment service read every run, Norway's NAV built and waiting for its token, a withdrawn ad closed, and what the rest of Europe has
 
 The owner: "lets go through each major european country and grab as many job sources as we can that we don't have at

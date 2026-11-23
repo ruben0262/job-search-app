@@ -164,10 +164,10 @@ def _conditional_get(url: str, etag: str | None,
 
 
 def fetch_greenhouse(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
-    """A board's jobs with each one's whole text (`content=true`), which still answers 304 when nothing changed
-    (2026-11-23). A title alone left each job to be read a page at a time, 200 pages a run for every board."""
-    r, new_etag, status = _conditional_get(
-        f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true", etag)
+    """A board's jobs without their text, which a new job's page gives once (the describer). With it
+    (`content=true`) the largest boards answer 12 to 17 times as much, SpaceX 33 MB and Anduril 46 MB, and a board
+    is sent whole again whenever one of its jobs changes: 28.9 MB for the laptop's 221 boards without (2026-11-23)."""
+    r, new_etag, status = _conditional_get(f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs", etag)
     if status != "ok":
         return (None if status == "304" else GONE), new_etag
     out = []
@@ -179,8 +179,7 @@ def fetch_greenhouse(token: str, etag: str | None = None) -> tuple[list[JobLink]
         out.append(JobLink(url=url, title=(j.get("title") or "").strip(),
                            company=(j.get("company_name") or token).strip(), location=loc,
                            source="greenhouse", date_posted=(j.get("first_published") or j.get("updated_at")),
-                           snippet=strip_html(j.get("content") or "") or (j.get("title") or ""),
-                           is_remote=(True if "remote" in loc.lower() else None)))
+                           snippet=(j.get("title") or ""), is_remote=(True if "remote" in loc.lower() else None)))
     return out, new_etag
 
 

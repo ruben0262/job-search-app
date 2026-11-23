@@ -966,29 +966,6 @@ def test_a_board_that_did_not_answer_is_asked_again_once_after_the_rest(caplog):
     assert len(failures) == 1 and "name resolution" in failures[0]
 
 
-def test_a_greenhouse_board_gives_each_job_its_whole_text_in_the_one_answer(monkeypatch):
-    """Its list asked with `content=true` carries every job's text, and still answers 304 when nothing changed
-    (2026-11-23). Without it each job was a title, read a page at a time by a reader that reads 200 a run, and
-    one run's 381 Greenhouse jobs waited behind it."""
-    from services.harvester.sources import ats
-
-    asked: list[httpx.URL] = []
-
-    def greenhouse(request: httpx.Request) -> httpx.Response:
-        asked.append(request.url)
-        return httpx.Response(200, json={"jobs": [{
-            "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/1", "title": "Field Engineer",
-            "location": {"name": "Berlin"}, "updated_at": "2026-11-23T09:00:00-05:00",
-            "content": "&lt;p&gt;Install and service wind turbines.&lt;/p&gt;"
-                       "&lt;ul&gt;&lt;li&gt;Travel&lt;/li&gt;&lt;/ul&gt;"}]})
-
-    monkeypatch.setattr(ats, "_CLIENT", httpx.Client(transport=httpx.MockTransport(greenhouse)))
-    jobs, _ = ats.fetch_greenhouse("acme")
-
-    assert asked[0].params.get("content") == "true"
-    assert jobs[0].snippet == "Install and service wind turbines.\n\n• Travel"
-
-
 def test_every_company_board_is_polled_over_a_round_of_runs_not_only_the_first_few(monkeypatch):
     """A run polls `max_companies` boards: it was always the first ones, and a board past them was never
     polled. Now the next ones each run, on the platform's clock."""
