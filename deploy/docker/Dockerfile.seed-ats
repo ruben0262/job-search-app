@@ -29,5 +29,8 @@ ARG APP_UID=1001
 RUN useradd --non-unique --create-home --uid ${APP_UID} app
 USER app
 ENV HOME=/home/app
+# `--common-crawl` reads the crawl's index over HTTPS with DuckDB's own reader, installed here once so a run
+# does not depend on DuckDB's extension site being up.
+RUN python -c "import duckdb; duckdb.connect().execute('INSTALL httpfs')"
 
 ENTRYPOINT ["python", "deploy/scripts/seed_ats.py"]

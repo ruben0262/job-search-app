@@ -3933,6 +3933,33 @@ work, or opening and closing sessions faster, would help):
     in, 48 h and 8 pages for one run, then back to 2 h and 5: its ads' text is read 200 a run, newest first, so a
     longer catch-up only waits longer.
 
+    **2026-11-23, midnight** (owner: "find the jobs per country, and all of it always" with no keywords, then "do
+    all of them ... parallel work or async runs"). Google's `site:` searches and Handshake are not open to us
+    (CHANGELOG). Every company board Common Crawl's latest crawl lists, 14,294 against the laptop's 626, is added by
+    the seed, and a run gives the company boards half its time, the boards asked longest ago first. After deploying:
+
+    ```
+    deploy/compose.sh run --rm seed-ats --common-crawl --dry-run   # what it would add, by ATS, storing nothing
+    deploy/compose.sh run --rm seed-ats --common-crawl             # stores them; again after each monthly crawl
+    grep -E "polled [0-9]+ companies|left for the next run" logs/harvester.log | tail -12
+    ```
+
+    For the owner:
+    - **Names, then memory.** A run waits on names: every Workday, Personio, Teamtailor, Recruitee and Breezy board
+      is a host of its own (4,918). The laptop's resolver took 5 to 20 s a name; Cloudflare's 300 names in 1.2 s.
+      As it is, two runs reached 2,021 then 3,115 of 10,730 boards (every board in about four runs) in 0.36 and
+      0.52 GB. With `dns: [1.1.1.1, 9.9.9.9]` on the `harvester` and `seed-ats` services, 7,266 then 2,799
+      (nearly every board in two) in 0.71 and 0.86 GB, inside the harvester's 1 GB with little to spare: its
+      `mem_limit` at 1.5g with it would leave room (the VM has 8 GB; 5.8 GB of ceilings during a harvest).
+      Neither is set: first see how fast the server's own resolver is (`time getent hosts
+      acme.wd3.myworkdayjobs.com` for a few names it has not asked before).
+    - **Personio** answers about 2.5 asks a second whatever it is asked (2 at once: 1,852 refused, 465 answered in
+      three minutes). Asking it at that pace, rather than refusing most, would be its own small change.
+    - **The company boards as a process of their own** (the owner's "async runs"): reading them all the time
+      rather than half of each run, in a container with its own memory. Not built: it is another service and
+      another clock (CLAUDE.md section 6); the numbers above are what it would be measured against.
+    - **Workday's window** is 96 hours, what its reader kept whatever the setting said (168) until now.
+
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 
 **Why.** The owner's decision: users, their logins and everything stored about them live in MongoDB

@@ -47,7 +47,9 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     "nav": 2,
     # Company boards, reached when our token list gets there.
     "greenhouse": 72, "ashby": 72, "lever": 72, "smartrecruiters": 72,
-    "recruitee": 72, "breezy": 72, "workday": 168, "personio": 72, "workable": 72, "teamtailor": 72,
+    "recruitee": 72, "breezy": 72, "personio": 72, "workable": 72, "teamtailor": 72,
+    # What its reader kept until 2026-11-23, four days, whatever this said (168): now the one window it reads.
+    "workday": 96,
 }
 
 # Anything not named above (Findwork). A setting until 2026-11-21, with no control in Admin from the day it
@@ -174,6 +176,11 @@ DEFAULT_EMAIL_DIGEST_HOUR = 8
 # Below `harvester.service`'s TimeoutStartSec, which is what kills a cycle that ignores this — and
 # a killed cycle skips the stages after the one that overran, silently (`test_schedules.py`).
 HARVEST_CYCLE_BUDGET_SECONDS = 11 * 60
+
+# The share of that budget the company boards may take, the boards asked longest ago first: the rest wait for
+# the next run (`sources.ats.gather_ats`). Every board one crawl lists, 10,730 of them, took 23 minutes on
+# the laptop, Workable's 3,664 alone some nine at two at a time; what is left of the run reads the texts.
+BOARDS_SHARE_OF_RUN = 0.5
 
 # How long one harvest run may spend searching the stored postings for people's new words, after the boards
 # and LinkedIn: it stops there and goes on in the next run (`libs.corpus.terms`). Measured 2026-11-04 at

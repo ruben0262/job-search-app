@@ -91,6 +91,30 @@ def test_a_job_its_board_says_was_withdrawn_is_closed_here(ctx):
     assert report.closed == 1
 
 
+
+def test_the_company_boards_stop_at_their_share_of_the_run_and_nothing_else_does(ctx):
+    """Every board a crawl lists (10,730 measured) took 23 minutes in one run on the laptop, past the run's
+    budget, which kills it with nothing stored (2026-11-23). So a run gives the company boards a deadline,
+    their share of its own budget from its start, and the other boards none."""
+    from time import monotonic
+
+    from libs.settings import BOARDS_SHARE_OF_RUN, HARVEST_CYCLE_BUDGET_SECONDS
+
+    _active_user(ctx)
+    given: dict[str, dict] = {}
+
+    def remember(source, cfg, _ats):
+        given[source.key] = cfg
+        return []
+
+    before = monotonic()
+    run_cycle(ctx, source_configs=_sources(himalayas={}, greenhouse={}), run_source=remember, describe=False)
+    after = monotonic()
+
+    share = HARVEST_CYCLE_BUDGET_SECONDS * BOARDS_SHARE_OF_RUN
+    assert before + share <= given["greenhouse"]["until"] <= after + share
+    assert "until" not in given["himalayas"]
+
 def test_the_same_job_twice_is_ingested_once(ctx):
     """Two sources listing one posting is the normal case, not the exception."""
     s = ctx
@@ -292,6 +316,9 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering():
         def record_poll(self, *_args, **_kwargs):
             pass
 
+        def record_asked(self, *_args, **_kwargs):
+            pass
+
     # A job the platform exists to catch and no keyword list would name.
     ordinary = JobLink(
         url="https://boards.greenhouse.io/acme/jobs/1",
@@ -312,7 +339,7 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering():
 
     rejected = [name for name in routed if not gather_ats(
         built[name], logging.getLogger("test"), ats=name, repo=Boards(),
-        fetch_company=lambda _token, _etag: ([ordinary], None))]
+        fetch_company=lambda _token, _etag, within=None: ([ordinary], None))]
     assert not rejected, (
         f"{rejected} would drop a real posting before it ever reached the corpus — the shape of "
         "the incident that zeroed eleven sources")

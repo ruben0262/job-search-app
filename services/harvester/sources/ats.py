@@ -11,6 +11,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+from time import monotonic
 from functools import partial
 from typing import Any, Callable
 
@@ -20,7 +21,7 @@ from libs.corpus.filters import epoch_to_iso, is_within_hours
 from libs.corpus.ats import AtsRepository
 from libs.corpus.postings import strip_html
 from services.harvester.fetch import make_shared_client
-from services.harvester.sources.base import JobLink, turn
+from services.harvester.sources.base import JobLink
 
 _TIMEOUT = 15
 # Lever answers a board it has not served lately slowly, whatever its size, and fast after: Palantir
@@ -70,6 +71,8 @@ def _load_etags(repo: AtsRepository, ats: str) -> dict[str, str]:
 GONE: list[JobLink] = []
 # What the poll notes for a board that did not answer at all.
 _FAILED = object()
+# A board not asked this run: the run's share for the company boards was spent before its turn.
+_LATER = object()
 
 
 # ── generic gather: poll the companies, keep what is recent, dedup ────────────────────
@@ -83,14 +86,18 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
     that did not answer (a timeout, a 429, a 5xx, the resolver down) says nothing about itself, and one
     with nothing open today has jobs another day: both are asked again next run. Either used to read as an
     empty board, an empty board as a dead one, and nothing asks a dead board again: 542 of the dev copy's 565
-    had gone that way (2026-11-20)."""
+    had gone that way (2026-11-20).
+
+    The boards asked longest ago go first, and none is started after `cfg["until"]`, the company boards' share
+    of the run (`cycle.run_cycle`): the rest are the first the next run asks. Every board a crawl lists
+    (14,294, 2026-11-23) is more than one run can ask, Workable's 3,664 at two at a time above all."""
     seed = [str(t).strip().lower() for t in (cfg.get("companies") or []) if str(t).strip()]
     companies = list(dict.fromkeys(
         seed + (load_harvested(repo, ats) if cfg.get("use_harvested", True) else [])))
     if cap := int(cfg.get("max_companies", 0)):
-        # The next `cap` a run, so every board is polled every few runs. The first `cap` used to be
+        # The `cap` asked longest ago, so every board is polled every few runs. The first `cap` used to be
         # polled every run and the rest never.
-        companies = [companies[index] for index in turn(len(companies), cap)]
+        companies = companies[:cap]
     if not companies:
         return []
     max_age = int(cfg.get("posted_within_hours", 0)) or int(cfg.get("max_age_hours", 24))
@@ -99,11 +106,14 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
     # For the ATS whose API names no company (Ashby, Lever): the name the board was stored with, or
     # its address written as words.
     names = repo.names(ats)
+    until = cfg.get("until")
 
     def _one(token: str) -> tuple[str, Any, str | None, str]:
+        if until is not None and monotonic() >= until:
+            return token, _LATER, None, ""
         try:
             with _BOARD_TURNS:
-                jobs, etag = fetch_company(token, etags.get(token) if use_cond else None)
+                jobs, etag = fetch_company(token, etags.get(token) if use_cond else None, within=max_age)
             return token, jobs, etag, ""
         except Exception as exc:
             # Why, without the board's own address, so the boards that failed alike are counted together.
@@ -123,7 +133,11 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
         again = [token for token, jobs, _etag, _why in answers if jobs is _FAILED]
         answers = [answer for answer in answers if answer[1] is not _FAILED] + list(pool.map(_one, again))
     unanswered: Counter[str] = Counter()
+    later = [token for token, jobs, _etag, _why in answers if jobs is _LATER]
+    repo.record_asked(ats, [token for token, jobs, _etag, _why in answers if jobs is not _LATER])
     for token, jobs, etag, why in answers:
+        if jobs is _LATER:
+            continue
         if jobs is _FAILED:                       # no answer, twice: nothing learnt about the board
             unanswered[why] += 1
             continue
@@ -143,27 +157,49 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
     if unanswered:
         logger.warning("%s: %d of %d boards did not answer twice, and are asked next run: %s", ats,
                        sum(unanswered.values()), len(companies), dict(unanswered.most_common(3)))
-    logger.info("%s: polled %d companies (%d unchanged/304, %d asked twice, %d did not answer) -> %d relevant "
-                "recent jobs", ats, len(companies), unchanged, len(again), sum(unanswered.values()), len(out))
+    logger.info("%s: polled %d companies (%d unchanged/304, %d asked twice, %d did not answer, %d left for the next "
+                "run) -> %d relevant recent jobs", ats, len(companies) - len(later), unchanged, len(again),
+                sum(unanswered.values()), len(later), len(out))
     return out
 
 # ── per-ATS fetch: (token, prev_etag) -> (jobs|None, new_etag) ────────────
 # None means 304 Not Modified (board unchanged, skip); `GONE` a board that is not there; [] one with nothing
 # open; and an answer that is none of those is raised, for the caller to count.
+# The most one board's answer is read to. The largest a board needed was 17.9 MB (Ashby's), and Recruitee's
+# TransPerfect 11.4 MB; one Recruitee board answered 89.5 MB on each first read, its parse alone most of the
+# harvester's 1 GB (2026-11-23). Past it the board is one that did not answer.
+_LARGEST_ANSWER = 32_000_000
+
+
 def _conditional_get(url: str, etag: str | None,
                      timeout: float = _TIMEOUT) -> tuple[httpx.Response | None, str | None, str]:
     """Returns (response|None, new_etag, status). status in {'ok','304','dead'}."""
-    r = _http().get(url, headers={"if-none-match": etag} if etag else None, timeout=timeout)
-    if r.status_code == 304:
-        return None, etag, "304"
-    if r.status_code == 404:
-        return None, None, "dead"
-    if r.status_code != 200:
-        raise RuntimeError(f"HTTP {r.status_code}")
-    return r, r.headers.get("etag"), "ok"
+    with _http().stream("GET", url, headers={"if-none-match": etag} if etag else None, timeout=timeout) as r:
+        if r.status_code == 304:
+            return None, etag, "304"
+        if r.status_code == 404:
+            return None, None, "dead"
+        if r.status_code != 200:
+            raise RuntimeError(f"HTTP {r.status_code}")
+        body = bytearray()
+        for chunk in r.iter_bytes():
+            body += chunk
+            if len(body) > _LARGEST_ANSWER:
+                raise RuntimeError(f"an answer over {_LARGEST_ANSWER // 1_000_000} MB")
+        # The body as read, decoded: its encoding headers would have it decoded again.
+        kept = [(k, v) for k, v in r.headers.multi_items() if k.lower() not in ("content-encoding", "content-length")]
+        return httpx.Response(200, headers=kept, content=bytes(body), request=r.request), r.headers.get("etag"), "ok"
 
 
-def fetch_greenhouse(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
+def _in_window(date: str | None, within: float | None) -> bool:
+    """A job a run keeps, asked before anything is made of it: cleaning every offer's text is what made
+    Recruitee's 627 boards take 476 s for 172 jobs in the window, and 226 s once only those were cleaned
+    (2026-11-23). `within` is the run's window in hours; none (the seed's probe) is every job."""
+    return within is None or is_within_hours(date, within)
+
+
+def fetch_greenhouse(token: str, etag: str | None = None,
+                     within: float | None = None) -> tuple[list[JobLink] | None, str | None]:
     """A board's jobs without their text, which a new job's page gives once (the describer). With it
     (`content=true`) the largest boards answer 12 to 17 times as much, SpaceX 33 MB and Anduril 46 MB, and a board
     is sent whole again whenever one of its jobs changes: 28.9 MB for the laptop's 221 boards without (2026-11-23)."""
@@ -175,22 +211,25 @@ def fetch_greenhouse(token: str, etag: str | None = None) -> tuple[list[JobLink]
         url = (j.get("absolute_url") or "").strip()
         if not url:
             continue
-        loc = ((j.get("location") or {}).get("name") or "").strip()
+        loc, date = ((j.get("location") or {}).get("name") or "").strip(), j.get("first_published") or j.get("updated_at")
+        if not _in_window(date, within):
+            continue
         out.append(JobLink(url=url, title=(j.get("title") or "").strip(),
                            company=(j.get("company_name") or token).strip(), location=loc,
-                           source="greenhouse", date_posted=(j.get("first_published") or j.get("updated_at")),
+                           source="greenhouse", date_posted=date,
                            snippet=(j.get("title") or ""), is_remote=(True if "remote" in loc.lower() else None)))
     return out, new_etag
 
 
-def fetch_ashby(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
+def fetch_ashby(token: str, etag: str | None = None,
+                within: float | None = None) -> tuple[list[JobLink] | None, str | None]:
     r, new_etag, status = _conditional_get(f"https://api.ashbyhq.com/posting-api/job-board/{token}", etag)
     if status != "ok":
         return (None if status == "304" else GONE), new_etag
     out = []
     for j in (r.json().get("jobs") or []):
         url = (j.get("jobUrl") or j.get("applyUrl") or "").strip()
-        if not url or j.get("isListed") is False:
+        if not url or j.get("isListed") is False or not _in_window(j.get("publishedAt"), within):
             continue
         loc = (j.get("location") or "").strip()
         out.append(JobLink(url=url, title=(j.get("title") or "").strip(),
@@ -203,7 +242,8 @@ def fetch_ashby(token: str, etag: str | None = None) -> tuple[list[JobLink] | No
     return out, new_etag
 
 
-def fetch_lever(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
+def fetch_lever(token: str, etag: str | None = None,
+                within: float | None = None) -> tuple[list[JobLink] | None, str | None]:
     r, new_etag, status = _conditional_get(f"https://api.lever.co/v0/postings/{token}?mode=json", etag,
                                            timeout=LEVER_TIMEOUT)
     if status != "ok":
@@ -211,7 +251,7 @@ def fetch_lever(token: str, etag: str | None = None) -> tuple[list[JobLink] | No
     out = []
     for j in (r.json() or []):
         url = (j.get("hostedUrl") or j.get("applyUrl") or "").strip()
-        if not url:
+        if not url or not _in_window(epoch_to_iso(j.get("createdAt")), within):
             continue
         loc = ((j.get("categories") or {}).get("location") or "").strip()
         out.append(JobLink(url=url, title=(j.get("text") or "").strip(),
@@ -232,7 +272,8 @@ def _lever_text(posting: dict) -> str:
                       f"<div>{posting.get('additional') or ''}</div>")
 
 
-def fetch_smartrecruiters(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
+def fetch_smartrecruiters(token: str, etag: str | None = None,
+                          within: float | None = None) -> tuple[list[JobLink] | None, str | None]:
     r, new_etag, status = _conditional_get(
         f"https://api.smartrecruiters.com/v1/companies/{token}/postings?limit=100", etag)
     if status != "ok":
@@ -243,7 +284,7 @@ def fetch_smartrecruiters(token: str, etag: str | None = None) -> tuple[list[Job
         # Its own name ("Bosch Group"), not the identifier in its address ("BoschGroup").
         company = ((j.get("company") or {}).get("name") or ident).strip()
         jid = (j.get("id") or "").strip()
-        if not jid:
+        if not jid or not _in_window(j.get("releasedDate"), within):
             continue
         loc = j.get("location") or {}
         loc_str = ", ".join(x for x in [loc.get("city"), (loc.get("country") or "").upper()] if x)
@@ -255,7 +296,8 @@ def fetch_smartrecruiters(token: str, etag: str | None = None) -> tuple[list[Job
     return out, new_etag
 
 
-def fetch_recruitee(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
+def fetch_recruitee(token: str, etag: str | None = None,
+                    within: float | None = None) -> tuple[list[JobLink] | None, str | None]:
     r, new_etag, status = _conditional_get(f"https://{token}.recruitee.com/api/offers/", etag)
     if status != "ok":
         return (None if status == "304" else GONE), new_etag
@@ -267,6 +309,8 @@ def fetch_recruitee(token: str, etag: str | None = None) -> tuple[list[JobLink] 
         loc = (j.get("location") or ", ".join(x for x in [j.get("city"), j.get("country")] if x)).strip()
         # Recruitee dates look like "2026-07-07 12:47:47 UTC" — drop the suffix so the parser accepts it.
         date = (j.get("published_at") or j.get("created_at") or "").replace(" UTC", "").strip() or None
+        if not _in_window(date, within):
+            continue
         out.append(JobLink(url=url, title=(j.get("title") or "").strip(),
                            company=(j.get("company_name") or token).strip(), location=loc,
                            source="recruitee", date_posted=date,
@@ -275,14 +319,15 @@ def fetch_recruitee(token: str, etag: str | None = None) -> tuple[list[JobLink] 
     return out, new_etag
 
 
-def fetch_breezy(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
+def fetch_breezy(token: str, etag: str | None = None,
+                 within: float | None = None) -> tuple[list[JobLink] | None, str | None]:
     r, new_etag, status = _conditional_get(f"https://{token}.breezy.hr/json", etag)
     if status != "ok":
         return (None if status == "304" else GONE), new_etag
     out = []
     for j in (r.json() or []):
         url = (j.get("url") or "").strip()
-        if not url:
+        if not url or not _in_window(j.get("published_date"), within):
             continue
         loc = j.get("location") or {}
         city = loc.get("city") or ""
@@ -297,7 +342,6 @@ def fetch_breezy(token: str, etag: str | None = None) -> tuple[list[JobLink] | N
 
 # 20/page; the listing is newest-first, so we stop early once a page goes stale.
 _WD_PAGES = 5
-_WD_STALE_DAYS = 4   # comfortably covers the posted_within_hours: 72 window
 
 
 def _wd_date(posted_on: str | None) -> str | None:
@@ -315,7 +359,7 @@ def _wd_date(posted_on: str | None) -> str | None:
     return (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
 
 
-def fetch_workday(token: str, etag: str | None = None, *,
+def fetch_workday(token: str, etag: str | None = None, within: float | None = None, *,
                   pages: int = _WD_PAGES) -> tuple[list[JobLink] | None, str | None]:
     """token = 'tenant:wdN:site' (all three live in every myworkdayjobs.com job URL)."""
     try:
@@ -324,7 +368,6 @@ def fetch_workday(token: str, etag: str | None = None, *,
         return GONE, None    # malformed harvested token -> dead
     api = f"https://{tenant}.{wd}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs"
     base = f"https://{tenant}.{wd}.myworkdayjobs.com/{site}"
-    today = datetime.now(timezone.utc).date()
     out: list[JobLink] = []
     for page in range(pages):
         r = _http().post(api, json={"appliedFacets": {}, "limit": 20,
@@ -342,7 +385,7 @@ def fetch_workday(token: str, etag: str | None = None, *,
             if not path or not title:
                 continue
             date = _wd_date(j.get("postedOn"))
-            if date and (today - datetime.fromisoformat(date).date()).days > _WD_STALE_DAYS:
+            if not _in_window(date, within):
                 stale = True
                 continue
             out.append(JobLink(url=base + path, title=title,
@@ -354,7 +397,8 @@ def fetch_workday(token: str, etag: str | None = None, *,
     return out, None
 
 
-def fetch_personio(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
+def fetch_personio(token: str, etag: str | None = None,
+                   within: float | None = None) -> tuple[list[JobLink] | None, str | None]:
     """Public XML feed, ETag-capable. The .de host mirrors .com accounts, so one host serves all."""
     r, new_etag, status = _conditional_get(f"https://{token}.jobs.personio.de/xml", etag)
     if status != "ok":
@@ -367,7 +411,8 @@ def fetch_personio(token: str, etag: str | None = None) -> tuple[list[JobLink] |
     for pos in root.iter("position"):
         pid = (pos.findtext("id") or "").strip()
         title = (pos.findtext("name") or "").strip()
-        if not pid or not title:
+        date = (pos.findtext("createdAt") or "").strip() or None
+        if not pid or not title or not _in_window(date, within):
             continue
         offices = [pos.findtext("office") or ""] + \
                   [o.text or "" for o in pos.findall("additionalOffices/office")]
@@ -378,13 +423,13 @@ def fetch_personio(token: str, etag: str | None = None) -> tuple[list[JobLink] |
         out.append(JobLink(url=f"https://{token}.jobs.personio.de/job/{pid}", title=title,
                            company=(pos.findtext("subcompany") or "").strip() or token,
                            location=loc, source="personio",
-                           date_posted=(pos.findtext("createdAt") or "").strip() or None,
-                           snippet=f"{title}\n{desc}",
+                           date_posted=date, snippet=f"{title}\n{desc}",
                            is_remote=(True if "remote" in hay else None)))
     return out, new_etag
 
 
-def fetch_workable(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
+def fetch_workable(token: str, etag: str | None = None,
+                   within: float | None = None) -> tuple[list[JobLink] | None, str | None]:
     """v1 widget JSON — public, verified 2026-07-08 (the v3 path that 404'd before is POST-only)."""
     r, new_etag, status = _conditional_get(
         f"https://apply.workable.com/api/v1/widget/accounts/{token}", etag)
@@ -395,12 +440,12 @@ def fetch_workable(token: str, etag: str | None = None) -> tuple[list[JobLink] |
     out = []
     for j in (d.get("jobs") or []):
         url = (j.get("url") or j.get("shortlink") or "").strip()
-        if not url:
+        date = j.get("published_on") or j.get("created_at")
+        if not url or not _in_window(date, within):
             continue
         loc = ", ".join(x for x in [j.get("city"), j.get("country")] if x)
         out.append(JobLink(url=url, title=(j.get("title") or "").strip(), company=company,
-                           location=loc, source="workable",
-                           date_posted=j.get("published_on") or j.get("created_at"),
+                           location=loc, source="workable", date_posted=date,
                            snippet=" · ".join(x for x in [j.get("title"), j.get("department")] if x),
                            is_remote=(True if (j.get("telecommuting") or "remote" in loc.lower())
                                       else None)))
@@ -413,7 +458,8 @@ _TT = "{https://teamtailor.com/locations}"
 _TT_PAGE, _TT_PAGES = 100, 5
 
 
-def fetch_teamtailor(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
+def fetch_teamtailor(token: str, etag: str | None = None,
+                     within: float | None = None) -> tuple[list[JobLink] | None, str | None]:
     """A company's public feed (`<token>.teamtailor.com/jobs.rss`), which Teamtailor publishes for job boards to
     read, ETag-capable, and a 404 for a company that is not there: each job with its whole text, its time to the
     second and every place it is in, the company as the feed's title names it. Measured 2026-11-23: care homes,
@@ -435,15 +481,15 @@ def fetch_teamtailor(token: str, etag: str | None = None) -> tuple[list[JobLink]
         items = channel.findall("item") if channel is not None else []
         for item in items:
             url, title = (item.findtext("link") or "").strip(), (item.findtext("title") or "").strip()
-            if not url or not title:
+            date = _rss_time(item.findtext("pubDate"))
+            if not url or not title or not _in_window(date, within):
                 continue
             places = dict.fromkeys(", ".join(part for part in (
                 (place.findtext(f"{_TT}city") or "").strip(), (place.findtext(f"{_TT}country") or "").strip())
                 if part) for place in item.iter(f"{_TT}location"))
             out.append(JobLink(url=url, title=title, company=(channel.findtext("title") or token).strip(),
                                location="; ".join(each for each in places if each), source="teamtailor",
-                               date_posted=_rss_time(item.findtext("pubDate")),
-                               snippet=strip_html(item.findtext("description") or ""),
+                               date_posted=date, snippet=strip_html(item.findtext("description") or ""),
                                is_remote=True if (item.findtext("remoteStatus") or "").strip() == "fully" else None))
         if len(items) < _TT_PAGE:
             break

@@ -55,11 +55,17 @@ PLATFORM_DEFAULTS: dict[str, dict] = {
     # a 400 here as well was what a stored "every board" fell back to (2026-11-23).
     **{
         ats: {"posted_within_hours": 72, "use_harvested": True, "conditional": True}
-        for ats in ("greenhouse", "ashby", "lever", "smartrecruiters", "breezy",
-                    "workday", "personio", "teamtailor")
+        for ats in ("greenhouse", "lever", "smartrecruiters", "breezy", "workday", "teamtailor")
     },
-    # Recruitee answers a burst from one IP with 429s — lower concurrency, from the reference.
-    "recruitee": {"posted_within_hours": 72, "use_harvested": True, "conditional": True, "concurrency": 8},
+    # Ashby sends a board whole, its jobs' text with it, up to 18 MB: its 1,077 boards read 30 at once peaked
+    # at 0.84 GB, of the harvester's 1 GB; 6 at once, 0.38 GB in 35 s (2026-11-23).
+    "ashby": {"posted_within_hours": 72, "use_harvested": True, "conditional": True, "concurrency": 6},
+    # Recruitee answers a burst from one IP with 429s, and sends its offers' text too: 8 at once, 448 of its
+    # 627 boards refused and 1.36 GB; 2 at once, every board in 106 s and 0.17 GB (2026-11-23).
+    "recruitee": {"posted_within_hours": 72, "use_harvested": True, "conditional": True, "concurrency": 2},
+    # Personio refuses the platform's address as a whole: 30 at once over 2,005 boards had 1,325 of 2,418 asks
+    # refused (429), and 8 at once 2,719 of 3,283 (2026-11-23).
+    "personio": {"posted_within_hours": 72, "use_harvested": True, "conditional": True, "concurrency": 2},
     # Workable more so: 16 at once got 490 refusals of 555, and then even one at a time was refused for
     # hours (2026-11-02). The harvest asked 30 at once.
     "workable": {"posted_within_hours": 72, "use_harvested": True, "conditional": True, "concurrency": 2},

@@ -21,9 +21,15 @@ class AtsRepository:
     # ── tokens ───────────────────────────────────────────────────────────────────────────────
 
     def live_tokens(self, ats: str) -> list[str]:
-        """Every token still worth polling for this ATS, oldest first."""
+        """Every token still worth polling for this ATS, the one asked longest ago first (never, first)."""
         return [row["token"] for row in self._tokens.find(
-            {"ats": ats, "dead_at": None}, {"token": 1}, sort=[("first_seen_at", 1), ("token", 1)])]
+            {"ats": ats, "dead_at": None}, {"token": 1},
+            sort=[("polled_at", 1), ("first_seen_at", 1), ("token", 1)])]
+
+    def record_asked(self, ats: str, tokens: Iterable[str]) -> None:
+        """These boards were asked this run, whatever they answered: the next run asks the others first."""
+        if tokens := list(tokens):
+            self._tokens.update_many({"ats": ats, "token": {"$in": tokens}}, {"$set": {"polled_at": now()}})
 
     def add_tokens(self, pairs: Iterable[tuple[str, str]],
                    names: Mapping[tuple[str, str], str] | None = None) -> int:

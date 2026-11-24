@@ -27,6 +27,7 @@ from libs.settings import (
     ATS_DISCOVERY_LOOKBACK_HOURS,
     ATS_DISCOVERY_MAX_ROWS,
     BOARD_LOOKUP_BUDGET_SECONDS,
+    BOARDS_SHARE_OF_RUN,
     HARVEST_CYCLE_BUDGET_SECONDS,
     HARVEST_CYCLE_WARN_FRACTION,
 )
@@ -116,7 +117,11 @@ def run_cycle(
             # A cycle with no active accounts keeps nothing, and reads like a healthy quiet run.
             logger.warning("harvest: no active accounts — this cycle keeps nothing")
 
-        # 2. Read every enabled board. LinkedIn is a pass of its own beside this one.
+        # 2. Read every enabled board. LinkedIn is a pass of its own beside this one. The company boards stop
+        # at their share of the run, the boards asked longest ago first: the rest are the next run's first.
+        until = started + HARVEST_CYCLE_BUDGET_SECONDS * BOARDS_SHARE_OF_RUN
+        source_configs = {name: {**cfg, "until": until} if name in ATS_SOURCES else cfg
+                          for name, cfg in source_configs.items()}
         with timed("gather", report.timings):
             links = _gather(source_configs, ats, run_source, report)
         report.links_found = len(links)

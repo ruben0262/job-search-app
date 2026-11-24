@@ -261,9 +261,12 @@ def test_workable_is_asked_two_boards_at_a_time():
         def record_poll(self, *_args, **_kwargs):
             pass
 
+        def record_asked(self, *_args, **_kwargs):
+            pass
+
     lock, now, most = threading.Lock(), [0], [0]
 
-    def fetch(_token, _etag):
+    def fetch(_token, _etag, within=None):
         with lock:
             now[0] += 1
             most[0] = max(most[0], now[0])
@@ -633,7 +636,10 @@ def test_a_job_carries_its_companys_own_name_where_the_board_does_not_say_it(mon
         def record_poll(self, *_args, **_kwargs):
             pass
 
-    def fetch(token, _etag):
+        def record_asked(self, *_args, **_kwargs):
+            pass
+
+    def fetch(token, _etag, within=None):
         return [JobLink(url=f"https://jobs.ashbyhq.com/{token}/1", title="Engineer", source="ashby")], None
 
     links = ats.gather_ats({"posted_within_hours": 72}, logging.getLogger("test"), ats="ashby", repo=Boards(),
@@ -935,6 +941,9 @@ def _boards(count: int):
 
         def record_poll(self, *_args, **_kwargs):
             pass
+
+        def record_asked(self, *_args, **_kwargs):
+            pass
     return Boards()
 
 
@@ -949,7 +958,7 @@ def test_a_board_that_did_not_answer_is_asked_again_once_after_the_rest(caplog):
 
     asked: list[str] = []
 
-    def fetch(token, _etag):
+    def fetch(token, _etag, within=None):
         asked.append(token)
         if (token == "company001" and asked.count(token) == 1) or token == "company002":
             raise httpx.ConnectError("[Errno -3] Temporary failure in name resolution")
@@ -966,29 +975,26 @@ def test_a_board_that_did_not_answer_is_asked_again_once_after_the_rest(caplog):
     assert len(failures) == 1 and "name resolution" in failures[0]
 
 
-def test_every_company_board_is_polled_over_a_round_of_runs_not_only_the_first_few(monkeypatch):
+@needs_db
+def test_every_company_board_is_polled_over_a_round_of_runs_not_only_the_first_few(db):
     """A run polls `max_companies` boards: it was always the first ones, and a board past them was never
-    polled. Now the next ones each run, on the platform's clock."""
-    import math
-
-    from libs.settings import PLATFORM_TICK_MIN
-    from services.harvester.sources import base
+    polled. Now the ones asked longest ago, each run, so a round of runs asks every board."""
+    from libs.corpus.ats import AtsRepository
     from services.harvester.sources.ats import gather_ats
 
+    repo = AtsRepository(db)
+    repo.add_tokens([("greenhouse", f"company{n:03d}") for n in range(25)])
     polled: list[str] = []
 
-    def fetch(token, _etag):
+    def fetch(token, _etag, within=None):
         polled.append(token)
         return [], None
 
-    runs = math.ceil(25 / 10)
-    for run in range(runs):
-        monkeypatch.setattr(base.time, "time", lambda run=run: run * PLATFORM_TICK_MIN * 60.0)
-        gather_ats({"max_companies": 10}, logging.getLogger("test"), ats="greenhouse", repo=_boards(25),
+    for _run in range(3):
+        gather_ats({"max_companies": 10}, logging.getLogger("test"), ats="greenhouse", repo=repo,
                    fetch_company=fetch)
 
-    assert len(polled) == 25 and set(polled) == {f"company{n:03d}" for n in range(25)}
-
+    assert set(polled) == {f"company{n:03d}" for n in range(25)} and len(polled) == 30
 
 def test_never_more_boards_are_read_at_once_than_the_client_has_connections():
     """**A relationship, not a stopwatch.** Every ATS reads with workers of its own and all of them share
@@ -1002,7 +1008,7 @@ def test_never_more_boards_are_read_at_once_than_the_client_has_connections():
     reading, most, lock = 0, 0, threading.Lock()
     full, over, go = threading.Event(), threading.Event(), threading.Event()
 
-    def fetch(_token, _etag):
+    def fetch(_token, _etag, within=None):
         nonlocal reading, most
         with lock:
             reading += 1
@@ -1162,3 +1168,113 @@ def test_a_run_reads_the_platforms_settings_once_for_every_board(db):
     assert asked["platform_settings"] == 1
     assert (configs["himalayas"]["max_age_hours"], configs["himalayas"]["max_pages"]) == (7, 3)
     assert configs["jobicy"]["max_age_hours"] != 7, "and only that board"
+
+
+def test_a_board_is_read_for_the_runs_window_and_an_older_jobs_text_is_never_cleaned(monkeypatch):
+    """Each reader is given the run's window and leaves an older job before its text is cleaned: Recruitee's
+    627 boards, every offer's text cleaned and most then dropped for their age, took 476 s for 172 jobs in the
+    window, and 226 s with only those cleaned (2026-11-23)."""
+    from datetime import UTC, datetime, timedelta
+
+    from services.harvester.sources import ats
+
+    def offer(n: int, days: int) -> dict:
+        posted = f"{datetime.now(UTC) - timedelta(days=days):%Y-%m-%d %H:%M:%S} UTC"
+        return {"careers_url": f"https://acme.recruitee.com/o/{n}", "title": f"Engineer {n}",
+                "description": f"<p>Offer {n}</p>", "published_at": posted, "city": "Berlin"}
+
+    offers = {"offers": [offer(1, 1), offer(2, 30), offer(3, 400)]}
+    monkeypatch.setattr(ats, "_CLIENT", httpx.Client(transport=httpx.MockTransport(
+        lambda _request: httpx.Response(200, json=offers))))
+    cleaned: list[str] = []
+    monkeypatch.setattr(ats, "strip_html", lambda text, *_: cleaned.append(text) or text)
+
+    jobs, _ = ats.fetch_recruitee("acme", None, within=72)
+
+    assert [job.title for job in jobs] == ["Engineer 1"]
+    assert cleaned == ["<p>Offer 1</p>"], "only the job a run keeps has its text cleaned"
+    assert len(ats.fetch_recruitee("acme", None)[0]) == 3, "no window (the seed's probe): every job"
+
+
+def test_workday_is_read_as_far_back_as_its_window_says_not_four_days_of_its_own():
+    """Its reader stopped at four days of its own while the setting said seven (168 h), so a window set in
+    Admin never reached it (2026-11-23). A job posted five days ago is read for a week's window, not three."""
+    from services.harvester.sources import ats
+
+    page = {"jobPostings": [{"externalPath": "/job/1", "title": "Engineer", "postedOn": "Posted 5 Days Ago",
+                             "locationsText": "Berlin"}]}
+
+    class _Client:
+        def post(self, _url, json=None, **_kw):
+            return httpx.Response(200, json=page)
+
+    original = ats._http
+    ats._http = _Client
+    try:
+        week, three_days = (ats.fetch_workday("tenant:wd3:site", within=hours)[0] for hours in (168, 72))
+    finally:
+        ats._http = original
+
+    assert [job.title for job in week] == ["Engineer"]
+    assert three_days == []
+
+
+@needs_db
+def test_a_run_asks_the_longest_unasked_boards_first_and_the_next_begins_where_it_stopped(db, monkeypatch):
+    """With every board a crawl lists (14,294) a run cannot ask them all: Workable alone is 3,664 boards at
+    two at a time (2026-11-23). So the company boards have their share of a run, the boards asked longest ago
+    go first, and when the share is spent the rest are the first the next run asks: every board in turn, and
+    no run past its budget."""
+    from libs.corpus.ats import AtsRepository
+    from services.harvester.sources import ats as ats_module
+    from services.harvester.sources.ats import gather_ats
+
+    repo = AtsRepository(db)
+    repo.add_tokens([("greenhouse", f"board{n}") for n in range(5)])
+    clock = [0.0]
+    monkeypatch.setattr(ats_module, "monotonic", lambda: clock[0])
+    asked: list[str] = []
+
+    def fetch(token, _etag, within=None):
+        asked.append(token)
+        clock[0] += 1.0          # each board takes a second of the run
+        return [], None
+
+    def run(until: float) -> list[str]:
+        asked.clear()
+        gather_ats({"until": until, "max_age_hours": 72}, logging.getLogger("test"), ats="greenhouse",
+                   repo=repo, fetch_company=fetch)
+        return sorted(asked)
+
+    clock[0] = 0.0
+    first = run(until=3.0)
+    second = run(until=clock[0] + 3.0)
+
+    unasked = {f"board{n}" for n in range(5)} - set(first)
+    assert len(first) == 3, "the share spent, no board more is started"
+    assert len(unasked) == 2 and unasked <= set(second), "the boards one run did not reach, first in the next"
+
+
+def test_an_answer_past_the_ceiling_is_not_read_and_a_board_under_it_is(monkeypatch):
+    """One Recruitee board answered 89.5 MB on each first read, its parse alone most of the harvester's 1 GB,
+    while the largest any board needed was 17.9 MB, Ashby's (2026-11-23). An answer past the ceiling is left
+    unread, a board that did not answer, and every other board is read."""
+    from datetime import UTC, datetime
+
+    from services.harvester.sources import ats
+
+    monkeypatch.setattr(ats, "_LARGEST_ANSWER", 2_000)
+
+    def board(request: httpx.Request) -> httpx.Response:
+        token = request.url.path.split("/")[3]
+        jobs = [{"absolute_url": f"https://boards.greenhouse.io/{token}/jobs/{n}", "title": "Engineer",
+                 "first_published": datetime.now(UTC).isoformat()}
+                for n in range(1 if token == "small" else 50)]
+        return httpx.Response(200, json={"jobs": jobs}, headers={"etag": '"v1"'})
+
+    monkeypatch.setattr(ats, "_CLIENT", httpx.Client(transport=httpx.MockTransport(board)))
+
+    jobs, etag = ats.fetch_greenhouse("small")
+    assert [job.url for job in jobs] == ["https://boards.greenhouse.io/small/jobs/0"] and etag == '"v1"'
+    with pytest.raises(RuntimeError, match="over"):
+        ats.fetch_greenhouse("huge")

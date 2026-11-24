@@ -48,3 +48,26 @@ def test_only_boards_that_list_jobs_are_stored(db, monkeypatch, tmp_path):
     assert repo.live_tokens("greenhouse") == ["acmecorp"]
     assert not any(repo.live_tokens(name) for name in fetch if name != "greenhouse")
     assert repo.names("greenhouse") == {"acmecorp": "Acme Corp"}, "the name its jobs will carry"
+
+
+@needs_db
+def test_every_board_a_web_crawl_saw_is_stored_from_its_addresses_with_no_word_asked(db, monkeypatch):
+    """`--common-crawl`: the boards are what the crawl's addresses on each ATS's hosts name, the way a harvest
+    reads a posting's link, so no keyword decides which are found (owner, 2026-11-23: "if there is a way to
+    remove the key words and find the jobs per country, and all of it always"). 14,334 boards in one crawl."""
+    from libs.corpus.ats import AtsRepository
+
+    seed = _seed()
+    crawled = ["https://job-boards.greenhouse.io/acmecorp/jobs/4001", "https://job-boards.greenhouse.io/acmecorp",
+               "https://jobs.ashbyhq.com/openai/1b2c", "https://www.example.com/careers",
+               "https://acme.wd3.myworkdayjobs.com/en-US/Careers/job/Berlin/x"]
+    monkeypatch.setattr(seed, "crawled_addresses", lambda: ("CC-MAIN-2026-43", crawled))
+    monkeypatch.setattr(seed, "database", lambda: db)
+    monkeypatch.setattr(sys, "argv", ["seed_ats.py", "--common-crawl"])
+
+    seed.main()
+
+    repo = AtsRepository(db)
+    assert repo.live_tokens("greenhouse") == ["acmecorp"], "a board once, however many of its pages were seen"
+    assert repo.live_tokens("ashby") == ["openai"]
+    assert repo.live_tokens("workday") == ["acme:wd3:careers"], "Workday's board as its reader needs it"

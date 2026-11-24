@@ -22,6 +22,9 @@ class AtsToken(Document):
     token: str
     first_seen_at: datetime = field(default_factory=now)
     dead_at: datetime | None = None
+    # When a run last asked its board, answered or not: a run asks the longest-unasked first and stops at its
+    # share of the run, so with more boards than a run can ask each is reached in turn (2026-11-23).
+    polled_at: datetime | None = None
     # The company's own name, from the list it was found by (`deploy/scripts/ats_companies.txt`): Ashby
     # and Lever say no name, and a job card read "Openai". `None` for a board found from a link.
     name: str | None = None

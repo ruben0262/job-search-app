@@ -14,6 +14,54 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-23, midnight — every company board a web crawl lists, found with no keyword, and a run's company boards kept to half the run
+
+The owner: "I heard you can also do this in the google search engine to get results too, site:jobs.ashbyhq.com(...)
+... if there is a way to remove the key words and find the jobs per country, and all of it always, that would be great,
+next to all the company boards that we are searching for right now. we can also try pulling jobs from handshake as
+well". Then, of the boards found: "do all of them, but since it takes time to do these job searches, we can also do
+some parallel work or async runs to solve this".
+
+- **Not built: Google's `site:` searches, and Handshake.** Google's search API takes no new customers and ends on
+  2027-01-01, its result pages may not be scraped and are walled, and a query gives a few hundred results at most, so
+  no set of them is "everything, no words". Handshake's terms do "not permit third parties to bulk collect ... job
+  descriptions ... through the use of automated scripts", its app's robots.txt bars all but its sign-in and share
+  pages, and a job needs a student's sign-in: only an agreement with Handshake would open it.
+- **Every company board a web crawl lists** (`seed_ats.py --common-crawl`). Common Crawl's open index keeps every
+  address its monthly crawl fetched. Read for the ATS's own hosts alone (a few row groups of its 300 files, with
+  DuckDB, in the seed's image only) it gave 14,294 boards from 152,880 addresses in 86 s and 302 MB, against the
+  laptop's 626: Greenhouse 3,037, Workable 3,664, Workday 2,748, Personio 2,005, Ashby 1,077, Recruitee 627,
+  Teamtailor 555, SmartRecruiters 522, Breezy 59 (Lever's robots.txt keeps crawlers out). Of a sample of 195, 180
+  were there and 88 had jobs in Europe. Stored unprobed: a board's first poll says whether it is there.
+- **What 10,730 of them did to one run, measured on the laptop** (Workable's 100 of 3,664): every board at once
+  took 23 to 30 minutes, past the 14 at which a run is killed with nothing stored, and 1.6 to 1.9 GB, past the
+  harvester's 1 GB. So, before the seed runs on the server:
+  - **The company boards have half the run** (`BOARDS_SHARE_OF_RUN`, 5.5 of its 11 minutes), the boards asked
+    longest ago first (`AtsToken.polled_at`): none is started after it, and the rest are the next run's first.
+    Measured with everything here, two runs in a row from nothing: 367 and 373 s against 23 to 30 minutes, 0.36
+    and 0.52 GB against 1.6 to 1.9, 2,021 then 3,115 boards, every board in about four runs.
+  - **A board is read for the run's window**: each reader leaves an older job before its text is cleaned.
+    Recruitee's 627 boards, every offer cleaned and most then dropped for their age, took 476 s for 172 jobs in
+    the window; 226 s once only those were cleaned. Its memory stayed (1.41 GB, then 1.36): that is the answers
+    themselves, parsed.
+  - **Fewer at once where an answer is large, or refused.** Ashby sends each board whole, up to 18 MB: its 1,077
+    boards 30 at once peaked at 0.84 GB in 16 s, 6 at once 0.38 GB in 35 s. Recruitee 8 at once had 448 of 627
+    boards refused and took 1.36 GB; 2 at once, every board in 106 s and 0.17 GB.
+  - **An answer is read to 32 MB** (`_LARGEST_ANSWER`). The largest any board needed was 17.9 MB, Ashby's; one
+    Recruitee board answered 89.5 MB on each first read, its parse alone most of the harvester's 1 GB. Past the
+    ceiling the board is one that did not answer, and its reason is in the run's warning line.
+  - **Workday's own four days are gone.** Its reader stopped at four days whatever its window said (168 hours);
+    its window is now the one it reads, set to what ran: 96 hours.
+  - **Personio two at a time.** 30 at once had 1,325 of 2,418 asks refused, 8 at once 2,719 of 3,283, and 2 at
+    once 1,852 in three minutes beside 465 answers: it answers about 2.5 a second however it is asked, so two
+    reach as many boards as eight with fewer refusals.
+- **What a run waits on: names.** Each Workday, Personio, Teamtailor, Recruitee and Breezy board is a host of its
+  own, 4,918 names. The laptop's resolver (systemd-resolved, then the LAN's) asked 60 at once failed 228 of 300,
+  20 s each, and 8 at once took 5 s each; Cloudflare's answered 300 in 1.2 s. With names answered at once and
+  everything above, two runs reached 7,266 then 2,799 boards, nearly every board in two, in 0.71 and 0.86 GB:
+  inside the harvester's 1 GB with little to spare, so the resolver and its memory are the owner's to decide
+  together (ROADMAP item 56). No answer passed 32 MB in these runs; one of 89.5 MB had, in three first runs.
+
 ## 2026-11-23, late night — Greenhouse's lists asked without their jobs' text again: up to 17 times the bytes
 
 The evening's change asked each Greenhouse board for its jobs with their text (`content=true`), measured for time

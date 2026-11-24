@@ -25,3 +25,7 @@ cryptography>=44.0       # libs/secrets, reached from libs/obs — every service
 # row was stored with no language and every account's language filter admitted everything. Measured
 # 2026-08-11: one account went from 608 detected in a day to 1.
 langdetect>=1.0.9
+
+# The company-board seed's `--common-crawl` (`deploy/scripts/seed_ats.py`, whose image installs this file): it
+# reads Common Crawl's columnar index for the job boards' hosts alone. The harvest never imports it.
+duckdb>=2.0
