@@ -266,7 +266,6 @@ export function Landing() {
               <a className="btn btn-primary" href="/signup">Start free <Arrow /></a>
               <a className="btn btn-glass" href="#how" onClick={jump("how")}>How it works</a>
             </div>
-            <p className="lp-note" data-reveal style={after(0.75)}>No card needed.</p>
           </div>
         </section>
 

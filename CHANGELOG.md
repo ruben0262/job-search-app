@@ -119,7 +119,7 @@ implemented properly for mobile ... assign proper break points"; "make sure all 
 and all other jobs as well, same with cities too"; "solve the harvestor memory issue ... use less memory of the db ...
 is there any way to measure what takes all that up and reduce it, while keeping the performance of the app intact";
 and, midway, "we can also increase RAM usage if that makes this faster, slightly ... lets optimize this so fetches,
-information transfer and so on are all fast and efficient". Not committed.
+information transfer and so on are all fast and efficient". Committed as bb9400c.
 
 **Applied's calendar** opens from a Calendar button before Filters, under it and over the list: its right edge under
 the button's on a wide screen, the page's width from its left edge on a phone. It closes when a day is picked, on a
@@ -220,7 +220,7 @@ importantly all the cities as well from all the jobs"; "instead of 'more' sectio
 should be able to select at least one, and more as well"; sort by "needs to make more sense and be clearer ... the
 last two sounds similar"; "make sure these filters are saved for all users"; Applied "track them inside a calendar
 visually"; My search's suggestions "in a dropdown, keeping 'Suggested for you — tap one to add it' visible"; and "all
-the languages and countries, in my search so nothing is missed from europe". Not committed.
+the languages and countries, in my search so nothing is missed from europe". Committed as bb9400c.
 
 **Every job's town** (`libs.corpus.geo.posting_place`). A posting's town was one of 43 cities or none: 20,860 of the
 dev copy's 43,897 open jobs with a place had one (47.5%). Now it is any town of 5,000 people or more in GeoNames
@@ -575,6 +575,42 @@ over, regional locked sources we only pull from there, but all the jobs that hav
   days. No other board offers a filter by time; each is read for its window (Admin → Settings, in hours) by every
   posting's own time.
 - Requests made to measure Reed: about 35 to its API and 3 to its site (the documentation, `robots.txt`, a job page).
+
+## 2026-11-22, night — Confirmation emails that "never came" on iPhones: what the live log showed, and each fixed
+
+The owner: the confirmation email "does not work for some devices and all of them are iPhones". Cloudflare was
+ruled out first (Bot Fight Mode off; its only blocks were WordPress scanners), and the site, its DNS and the
+sign-up were walked as an iPhone in WebKit. The live server's own lines then said what happened:
+
+- **Eight sign-ups refused (400) with nothing on the page.** The password rules answer with what is wrong
+  (`{"password": [...]}`), which the form could not say, and over HTTP/2 no status words either: the button
+  stopped and no account or email was made. It now says it ("Password must not contain your email address.",
+  `web/src/api.ts`), and any answer that is not the server's own says its code, or to reload for a check
+  Cloudflare wants passed (`cf-mitigated: challenge`).
+- **Links that no longer worked, opened again and again until the resend limit refused (verify 400, resend
+  429).** A new link spent the older, and an iPhone's Mail shows the emails of one subject as one conversation,
+  the oldest first. A new confirmation link now leaves the older working (`issue_token(spend_older=False)`);
+  confirming spends the rest, since each signs in. A new sign-up, which can change the password, still spends
+  them.
+- **People already confirmed, signing up again or asking for a link, were sent nothing** while the page said
+  "check your email" as it does to everybody. Their inbox is now told: "You already have an account", with
+  Sign in and a new-password link (`existing_account_email`, counted as a reset). The page still answers the
+  same for every address, and "Forgot your password" already mailed any address with an account.
+- A spent link's page offers Sign in (`Verify.tsx`).
+- **Seen from now on:** each sign-up and resend writes one line with the address's domain, the device and
+  browser ("iPhone Safari", "iPhone Chrome", in-app browsers) and what was done; each confirmation and reset the
+  `Message-ID` it was handed to the mail server with (`SmtpSender.send` answers with it), which finds it in
+  Zoho's own log. A successful send wrote no line before.
+- **And why anything was refused**, which the visitor was told and the log was not: a sign-up (which password
+  rule, the terms box), a confirmation or reset link (unknown or expired; replaced by a newer; used, the account
+  confirmed already, which means signing in), a sign-in (no account, wrong password, not confirmed yet), each
+  with the address's domain and the browser and never the address. A limit that stops somebody names itself
+  once a window (`deps.rate_limit`), not once a try.
+
+Tests: seven new or changed, each failing on 17ce5ef (run there with its own build); one more guards the rule
+kept (a new sign-up still spends older links). On the working tree: auth, mail, contact, daily email, logging,
+alerts, legal, billing and every browser test, 264 passed, 1 failed, the sign-up walk's 1.5 s step bound at a
+load of 13, which passed alone 3 times of 3.
 
 ## 2026-11-22, late — three free sources read every run: Arbeitnow, Remote OK and Sweden's Platsbanken
 
