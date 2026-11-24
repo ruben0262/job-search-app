@@ -14,6 +14,18 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-24, last — The hero's circle higher, midway between the bar and the title
+
+The owner: "lets move the spinning circle higher, than the text on the hero page so its in the middle between the nav
+and the title, that looks good and doesn't look too clustered in the middle of the hero page."
+
+- The halo is drawn 9% of its size higher than its place (`translate`), so the title, the words and the buttons stay
+  where they were, in the middle of the screen. On a laptop (1280x800), a wide screen (1536x960) and a phone (390x844)
+  it sits about midway between the bar and the title, with clear room above "Get seen first.". It used to touch it.
+- A first try gave the halo no height of its own and a row each side of the words. That centred the words alone,
+  higher than the approved place, and left the screen's foot empty again, so it was not kept.
+- Tests: the layout, motion and demo walks passed (3). Copy and the rest unchanged.
+
 ## 2026-11-24, later — "Straight from the source. The moment a job goes live." over the strip, and the hero in the middle of the screen
 
 The owner: "we need something more powerful and better than 'New jobs from all of these, the moment companies post

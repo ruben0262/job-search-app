@@ -420,6 +420,9 @@
   width: var(--s);
   aspect-ratio: 1;
   margin: calc(var(--s) * -0.34) 0 calc(var(--s) * -0.28);
+  /* Drawn higher than its place, about midway between the bar and the title, the words staying where they are
+     (owner, 2026-11-24: "in the middle between the nav and the title ... doesn't look too clustered"). */
+  translate: 0 calc(var(--s) * -0.09);
   perspective: 1000px;
   pointer-events: none;
 }
