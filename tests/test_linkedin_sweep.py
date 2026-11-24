@@ -31,13 +31,13 @@ def _user(db, config: dict, **kwargs) -> User:
     return user
 
 
-def _card(job_id: int, title: str) -> str:
+def _card(job_id: int, title: str, where: str = "Berlin, Germany") -> str:
     """One job as LinkedIn's guest list writes it."""
     return (f'<li><div class="base-card base-search-card" data-entity-urn="urn:li:jobPosting:{job_id}">'
             f'<h3 class="base-search-card__title">{title}</h3>'
             # A company each: the same title at the same company and place is one job to the corpus.
             f'<h4 class="base-search-card__subtitle">Company {job_id}</h4>'
-            f'<span class="job-search-card__location">Berlin, Germany</span>'
+            f'<span class="job-search-card__location">{where}</span>'
             # Today: a job past the delivery window is never opened, its text would reach nobody.
             f'<time class="job-search-card__listdate" datetime="{datetime.now(UTC).date()}">5 minutes ago'
             '</time></div></li>')
@@ -49,8 +49,10 @@ class LinkedIn:
     answering 503 to every one, as two of six did on 2026-11-05."""
 
     def __init__(self, listed: dict[str, list[str]], *, refuse_once: set[int] = frozenset(),
-                 refuse_every: int = 0):
+                 refuse_every: int = 0, where: dict[str, str] | None = None):
         self.listed = listed
+        # Where each place's jobs say they are, as each card writes it: "Berlin, Germany" unless said.
+        self.where = where or {}
         self.refuse_once = set(refuse_once)
         self.refuse_every, self.connections = refuse_every, 0
         self.asked: list[dict] = []
@@ -84,8 +86,9 @@ class LinkedIn:
         # Ids apart for each place, as LinkedIn's are.
         offset = 1_000_000 * (1 + sorted(self.listed).index(params["location"])) if titles else 0
         page = titles[start:start + linkedin.SWEEP_PAGE]
+        where = self.where.get(params["location"], "Berlin, Germany")
         return SimpleNamespace(status_code=200, text="".join(
-            _card(offset + start + n, title) for n, title in enumerate(page)))
+            _card(offset + start + n, title, where) for n, title in enumerate(page)))
 
 
 @pytest.fixture()
@@ -231,9 +234,9 @@ def test_a_region_is_read_as_its_countries_each_once(db, site):
     """LinkedIn lists no further than 1,000 jobs, and the EU's 30 minutes held ~1,300 (2026-11-04): read
     as one list, ~300 were lost every run. Germany picked as well is still read once. A job in each,
     since an empty first page is asked again (`test_a_refused_first_page_is_asked_again…`)."""
-    from libs.corpus.geo import COUNTRY_LABELS, EU_COUNTRIES
+    from libs.corpus.geo import EU_COUNTRIES
 
-    linkedin_site = site({COUNTRY_LABELS[code]: ["Nurse"] for code in (*EU_COUNTRIES, "GB")})
+    linkedin_site = site({linkedin.searched_as(code): ["Nurse"] for code in (*EU_COUNTRIES, "GB")})
     _user(db, _config("nurse", "carer", "midwife", places=("germany",)))
     _user(db, _config("nurse", "carer", "midwife", places=("europe", "united_kingdom")))
 
@@ -241,7 +244,28 @@ def test_a_region_is_read_as_its_countries_each_once(db, site):
 
     asked = [asked["location"] for asked in linkedin_site.asked if asked["start"] == 0]
     assert len(asked) == len(set(asked)) == len(EU_COUNTRIES) + 1, "the 27 members, and the UK"
-    assert "European Union" not in asked and {"Germany", "France", "United Kingdom"} <= set(asked)
+    assert "European Union" not in asked
+    assert {"Germany", "France", "United Kingdom", "Valletta, Malta"} <= set(asked)
+
+
+def test_a_country_linkedin_takes_for_somewhere_else_is_asked_for_by_a_name_it_does_not(db, site):
+    """Asked for by its own name, LinkedIn listed the American state's jobs for Georgia, a Colombian city's
+    for Armenia, a Brazilian town's for Montenegro and none for Kosovo (measured 2026-11-24): each such
+    country is asked for by a name LinkedIn reads as it (`linkedin.LINKEDIN_NAMES`). And a job is read in the
+    country it was listed in, where its place can be read two ways: "Nis Metropolitan Area" in Serbia's list
+    is Niš, not Nice."""
+    _user(db, _config("python", places=("georgia", "serbia", "kosovo")))
+    fake = site({"Tbilisi, Georgia": ["Python Developer"], "Serbia": ["Python Developer"],
+                 "Prishtina, Kosovo": ["Python Developer"]},
+                where={"Tbilisi, Georgia": "Tbilisi, Georgia", "Serbia": "Nis Metropolitan Area",
+                       "Prishtina, Kosovo": "Pristina, District of Pristina, Kosovo"})
+
+    _pass(db)
+
+    assert {asked["location"] for asked in fake.asked} == {"Tbilisi, Georgia", "Serbia", "Prishtina, Kosovo"}
+    placed = {(row["country"], row["city"])
+              for row in db[CorpusJob.COLLECTION].find({}, {"country": 1, "city": 1})}
+    assert placed == {("GE", "Tbilisi"), ("RS", "Niš"), ("XK", "Pristina")}
 
 
 def test_only_active_peoples_countries_are_read(db, site):

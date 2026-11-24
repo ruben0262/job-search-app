@@ -6,17 +6,17 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
-from pymongo import ReturnDocument
+from pymongo import ReturnDocument, UpdateOne
 from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
 from libs import fit
 from libs.corpus import langfilter, pay, workfilter
 from libs.corpus.freshness import DATE_ONLY, PlatformWindows, showable
-from libs.corpus.geo import posting_country, read_city
+from libs.corpus.geo import posting_place
 from libs.corpus.keys import canonical_url, content_key
 from libs.corpus.words import terms_of
-from libs.db import insert, now
+from libs.db import insert, next_ids, now
 from libs.db.models import CorpusJob, CountryCount, Word
 from libs.settings import PLATFORM_TICK_MIN
 
@@ -170,8 +170,11 @@ class CorpusRepository:
             easy_apply: bool | None = None, applicants: int | None = None,
             reposted: bool | None = None, workplace: str | None = None,
             fetched_at: datetime | None = None,
-            discovered_via: str | None = None) -> int | None:
-        """Insert if absent: the new id, or `None` when the URL is already stored."""
+            discovered_via: str | None = None, within: str | None = None) -> int | None:
+        """Insert if absent: the new id, or `None` when the URL is already stored. `within` is the country the
+        board listed it in, where it lists a country at a time (`geo.posting_place`)."""
+        # Read once here, for everyone, rather than per user per query.
+        country, city = posting_place(location, title=title, within=within)
         job = CorpusJob(
             url=url,
             canonical_url=canonical_url(url),
@@ -180,9 +183,8 @@ class CorpusRepository:
             title=title,
             company=company or None,
             location=location or None,
-            # Read once here, for everyone, rather than per user per query.
-            country=posting_country(location, title=title),
-            city=read_city(location),
+            country=country,
+            city=city,
             is_remote=is_remote,
             posted_at=posted_at,
             # When the fetch found this row, so our latency is separable from the board's.
@@ -218,9 +220,9 @@ class CorpusRepository:
           The page's address with `#typed-…` after it, which still opens the page;
         - no candidate for anybody's words, alerts included (`TYPED`).
         It holds nobody's name: whose it is lives on their own row (TENANT_SAFETY §1, rule 2)."""
+        country, city = posting_place(location, title=title)
         job = CorpusJob(url=f"{url.split('#', 1)[0]}#typed-{secrets.token_hex(6)}", source=TYPED, title=title,
-                        company=company or None, location=location or None,
-                        country=posting_country(location, title=title), city=read_city(location),
+                        company=company or None, location=location or None, country=country, city=city,
                         discovered_via=TYPED)
         job_id = insert(self._db, job).id
         self.set_description(job_id, description)
@@ -338,3 +340,21 @@ class CorpusRepository:
     # trimming nulled the description and vector in place, which dropped the row out of every future
     # training set without raising, and `pinned` was a denormalised copy of "somebody labelled or
     # acted on this" that two of the three label writers never set.
+
+
+def read_places_once(db: Database) -> int:
+    """Every stored posting's country and town read again by `posting_place`, once ever (its counter,
+    `next_ids`, says so after), and how many changed. Before 2026-11-24 a posting's town was one of 43 cities
+    or none, so 23,146 of 44,006 open jobs on the dev copy had none, and a town of 5,000 to 15,000 people
+    gave no country either: 20,860 had a town before, 37,094 after, and 119 more a country (2026-11-24)."""
+    if next_ids(db, "corpus.read_places_once")[0] != 1:
+        return 0
+    corpus, writes, changed = db[CorpusJob.COLLECTION], [], 0
+    for row in corpus.find({}, {"location": 1, "title": 1, "country": 1, "city": 1}):
+        place = posting_place(row.get("location"), title=row.get("title"))
+        if place != (row.get("country"), row.get("city")):
+            writes.append(UpdateOne({"_id": row["_id"]}, {"$set": {"country": place[0], "city": place[1]}}))
+        if len(writes) == 1_000:
+            changed += corpus.bulk_write(writes, ordered=False).modified_count
+            writes = []
+    return changed + (corpus.bulk_write(writes, ordered=False).modified_count if writes else 0)

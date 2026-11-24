@@ -178,19 +178,19 @@ def test_applied_lists_every_job_applied_to_newest_first_until_taken_back(api):
 
     http, db, _user, _inbox, _as_user = api
     older, newer = _job(db, "Night Nurse"), _job(db, "Backend Engineer")
-    assert http.get("/applied").json() == []
+    assert http.get("/applied").json()["jobs"] == []
 
     http.put(f"/jobs/{older.id}/applied")
     http.put(f"/jobs/{newer.id}/applied")
     db[UserJobState.COLLECTION].update_one({"job_id": older.id},
                                            {"$set": {"applied_at": now() - timedelta(days=2)}})
 
-    listed = http.get("/applied").json()
+    listed = http.get("/applied").json()["jobs"]
     assert [job["title"] for job in listed] == ["Backend Engineer", "Night Nurse"]
     assert listed[0]["url"] == newer.url
 
     http.delete(f"/jobs/{newer.id}/applied")
-    assert [job["title"] for job in http.get("/applied").json()] == ["Night Nurse"]
+    assert [job["title"] for job in http.get("/applied").json()["jobs"]] == ["Night Nurse"]
 
 
 @needs_db
@@ -202,4 +202,5 @@ def test_another_persons_applications_are_not_listed(api):
     http.put(f"/jobs/{_job(db, 'Backend Engineer').id}/applied")
     as_user(insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
                             subscription_status="active", status="active")))
-    assert http.get("/applied").json() == []
+    body = http.get("/applied").json()
+    assert (body["jobs"], body["total"], body["dates"]) == ([], 0, [])

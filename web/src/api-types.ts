@@ -756,7 +756,9 @@ export interface paths {
         /**
          * Applied
          * @description Every job this person said they applied to, the latest first, whether or not it still matches
-         *     their words. Retention keeps these postings (`libs.corpus.archive.ACTED_ON`).
+         *     their words, narrowed as every list is (`narrowing`), to the stages picked, and to the ones applied to
+         *     from `applied_from` until `applied_to`: a day of the calendar, as the page's own clock bounds it.
+         *     Retention keeps these postings (`libs.corpus.archive.ACTED_ON`).
          */
         get: operations["applied_applied_get"];
         put?: never;
@@ -1358,8 +1360,9 @@ export interface paths {
          * Feed
          * @description This person's matches, a page at a time: the most of their words first, the newest posted
          *     first, or the ones that arrived here last first:
-         *     searched, remote only, posted lately, from one board, in one country or one city, with a document
-         *     made or not, having every word picked, or at least so many of their words — or one job, the one
+         *     narrowed as every list is (`narrowing`: searched, remote only, in the places and from the job sites
+         *     picked), posted lately, with a document made or not, having every word picked, or at least so many of
+         *     their words — or one job, the one
          *     an alert's link names, which is either still in their list or not. `found_after` counts the jobs
          *     that reached the list since it was read (`arrived`), which is how the page learns how many new ones
          *     there are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn
@@ -1480,6 +1483,8 @@ export interface paths {
          * Bookmarks
          * @description The jobs this person bookmarked, the latest first, as the Jobs page shows a job: until they take
          *     the bookmark off, skip the job, apply to it, or it closes. For every account (owner, 2026-11-15).
+         *     Searched and filtered as every list is (`narrowing`; owner, 2026-11-24: "a basic search bar and
+         *     filtering function too").
          */
         get: operations["bookmarks_jobs_bookmarked_get"];
         put?: never;
@@ -2560,6 +2565,25 @@ export interface components {
              */
             telegram: "unconfigured" | "waiting" | "connected" | "broken";
         };
+        /**
+         * Applications
+         * @description The jobs somebody said they applied to that the page's filters leave, the latest first, and the whole
+         *     record beside them, whatever the filters: how many there are, when each was applied to (the calendar
+         *     counts them by the person's own days), how many stand at each stage, and what the filters offer.
+         */
+        Applications: {
+            /** Dates */
+            dates: string[];
+            /** Jobs */
+            jobs: components["schemas"]["AppliedJob"][];
+            offers: components["schemas"]["Offers"];
+            /** Stages */
+            stages: {
+                [key: string]: number;
+            };
+            /** Total */
+            total: number;
+        };
         /** AppliedJob */
         AppliedJob: {
             /**
@@ -2926,6 +2950,8 @@ export interface components {
             as_of: string;
             /** Cities */
             cities: components["schemas"]["FeedPlace"][];
+            /** Continents */
+            continents: components["schemas"]["FeedPlace"][];
             /** Countries */
             countries: components["schemas"]["FeedPlace"][];
             /** Cut */
@@ -2997,6 +3023,8 @@ export interface components {
             label: string;
             /** Value */
             value: string;
+            /** Within */
+            within?: string | null;
         };
         /** FeedSalary */
         FeedSalary: {
@@ -3189,19 +3217,24 @@ export interface components {
          * JobFilters
          * @description The Jobs page's filters, named as `/feed` takes them, kept for each person so the page opens as they
          *     left it, on any device (owner, 2026-11-07). A field left out is its default, which is what a new
-         *     account sees.
+         *     account sees. Places and job sites are lists, as many of each as somebody picks (owner, 2026-11-24).
          */
         JobFilters: {
             /**
              * City
-             * @default
+             * @default []
              */
-            city: string;
+            city: string[];
+            /**
+             * Continent
+             * @default []
+             */
+            continent: ("EU" | "AS" | "AF" | "NA" | "SA" | "OC" | "AN")[];
             /**
              * Country
-             * @default
+             * @default []
              */
-            country: string;
+            country: string[];
             /** Made */
             made?: boolean | null;
             /** Min Fit */
@@ -3234,9 +3267,9 @@ export interface components {
             sort: "best" | "newest" | "arrived";
             /**
              * Source
-             * @default
+             * @default []
              */
-            source: string;
+            source: string[];
             /** Word */
             word?: string[];
         };
@@ -3330,10 +3363,14 @@ export interface components {
         };
         /**
          * Language
-         * @description ISO 639-1 codes the platform offers. Also a controlled list, for the same reason.
+         * @description ISO 639-1 codes the platform offers, in the order My search lists them: the eleven it began with, then
+         *     every other language of Europe a posting can be read in (owner, 2026-11-24: "make sure that we have all
+         *     the languages ... so nothing is missed from europe"), A to Z. Those the reader cannot tell apart from
+         *     another are read as that one too (`libs.corpus.langfilter.READ_AS`); Irish, Maltese and Basque, which it
+         *     reads as nothing in particular, are not offered. Also a controlled list, for the same reason.
          * @enum {string}
          */
-        Language: "en" | "de" | "fr" | "es" | "nl" | "hu" | "pl" | "pt" | "it" | "sv" | "da";
+        Language: "en" | "de" | "fr" | "es" | "nl" | "hu" | "pl" | "pt" | "it" | "sv" | "da" | "sq" | "be" | "bs" | "bg" | "ca" | "hr" | "cs" | "et" | "fi" | "gl" | "el" | "is" | "lv" | "lt" | "lb" | "mk" | "no" | "ro" | "ru" | "sr" | "sk" | "sl" | "tr" | "uk" | "cy";
         /** LatencyReport */
         LatencyReport: {
             /** Stages */
@@ -3453,7 +3490,7 @@ export interface components {
          * Location
          * @enum {string}
          */
-        Location: "europe" | "united_kingdom" | "ireland" | "austria" | "belgium" | "bulgaria" | "croatia" | "cyprus" | "czechia" | "denmark" | "estonia" | "finland" | "france" | "germany" | "greece" | "hungary" | "iceland" | "italy" | "latvia" | "lithuania" | "luxembourg" | "malta" | "netherlands" | "norway" | "poland" | "portugal" | "romania" | "serbia" | "slovakia" | "slovenia" | "spain" | "sweden" | "switzerland" | "ukraine" | "united_states" | "canada";
+        Location: "europe" | "united_kingdom" | "ireland" | "albania" | "andorra" | "armenia" | "austria" | "azerbaijan" | "belarus" | "belgium" | "bosnia_and_herzegovina" | "bulgaria" | "croatia" | "cyprus" | "czechia" | "denmark" | "estonia" | "faroe_islands" | "finland" | "france" | "georgia" | "germany" | "gibraltar" | "greece" | "guernsey" | "hungary" | "iceland" | "isle_of_man" | "italy" | "jersey" | "kosovo" | "latvia" | "liechtenstein" | "lithuania" | "luxembourg" | "malta" | "moldova" | "monaco" | "montenegro" | "netherlands" | "north_macedonia" | "norway" | "poland" | "portugal" | "romania" | "russia" | "san_marino" | "serbia" | "slovakia" | "slovenia" | "spain" | "sweden" | "switzerland" | "turkey" | "ukraine" | "vatican_city" | "united_states" | "canada";
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -3476,11 +3513,13 @@ export interface components {
         };
         /**
          * MarkedJobs
-         * @description A page of the jobs somebody holds a mark on, and how many there are in all.
+         * @description A page of the jobs somebody holds a mark on, and how many there are in all, or with the page's filters
+         *     on. Where the page filters them (Bookmarks), what its filters offer over all of them; None elsewhere.
          */
         MarkedJobs: {
             /** Jobs */
             jobs: components["schemas"]["FeedJob"][];
+            offers?: components["schemas"]["Offers"] | null;
             /** Total */
             total: number;
         };
@@ -3555,6 +3594,22 @@ export interface components {
             title: string;
             /** Url */
             url: string | null;
+        };
+        /**
+         * Offers
+         * @description What a list's filters offer, each with how many of its jobs have it, most first, counted before any
+         *     filter, so another can be picked: the job sites its jobs came from, and the continents, countries and
+         *     towns they are in.
+         */
+        Offers: {
+            /** Cities */
+            cities: components["schemas"]["FeedPlace"][];
+            /** Continents */
+            continents: components["schemas"]["FeedPlace"][];
+            /** Countries */
+            countries: components["schemas"]["FeedPlace"][];
+            /** Sources */
+            sources: components["schemas"]["FeedSource"][];
         };
         /** OnboardingDashboard */
         OnboardingDashboard: {
@@ -5851,7 +5906,17 @@ export interface operations {
     };
     applied_applied_get: {
         parameters: {
-            query?: never;
+            query?: {
+                stage?: ("applied" | "interview" | "offer" | "hired" | "rejected")[];
+                applied_from?: string | null;
+                applied_to?: string | null;
+                q?: string | null;
+                remote?: boolean | null;
+                continent?: ("EU" | "AS" | "AF" | "NA" | "SA" | "OC" | "AN")[];
+                country?: string[];
+                city?: string[];
+                source?: string[];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5864,7 +5929,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AppliedJob"][];
+                    "application/json": components["schemas"]["Applications"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -6708,13 +6782,8 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
-                q?: string | null;
-                remote?: boolean | null;
                 job?: number | null;
                 since_hours?: number | null;
-                source?: string | null;
-                country?: string | null;
-                city?: string | null;
                 made?: boolean | null;
                 word?: string[];
                 min_words?: number;
@@ -6722,6 +6791,12 @@ export interface operations {
                 found_after?: string | null;
                 counts?: boolean;
                 sort?: "best" | "newest" | "arrived";
+                q?: string | null;
+                remote?: boolean | null;
+                continent?: ("EU" | "AS" | "AF" | "NA" | "SA" | "OC" | "AN")[];
+                country?: string[];
+                city?: string[];
+                source?: string[];
             };
             header?: never;
             path?: never;
@@ -6859,6 +6934,12 @@ export interface operations {
         parameters: {
             query?: {
                 offset?: number;
+                q?: string | null;
+                remote?: boolean | null;
+                continent?: ("EU" | "AS" | "AF" | "NA" | "SA" | "OC" | "AN")[];
+                country?: string[];
+                city?: string[];
+                source?: string[];
             };
             header?: never;
             path?: never;

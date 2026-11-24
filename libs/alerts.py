@@ -87,7 +87,8 @@ class Rule:
                    companies=pattern(alert.companies) if alert.companies else None,
                    countries=frozenset(code for place in alert.places if place in COUNTRIES
                                        for code in COUNTRIES[place].countries),
-                   cities=frozenset(place for place in alert.places if place in CITIES),
+                   # A posting's town is its name, as `CITIES` names a city (`geo.posting_place`).
+                   cities=frozenset(CITIES[place].label for place in alert.places if place in CITIES),
                    sources=frozenset(alert.sources), green=green)
 
     def catches(self, job: dict) -> bool:

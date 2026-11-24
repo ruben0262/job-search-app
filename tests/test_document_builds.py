@@ -330,7 +330,7 @@ def test_a_made_document_is_kept_to_download_again_and_shows_on_the_jobs_it_was_
     assert (made["state"], made["saved"]) == ("ready", True)
 
     api.http.put(f"/jobs/{api.job.id}/applied")
-    (applied,) = api.http.get("/applied").json()
+    (applied,) = api.http.get("/applied").json()["jobs"]
     (document,) = applied["documents"]
     assert (document["kind"], document["download_url"]) == ("cv", made["download_url"])
     assert api.http.get(document["download_url"]).content.startswith(b"%PDF")

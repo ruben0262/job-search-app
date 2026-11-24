@@ -46,6 +46,9 @@ class JobLink:
     found_via: str = ""
     # The board says the job was withdrawn (NAV's feed): closed if stored, and not stored if not.
     closed: bool = False
+    # The country the board itself listed the job in, for a board read a country at a time (LinkedIn's sweep
+    # of one): what decides between places of one name (`libs.corpus.geo.posting_place`).
+    within: str | None = None
 
     def as_corpus_row(self) -> dict[str, Any]:
         """Keyword arguments for `CorpusRepository.add()`."""
@@ -65,4 +68,5 @@ class JobLink:
             "workplace": classify(self.title, self.location, self.snippet, self.is_remote),
             # How it was found, carried through to the row rather than dropped here.
             "discovered_via": self.found_via or None,
+            "within": self.within,
         }

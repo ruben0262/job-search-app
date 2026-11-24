@@ -362,3 +362,40 @@ def uuid_hex() -> str:
     import uuid
 
     return uuid.uuid4().hex
+
+
+# ── languages ─────────────────────────────────────────────────────────────────────────────────────
+
+def test_a_language_the_reader_takes_for_another_admits_the_jobs_written_in_it(db):
+    """Serbian is read as Croatian, or as Macedonian in Cyrillic (`langfilter.READ_AS`, measured 2026-11-24):
+    somebody who works in Serbian and English only was shown no Serbian job at all, the reader having stored
+    each as another language. Croatian admits no Serbian beyond what it admitted before."""
+    serbian_latin, serbian_cyrillic = _row(db, language="hr"), _row(db, language="mk")
+    polish = _row(db, language="pl")
+
+    shown = _survivors(db, built({**config(), "languages": ["sr", "en"]}))
+    assert {serbian_latin.id, serbian_cyrillic.id} <= shown
+    assert polish.id not in shown
+    croatian = _survivors(db, built({**config(), "languages": ["hr"]}))
+    assert not croatian & {serbian_cyrillic.id, polish.id}
+
+
+def test_every_language_of_europe_the_reader_knows_can_be_picked():
+    """Owner, 2026-11-24: "make sure that we have all the languages ... so nothing is missed from europe".
+    Jobs in Czech, Greek, Romanian or Finnish were stored with their language, and nobody could say they
+    work in it, so they reached nobody. Every European language the reader has a profile of is offered; each
+    that it takes for another admits a code it can give."""
+    langdetect = pytest.importorskip("langdetect.detector_factory")
+
+    from libs.contracts.config import Language
+    from libs.corpus.langfilter import READ_AS
+
+    langdetect.init_factory()
+    readable = set(langdetect._factory.get_lang_list())
+    europe = {"bg", "ca", "cs", "cy", "da", "de", "el", "en", "es", "et", "fi", "fr", "hr", "hu", "it", "lt",
+              "lv", "mk", "nl", "no", "pl", "pt", "ro", "ru", "sk", "sl", "sq", "sv", "tr", "uk"}
+    assert europe <= readable, "the list above is the reader's, not a wish"
+    offered = {language.value for language in Language}
+    assert europe <= offered
+    assert set(READ_AS) <= offered and not set(READ_AS) & readable
+    assert {code for codes in READ_AS.values() for code in codes} <= readable

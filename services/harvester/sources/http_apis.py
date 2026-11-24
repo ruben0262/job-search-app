@@ -196,20 +196,27 @@ def gather_nofluffjobs(cfg: dict[str, Any], logger) -> list[JobLink]:
             continue
         seen.add(slug)
         title = j.get("title", "")
-        loc = j.get("location") or {}
-        places = loc.get("places", []) if isinstance(loc, dict) else []
-        city = places[0].get("city", "") if places and isinstance(places[0], dict) else ""
-        # e.g. ", Hungary" on the HU block, so the country filter can place the job.
-        if city and cfg.get("location_suffix"):
-            city += cfg["location_suffix"]
         out.append(JobLink(
             url=f"https://nofluffjobs.com/job/{slug}", title=title,
-            company=j.get("name", ""), location=city, source=label,
+            company=j.get("name", ""), location=_nofluffjobs_place(j.get("location")), source=label,
             date_posted=iso, snippet=title,
             # fullyRemote=false could be hybrid — unknown, not on-site.
             is_remote=(True if j.get("fullyRemote") else None),
         ))
     return out
+
+
+def _nofluffjobs_place(location: Any) -> str:
+    """Where a No Fluff Jobs posting is: its first place with a town ("Warsaw, Poland"), or the country of its
+    first place. Its first place is often a province alone, with no town, and its town comes after "Remote":
+    read off the first place, 27 of 76 postings on the first page had no place at all, so passed every
+    country filter (2026-11-24)."""
+    places = [each for each in (location or {}).get("places") or [] if isinstance(each, dict)] \
+        if isinstance(location, dict) else []
+    there = next((each for each in places if each.get("city") and each["city"] != "Remote"), None)
+    country = next((each["country"].get("name", "") for each in ([there] if there else places)
+                    if isinstance(each.get("country"), dict)), "")
+    return ", ".join(part for part in ((there or {}).get("city", ""), country) if part)
 
 
 # ── RSS date helper ───────────────────────────────────────────────────

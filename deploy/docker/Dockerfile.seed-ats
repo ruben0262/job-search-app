@@ -22,6 +22,11 @@ COPY deploy/scripts/seed_ats.py deploy/scripts/ats_companies.txt /app/deploy/scr
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
+# At most two of glibc's heaps ("arenas"), shared by every thread, not one a thread. Each thread reading a board
+# kept the memory it freed in a heap of its own: a run reading every board of the dev copy at once peaked at 532 MB
+# and still held 536 at its end, for 10 MB of jobs; with two, 225 MB and 170, and no slower (2026-11-24, CHANGELOG).
+ENV MALLOC_ARENA_MAX=2
+
 # Not as root: whatever goes wrong in here is the account that owns the checkout's logs, and no more. Its id
 # is that account's (`deploy/compose.sh`), so what it writes to the folders the server lends it is the
 # owner's to read. The code stays root's, which this account can read and not change.

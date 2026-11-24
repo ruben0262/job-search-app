@@ -64,7 +64,11 @@ def location_search_name(value: str) -> str:
 
 
 class Language(StrEnum):
-    """ISO 639-1 codes the platform offers. Also a controlled list, for the same reason."""
+    """ISO 639-1 codes the platform offers, in the order My search lists them: the eleven it began with, then
+    every other language of Europe a posting can be read in (owner, 2026-11-24: "make sure that we have all
+    the languages ... so nothing is missed from europe"), A to Z. Those the reader cannot tell apart from
+    another are read as that one too (`libs.corpus.langfilter.READ_AS`); Irish, Maltese and Basque, which it
+    reads as nothing in particular, are not offered. Also a controlled list, for the same reason."""
 
     EN = "en"
     DE = "de"
@@ -77,6 +81,31 @@ class Language(StrEnum):
     IT = "it"
     SV = "sv"
     DA = "da"
+    SQ = "sq"
+    BE = "be"
+    BS = "bs"
+    BG = "bg"
+    CA = "ca"
+    HR = "hr"
+    CS = "cs"
+    ET = "et"
+    FI = "fi"
+    GL = "gl"
+    EL = "el"
+    IS = "is"
+    LV = "lv"
+    LT = "lt"
+    LB = "lb"
+    MK = "mk"
+    NO = "no"
+    RO = "ro"
+    RU = "ru"
+    SR = "sr"
+    SK = "sk"
+    SL = "sl"
+    TR = "tr"
+    UK = "uk"
+    CY = "cy"
 
 
 class Currency(StrEnum):

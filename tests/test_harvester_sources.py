@@ -917,6 +917,36 @@ def test_no_fluff_jobs_is_read_newest_first_until_a_page_has_nothing_new(monkeyp
     assert {link.url for link in links} == {f"https://nofluffjobs.com/job/job-1-{n}" for n in range(3)}
 
 
+def test_a_no_fluff_jobs_posting_is_where_its_first_town_is_or_at_least_in_its_country(monkeypatch):
+    """Its first place is often a province alone, with no town, and its town comes after "Remote": read off
+    the first place, 27 of 76 postings on its first page had no place, so passed every country filter
+    (2026-11-24)."""
+    from datetime import UTC, datetime
+
+    from services.harvester.source_config import build_source_configs
+    from services.harvester.sources import http_apis
+
+    province = {"country": {"code": "POL", "name": "Poland"}, "province": "lodz", "provinceOnly": True}
+    places = {"job-1": [province, {"city": "Remote"}, {"country": {"name": "Poland"}, "city": "Warsaw"}],
+              "job-2": [province, {"city": "Remote"}],
+              "job-3": [{"city": "Kraków", "country": {"name": "Poland"}}]}
+    now = int(datetime.now(UTC).timestamp() * 1000)
+
+    def answer(request):
+        return httpx.Response(200, json={"postings": [
+            {"url": slug, "title": "Backend Developer", "name": "Acme", "renewed": now, "posted": now,
+             "location": {"places": where}} for slug, where in places.items()]
+            if int(request.url.params["page"]) == 1 else []})
+
+    monkeypatch.setattr(http_apis, "make_shared_client", lambda **_: httpx.Client(
+        transport=httpx.MockTransport(answer)))
+    cfg = build_source_configs({}, env={})["nofluffjobs"]
+    links = http_apis.gather_nofluffjobs(cfg, logging.getLogger("test"))
+
+    assert {link.url.rsplit("/", 1)[1]: link.location for link in links} == {
+        "job-1": "Warsaw, Poland", "job-2": "Poland", "job-3": "Kraków, Poland"}
+
+
 def test_no_fluff_jobs_walks_no_further_than_the_operator_set(monkeypatch):
     from services.harvester.source_config import build_source_configs
     from services.harvester.sources import http_apis

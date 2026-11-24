@@ -1141,6 +1141,58 @@
         "title": "AlertsPage",
         "type": "object"
       },
+      "Applications": {
+        "description": "The jobs somebody said they applied to that the page's filters leave, the latest first, and the whole\nrecord beside them, whatever the filters: how many there are, when each was applied to (the calendar\ncounts them by the person's own days), how many stand at each stage, and what the filters offer.",
+        "properties": {
+          "dates": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Dates",
+            "type": "array"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/AppliedJob"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "offers": {
+            "$ref": "#/components/schemas/Offers"
+          },
+          "stages": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "enum": [
+                "applied",
+                "interview",
+                "offer",
+                "hired",
+                "rejected"
+              ]
+            },
+            "title": "Stages",
+            "type": "object"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "jobs",
+          "total",
+          "dates",
+          "stages",
+          "offers"
+        ],
+        "title": "Applications",
+        "type": "object"
+      },
       "AppliedJob": {
         "properties": {
           "applied_at": {
@@ -2225,6 +2277,13 @@
             "title": "Cities",
             "type": "array"
           },
+          "continents": {
+            "items": {
+              "$ref": "#/components/schemas/FeedPlace"
+            },
+            "title": "Continents",
+            "type": "array"
+          },
           "countries": {
             "items": {
               "$ref": "#/components/schemas/FeedPlace"
@@ -2281,12 +2340,13 @@
           }
         },
         "required": [
-          "total",
-          "jobs",
           "sources",
-          "words",
+          "continents",
           "countries",
           "cities",
+          "total",
+          "jobs",
+          "words",
           "as_of",
           "shelf_hours",
           "shelf_longest_hours",
@@ -2471,6 +2531,17 @@
           "value": {
             "title": "Value",
             "type": "string"
+          },
+          "within": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Within"
           }
         },
         "required": [
@@ -2979,19 +3050,46 @@
         "type": "object"
       },
       "JobFilters": {
-        "description": "The Jobs page's filters, named as `/feed` takes them, kept for each person so the page opens as they\nleft it, on any device (owner, 2026-11-07). A field left out is its default, which is what a new\naccount sees.",
+        "description": "The Jobs page's filters, named as `/feed` takes them, kept for each person so the page opens as they\nleft it, on any device (owner, 2026-11-07). A field left out is its default, which is what a new\naccount sees. Places and job sites are lists, as many of each as somebody picks (owner, 2026-11-24).",
         "properties": {
           "city": {
-            "default": "",
-            "maxLength": 40,
+            "default": [],
+            "items": {
+              "maxLength": 90,
+              "pattern": "^[A-Z]{2}/.+$",
+              "type": "string"
+            },
+            "maxItems": 200,
             "title": "City",
-            "type": "string"
+            "type": "array"
+          },
+          "continent": {
+            "default": [],
+            "items": {
+              "enum": [
+                "EU",
+                "AS",
+                "AF",
+                "NA",
+                "SA",
+                "OC",
+                "AN"
+              ],
+              "type": "string"
+            },
+            "maxItems": 7,
+            "title": "Continent",
+            "type": "array"
           },
           "country": {
-            "default": "",
-            "maxLength": 2,
+            "default": [],
+            "items": {
+              "pattern": "^[A-Z]{2}$",
+              "type": "string"
+            },
+            "maxItems": 250,
             "title": "Country",
-            "type": "string"
+            "type": "array"
           },
           "made": {
             "anyOf": [
@@ -3060,10 +3158,13 @@
             "type": "string"
           },
           "source": {
-            "default": "",
-            "maxLength": 60,
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 60,
             "title": "Source",
-            "type": "string"
+            "type": "array"
           },
           "word": {
             "items": {
@@ -3291,7 +3392,7 @@
         "type": "object"
       },
       "Language": {
-        "description": "ISO 639-1 codes the platform offers. Also a controlled list, for the same reason.",
+        "description": "ISO 639-1 codes the platform offers, in the order My search lists them: the eleven it began with, then\nevery other language of Europe a posting can be read in (owner, 2026-11-24: \"make sure that we have all\nthe languages ... so nothing is missed from europe\"), A to Z. Those the reader cannot tell apart from\nanother are read as that one too (`libs.corpus.langfilter.READ_AS`); Irish, Maltese and Basque, which it\nreads as nothing in particular, are not offered. Also a controlled list, for the same reason.",
         "enum": [
           "en",
           "de",
@@ -3303,7 +3404,32 @@
           "pt",
           "it",
           "sv",
-          "da"
+          "da",
+          "sq",
+          "be",
+          "bs",
+          "bg",
+          "ca",
+          "hr",
+          "cs",
+          "et",
+          "fi",
+          "gl",
+          "el",
+          "is",
+          "lv",
+          "lt",
+          "lb",
+          "mk",
+          "no",
+          "ro",
+          "ru",
+          "sr",
+          "sk",
+          "sl",
+          "tr",
+          "uk",
+          "cy"
         ],
         "title": "Language",
         "type": "string"
@@ -3641,37 +3767,59 @@
           "europe",
           "united_kingdom",
           "ireland",
+          "albania",
+          "andorra",
+          "armenia",
           "austria",
+          "azerbaijan",
+          "belarus",
           "belgium",
+          "bosnia_and_herzegovina",
           "bulgaria",
           "croatia",
           "cyprus",
           "czechia",
           "denmark",
           "estonia",
+          "faroe_islands",
           "finland",
           "france",
+          "georgia",
           "germany",
+          "gibraltar",
           "greece",
+          "guernsey",
           "hungary",
           "iceland",
+          "isle_of_man",
           "italy",
+          "jersey",
+          "kosovo",
           "latvia",
+          "liechtenstein",
           "lithuania",
           "luxembourg",
           "malta",
+          "moldova",
+          "monaco",
+          "montenegro",
           "netherlands",
+          "north_macedonia",
           "norway",
           "poland",
           "portugal",
           "romania",
+          "russia",
+          "san_marino",
           "serbia",
           "slovakia",
           "slovenia",
           "spain",
           "sweden",
           "switzerland",
+          "turkey",
           "ukraine",
+          "vatican_city",
           "united_states",
           "canada"
         ],
@@ -3724,7 +3872,7 @@
         "type": "object"
       },
       "MarkedJobs": {
-        "description": "A page of the jobs somebody holds a mark on, and how many there are in all.",
+        "description": "A page of the jobs somebody holds a mark on, and how many there are in all, or with the page's filters\non. Where the page filters them (Bookmarks), what its filters offer over all of them; None elsewhere.",
         "properties": {
           "jobs": {
             "items": {
@@ -3732,6 +3880,16 @@
             },
             "title": "Jobs",
             "type": "array"
+          },
+          "offers": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Offers"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "total": {
             "title": "Total",
@@ -4020,6 +4178,47 @@
           "read"
         ],
         "title": "NotificationRow",
+        "type": "object"
+      },
+      "Offers": {
+        "description": "What a list's filters offer, each with how many of its jobs have it, most first, counted before any\nfilter, so another can be picked: the job sites its jobs came from, and the continents, countries and\ntowns they are in.",
+        "properties": {
+          "cities": {
+            "items": {
+              "$ref": "#/components/schemas/FeedPlace"
+            },
+            "title": "Cities",
+            "type": "array"
+          },
+          "continents": {
+            "items": {
+              "$ref": "#/components/schemas/FeedPlace"
+            },
+            "title": "Continents",
+            "type": "array"
+          },
+          "countries": {
+            "items": {
+              "$ref": "#/components/schemas/FeedPlace"
+            },
+            "title": "Countries",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/FeedSource"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources",
+          "continents",
+          "countries",
+          "cities"
+        ],
+        "title": "Offers",
         "type": "object"
       },
       "OnboardingDashboard": {
@@ -8887,22 +9086,186 @@
     },
     "/applied": {
       "get": {
-        "description": "Every job this person said they applied to, the latest first, whether or not it still matches\ntheir words. Retention keeps these postings (`libs.corpus.archive.ACTED_ON`).",
+        "description": "Every job this person said they applied to, the latest first, whether or not it still matches\ntheir words, narrowed as every list is (`narrowing`), to the stages picked, and to the ones applied to\nfrom `applied_from` until `applied_to`: a day of the calendar, as the page's own clock bounds it.\nRetention keeps these postings (`libs.corpus.archive.ACTED_ON`).",
         "operationId": "applied_applied_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "enum": [
+                  "applied",
+                  "interview",
+                  "offer",
+                  "hired",
+                  "rejected"
+                ],
+                "type": "string"
+              },
+              "maxItems": 5,
+              "title": "Stage",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "applied_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Applied From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "applied_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Applied To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "remote",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Remote"
+            }
+          },
+          {
+            "in": "query",
+            "name": "continent",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "enum": [
+                  "EU",
+                  "AS",
+                  "AF",
+                  "NA",
+                  "SA",
+                  "OC",
+                  "AN"
+                ],
+                "type": "string"
+              },
+              "maxItems": 7,
+              "title": "Continent",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "pattern": "^[A-Z]{2}$",
+                "type": "string"
+              },
+              "maxItems": 250,
+              "title": "Country",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "city",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "maxLength": 90,
+                "pattern": "^[A-Z]{2}/.+$",
+                "type": "string"
+              },
+              "maxItems": 200,
+              "title": "City",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 60,
+              "title": "Source",
+              "type": "array"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AppliedJob"
-                  },
-                  "title": "Response Applied Applied Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Applications"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Applied",
@@ -9990,7 +10353,7 @@
     },
     "/feed": {
       "get": {
-        "description": "This person's matches, a page at a time: the most of their words first, the newest posted\nfirst, or the ones that arrived here last first:\nsearched, remote only, posted lately, from one board, in one country or one city, with a document\nmade or not, having every word picked, or at least so many of their words \u2014 or one job, the one\nan alert's link names, which is either still in their list or not. `found_after` counts the jobs\nthat reached the list since it was read (`arrived`), which is how the page learns how many new ones\nthere are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn\njob found before the list was read and read after it is new to them.\n\nCounted on the whole list, not instead of it: the jobs that left meanwhile, past their shelf life,\nare the difference between the two lengths. Asked for the new ones alone, the page said \"100 new\njobs\" and a refresh made the list 15 longer (owner, 2026-11-06). `counts` is that question and nothing\nelse, as the page asks it every minute: `total` and `arrived`, with no job, no score and none of what the\nfilters offer. It was asked as a whole page of one job, scored and counted every way, to read two numbers.\n\nA job they skipped or applied to is gone from it for good: Applied lists the second.",
+        "description": "This person's matches, a page at a time: the most of their words first, the newest posted\nfirst, or the ones that arrived here last first:\nnarrowed as every list is (`narrowing`: searched, remote only, in the places and from the job sites\npicked), posted lately, with a document made or not, having every word picked, or at least so many of\ntheir words \u2014 or one job, the one\nan alert's link names, which is either still in their list or not. `found_after` counts the jobs\nthat reached the list since it was read (`arrived`), which is how the page learns how many new ones\nthere are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn\njob found before the list was read and read after it is new to them.\n\nCounted on the whole list, not instead of it: the jobs that left meanwhile, past their shelf life,\nare the difference between the two lengths. Asked for the new ones alone, the page said \"100 new\njobs\" and a refresh made the list 15 longer (owner, 2026-11-06). `counts` is that question and nothing\nelse, as the page asks it every minute: `total` and `arrived`, with no job, no score and none of what the\nfilters offer. It was asked as a whole page of one job, scored and counted every way, to read two numbers.\n\nA job they skipped or applied to is gone from it for good: Applied lists the second.",
         "operationId": "feed_feed_get",
         "parameters": [
           {
@@ -10014,39 +10377,6 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "q",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 200,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Q"
-            }
-          },
-          {
-            "in": "query",
-            "name": "remote",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Remote"
             }
           },
           {
@@ -10081,57 +10411,6 @@
                 }
               ],
               "title": "Since Hours"
-            }
-          },
-          {
-            "in": "query",
-            "name": "source",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 60,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Source"
-            }
-          },
-          {
-            "in": "query",
-            "name": "country",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 2,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Country"
-            }
-          },
-          {
-            "in": "query",
-            "name": "city",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 40,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "City"
             }
           },
           {
@@ -10234,6 +10513,107 @@
               ],
               "title": "Sort",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "remote",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Remote"
+            }
+          },
+          {
+            "in": "query",
+            "name": "continent",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "enum": [
+                  "EU",
+                  "AS",
+                  "AF",
+                  "NA",
+                  "SA",
+                  "OC",
+                  "AN"
+                ],
+                "type": "string"
+              },
+              "maxItems": 7,
+              "title": "Continent",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "pattern": "^[A-Z]{2}$",
+                "type": "string"
+              },
+              "maxItems": 250,
+              "title": "Country",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "city",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "maxLength": 90,
+                "pattern": "^[A-Z]{2}/.+$",
+                "type": "string"
+              },
+              "maxItems": 200,
+              "title": "City",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 60,
+              "title": "Source",
+              "type": "array"
             }
           }
         ],
@@ -10397,7 +10777,7 @@
     },
     "/jobs/bookmarked": {
       "get": {
-        "description": "The jobs this person bookmarked, the latest first, as the Jobs page shows a job: until they take\nthe bookmark off, skip the job, apply to it, or it closes. For every account (owner, 2026-11-15).",
+        "description": "The jobs this person bookmarked, the latest first, as the Jobs page shows a job: until they take\nthe bookmark off, skip the job, apply to it, or it closes. For every account (owner, 2026-11-15).\nSearched and filtered as every list is (`narrowing`; owner, 2026-11-24: \"a basic search bar and\nfiltering function too\").",
         "operationId": "bookmarks_jobs_bookmarked_get",
         "parameters": [
           {
@@ -10409,6 +10789,107 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "remote",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Remote"
+            }
+          },
+          {
+            "in": "query",
+            "name": "continent",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "enum": [
+                  "EU",
+                  "AS",
+                  "AF",
+                  "NA",
+                  "SA",
+                  "OC",
+                  "AN"
+                ],
+                "type": "string"
+              },
+              "maxItems": 7,
+              "title": "Continent",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "pattern": "^[A-Z]{2}$",
+                "type": "string"
+              },
+              "maxItems": 250,
+              "title": "Country",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "city",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "maxLength": 90,
+                "pattern": "^[A-Z]{2}/.+$",
+                "type": "string"
+              },
+              "maxItems": 200,
+              "title": "City",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 60,
+              "title": "Source",
+              "type": "array"
             }
           }
         ],

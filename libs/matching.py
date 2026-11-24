@@ -18,6 +18,7 @@ from pymongo.database import Database
 from libs.contracts.config import migrate_config
 from libs.corpus import pay
 from libs.corpus.freshness import PlatformWindows, platform_windows
+from libs.corpus.geo import continent_of, countries_in
 from libs.corpus.words import norm
 from libs.db import find
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState, Word
@@ -256,6 +257,40 @@ def matching_jobs(db: Database, user: User, *, described_since: datetime | None 
     return matches
 
 
+def offered(match: dict) -> dict:
+    """The facets that count what a list's filters offer, over the jobs `match` keeps: each job site, country
+    and town with how many of them have it, most first. A town is named with its country ("DE/Berlin"): two
+    towns of one name are two places, and a town is picked inside its country (`places`)."""
+    counted = [{"$sort": {"count": -1, "_id": 1}}]
+    placed = {"country": {"$nin": [None, ""]}}
+    return {"sources": [{"$match": match}, {"$sortByCount": "$source"}, *counted],
+            "countries": [{"$match": {**match, **placed}}, {"$sortByCount": "$country"}, *counted],
+            "cities": [{"$match": {**match, **placed, "city": {"$nin": [None, ""]}}},
+                       {"$sortByCount": {"$concat": ["$country", "/", "$city"]}}, *counted]}
+
+
+def offers(db: Database, ids: list[int]) -> dict[str, list[tuple[str, int]]]:
+    """What the filters offer over these jobs (`offered`): a list somebody keeps (Bookmarks, Applied)."""
+    [made] = db[CorpusJob.COLLECTION].aggregate([{"$match": {"_id": {"$in": ids}}}, {"$facet": offered({})}])
+    return {name: [(row["_id"], row["count"]) for row in rows] for name, rows in made.items()}
+
+
+def places(continents: list[str], countries: list[str], cities: list[str]) -> dict | None:
+    """The condition a job meets to be in the places picked, or None when none is (owner, 2026-11-24: "narrow
+    down continent, then country and then city ... choose multiple of each"): in a town picked ("DE/Berlin"),
+    in a country picked none of whose towns is, or on a continent picked none of whose countries or towns is.
+    A place picked inside another narrows it, and beside it adds to it: Germany and Berlin is Berlin; France
+    and Berlin is all of France, and Berlin."""
+    towns = [tuple(each.split("/", 1)) for each in cities]
+    narrowed = {code for code, _ in towns}
+    whole = {code for code in countries if code not in narrowed}
+    inside = {continent_of(code) for code in {*countries, *narrowed}}
+    whole |= set(countries_in([each for each in continents if each not in inside]))
+    either = [*({"country": code, "city": town} for code, town in towns),
+              *([{"country": {"$in": sorted(whole)}}] if whole else [])]
+    return {"$or": either} if either else None
+
+
 @dataclass
 class Page:
     """One page of a person's Jobs list and what the page says around it, all made by the database."""
@@ -263,7 +298,8 @@ class Page:
     # How many jobs the list holds with the filters on, and how many of them reached it after `found_after`.
     total: int
     arrived: int | None
-    # What the filters offer, each with how many of the jobs shown in the time asked have it, most first.
+    # What the filters offer, each with how many of the jobs shown in the time asked have it, most first
+    # (`offered`): a town as "DE/Berlin".
     sources: list[tuple[str, int]]
     words: list[tuple[str, int]]
     countries: list[tuple[str, int]]
@@ -295,15 +331,12 @@ def page(db: Database, user: User, *, since: datetime | None, scan: int, wanted:
         return Page([], 0, None if found_after is None else 0, [], [], [], [], cut=False)
     stages, how = read
     shown = {"_visible": True}
-    counted = [{"$sort": {"count": -1, "_id": 1}}]
     facets = {
         "read": [{"$count": "n"}],
         "oldest": [{"$sort": {"first_seen_at": 1}}, {"$limit": 1}, {"$project": {"first_seen_at": 1}}],
-        "sources": [{"$match": shown}, {"$sortByCount": "$source"}, *counted],
-        "countries": [{"$match": {**shown, "country": {"$nin": [None, ""]}}}, {"$sortByCount": "$country"},
-                      *counted],
-        "cities": [{"$match": {**shown, "city": {"$nin": [None, ""]}}}, {"$sortByCount": "$city"}, *counted],
-        "words": [{"$match": shown}, {"$unwind": "$words"}, {"$sortByCount": "$words"}, *counted],
+        **offered(shown),
+        "words": [{"$match": shown}, {"$unwind": "$words"}, {"$sortByCount": "$words"},
+                  {"$sort": {"count": -1, "_id": 1}}],
         "total": [{"$match": {"$and": [shown, wanted]}}, {"$count": "n"}],
         "page": [{"$match": {"$and": [shown, wanted]}}, {"$sort": ORDERS[order]}, {"$skip": offset},
                  {"$limit": limit}, *(fit or [])],

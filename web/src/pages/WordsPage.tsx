@@ -175,22 +175,8 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
                    onChange={(locations) => patch({ locations })} />
         {full ? <p className="picker-hint">That is the most countries you can pick: {choices.max_locations}.</p> : null}
 
-        <fieldset className="picker">
-          <legend>Which languages can you work in?</legend>
-          <div className="picker-grid">
-            {choices.languages.map((language) => {
-              const value = language.value as NonNullable<Config["languages"]>[number];
-              return (
-                <label key={language.value} className="pick">
-                  <input type="checkbox" role="switch" checked={languages.includes(value)}
-                         disabled={last(languages, value)}
-                         onChange={() => edit({ ...config, languages: toggle(languages, value) })} />
-                  <span>{language.label}</span>
-                </label>
-              );
-            })}
-          </div>
-        </fieldset>
+        <Languages options={choices.languages} picked={languages}
+                   onChange={(chosen) => edit({ ...config, languages: chosen })} />
 
         <fieldset className="picker">
           <legend>How do you want to work?</legend>
@@ -241,6 +227,43 @@ const last = <T,>(chosen: T[], value: T) => chosen.length === 1 && chosen[0] ===
 
 type Choice = Review["choices"]["locations"][number];
 type Place = NonNullable<Section["locations"]>[number];
+type Language = NonNullable<Config["languages"]>[number];
+
+/** How many languages show before the rest are opened: the ones people here pick most. */
+const LANGUAGES_SHOWN = 5;
+
+/** Every language of Europe a job can be read in (owner, 2026-11-24: "make sure that we have all the languages"),
+ * each a switch: the first few and every one picked, and the rest folded under one button, as the countries are. */
+function Languages({ options, picked, onChange }: {
+  options: Review["choices"]["languages"];
+  picked: Language[];
+  onChange: (picked: Language[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const shown = open ? options
+    : options.filter((option, index) => index < LANGUAGES_SHOWN || picked.includes(option.value as Language));
+  return (
+    <fieldset className="picker">
+      <legend>Which languages can you work in?</legend>
+      <div className="picker-grid">
+        {shown.map((language) => {
+          const value = language.value as Language;
+          return (
+            <label key={language.value} className="pick">
+              <input type="checkbox" role="switch" checked={picked.includes(value)} disabled={last(picked, value)}
+                     onChange={() => onChange(picked.includes(value) ? picked.filter((each) => each !== value)
+                       : [...picked, value])} />
+              <span>{language.label}</span>
+            </label>
+          );
+        })}
+      </div>
+      <button type="button" className="linklike more" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {open ? "Show fewer languages" : `Show ${options.length - shown.length} more languages`}
+      </button>
+    </fieldset>
+  );
+}
 
 /** How many countries show before the rest are opened: the three people pick most. */
 const SHOWN = 3;

@@ -8,6 +8,7 @@ from datetime import datetime
 from libs.contracts.config import migrate_config
 from libs.corpus.freshness import PlatformWindows, platform_windows, showable
 from libs.corpus.geo import wanted_countries
+from libs.corpus.langfilter import READ_AS
 from libs.corpus.repository import TYPED
 from libs.db.models import CorpusJob, UserJobState
 from libs.db.models.corpus import WORKPLACES
@@ -67,8 +68,10 @@ class UserFilters:
             # An operator ceiling rather than a search preference, so it comes from `libs.limits`.
             applicant_cap=0 if applicant_cap is None else int(applicant_cap),
             workplaces=_workplaces(sections),
-            # An empty set means no opinion and admits every language.
-            languages=frozenset(str(code).lower() for code in config.get("languages") or []),
+            # An empty set means no opinion and admits every language. A language the reader takes for
+            # another admits that one too (`langfilter.READ_AS`).
+            languages=frozenset(read for code in config.get("languages") or []
+                                for read in (str(code).lower(), *READ_AS.get(str(code).lower(), ()))),
             source_min_ages=source_min_ages,
         )
 

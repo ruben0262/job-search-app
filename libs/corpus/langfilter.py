@@ -16,6 +16,15 @@ _READING = threading.Lock()
 # Below this, detection is guesswork. A three-word title is not evidence of anything.
 MIN_CHARS = 40
 
+# The languages the reader has no profile of, and what it reads a job written in each as, measured on a
+# posting's worth of each on 2026-11-24 (CHANGELOG): Serbian in the Latin alphabet, Bosnian and Montenegrin as
+# Croatian, Serbian in Cyrillic as Macedonian, Icelandic as Norwegian, Luxembourgish as German, Galician as
+# Spanish, Belarusian as Ukrainian or Russian. A person who works in one of them is shown the jobs read as
+# those too, or theirs would never reach them. Irish, Maltese and Basque it read as English or Catalan,
+# Estonian or Slovenian, Indonesian or Romanian: nothing to go by, so My search does not offer them.
+READ_AS: dict[str, tuple[str, ...]] = {"sr": ("hr", "mk"), "bs": ("hr",), "is": ("no",), "lb": ("de",),
+                                       "gl": ("es",), "be": ("uk", "ru")}
+
 @cache
 def _warn_library_missing() -> None:
     """Said once per process, not once per posting.

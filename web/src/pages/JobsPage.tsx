@@ -6,6 +6,8 @@ import type { CSSProperties, MouseEvent, ReactNode } from "react";
 
 import { api, request, type Ready, type Schema } from "../api";
 import { useBuild } from "../documents";
+import { FilterSheet, Finder, FiltersOn, type Offers, SitesSection, SLIDERS, WhereSection, WIDE, narrowed, narrowing,
+         showing } from "../finder";
 import { textsAhead } from "../jobtext";
 import { JobView } from "../jobview";
 import { keep, peek, useKept } from "../kept";
@@ -13,7 +15,7 @@ import { type Mark, bookmark, bookmarked, mark as record, send, unsent } from ".
 import { POLL_MS } from "../notifications";
 import { PLACES } from "../places";
 import { ago, span, useNow } from "../time";
-import { Banner, Error, Field, Prompt, Sheet, useAction } from "../ui";
+import { Banner, Error, Field, Prompt, useAction } from "../ui";
 
 type Feed = Schema<"Feed">;
 type Filters = Schema<"JobFilters">;
@@ -47,14 +49,19 @@ export const PICTURES = {
   bookmark: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10a1 1 0 011 1v15l-6-4-6 4V5a1 1 0 011-1z" /></svg>,
 };
 
-/** The orders the list comes in: its words, when the board says it was posted, when it arrived here. */
-const ORDERS = [["best", "Most of your words first"], ["newest", "Newest posted first"],
-                ["arrived", "Just arrived first"]] as const;
+/** The orders the list comes in, each saying what it goes by (owner, 2026-11-24: "the last two sounds similar but
+ * they probably do different things"): their words, the day the job site gives, the moment it reached their
+ * list here, which is later for a job a site lists days after posting it or that we read late. */
+const ORDERS = [
+  ["best", "Most of your words", "The jobs with the most of your words come first."],
+  ["newest", "Newest on the job site", "By the day the job site says it was posted."],
+  ["arrived", "Newest to your list", "By when the job reached your list here, even if the site posted it days ago."],
+] as const;
 
 /** The other pictures the job lists use: the sliders on the button that opens the filters, the arrow back of an
  * Undo, the tray of a download and the circling arrow of "Make it again". Applied has them too. */
 export const MORE_PICTURES = {
-  filters: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9M15 4.5v5M9 14.5v5" /></svg>,
+  filters: SLIDERS,
   undo: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4.5 9.5 9 5M4.5 9.5H15a4.5 4.5 0 010 9h-3" /></svg>,
   download: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14" /></svg>,
   again: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 11-2.2-5.3M19.5 4.5v4.2h-4.2" /></svg>,
@@ -67,17 +74,13 @@ const REGIONS = new Intl.DisplayNames(["en"], { type: "region" });
 /** The filters as this tab last had them (`kept.ts`), over the saved ones the dashboard brought. */
 const FILTERS = "/feed/filters";
 
-/** The feed's question for these filters: each one that is on, by the name `/feed` takes it. Its answer is
- * kept under it, so the page comes back drawn at once, whatever they had chosen. */
+/** The feed's question for these filters: each one that is on, by the name `/feed` takes it, those of every list
+ * among them (`finder.narrowed`). Its answer is kept under it, so the page comes back drawn at once, whatever
+ * they had chosen. */
 function asked(filters: Filters, offset = 0): URLSearchParams {
-  const { q, remote, since_hours, source, country, city, sort, made, word = [], min_words, min_fit } = filters;
-  const params = new URLSearchParams({ offset: `${offset}` });
-  if (q.trim()) params.set("q", q.trim());
-  if (remote) params.set("remote", "true");
+  const { since_hours, sort, made, word = [], min_words, min_fit } = filters;
+  const params = narrowed(filters, new URLSearchParams({ offset: `${offset}` }));
   if (since_hours) params.set("since_hours", `${since_hours}`);
-  if (source) params.set("source", source);
-  if (country) params.set("country", country);
-  if (city) params.set("city", city);
   if (sort !== "best") params.set("sort", sort);
   if (made === false) params.set("made", "false");
   for (const each of word) params.append("word", each);
@@ -91,23 +94,20 @@ const FIT_STEPS = [5, 6, 7, 8, 9];
 
 /** Each filter that narrows the list past their words, as the chip under the search says it, with the change
  * that takes it off: what the button to the filters counts, and "Clear all" takes off together. */
-function narrowing(filters: Filters, known: {
-  boards: Feed["sources"]; countries: Feed["countries"]; cities: Feed["cities"]; scoring: boolean;
-}): [string, Partial<Filters>][] {
-  const { remote, source, country, city, made, word = [], min_words: atLeast, min_fit: fit } = filters;
-  const named = (options: { value: string; label: string }[], value: string) =>
-    options.find((each) => each.value === value)?.label ?? value;
+function jobsNarrowing(filters: Filters, offers: Offers, scoring: boolean): [string, Partial<Filters>][] {
+  const { made, word = [], min_words: atLeast, min_fit: fit } = filters;
   const on: [string, Partial<Filters>][] = [];
-  if (known.scoring && fit) on.push([`Match ${fit}+`, { min_fit: null }]);
-  if (country) on.push([named(known.countries, country), { country: "" }]);
-  if (city) on.push([named(known.cities, city), { city: "" }]);
-  if (remote) on.push(["Remote only", { remote: false }]);
+  if (scoring && fit) on.push([`Match ${fit}+`, { min_fit: null }]);
+  on.push(...narrowing(filters, offers));
   for (const each of word) on.push([each, { word: word.filter((other) => other !== each) }]);
   if (atLeast > 1) on.push([`${atLeast}+ of your words`, { min_words: 1 }]);
-  if (source) on.push([known.boards.find((each) => each.name === source)?.label ?? source, { source: "" }]);
   if (made === false) on.push(["No CV yet", { made: null }]);
   return on;
 }
+
+/** What the filters offer, and none of the jobs, from an answer that has both. */
+const offersOf = ({ sources, continents, countries, cities }: Offers): Offers => ({ sources, continents, countries, cities });
+const NO_OFFERS: Offers = { sources: [], continents: [], countries: [], cities: [] };
 
 /** Jobs has three tabs: the jobs that match your words, the ones you bookmarked, and one brought in by
  * its link. */
@@ -129,9 +129,11 @@ export function JobsTabs({ on }: { on: (typeof TABS)[number][0] }) {
 
 /** The jobs kept under `path` (`kept.ts`), a page of them at first, as cards, with what is done to each: a
  * skipped one is gone, one marked applied shows its Undo. What Bookmarks, Add a job and an alert's own list
- * show. Marks still waiting in this browser are sent before the list is asked for, so a bookmark tapped a
- * moment ago is in it. `total` is how many there are, on this page or not, and `more` the way to the rest. */
-export function useJobList(path: string, onChanged: () => void) {
+ * show, Bookmarks with its filters on (`query`). Marks still waiting in this browser are sent before the list is
+ * asked for, so a bookmark tapped a moment ago is in it. `total` is how many there are, on this page or not,
+ * and `more` the way to the rest. */
+export function useJobList(base: string, onChanged: () => void, query = "") {
+  const path = query ? `${base}?${query}` : base;
   const { data: listed, set, failed } = useKept<Listed>(path, send);
   const jobs = listed?.jobs ?? null;
   // Their texts, so each opens at once (`jobtext.ts`).
@@ -159,7 +161,7 @@ export function useJobList(path: string, onChanged: () => void) {
     if (!listed) return;
     await send();
     const still = less(listed, marked).jobs.filter((job) => bookmarked(job) || !job.bookmarked).length;
-    const next = await api.get<Listed>(`${path}?offset=${still}`);
+    const next = await api.get<Listed>(`${base}?${query ? `${query}&` : ""}offset=${still}`);
     const have = new Set(listed.jobs.map((job) => job.id));
     const longer = { total: next.total + listed.jobs.length - less(listed, marked).jobs.length,
                      jobs: [...listed.jobs, ...next.jobs.filter((job) => !have.has(job.id))] };
@@ -178,7 +180,8 @@ export function useJobList(path: string, onChanged: () => void) {
       <Error>{rest.error}</Error>
     </>
   ) : null;
-  return { jobs, total: listed ? less(listed, marked).total : 0, set, failed, card, more };
+  return { jobs, total: listed ? less(listed, marked).total : 0, offers: listed?.offers ?? null, set, failed, card,
+           more };
 }
 
 export function JobsPage({ dashboard, focus, onChanged, onRead }: {
@@ -197,11 +200,10 @@ export function JobsPage({ dashboard, focus, onChanged, onRead }: {
   // The filters, open over the page: the list behind them follows each change as it is made.
   const [choosing, setChoosing] = useState(false);
   const cached = peek<Feed>(`/feed?${asked(filters)}`);
-  // The boards and words their jobs have, kept from the first answer: a filtered one still offers them all.
-  const [boards, setBoards] = useState<Feed["sources"]>(cached?.sources ?? []);
+  // The places, boards and words their jobs have, from the last answer: counted before any filter, a filtered
+  // one still offers them all.
+  const [offers, setOffers] = useState<Offers>(cached ? offersOf(cached) : NO_OFFERS);
   const [words, setWords] = useState<Feed["words"]>(cached?.words ?? []);
-  const [countries, setCountries] = useState<Feed["countries"]>(cached?.countries ?? []);
-  const [cities, setCities] = useState<Feed["cities"]>(cached?.cities ?? []);
   const [feed, setFeed] = useState<Feed | null>(cached);
   const [failed, setFailed] = useState(false);
   // A read under way: a week of jobs takes longer than a day's, so the list says it is coming.
@@ -220,10 +222,9 @@ export function JobsPage({ dashboard, focus, onChanged, onRead }: {
   // Narrowed past their words, each said as a chip under the search that takes it off, and the search itself.
   // The time chosen under "Posted" and the order are how the list is shown, not what is in it, so they stay
   // when the rest is cleared.
-  const on = narrowing(filters, { boards, countries, cities, scoring });
+  const on = jobsNarrowing(filters, offers, scoring);
   const filtered = query.trim() !== "" || on.length > 0;
-  const clear = () => set({ q: "", remote: false, source: "", country: "", city: "", made: null, word: [],
-                            min_words: 1, min_fit: null });
+  const clear = () => set({ q: "", ...WIDE, made: null, word: [], min_words: 1, min_fit: null });
 
   // Saved as they change, for the next time Jobs opens: a moment after the last change, and at once on
   // leaving, for another page or by closing the tab (`keepalive`). One that fails is sent again with the
@@ -273,10 +274,8 @@ export function JobsPage({ dashboard, focus, onChanged, onRead }: {
     void send().finally(() => read(0).then((body) => {
       keep(`/feed?${asked(filters)}`, body);
       if (mine !== newest.current) return;
-      setBoards(body.sources);
+      setOffers(offersOf(body));
       setWords(body.words);
-      setCountries(body.countries);
-      setCities(body.cities);
       setFeed(body);
       setMarked(new Map());
       setGone(unsent());
@@ -419,9 +418,8 @@ export function JobsPage({ dashboard, focus, onChanged, onRead }: {
 
       {/* The search and how far back, at hand; every other filter behind one button, and each one that is on
           said under them as a chip that takes it off (owner, 2026-11-16: "simplify it ... not clunky"). */}
-      <div className="finder">
-        <input type="search" placeholder="Search your jobs" aria-label="Search your jobs" value={query}
-               onChange={(event) => set({ q: event.target.value })} />
+      <Finder query={query} onQuery={(q) => set({ q })} label="Search your jobs" on={on.length}
+              onOpen={() => setChoosing(true)}>
         <label className="finder-posted">
           <span>Posted</span>
           {/* Only the times shorter than jobs stay and longer than their plan waits: "Any time" is all of them. */}
@@ -432,28 +430,12 @@ export function JobsPage({ dashboard, focus, onChanged, onRead }: {
             ))}
           </select>
         </label>
-        <button type="button" className="secondary finder-open" aria-haspopup="dialog"
-                aria-label={on.length ? `Filters, ${on.length} on` : undefined} onClick={() => setChoosing(true)}>
-          {MORE_PICTURES.filters}Filters{on.length ? <span className="finder-count">{on.length}</span> : null}
-        </button>
-      </div>
-      {on.length ? (
-        <div className="filters-on" role="group" aria-label="Filters on">
-          {on.map(([label, off], i) => (
-            <button key={`${i}:${label}`} type="button" className="chip on" aria-label={`Take off: ${label}`}
-                    onClick={() => set(off)}>
-              {label}<span className="chip-x" aria-hidden="true">×</span>
-            </button>
-          ))}
-          <button type="button" className="chip clear" onClick={clear}>Clear all</button>
-        </div>
-      ) : null}
+      </Finder>
+      <FiltersOn on={on} set={set} clear={clear} />
       {choosing ? (
-        <FilterSheet filters={filters} set={set} clear={clear} on={on.length > 0} scoring={scoring}
-                     boards={boards} words={words} countries={countries} cities={cities}
-                     onClose={() => setChoosing(false)}
-                     showing={busy || !feed ? "Finding your jobs…"
-                       : `Show ${total}${feed.cut ? "+" : ""} ${total === 1 && !feed.cut ? "job" : "jobs"}`} />
+        <JobFilters filters={filters} set={set} clear={clear} on={on.length > 0} scoring={scoring}
+                    offers={offers} words={words} onClose={() => setChoosing(false)}
+                    showing={showing(busy || !feed, total, feed?.cut)} />
       ) : null}
 
       {focus !== null && shown(focus) ? (
@@ -494,134 +476,95 @@ export function JobsPage({ dashboard, focus, onChanged, onRead }: {
   );
 }
 
-/** The filters, over the page (owner, 2026-11-16: "lots to see and navigate"): each kind under a heading that
- * says what it is, the list behind following every change as it is made, and one button back to it that says
- * how many jobs it holds now. */
-function FilterSheet({ filters, set, clear, on, scoring, boards, words, countries, cities, showing, onClose }: {
+/** The Jobs page's filters, over the page: how well a job fits, where it is, their words, the job sites, their
+ * CV, and the order. */
+function JobFilters({ filters, set, clear, on, scoring, offers, words, showing: back, onClose }: {
   filters: Filters;
   set: (change: Partial<Filters>) => void;
   clear: () => void;
   /** Any filter is on: "Clear all" is offered. */
   on: boolean;
   scoring: boolean;
-  boards: Feed["sources"];
+  offers: Offers;
   words: Feed["words"];
-  countries: Feed["countries"];
-  cities: Feed["cities"];
   /** What the button back to the list says: "Show 332 jobs". */
   showing: string;
   onClose: () => void;
 }) {
-  const { remote, source, country, city, sort: order, made, word: picked = [], min_words: atLeast } = filters;
+  const { sort: order, made, word: picked = [], min_words: atLeast } = filters;
   const fit = scoring ? filters.min_fit ?? null : null;
   return (
-    <Sheet title="Filters" onClose={onClose}>
-      <div className="filter-sheet">
-        {/* Numbers, not words (owner, 2026-11-16: "a score or above it"), each in its colour on the cards' line
-            from red to green, the one picked filled. */}
-        {scoring ? (
-          <section className="filter-group">
-            <h3>Match score</h3>
-            <p className="filter-hint">How well a job fits your CV, out of 10. Pick the lowest you want to see.</p>
-            <div className="score-steps" role="group" aria-label="Match score">
-              {[null, ...FIT_STEPS].map((at) => (
-                <button key={at ?? "any"} type="button" aria-pressed={fit === at}
-                        aria-label={at === null ? "Any match score" : `Match score ${at} or more`}
-                        className={`chip score-step${at === null ? " any" : ""}${fit === at ? " on" : ""}`}
-                        style={at === null ? undefined : { "--fit": at } as CSSProperties}
-                        onClick={() => set({ min_fit: at })}>
-                  {at === null ? "Any" : `${at}+`}
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : null}
+    <FilterSheet on={on} clear={clear} showing={back} onClose={onClose}>
+      {/* Numbers, not words (owner, 2026-11-16: "a score or above it"), each in its colour on the cards' line
+          from red to green, the one picked filled. */}
+      {scoring ? (
         <section className="filter-group">
-          <h3>Where</h3>
-          {countries.length > 1 || country || cities.length > 1 || city ? (
-            <div className="filter-fields">
-              {countries.length > 1 || country ? (
-                <Field label="Country">
-                  <select value={country} onChange={(event) => set({ country: event.target.value })}>
-                    <option value="">All countries</option>
-                    {countries.map((each) => (
-                      <option key={each.value} value={each.value}>{each.label} ({each.jobs})</option>
-                    ))}
-                  </select>
-                </Field>
-              ) : null}
-              {cities.length > 1 || city ? (
-                <Field label="City">
-                  <select value={city} onChange={(event) => set({ city: event.target.value })}>
-                    <option value="">All cities</option>
-                    {cities.map((each) => <option key={each.value} value={each.value}>{each.label} ({each.jobs})</option>)}
-                  </select>
-                </Field>
-              ) : null}
-            </div>
-          ) : null}
-          <label className="pick">
-            <input type="checkbox" role="switch" checked={remote} onChange={() => set({ remote: !remote })} />
-            <span>Remote jobs only</span>
-          </label>
-        </section>
-        {words.length > 1 ? (
-          <section className="filter-group">
-            <h3>Your words</h3>
-            <p className="filter-hint">Show only the jobs that have the words you tap.</p>
-            <div className="chips" role="group" aria-label="Only jobs with">
-              {words.map((each) => {
-                const pressed = picked.includes(each.name);
-                return (
-                  <button key={each.name} type="button" className={pressed ? "chip on" : "chip"} aria-pressed={pressed}
-                          onClick={() => set({ word: pressed ? picked.filter((other) => other !== each.name)
-                            : [...picked, each.name] })}>
-                    {each.name} <span className="count">{each.jobs}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <Field label="How many of your words a job needs">
-              <select value={atLeast} onChange={(event) => set({ min_words: Number(event.target.value) })}>
-                <option value={1}>Any one of them</option>
-                {[2, 3, 4].filter((count) => count <= words.length).map((count) => (
-                  <option key={count} value={count}>At least {count}</option>
-                ))}
-              </select>
-            </Field>
-          </section>
-        ) : null}
-        <section className="filter-group">
-          <h3>More</h3>
-          <Field label="Job site">
-            <select value={source} onChange={(event) => set({ source: event.target.value })}>
-              <option value="">Every job site</option>
-              {boards.map((each) => <option key={each.name} value={each.name}>{each.label} ({each.jobs})</option>)}
-            </select>
-          </Field>
-          <label className="pick">
-            <input type="checkbox" role="switch" checked={made === false}
-                   onChange={() => set({ made: made === false ? null : false })} />
-            <span>Only jobs you have no CV for yet</span>
-          </label>
-        </section>
-        <section className="filter-group">
-          <h3>Sort by</h3>
-          <div className="toggles" role="group" aria-label="Sort by">
-            {ORDERS.map(([value, label]) => (
-              <button key={value} type="button" className="toggle" aria-pressed={order === value}
-                      onClick={() => set({ sort: value })}>
-                {label}
+          <h3>Match score</h3>
+          <p className="filter-hint">How well a job fits your CV, out of 10. Pick the lowest you want to see.</p>
+          <div className="score-steps" role="group" aria-label="Match score">
+            {[null, ...FIT_STEPS].map((at) => (
+              <button key={at ?? "any"} type="button" aria-pressed={fit === at}
+                      aria-label={at === null ? "Any match score" : `Match score ${at} or more`}
+                      className={`chip score-step${at === null ? " any" : ""}${fit === at ? " on" : ""}`}
+                      style={at === null ? undefined : { "--fit": at } as CSSProperties}
+                      onClick={() => set({ min_fit: at })}>
+                {at === null ? "Any" : `${at}+`}
               </button>
             ))}
           </div>
         </section>
-      </div>
-      <div className="filter-foot">
-        {on ? <button type="button" className="secondary" onClick={clear}>Clear all</button> : null}
-        <button type="button" onClick={onClose}>{showing}</button>
-      </div>
-    </Sheet>
+      ) : null}
+      <WhereSection narrow={filters} set={set} offers={offers} />
+      {words.length > 1 ? (
+        <section className="filter-group">
+          <h3>Your words</h3>
+          <p className="filter-hint">Show only the jobs that have the words you tap.</p>
+          <div className="chips" role="group" aria-label="Only jobs with">
+            {words.map((each) => {
+              const pressed = picked.includes(each.name);
+              return (
+                <button key={each.name} type="button" className={pressed ? "chip on" : "chip"} aria-pressed={pressed}
+                        onClick={() => set({ word: pressed ? picked.filter((other) => other !== each.name)
+                          : [...picked, each.name] })}>
+                  {each.name} <span className="count">{each.jobs}</span>
+                </button>
+              );
+            })}
+          </div>
+          <Field label="How many of your words a job needs">
+            <select value={atLeast} onChange={(event) => set({ min_words: Number(event.target.value) })}>
+              <option value={1}>Any one of them</option>
+              {[2, 3, 4].filter((count) => count <= words.length).map((count) => (
+                <option key={count} value={count}>At least {count}</option>
+              ))}
+            </select>
+          </Field>
+        </section>
+      ) : null}
+      <SitesSection narrow={filters} set={set} offers={offers} />
+      <section className="filter-group">
+        <h3>Your CV</h3>
+        <label className="pick">
+          <input type="checkbox" role="switch" checked={made === false}
+                 onChange={() => set({ made: made === false ? null : false })} />
+          <span>Only jobs you have no CV for yet</span>
+        </label>
+      </section>
+      <section className="filter-group">
+        <h3>Sort by</h3>
+        {/* One choice of three, each a row: its mark, then what it is called over what it goes by (owner,
+            2026-11-24: "so it looks structured"). */}
+        <div className="sort-options" role="radiogroup" aria-label="Sort by">
+          {ORDERS.map(([value, label, hint]) => (
+            <button key={value} type="button" role="radio" className="sort-option" aria-checked={order === value}
+                    onClick={() => set({ sort: value })}>
+              <span className="sort-name">{label}</span>
+              <span className="sort-hint">{hint}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </FilterSheet>
   );
 }
 

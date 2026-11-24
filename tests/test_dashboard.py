@@ -55,6 +55,11 @@ def _change(db, user, **fields) -> None:
     db[User.COLLECTION].update_one({"_id": user.id}, {"$set": fields})
 
 
+def _page(body: dict) -> tuple[list[int], int]:
+    """A list's page and its count, without what its filters offer."""
+    return _ids(body), body["total"]
+
+
 # ── the front page ────────────────────────────────────────────────────────────────────────────
 
 def test_an_unfinished_signup_gets_the_onboarding_state_and_nothing_else(api):
@@ -482,7 +487,8 @@ def test_the_jobs_page_opens_on_the_last_day_and_as_they_left_it(api, caplog):
     opened = http.get("/dashboard").json()["job_filters"]
     assert (opened["since_hours"], opened["q"], opened["sort"], opened["word"]) == (24, "", "best", [])
 
-    left = {**opened, "since_hours": None, "source": "greenhouse", "word": ["golang"], "made": False}
+    left = {**opened, "since_hours": None, "source": ["greenhouse", "lever"], "continent": ["EU"],
+            "country": ["DE", "FR"], "city": ["DE/Berlin"], "word": ["golang"], "made": False}
     assert http.put("/feed/filters", json=left).json() == left
     assert http.get("/dashboard").json()["job_filters"] == left
 
@@ -492,17 +498,74 @@ def test_the_jobs_page_opens_on_the_last_day_and_as_they_left_it(api, caplog):
     assert "saved filters no longer read" in caplog.text
 
 
-def test_one_country_or_one_city_and_each_offered_with_its_count(api):
-    http, db, _, jobs = api
-    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {"country": "DE", "city": "berlin"}})
-    db[CorpusJob.COLLECTION].update_one({"_id": jobs[1].id}, {"$set": {"country": "DE", "city": "munich"}})
+def _place(db, job, country: str, city: str | None = None) -> None:
+    db[CorpusJob.COLLECTION].update_one({"_id": job.id}, {"$set": {"country": country, "city": city}})
 
-    body = http.get("/feed").json()
-    assert body["countries"] == [{"value": "DE", "label": "Germany", "jobs": 2}]
-    assert {(each["value"], each["label"]) for each in body["cities"]} == {("berlin", "Berlin"),
-                                                                          ("munich", "Munich")}
-    assert set(_ids(http.get("/feed?country=DE").json())) == {jobs[0].id, jobs[1].id}
-    assert _ids(http.get("/feed?city=munich").json()) == [jobs[1].id]
+
+def _searching(db, user, *countries: str) -> None:
+    """Their search, in these countries: a job in a country they did not pick is not on their list at all."""
+    from libs.db.models import UserConfig
+
+    db[UserConfig.COLLECTION].update_one({"user_id": user.id}, {"$set": {"config": {
+        **CONFIG, "sections": [{**CONFIG["sections"][0], "locations": list(countries)}]}}})
+
+
+def test_each_continent_country_and_town_is_offered_with_its_count_and_where_it_is(api):
+    """What "Where" offers (owner, 2026-11-24: "narrow down continent, then country and then city"): every
+    continent, country and town their jobs are in, counted before any filter, each country with its continent
+    and each town with its country, so the page can offer a country's towns once it is picked."""
+    http, db, user, jobs = api
+    _searching(db, user, "germany", "united_states")
+    _place(db, jobs[0], "DE", "Berlin")
+    _place(db, jobs[1], "US", "Berlin")
+
+    body = http.get("/feed?country=DE").json()
+    assert body["continents"] == [{"value": "EU", "label": "Europe", "jobs": 1, "within": None},
+                                  {"value": "NA", "label": "North America", "jobs": 1, "within": None}]
+    assert body["countries"] == [{"value": "DE", "label": "Germany", "jobs": 1, "within": "EU"},
+                                 {"value": "US", "label": "United States", "jobs": 1, "within": "NA"}]
+    assert body["cities"] == [{"value": "DE/Berlin", "label": "Berlin", "jobs": 1, "within": "DE"},
+                              {"value": "US/Berlin", "label": "Berlin", "jobs": 1, "within": "US"}], (
+        "two towns of one name are two places")
+    assert _ids(http.get("/feed?city=US/Berlin").json()) == [jobs[1].id]
+
+
+def test_as_many_places_as_are_picked_and_a_narrower_one_narrows_only_its_own(api):
+    """Many of each (owner, 2026-11-24: "choose multiple of each"): a continent is every country on it, a
+    country picked inside it narrows it to that country, and a town picked inside a country narrows that
+    country alone; a place picked beside another adds to it."""
+    http, db, user, jobs = api
+    _searching(db, user, "germany", "france", "united_states")
+    berlin, munich = jobs[0], jobs[1]
+    _place(db, berlin, "DE", "Berlin")
+    _place(db, munich, "DE", "Munich")
+    paris, boston = (insert(db, CorpusJob(described_at=now(), url=f"https://example.com/{uuid.uuid4()}",
+                                          source="test", title="Backend Engineer", description="x",
+                                          country=country, city=city))
+                     for country, city in (("FR", "Paris"), ("US", "Boston")))
+
+    def found(query: str) -> set[int]:
+        return set(_ids(http.get(f"/feed?{query}").json()))
+
+    assert found("continent=EU") == {berlin.id, munich.id, paris.id}
+    assert found("continent=EU&continent=NA") == {berlin.id, munich.id, paris.id, boston.id}
+    assert found("continent=EU&country=FR") == {paris.id}, "a country picked on a continent narrows it"
+    assert found("country=DE&country=FR") == {berlin.id, munich.id, paris.id}
+    assert found("country=DE&city=DE/Berlin") == {berlin.id}, "a town picked in a country narrows it"
+    assert found("country=FR&city=DE/Berlin") == {berlin.id, paris.id}, "and beside another adds to it"
+    assert found("city=DE/Berlin&city=DE/Munich") == {berlin.id, munich.id}
+    assert found("continent=EU&city=US/Boston") == {berlin.id, munich.id, paris.id, boston.id}
+    assert http.get("/feed?city=berlin").status_code == 422, "a town is named with its country"
+
+
+def test_jobs_from_the_job_sites_picked_and_from_no_other(api):
+    """"Job sites", as many as somebody picks (owner, 2026-11-24: "select at least one, and more as well")."""
+    http, db, _, jobs = api
+    for job, source in zip(jobs, ("greenhouse", "lever", "linkedin"), strict=True):
+        db[CorpusJob.COLLECTION].update_one({"_id": job.id}, {"$set": {"source": source}})
+
+    assert set(_ids(http.get("/feed?source=greenhouse&source=lever").json())) == {jobs[0].id, jobs[1].id}
+    assert _ids(http.get("/feed?source=lever").json()) == [jobs[1].id]
 
 
 def test_a_card_names_the_country_its_place_was_read_as(api):
@@ -643,7 +706,7 @@ def test_i_applied_counts_takes_the_job_off_the_jobs_page_and_can_be_taken_back(
         "job_id": job.id, "applied": True, "hidden": False, "bookmarked": False}
     assert http.get("/dashboard").json()["applied"] == 1
     assert job.id not in listed()
-    assert [row["id"] for row in http.get("/applied").json()] == [job.id]
+    assert [row["id"] for row in http.get("/applied").json()["jobs"]] == [job.id]
     assert http.get(f"/feed?job={job.id}").json()["total"] == 0, "an alert's link says it is not theirs"
 
     assert http.delete(f"/jobs/{job.id}/applied").json()["applied"] is False
@@ -687,7 +750,7 @@ def test_a_bookmarked_job_stays_on_the_jobs_page_and_is_listed_under_bookmarks_l
         return http.get("/jobs/bookmarked").json()["jobs"]
 
     assert on_the_page() == {first.id: False, senior.id: False}
-    assert http.get("/jobs/bookmarked").json() == {"jobs": [], "total": 0}
+    assert _page(http.get("/jobs/bookmarked").json()) == ([], 0)
 
     assert http.put(f"/jobs/{first.id}/bookmarked").json()["bookmarked"] is True
     # One that is not on their list can be bookmarked too: it was shown to them by its link, or was theirs.
@@ -718,10 +781,10 @@ def test_a_bookmark_is_one_persons_and_leaves_bookmarks_when_they_apply_skip_or_
     http.put(f"/jobs/{first.id}/applied")
     http.put(f"/jobs/{senior.id}/hidden")
     assert [row["id"] for row in http.get("/jobs/bookmarked").json()["jobs"]] == [nurse.id]
-    assert [row["id"] for row in http.get("/applied").json()] == [first.id]
+    assert [row["id"] for row in http.get("/applied").json()["jobs"]] == [first.id]
 
     db[CorpusJob.COLLECTION].update_one({"_id": nurse.id}, {"$set": {"closed_at": now()}})
-    assert http.get("/jobs/bookmarked").json() == {"jobs": [], "total": 0}
+    assert _page(http.get("/jobs/bookmarked").json()) == ([], 0)
 
 
 def test_more_bookmarks_than_a_page_are_counted_whole_and_come_a_page_at_a_time(api):
@@ -748,7 +811,99 @@ def test_more_bookmarks_than_a_page_are_counted_whole_and_come_a_page_at_a_time(
     rest = http.get(f"/jobs/bookmarked?offset={FEED_PAGE}").json()
     assert [row["id"] for row in rest["jobs"]] == still[FEED_PAGE:], "and the rest, each once"
     assert rest["total"] == first["total"]
-    assert http.get(f"/jobs/bookmarked?offset={len(still)}").json() == {"jobs": [], "total": len(still)}
+    assert _page(http.get(f"/jobs/bookmarked?offset={len(still)}").json()) == ([], len(still))
+
+
+def test_bookmarks_are_searched_and_filtered_as_the_jobs_page_is_and_offer_what_all_of_them_have(api):
+    """Owner, 2026-11-24: Bookmarks "should also have a basic search bar and filtering function too": the
+    same search and filters as Jobs, counted over the jobs left, and what the filters offer counted over all
+    of the bookmarks, so another can be picked."""
+    http, db, _user, jobs = api
+    first, senior, nurse = jobs
+    _place(db, first, "DE", "Berlin")
+    _place(db, nurse, "FR", "Paris")
+    db[CorpusJob.COLLECTION].update_one({"_id": nurse.id}, {"$set": {"source": "lever", "company": "Clinic",
+                                                                     "location": "Paris, France"}})
+    for job in jobs:
+        http.put(f"/jobs/{job.id}/bookmarked")
+
+    assert _page(http.get("/jobs/bookmarked?q=nurse").json()) == ([nurse.id], 1)
+    assert _page(http.get("/jobs/bookmarked?q=clinic").json()) == ([nurse.id], 1), "its company too"
+    assert _page(http.get("/jobs/bookmarked?q=paris").json()) == ([nurse.id], 1), "and its place"
+    assert _page(http.get("/jobs/bookmarked?country=DE").json()) == ([first.id], 1)
+    assert _page(http.get("/jobs/bookmarked?city=FR/Paris&source=lever").json()) == ([nurse.id], 1)
+    assert _page(http.get("/jobs/bookmarked?source=test").json()) == ([senior.id, first.id], 2)
+
+    offers = http.get("/jobs/bookmarked?country=DE").json()["offers"]
+    assert [(each["value"], each["jobs"]) for each in offers["countries"]] == [("DE", 1), ("FR", 1)]
+    assert [(each["value"], each["jobs"]) for each in offers["cities"]] == [("DE/Berlin", 1), ("FR/Paris", 1)]
+    assert [(each["name"], each["jobs"]) for each in offers["sources"]] == [("test", 2), ("lever", 1)]
+    assert http.get("/jobs/added").json()["offers"] is None, "a list with no filters offers none"
+
+
+def test_applied_is_filtered_by_search_place_stage_and_day_and_still_tells_the_whole_record(api):
+    """Owner, 2026-11-24: Applied "allows people to filter all of their jobs, just like on the other pages",
+    and a calendar of the days they applied. The jobs are the ones the filters leave; how many there are, the
+    day each was applied to and how many stand at each stage are the whole record, whatever is picked."""
+    http, db, user, jobs = api
+    first, senior, nurse = jobs
+    _place(db, nurse, "FR", "Paris")
+    for job in jobs:
+        http.put(f"/jobs/{job.id}/applied")
+    two_days_ago = now() - timedelta(days=2)
+    db[UserJobState.COLLECTION].update_one({"user_id": user.id, "job_id": first.id},
+                                           {"$set": {"applied_at": two_days_ago}})
+    http.put(f"/jobs/{senior.id}/progress", json={"stage": "interview"})
+
+    def shown(query: str = "") -> list[int]:
+        return _ids(http.get(f"/applied?{query}").json())
+
+    assert shown() == [nurse.id, senior.id, first.id]
+    assert shown("q=nurse") == [nurse.id]
+    assert shown("country=FR") == shown("continent=EU&city=FR/Paris") == [nurse.id]
+    assert shown("stage=interview") == [senior.id]
+    assert shown("stage=applied") == [nurse.id, first.id], "nothing heard yet"
+    day = two_days_ago.replace(hour=0, minute=0, second=0, microsecond=0)
+    assert shown(f"applied_from={day.isoformat()}&applied_to={(day + timedelta(days=1)).isoformat()}"
+                 .replace("+", "%2B")) == [first.id]
+
+    body = http.get("/applied?stage=offer").json()
+    assert body["jobs"] == []
+    assert (body["total"], len(body["dates"]), body["stages"]) == (3, 3, {"applied": 2, "interview": 1})
+    assert body["dates"] == sorted(body["dates"], reverse=True), "the latest first"
+    assert [(each["value"], each["jobs"]) for each in body["offers"]["countries"]] == [("FR", 1)]
+
+
+def test_filters_saved_before_places_were_lists_open_as_they_were_left(api):
+    """Saved before 2026-11-24, a job site, a country and a city were one each, the city by its slug: they
+    open as a list of it, the city named as postings now name their town, rather than all filters lost."""
+    http, db, user, _ = api
+    _change(db, user, job_filters={"source": "greenhouse", "country": "DE", "city": "munich", "q": "go"})
+
+    opened = http.get("/dashboard").json()["job_filters"]
+    assert (opened["source"], opened["country"], opened["city"], opened["q"]) == (
+        ["greenhouse"], ["DE"], ["DE/Munich"], "go")
+    _change(db, user, job_filters={"source": "", "country": "", "city": ""})
+    opened = http.get("/dashboard").json()["job_filters"]
+    assert (opened["source"], opened["country"], opened["city"]) == ([], [], [])
+
+
+def test_every_stored_posting_is_given_its_town_once_by_the_reader_of_every_town(api):
+    """Before 2026-11-24 a posting's town was one of 43 cities or none, so half the jobs had none. The deploy
+    reads every stored posting's place again, once ever (`python -m libs.db`)."""
+    from libs.corpus.repository import read_places_once
+
+    _http, db, _user, jobs = api
+    db[CorpusJob.COLLECTION].update_many({}, {"$set": {"country": None, "city": None}})
+    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {"location": "Debrecen, Hungary"}})
+    db[CorpusJob.COLLECTION].update_one({"_id": jobs[1].id}, {"$set": {"location": "Wernau (Neckar), DE"}})
+
+    assert read_places_once(db) == 2
+    placed = {row["_id"]: (row["country"], row["city"]) for row in db[CorpusJob.COLLECTION].find(
+        {"_id": {"$in": [job.id for job in jobs]}})}
+    assert placed == {jobs[0].id: ("HU", "Debrecen"), jobs[1].id: ("DE", "Wernau"), jobs[2].id: (None, None)}
+    db[CorpusJob.COLLECTION].update_many({}, {"$set": {"city": None}})
+    assert read_places_once(db) == 0, "once ever"
 
 
 # ── the landing page ──────────────────────────────────────────────────────────────────────────

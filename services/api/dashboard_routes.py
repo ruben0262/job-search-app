@@ -4,18 +4,19 @@ from __future__ import annotations
 import logging
 import re
 import uuid as _uuid
+from collections import Counter
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, StringConstraints, ValidationError, field_validator
 from pymongo.database import Database
 
 from libs import fit, prompts
 from libs.corpus import salary
 from libs.corpus.boards import apply_on, board_name
 from libs.corpus.freshness import platform_windows, shelf_life
-from libs.corpus.geo import CITIES, COUNTRY_LABELS
+from libs.corpus.geo import CITIES, CONTINENTS, continent_of, country_name
 from libs.corpus.postings import paragraphs
 from libs.corpus.repository import TYPED
 from libs.db import get, now
@@ -23,7 +24,7 @@ from libs.db.models import BuiltDocument, CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents import about
 from libs.documents.saved import for_jobs
-from libs.matching import Match, norm, page, scan_for
+from libs.matching import Match, norm, offers, page, places, scan_for
 from libs.membership import FREE, PLANS, choosing, is_admin, jobs_as_of, tier, wait_hours
 from libs.obs import audit
 from libs.onboarding import onboarding_state
@@ -68,18 +69,26 @@ class OnboardingDashboard(BaseModel):
     areas: list[str]
 
 
+# A continent, by the code `libs.corpus.geo.CONTINENTS` gives it; a country, by its ISO code; a town, with its
+# country ("DE/Berlin", as the filters offer it, `libs.matching.offered`).
+Continent = Literal[tuple(CONTINENTS)]
+CountryCode = Annotated[str, StringConstraints(pattern=r"^[A-Z]{2}$")]
+Town = Annotated[str, StringConstraints(pattern=r"^[A-Z]{2}/.+$", max_length=90)]
+
+
 class JobFilters(BaseModel):
     """The Jobs page's filters, named as `/feed` takes them, kept for each person so the page opens as they
     left it, on any device (owner, 2026-11-07). A field left out is its default, which is what a new
-    account sees."""
+    account sees. Places and job sites are lists, as many of each as somebody picks (owner, 2026-11-24)."""
     q: str = Field("", max_length=200)
     remote: bool = False
     # "Last 24 hours" for everybody until they choose another (owner, 2026-11-07). None: "Any time", the
     # whole job shelf life.
     since_hours: int | None = Field(24, ge=1, le=24 * 60)
-    source: str = Field("", max_length=60)
-    country: str = Field("", max_length=2)
-    city: str = Field("", max_length=40)
+    source: list[str] = Field([], max_length=60)
+    continent: list[Continent] = Field([], max_length=len(CONTINENTS))
+    country: list[CountryCode] = Field([], max_length=250)
+    city: list[Town] = Field([], max_length=200)
     sort: Literal["best", "newest", "arrived"] = "best"
     # False: only the jobs with no CV made yet. None: every job.
     made: bool | None = None
@@ -87,6 +96,16 @@ class JobFilters(BaseModel):
     min_words: int = Field(1, ge=1, le=50)
     # Only the jobs whose match score shows this or more (`libs.fit`); None: every job.
     min_fit: int | None = Field(None, ge=1, le=10)
+
+    @field_validator("source", "country", "city", mode="before")
+    @classmethod
+    def _one_of_each(cls, value: object) -> object:
+        """Filters saved before 2026-11-24 held one job site, country and city each, a city by its slug
+        ("munich"): as a list of it, a city named as a town is now."""
+        if not isinstance(value, str):
+            return value
+        place = CITIES.get(value)
+        return [f"{next(iter(place.countries))}/{place.label}" if place else value] if value else []
 
 
 class ReadyDashboard(BaseModel):
@@ -168,23 +187,69 @@ class FeedWord(BaseModel):
 
 
 class FeedPlace(BaseModel):
-    # A country's ISO code, or a city's slug (`libs.corpus.geo.CITIES`).
+    # A continent's code (`libs.corpus.geo.CONTINENTS`), a country's ISO code, or a town with its country:
+    # "DE/Berlin".
     value: str
     label: str
-    # How many of their jobs are there, before any filter.
+    # How many of the list's jobs are there, before any filter.
     jobs: int
+    # Where it is: a country's continent, a town's country. None for a continent.
+    within: str | None = None
 
 
-class Feed(BaseModel):
-    total: int
-    jobs: list[FeedJob]
-    # The boards their jobs came from, for the filter that picks one.
+class Offers(BaseModel):
+    """What a list's filters offer, each with how many of its jobs have it, most first, counted before any
+    filter, so another can be picked: the job sites its jobs came from, and the continents, countries and
+    towns they are in."""
     sources: list[FeedSource]
-    # Their words found in their jobs, most found first, for the filter that picks some.
-    words: list[FeedWord]
-    # The countries and the cities their jobs are in, most jobs first, for the filters that pick one.
+    continents: list[FeedPlace]
     countries: list[FeedPlace]
     cities: list[FeedPlace]
+
+
+def offers_of(sources: list[tuple[str, int]], countries: list[tuple[str, int]],
+              cities: list[tuple[str, int]]) -> Offers:
+    """`Offers` from the counts the database made (`libs.matching.offered`): each named, each place with
+    where it is, and the continents added up from their countries."""
+    continents: Counter[str] = Counter()
+    for code, count in countries:
+        if continent := continent_of(code):
+            continents[continent] += count
+    return Offers(
+        sources=[FeedSource(name=name, label=board_name(name), jobs=count) for name, count in sources],
+        continents=[FeedPlace(value=key, label=CONTINENTS[key], jobs=count)
+                    for key, count in sorted(continents.items(), key=lambda item: (-item[1], item[0]))],
+        countries=[FeedPlace(value=code, label=country_name(code), jobs=count, within=continent_of(code))
+                   for code, count in countries],
+        cities=[FeedPlace(value=town, label=town.split("/", 1)[1], jobs=count, within=town.split("/", 1)[0])
+                for town, count in cities])
+
+
+def narrowing(*, q: str | None = Query(None, max_length=200), remote: bool | None = None,
+              continent: list[Continent] = Query([], max_length=len(CONTINENTS)),
+              country: list[CountryCode] = Query([], max_length=250),
+              city: list[Town] = Query([], max_length=200),
+              source: list[str] = Query([], max_length=60)) -> list[dict]:
+    """What a list's own filters ask of a job, each a condition: the one definition behind Jobs, Bookmarks
+    and Applied (owner, 2026-11-24: "filtering ... not just the jobs page, but the bookmarks, and applied").
+    The search reaches a job's title, company, place and link; remote only, or not remote; in the places
+    picked (`libs.matching.places`); from one of the job sites picked."""
+    where = places(continent, country, city)
+    return [condition for on, condition in (
+        (bool(q), {"$expr": {"$regexMatch": {
+            "input": {"$concat": ["$title", " ", {"$ifNull": ["$company", ""]}, " ",
+                                  {"$ifNull": ["$location", ""]}, " ", "$url"]},
+            "regex": re.escape(q or ""), "options": "i"}}}),
+        (remote is not None, {"is_remote": True} if remote else {"is_remote": {"$ne": True}}),
+        (where is not None, where),
+        (bool(source), {"source": {"$in": source}})) if on]
+
+
+class Feed(Offers):
+    total: int
+    jobs: list[FeedJob]
+    # Their words found in their jobs, most found first, for the filter that picks some.
+    words: list[FeedWord]
     # When this list was read: jobs found after it are the new ones (`found_after`).
     as_of: datetime
     # Of `total`, how many reached the list after `found_after`; `None` when it was not asked. With `total`
@@ -321,13 +386,9 @@ def _banners(user: User, plan: str) -> list[DashboardBanner]:
 def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user),
          limit: int = Query(FEED_PAGE, ge=1, le=100),
          offset: int = Query(0, ge=0),
-         q: str | None = Query(None, max_length=200),
-         remote: bool | None = None,
+         narrow: list[dict] = Depends(narrowing),
          job: int | None = None,
          since_hours: int | None = Query(None, ge=1, le=24 * 60),
-         source: str | None = Query(None, max_length=60),
-         country: str | None = Query(None, max_length=2),
-         city: str | None = Query(None, max_length=40),
          made: bool | None = None,
          word: list[str] = Query([], max_length=50),
          min_words: int = Query(1, ge=1, le=50),
@@ -338,8 +399,9 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
          sort: Literal["best", "newest", "arrived"] = "best") -> Feed:
     """This person's matches, a page at a time: the most of their words first, the newest posted
     first, or the ones that arrived here last first:
-    searched, remote only, posted lately, from one board, in one country or one city, with a document
-    made or not, having every word picked, or at least so many of their words — or one job, the one
+    narrowed as every list is (`narrowing`: searched, remote only, in the places and from the job sites
+    picked), posted lately, with a document made or not, having every word picked, or at least so many of
+    their words — or one job, the one
     an alert's link names, which is either still in their list or not. `found_after` counts the jobs
     that reached the list since it was read (`arrived`), which is how the page learns how many new ones
     there are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn
@@ -371,17 +433,10 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     # beside a list of 2 from the last day disagreed (2026-11-07).
     made_for = [] if made is None else db[BuiltDocument.COLLECTION].distinct("job_id", {"user_id": user_id})
     picked = sorted({norm(each) for each in word if each.strip()})
-    wanted = [condition for on, condition in (
-        (bool(q), {"$expr": {"$regexMatch": {
-            "input": {"$concat": ["$title", " ", {"$ifNull": ["$company", ""]}, " ", "$url"]},
-            "regex": re.escape(q or ""), "options": "i"}}}),
-        (remote is not None, {"is_remote": True} if remote else {"is_remote": {"$ne": True}}),
-        (source is not None, {"source": source}),
-        (country is not None, {"country": country}),
-        (city is not None, {"city": city}),
+    wanted = [*narrow, *(condition for on, condition in (
         (made is not None, {"_id": {"$in" if made else "$nin": made_for}}),
         (bool(picked), {"words": {"$all": picked}}),
-        (min_words > 1, {"nwords": {"$gte": min_words}})) if on]
+        (min_words > 1, {"nwords": {"$gte": min_words}})) if on)]
     # A time without a zone is UTC, as the database reads one when it does the comparing.
     since = found_after.replace(tzinfo=found_after.tzinfo or UTC) if found_after else None
     # Their match score, for a plan that has it (owner, 2026-11-16: Starter and Member): on each card, worked
@@ -406,16 +461,11 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
         {"_id": {"$in": ids}}, {"description": 1})} if ids else {}
     documents = for_jobs(db, user_id, ids) if ids else {}
     kept = bookmarked(db, user_id, ids) if ids else set()
-    return Feed(total=found.total, arrived=found.arrived,
+    return Feed(**dict(offers_of(found.sources, found.countries, found.cities)),
+                total=found.total, arrived=found.arrived,
                 jobs=[feed_row(match, texts.get(match.job.id), documents.get(match.job.id, []),
                                bookmarked=match.job.id in kept) for match in found.matches],
-                sources=[FeedSource(name=name, label=board_name(name), jobs=count)
-                         for name, count in found.sources],
                 words=[FeedWord(name=name, jobs=count) for name, count in found.words],
-                countries=[FeedPlace(value=code, label=COUNTRY_LABELS.get(code, code), jobs=count)
-                           for code, count in found.countries],
-                cities=[FeedPlace(value=slug, label=CITIES[slug].label if slug in CITIES else slug,
-                                  jobs=count) for slug, count in found.cities],
                 as_of=as_of, shelf_hours=shortest, shelf_longest_hours=longest, delay_hours=delay,
                 cut=found.cut, match_scores=mine is not None)
 
@@ -520,23 +570,55 @@ class AppliedJob(BaseModel):
     progress: list[Step]
 
 
+# Where an application stands now: its last step, or "applied" while nothing has been heard.
+Stage = Literal["applied", "interview", "offer", "hired", "rejected"]
+
+
+class Applications(BaseModel):
+    """The jobs somebody said they applied to that the page's filters leave, the latest first, and the whole
+    record beside them, whatever the filters: how many there are, when each was applied to (the calendar
+    counts them by the person's own days), how many stand at each stage, and what the filters offer."""
+    jobs: list[AppliedJob]
+    total: int
+    dates: list[datetime]
+    stages: dict[Stage, int]
+    offers: Offers
+
+
+def _stage(row: dict) -> str:
+    return (row.get("progress") or [{"stage": "applied"}])[-1]["stage"]
+
+
 @router.get("/applied")
-def applied(db: Database = Depends(get_db),
-            user_id: _uuid.UUID = Depends(current_user)) -> list[AppliedJob]:
+def applied(*, narrow: list[dict] = Depends(narrowing), stage: list[Stage] = Query([], max_length=5),
+            applied_from: datetime | None = None, applied_to: datetime | None = None,
+            db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> Applications:
     """Every job this person said they applied to, the latest first, whether or not it still matches
-    their words. Retention keeps these postings (`libs.corpus.archive.ACTED_ON`)."""
+    their words, narrowed as every list is (`narrowing`), to the stages picked, and to the ones applied to
+    from `applied_from` until `applied_to`: a day of the calendar, as the page's own clock bounds it.
+    Retention keeps these postings (`libs.corpus.archive.ACTED_ON`)."""
     rows = list(db[UserJobState.COLLECTION].find(
         {"user_id": user_id, "applied_at": {"$ne": None}}, {"job_id": 1, "applied_at": 1, "progress": 1},
         sort=[("applied_at", -1)]))
     jobs = {doc["_id"]: doc for doc in db[CorpusJob.COLLECTION].find(
         {"_id": {"$in": [row["job_id"] for row in rows]}},
         {"title": 1, "company": 1, "location": 1, "url": 1})}
-    documents = for_jobs(db, user_id, list(jobs))
-    return [AppliedJob(id=row["job_id"], title=job["title"], company=job.get("company"),
-                       location=job.get("location"), url=job["url"], applied_at=row["applied_at"],
-                       documents=[job_document(each) for each in documents.get(row["job_id"], [])],
-                       progress=row.get("progress") or [])
-            for row in rows if (job := jobs.get(row["job_id"]))]
+    rows = [row for row in rows if row["job_id"] in jobs]
+    kept = set(db[CorpusJob.COLLECTION].distinct("_id", {"$and": [{"_id": {"$in": list(jobs)}}, *narrow]})
+               ) if narrow else set(jobs)
+    start, end = (when.replace(tzinfo=when.tzinfo or UTC) if when else None
+                  for when in (applied_from, applied_to))
+    shown = [row for row in rows if row["job_id"] in kept and (not stage or _stage(row) in stage)
+             and (start is None or row["applied_at"] >= start) and (end is None or row["applied_at"] < end)]
+    documents = for_jobs(db, user_id, [row["job_id"] for row in shown])
+    return Applications(
+        jobs=[AppliedJob(id=row["job_id"], title=job["title"], company=job.get("company"),
+                         location=job.get("location"), url=job["url"], applied_at=row["applied_at"],
+                         documents=[job_document(each) for each in documents.get(row["job_id"], [])],
+                         progress=row.get("progress") or [])
+              for row in shown if (job := jobs[row["job_id"]])],
+        total=len(rows), dates=[row["applied_at"] for row in rows], stages=Counter(map(_stage, rows)),
+        offers=offers_of(**offers(db, list(jobs))))
 
 
 class StepRequest(BaseModel):

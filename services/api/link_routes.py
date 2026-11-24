@@ -32,13 +32,21 @@ from libs.db import get, now
 from libs.db.models import CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
-from libs.matching import Match, green_words
+from libs.matching import Match, green_words, offers
 from libs.membership import has
 from libs.obs import audit
 from libs.proxy import site_proxy
 from libs.secrets import redacting
 from libs.tenant.repository import TenantRepository
-from services.api.dashboard_routes import FEED_PAGE, FeedJob, bookmarked, feed_row
+from services.api.dashboard_routes import (
+    FEED_PAGE,
+    FeedJob,
+    Offers,
+    bookmarked,
+    feed_row,
+    narrowing,
+    offers_of,
+)
 from services.api.deps import current_user, get_db, rate_limit
 
 logger = logging.getLogger(__name__)
@@ -184,9 +192,11 @@ def save_typed(body: TypedJob, request: Request, db: Database = Depends(get_db),
 
 
 class MarkedJobs(BaseModel):
-    """A page of the jobs somebody holds a mark on, and how many there are in all."""
+    """A page of the jobs somebody holds a mark on, and how many there are in all, or with the page's filters
+    on. Where the page filters them (Bookmarks), what its filters offer over all of them; None elsewhere."""
     jobs: list[FeedJob]
     total: int
+    offers: Offers | None = None
 
 
 @router.get("/jobs/added")
@@ -199,25 +209,34 @@ def added(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_
 
 @router.get("/jobs/bookmarked")
 def bookmarks(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user), *,
-              offset: int = Query(0, ge=0)) -> MarkedJobs:
+              offset: int = Query(0, ge=0), narrow: list[dict] = Depends(narrowing)) -> MarkedJobs:
     """The jobs this person bookmarked, the latest first, as the Jobs page shows a job: until they take
-    the bookmark off, skip the job, apply to it, or it closes. For every account (owner, 2026-11-15)."""
-    return marked_jobs(db, user_id, {"bookmarked_at": {"$ne": None}}, "bookmarked_at", offset, why=True)
+    the bookmark off, skip the job, apply to it, or it closes. For every account (owner, 2026-11-15).
+    Searched and filtered as every list is (`narrowing`; owner, 2026-11-24: "a basic search bar and
+    filtering function too")."""
+    return marked_jobs(db, user_id, {"bookmarked_at": {"$ne": None}}, "bookmarked_at", offset, why=True,
+                       narrow=narrow)
 
 
 def marked_jobs(db: Database, user_id: _uuid.UUID, mark: dict, since: str, offset: int, *, why: bool = False,
-                words: list[str] | None = None) -> MarkedJobs:
+                words: list[str] | None = None, narrow: list[dict] | None = None) -> MarkedJobs:
     """The jobs this person holds a mark on (`mark`: they added it, bookmarked it, an alert found it), the
     latest first by `since`, less the ones they skipped or applied to and the ones that closed: a page of them
     as the Jobs page has one, from `offset`, and how many there are. The first hundred marks were read and
     the closed ones dropped after, with no count: somebody with 300 bookmarks, 30 of them closed, was shown
-    "90 bookmarked jobs" and no way to the other 180 (2026-11-21)."""
+    "90 bookmarked jobs" and no way to the other 180 (2026-11-21). With `narrow`, a page's own filters
+    (`narrowing`), only the jobs they leave are paged and counted, and what the filters offer is counted over
+    all of them."""
     ids = [row["job_id"] for row in db[UserJobState.COLLECTION].find(
         {"user_id": user_id, **mark, "applied_at": None, "dismissed_at": None}, {"job_id": 1},
         sort=[(since, -1)])]
     still = set(db[CorpusJob.COLLECTION].distinct("_id", {"_id": {"$in": ids}, "closed_at": None}))
     ids = [job_id for job_id in ids if job_id in still]
-    return MarkedJobs(total=len(ids),
+    offered = None if narrow is None else offers_of(**offers(db, ids))
+    if narrow:
+        left = set(db[CorpusJob.COLLECTION].distinct("_id", {"$and": [{"_id": {"$in": ids}}, *narrow]}))
+        ids = [job_id for job_id in ids if job_id in left]
+    return MarkedJobs(total=len(ids), offers=offered,
                       jobs=job_cards(db, user_id, ids[offset:offset + FEED_PAGE], why=why, words=words))
 
 

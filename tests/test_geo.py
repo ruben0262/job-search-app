@@ -3,7 +3,16 @@ from __future__ import annotations
 
 import pytest
 
-from libs.corpus.geo import EU_COUNTRIES, allows, posting_country, read_city, read_country, wanted_countries
+from libs.corpus.geo import (
+    EU_COUNTRIES,
+    allows,
+    continent_of,
+    countries_in,
+    posting_country,
+    posting_place,
+    read_country,
+    wanted_countries,
+)
 
 # ── the trick: what a region selection actually admits ───────────────────────────────────────────
 
@@ -44,17 +53,54 @@ def test_a_city_picked_before_cities_were_retired_reads_as_its_country():
     assert wanted_countries(locations) == frozenset({"HU", "DE", "CH"})
 
 
-@pytest.mark.parametrize(("location", "city"), [
-    ("Berlin, Berlin, Germany", "berlin"),
-    ("Warszawa, mazowieckie, Poland", "warsaw"),
-    ("München, Bayern", "munich"),
-    ("Greater London", "london"),
-    ("Kraków", "krakow"),
-    ("Vörstetten, Baden-Württemberg, Germany", None),
-    ("Remote", None),
+@pytest.mark.parametrize(("location", "place"), [
+    ("Berlin, Berlin, Germany", ("DE", "Berlin")),
+    ("Warszawa, mazowieckie, Poland", ("PL", "Warsaw")),
+    ("München, Bayern", ("DE", "Munich")),
+    ("Greater London", ("GB", "London")),
+    ("City Of London, England, UK", ("GB", "London")),
+    ("Kraków (Hybrid)", ("PL", "Kraków")),
+    ("Hybrid - Oulu, North Ostrobothnia", ("FI", "Oulu")),
+    ("New York, NY", ("US", "New York City")),
+    # Towns that were none of the 43 cities before 2026-11-24, so their jobs had no town.
+    ("Debrecen, Hungary", ("HU", "Debrecen")),
+    ("Obernai, Grand Est, France", ("FR", "Obernai")),
+    ("Wernau (Neckar), DE", ("DE", "Wernau")),
+    ("Vörstetten, Baden-Württemberg, Germany", ("DE", None)),
+    ("Remote", (None, None)),
 ])
-def test_a_postings_city_is_read_the_way_boards_write_it(location, city):
-    assert read_city(location) == city
+def test_a_postings_town_is_read_the_way_boards_write_it(location, place):
+    """Every town of 5,000 people and more (owner, 2026-11-24: "keep a tab on ... all the cities as well
+    from all the jobs"), where before a town was one of 43 cities or none."""
+    assert posting_place(location) == place
+
+
+@pytest.mark.parametrize(("location", "place"), [
+    # Bordeaux is called "Porto" too, and is the larger; Belarus has the larger Brest.
+    ("Porto, Portugal", ("PT", "Porto")),
+    ("Brest, Brittany, France", ("FR", "Brest")),
+    ("Surrey, England, United Kingdom", ("GB", None)),
+    ("South Holland, Netherlands", ("NL", None)),
+])
+def test_a_town_is_the_one_of_its_name_in_the_postings_own_country(location, place):
+    """Read with no regard to its country, "Porto, Portugal" was Bordeaux, "Surrey" a town in Canada and
+    "South Holland" one in the United States (2026-11-24)."""
+    assert posting_place(location) == place
+
+
+@pytest.mark.parametrize(("location", "place"), [
+    ("Luxembourg", ("LU", None)),
+    ("Luxembourg, Luxembourg", ("LU", "Luxembourg")),
+    ("Poland - Warsaw", ("PL", "Warsaw")),
+    ("European Union", (None, None)),
+    ("Remote job", (None, None)),
+    ("Time zone: CET (+/- 3 hours)", (None, None)),
+])
+def test_a_country_or_a_word_is_never_a_town_that_shares_its_name(location, place):
+    """A country's own name is the country, unless more of the place follows it; and only a whole part of a
+    place is a town: read word by word, "European Union" was a town called Union, "Remote job" a village in
+    France and "Time zone" one in Norway (2026-11-24)."""
+    assert posting_place(location) == place
 
 
 def test_selections_add_up_rather_than_narrowing_each_other():
@@ -213,13 +259,139 @@ def test_every_location_a_user_can_pick_resolves_to_countries():
         f"the picker offers {unresolved}, and `wanted_countries` cannot turn them into countries")
 
 
-def test_every_city_a_posting_is_read_in_is_named_and_in_a_country_offered():
-    """The jobs page filters by city: a city no posting can be read as being in is an empty choice, and
-    one whose country is not offered would retire into nothing."""
-    from libs.corpus.geo import CITIES, CITY_COUNTRY
+def test_a_posting_in_a_city_an_alert_follows_is_read_as_that_city_by_every_name_it_goes_by():
+    """An alert follows a city by its label (`libs.alerts.Rule`), so a posting there has to carry that label
+    as its town, however its board writes it ("Köln", "Koeln", "Cologne"), or the alert hears of nothing.
+    And a city whose country is not offered would retire into nothing."""
+    from libs.corpus.geo import CITIES, CITY_COUNTRY, place_names
 
-    assert not [slug for slug in CITIES if read_city(slug.replace("_", " ")) != slug]
+    unread = {name: posting_place(name) for slug, place in CITIES.items() for name in place_names(slug)
+              if posting_place(name) != (next(iter(place.countries)), place.label)}
+    assert not unread
     assert set(CITY_COUNTRY) == set(CITIES)
+
+
+# A job's place as LinkedIn wrote it, for every country My search offers: from a page of each country's jobs
+# listed on 2026-11-24, of which 1,088 of 1,089 were read in the country asked for and 944 in a town, Malta
+# aside, then asked for by another name (CHANGELOG).
+LINKEDIN = [
+    ("Belfast, Northern Ireland, United Kingdom", "GB", "Belfast"),
+    ("Dublin, County Dublin, Ireland", "IE", "Dublin"),
+    ("Tirana, Tirana, Albania", "AL", "Tirana"),
+    ("Andorra la Vella, Andorra", "AD", "Andorra la Vella"),
+    ("Yerevan, Yerevan, Armenia", "AM", "Yerevan"),
+    ("Vienna, Vienna, Austria", "AT", "Vienna"),
+    ("Baku, Baku Ekonomic Zone, Azerbaijan", "AZ", "Baku"),
+    ("Minsk, Minsk, Belarus", "BY", "Minsk"),
+    ("Brussels, Brussels Region, Belgium", "BE", "Brussels"),
+    ("Sarajevo, Federation of Bosnia and Herzegovina, Bosnia and Herzegovina", "BA", "Sarajevo"),
+    ("Sofia, Sofia City, Bulgaria", "BG", "Sofia"),
+    ("Zagreb, Zagreb, Croatia", "HR", "Zagreb"),
+    ("Paphos, Cyprus", "CY", "Paphos"),
+    ("Brno, South Moravia, Czechia", "CZ", "Brno"),
+    ("Copenhagen, Capital Region of Denmark, Denmark", "DK", "Copenhagen"),
+    ("Tallinn, Harjumaa, Estonia", "EE", "Tallinn"),
+    ("Hósvík, Streymoy region, Faroe Islands", "FO", None),
+    ("Helsinki, Uusimaa, Finland", "FI", "Helsinki"),
+    ("Metz, Grand Est, France", "FR", "Metz"),
+    ("Tbilisi, Georgia", "GE", "Tbilisi"),
+    ("Munich, Bavaria, Germany", "DE", "Munich"),
+    ("Gibraltar, Gibraltar", "GI", "Gibraltar"),
+    ("Athens, Attiki, Greece", "GR", "Athens"),
+    ("St Peter Port, Guernsey, Guernsey", "GG", "Saint Peter Port"),
+    ("Budapest, Budapest, Hungary", "HU", "Budapest"),
+    ("Reykjavík, Capital Region, Iceland", "IS", "Reykjavík"),
+    ("Douglas, Douglas, Isle of Man", "IM", "Douglas"),
+    ("Rome, Latium, Italy", "IT", "Rome"),
+    ("St. Helier, St. Helier, Jersey", "JE", "Saint Helier"),
+    ("Pristina, District of Pristina, Kosovo", "XK", "Pristina"),
+    ("Riga, Riga, Latvia", "LV", "Riga"),
+    ("Vaduz, Liechtenstein", "LI", "Vaduz"),
+    ("Vilnius, Vilniaus, Lithuania", "LT", "Vilnius"),
+    ("Luxembourg, Luxembourg, Luxembourg", "LU", "Luxembourg"),
+    ("San Ġiljan, Saint Julian's, Malta", "MT", "San Ġiljan"),
+    ("Chişinău, Chișinău, Moldova", "MD", "Chisinau"),
+    ("Monaco, Monaco, Monaco", "MC", "Monaco"),
+    ("Podgorica, Montenegro", "ME", "Podgorica"),
+    ("Amsterdam, North Holland, Netherlands", "NL", "Amsterdam"),
+    ("Skopje, Skopje Statistical Region, North Macedonia", "MK", "Skopje"),
+    ("Oslo, Oslo, Norway", "NO", "Oslo"),
+    ("Gdynia, Pomorskie, Poland", "PL", "Gdynia"),
+    ("Porto, Porto, Portugal", "PT", "Porto"),
+    ("Bucharest, Bucharest, Romania", "RO", "Bucharest"),
+    ("Moscow City, Russia", "RU", "Moscow"),
+    ("San Marino, San Marino", "SM", "San Marino"),
+    ("Belgrade, Serbia", "RS", "Belgrade"),
+    ("Bratislava, Bratislava, Slovakia", "SK", "Bratislava"),
+    ("Ljubljana, Slovenia", "SI", "Ljubljana"),
+    ("Málaga, Andalusia, Spain", "ES", "Málaga"),
+    ("Stockholm, Stockholm County, Sweden", "SE", "Stockholm"),
+    ("Zurich, Zurich, Switzerland", "CH", "Zurich"),
+    ("Istanbul, Türkiye", "TR", "Istanbul"),
+    ("Kyiv, Kyiv City, Ukraine", "UA", "Kyiv"),
+    ("Vatican City", "VA", "Vatican City"),
+    ("Mission Viejo, CA", "US", "Mission Viejo"),
+    ("Winnipeg, Manitoba, Canada", "CA", "Winnipeg"),
+]
+
+
+@pytest.mark.parametrize(("location", "country", "town"), LINKEDIN)
+def test_a_job_linkedin_lists_for_any_country_is_read_in_that_country_and_town(location, country, town):
+    """Owner, 2026-11-24: "make sure all the countries are tested for linkedin ... same with cities too"."""
+    assert posting_place(location, within=country) == (country, town)
+    assert posting_place(location)[0] == country, "and from its place alone, the sweep's country aside"
+
+
+def test_every_country_offered_has_a_place_linkedin_wrote_for_it_above():
+    from libs.corpus.geo import COUNTRY_LABELS
+
+    assert {country for _, country, _ in LINKEDIN} == set(COUNTRY_LABELS)
+
+
+@pytest.mark.parametrize(("location", "title", "place"), [
+    ("St. Gallen, Switzerland", None, ("CH", "Sankt Gallen")),
+    ("Baku City, Baku Ekonomic Zone, Azerbaijan", None, ("AZ", "Baku")),
+    # Its title named France, and the title was read before the town in its place.
+    ("Vatican City", "Account Manager France", ("VA", "Vatican City")),
+    ("Greater Nice Metropolitan Area", "Product Owner, Sofia Antipolis", ("FR", "Nice")),
+    ("Richmond, Virginia", None, ("US", "Richmond")),
+])
+def test_a_place_is_read_before_the_title_and_as_a_board_shortens_or_wraps_it(location, title, place):
+    assert posting_place(location, title=title) == place
+
+
+@pytest.mark.parametrize(("location", "country"), [
+    ("Polska", "PL"), ("Wrocław, Polska", "PL"), ("Spanien", "ES"), ("Cypern", "CY"),
+    ("Deutschlandweit", "DE"), ("Texas - Remote", "US"), ("New Jersey", "US"), ("Atlanta, Georgia", "US"),
+    ("Maine-et-Loire, France", "FR"),
+])
+def test_a_country_in_its_own_language_or_a_us_state_is_read_as_its_country(location, country):
+    """Just Join IT's "Polska", Platsbanken's "Spanien", Lever's "Texas": read as no country, each job passed
+    every country filter (2026-11-24)."""
+    assert posting_place(location)[0] == country
+
+
+def test_a_sweeps_country_decides_between_places_of_one_name_and_puts_nowhere_else_there():
+    """In Serbia's list "Nis Metropolitan Area" is Niš, not Nice; in Russia's, a village called Kosovo is in
+    Russia. A place that names nowhere in the country, "European Union" or a town in Wyoming, is left as it
+    reads."""
+    assert posting_place("Nis Metropolitan Area", within="RS") == ("RS", "Niš")
+    assert posting_place("Nis Metropolitan Area") == ("FR", "Nice")
+    assert posting_place("Kosovo, Tver\u2019, Russia", within="RU") == ("RU", "Tver")
+    assert posting_place("European Union", within="DE") == (None, None)
+    assert posting_place("Wheatland, WY", within="GG")[0] == "US"
+
+
+def test_every_country_of_europe_can_be_picked():
+    """Owner, 2026-11-24: "make sure that we have all the languages and countries, in my search so nothing is
+    missed from europe". Only Åland and Svalbard are not, each a part of a country offered (Finland, Norway)
+    with no job market of its own."""
+    from libs.corpus.geo import COUNTRIES
+
+    offered = {code for place in COUNTRIES.values() for code in place.countries}
+    assert set(countries_in(["EU"])) - offered == {"AX", "SJ"}
+    assert {"TR", "GE", "AM", "AZ", "CY"} <= set(countries_in(["EU"])), "in Europe and Asia both: in Europe"
+    assert {continent_of(code) for code in offered} == {"EU", "NA"}
 
 
 def test_remoteness_is_not_in_the_place_vocabulary():

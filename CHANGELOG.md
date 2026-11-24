@@ -82,6 +82,201 @@ postings available."
     holds its sources twice); that the top row moves right and the other left; and that the counts are gone.
     Both fail on the last commit.
 
+## 2026-11-24, afternoon — The calendar behind a button of its own, Sort by in one column, every country tried on LinkedIn, and the harvester's memory more than halved
+
+The owner, of the morning's work: "before filters we make a button called calander that does a popup below the button
+... lets correct the sort by section so its looks structures not all over the place"; "make sure that all these are
+implemented properly for mobile ... assign proper break points"; "make sure all the countries are tested for linkedin
+and all other jobs as well, same with cities too"; "solve the harvestor memory issue ... use less memory of the db ...
+is there any way to measure what takes all that up and reduce it, while keeping the performance of the app intact";
+and, midway, "we can also increase RAM usage if that makes this faster, slightly ... lets optimize this so fetches,
+information transfer and so on are all fast and efficient". Not committed.
+
+**Applied's calendar** opens from a Calendar button before Filters, under it and over the list: its right edge under
+the button's on a wide screen, the page's width from its left edge on a phone. It closes when a day is picked, on a
+tap outside it or on Escape, giving the button its focus back.
+
+**Sort by** is one column: each order a row, a round mark then its name over what it goes by, all from one left edge.
+A button centres what it holds, so each order's text had sat at its own indent.
+
+**Phones and breakpoints.** Jobs with its filters open, Bookmarks searched, Applied with the calendar open and My search
+with every language shown, at 13 widths from 320 to 1440 px, the site's own steps (400, 720, 900) among them: nothing
+past the screen's edge and nothing scrolling sideways, the calendar inside the screen, the sort orders on one edge, the
+search row's controls one height. One fault: the languages, two to a row at every phone width, ran 42 px off a 320 px
+screen ("Luxembourgish" beside its switch). Two to a row where two fit (390 px and wider), one below.
+
+**Every country, asked of LinkedIn as the harvest asks it** (its name, no word, a week, two pages each: 178 requests
+through the proxy). LinkedIn took eight for somewhere else: Andorra for a town in Aragon, Armenia for the Colombian
+city, Georgia for the American state, Guernsey for a town in Wyoming, Malta (partly) for a town in Montana, Montenegro
+for a town in Brazil, San Marino for the Californian city, and Kosovo for nothing at all; North Macedonia gave two
+jobs. Each is asked for now by a name LinkedIn reads as it, found a page each (`linkedin.LINKEDIN_NAMES`): "Andorra la
+Vella, Andorra", "Republic of Armenia", "Tbilisi, Georgia" (every name for the whole country gave the American state),
+"Bailiwick of Guernsey", "Valletta, Malta" ("Republic of Malta" gave Nepal), "Crna Gora", "San Marino, San Marino",
+"Prishtina, Kosovo", "Republic of North Macedonia". Asked again: 1,088 of 1,089 jobs outside Malta in the country
+asked for, 944 with a town; Malta's ten all Malta's. A job a sweep lists is read in the country it was listed in
+where its place can be read two ways (`JobLink.within`): in Serbia's list "Nis Metropolitan Area" is Niš, not Nice; in
+Russia's a village called Kosovo is in Russia. `test_geo.py` holds a place LinkedIn wrote for every country offered.
+
+**Every other source**, each read once on a scratch copy of the dev database with nothing stored (4,065 jobs), each
+job's place read and counted by source and country. Fixed from what it showed:
+- No Fluff Jobs: 27 of the 76 postings on its first page had no place at all, so passed every country filter: its
+  first place is often a province alone. Now its first town with its country ("Warsaw, Poland"), or the country.
+  `location_suffix`, read there and set nowhere, is gone.
+- The American states ("Texas - Remote", "New Jersey": Lever) and each European country in its own language and as
+  the Swedish and German boards write it ("Polska", "Spanien", "Cypern") were read as no country. They are read as
+  theirs: not Georgia, a country, nor Maine, which "Maine-et-Loire" would match.
+- A place's own words come before its title ("Vatican City" whose title named France had been in France; "Greater
+  Nice Metropolitan Area" whose title said "Sofia Antipolis", in Bulgaria), a country named outright before a town of
+  the same string ("St. Helier, Jersey" had been a district of London), and a board's short forms are read ("St.
+  Gallen", LinkedIn's "Moscow City").
+Over every job stored on the dev copy against HEAD: 181 more have a country, and of 25 whose country changed, read
+one by one, each is right but "Alameda, CA, Flexible / Remote", now Spain's Alameda (its "CA" is California's and
+Canada's both, so never read), and ten that list a dozen countries and were anywhere either way. Left as they are:
+Workday's list says "2 Locations" for 156 of its 527 jobs (its job pages name them), and "Ate, PE"'s code is read for
+a country only where the tables name it.
+
+**What takes the database's memory** (the dev copy, read only, `$collStats`): an open job averages 6,857 bytes, of
+which its text is 4,006 (58%) and its match score's features 1,995 (29%); everything the Jobs list uses, 856. MongoDB
+holds a whole document in its cache whatever a query asks of it, so the Jobs list, which reads every match in its
+time window, holds eight times what it uses. Indexes are small (17.5 MB against 301.5 MB of data). **Proposed, not
+built:** the text and the features in a collection of their own, read where they are used. The eight days of jobs the
+server's Jobs page reads, about 1.9 GB, would be about 0.24 GB, and the cache could go from 3.5 GB toward 1 GB with the
+list still in memory. About fifteen places read the text (matching's words not yet indexed, alerts, the word and score
+catch-ups, the lists' salaries and texts, CVs and letters, the alert cards, the describer), and every stored job moves
+once: the owner's to say (ROADMAP item 57).
+
+**The harvester's memory**, measured reading every source but LinkedIn once with every board answering whole, as a new
+board does on its first read, its RSS sampled:
+- 619 MB at its peak for 4,756 jobs whose text is 10 MB. Read alone: Lever +228 MB, Ashby +203, Recruitee +95,
+  Greenhouse +73. Their boards send every job with its whole text, and a run keeps the few in its window: Ashby's 134
+  boards 119.5 MB (OpenAI's alone 13.8), Lever's 52 47 MB, Recruitee's 53 23 MB.
+- Each posting is now made into a job, or into nothing, the moment it is read (`ats._postings`, `json.loads` with an
+  `object_hook`), and the answer is no longer copied once more on the way: Lever 134 MB, Ashby 153, Recruitee 76,
+  Greenhouse 57; the whole run 522 to 539.
+- The rest was glibc keeping what each thread freed in a heap of the thread's own: 536 MB still held at the run's end.
+  At most two heaps (`MALLOC_ARENA_MAX=2` in the harvester's image, which the describer runs in, and the seed's): a
+  peak of 225 to 228 MB and 159 to 181 at the end, no slower.
+- In a steady run Lever and Ashby answer "unchanged" (ETag) and cost almost nothing. Recruitee sends neither an ETag
+  nor a date, so its 23 MB come every run.
+- On the wire nothing is left to save: gzip is already asked for (OpenAI's board 1.46 MB for 14.1; Brotli 1.57; zstd
+  not offered; Recruitee 1.29 for 11.2), and Lever compresses nothing whatever it is asked.
+- A parser that reads an answer as it arrives (ijson) would leave about one job a board in memory. Installing it was
+  refused by this session's permission check: the owner's to add, a line in `services/harvester/requirements.txt`.
+- 120 boards at once measured a third faster than 60 (33 and 39 s against 45 and 65) at the same memory, with the
+  heaps capped. Not changed: on the server a run waits on its resolver (ROADMAP item 56), which 60 at once already
+  failed, so the two are the owner's to set together.
+- The town table every process storing jobs holds: 26 MB, now its own file kept as read (2.8 MB, 0.1 s), a name found
+  by halving it, 60 µs a posting.
+
+**Tests.**New: the LinkedIn place of every country offered and that every country has one, a place read before its
+title and as boards shorten it, the countries in their own languages and the American states, a sweep's country
+deciding between places (`test_geo.py`); the countries LinkedIn takes for somewhere else (`test_linkedin_sweep.py`);
+No Fluff Jobs' place (`test_harvester_sources.py`); and in the browser the sort orders on one edge and every language
+fitting 320 px. Changed: Applied's calendar walk (the button, Escape, a day picked closing it). In a checkout of the
+tree with only this round's fixes taken back out, every new test fails; 54 of the 57 places per country pass both
+ways, holding what already read right. Gates: lint-imports 2 kept, 0 broken; ruff clean; the schema step on an empty
+database, exit 0; the contract current (made again, nothing changed); the site built. pytest, only `MONGODB_URI` and
+`CHROME_BIN` set: 2,090 passed, 7 skipped (the usual seven), 1 failed and 6 errors in 10 min 24 s. The errors were
+the browser tests refusing a build older than its sources: another session committed 71d6795 (the landing page's
+logos) into this tree during the run. Built again, every browser test, the sign-in's and the logos' ran again: 92
+passed, 1 failed, the look test known to fail under load (passed alone 3 times of 3); the sign-in test that had
+failed passed.
+
+## 2026-11-24 — Search and filters on Jobs, Bookmarks and Applied, every job's town, a calendar of applications, and all of Europe in My search
+
+The owner: "add filtering to not just the jobs page, but the bookmarks, and applied section as well ... We should be
+able to search in all of them"; Where "we can narrow down continent, then country and then city as well, AND we should
+be able to choose multiple of each, with remote jobs still being an option ... keep a tab on all the countries more
+importantly all the cities as well from all the jobs"; "instead of 'more' section we can name that job sites and we
+should be able to select at least one, and more as well"; sort by "needs to make more sense and be clearer ... the
+last two sounds similar"; "make sure these filters are saved for all users"; Applied "track them inside a calendar
+visually"; My search's suggestions "in a dropdown, keeping 'Suggested for you — tap one to add it' visible"; and "all
+the languages and countries, in my search so nothing is missed from europe". Not committed.
+
+**Every job's town** (`libs.corpus.geo.posting_place`). A posting's town was one of 43 cities or none: 20,860 of the
+dev copy's 43,897 open jobs with a place had one (47.5%). Now it is any town of 5,000 people or more in GeoNames
+(`places.tsv.gz` rebuilt by `scripts/build_places.py`: 91,133 names, 753 KB, was 47,177 and 241 KB), stored by its
+name ("Kraków"), and 78.7% have one; 3,108 towns across all 47,268 stored postings.
+- Three list sizes measured on the dev copy: towns of 15,000, 5,000 and 1,000 people gave 76.4%, 78.7% and 79.9%,
+  at 12, 20 and 44 MB in a prototype. 5,000 taken; the jobs left over name a country, a region or "Remote".
+- **A town is the one of its name in the posting's country.** Read without it, "Porto, Portugal" was Bordeaux
+  (called "Porto" too, and larger), "Brest, France" was in Belarus and "Surrey, England" a town in Canada.
+- **Only a whole part of a place is a town.** Read word by word as well, a variant found 1.3 points more and read "New
+  York" as York, "European Union" as a town called Union and "Remote job" as a village in France: not taken.
+- Of the places one name can be, a European one first, then the larger: a posting that names no country is in
+  Hannover, not a town in the US called Hanover, as before. 119 postings with no country before have one now, read
+  off a town the larger list knows ("Wernau (Neckar)", "Komorniki"). 12 read before changed: ten list a dozen
+  countries and were anywhere either way, "Mafra (Hybrid)" moved from Brazil to Portugal, and "Alameda, CA,
+  Flexible / Remote" from the United States to Spain's Alameda, the European one of the name (its "CA" is
+  California's and Canada's both, so it is never read).
+- The 43 cities an alert can follow keep their names ("Cologne", not GeoNames' "Köln"): `libs.alerts` compares a town
+  by name, and a test reads every name each city goes by (`test_geo.py`).
+- Read once per process, the first time a posting needs it: 0.5 s and 26 MB, against 0.1 s and 4 MB. A posting is
+  read in 20 µs.
+- **Every stored posting is read again once, at the deploy** (`python -m libs.db`, `repository.read_places_once`, a
+  `next_ids` counter as `revive_all_once` has): 37,389 of 47,268 changed on a copy of the dev database, in 2.2 s.
+- `countries.tsv`: every country's continent and name, from the same GeoNames download. Türkiye, Georgia, Armenia,
+  Azerbaijan and Cyprus are in Europe, as My search lists them.
+
+**One way to narrow every list** (`dashboard_routes.narrowing`): the search, remote only, continents, countries, towns
+("DE/Berlin") and job sites, as many of each as are picked, read by `/feed`, `/jobs/bookmarked` and `/applied` alike.
+What a list's filters offer is counted by the database before any filter, each country with its continent and each
+town with its country (`libs.matching.offered`, the Jobs facets; `offers` for a list somebody keeps). The search reads
+a job's place as well now ("Paris").
+- **Where** (`libs.matching.places`): a place picked inside another narrows it to that place, and beside it adds to
+  it: Germany and Berlin is Berlin; France and Berlin is all of France, and Berlin. The filters offer the countries on
+  the continents picked and the towns of the countries picked, a box to find a town by its name, ten of each and the
+  rest a tap away. Remote only is still a switch.
+- **Job sites** (was "More"): tapped, as many as wanted. "Only jobs you have no CV for yet" is under "Your CV".
+- **Sort by** says what each goes by: "Most of your words", "Newest on the job site" ("By the day the job site says
+  it was posted"), "Newest to your list" ("By when the job reached your list here, even if the site posted it days
+  ago"). They were "Newest posted first" and "Just arrived first", and do what they did.
+- **Saved** as before, on the account (`User.job_filters`): any device, a sign-out between. Places and job sites are
+  lists; filters saved before read as lists, a city by its old slug as its town ("munich" is "DE/Munich").
+- **Bookmarks** has the search and the same Where and Job sites; **Applied** too, and "Where it stands" (No answer
+  yet, Interview, Offer, Got the job, Not this time). Their filters are kept while the site is open, not on the
+  account: a search left in Bookmarks would hide bookmarks the next day (ROADMAP item 57).
+
+**Applied's calendar.** A month, Monday first, in a card above the list: each day filled as deep as it was busy (one;
+two or three; four or more) with how many were sent, its date in its corner, today ringed; a day tapped lists that
+day's applications, said in a chip that takes it off; the arrows go back as far as the first application. Under it,
+the month's applications, the days applied on and the longest run of days in a row. Days are the person's own:
+`/applied` takes the hours of a day as the page works them out (`applied_from`, `applied_to`), and answers with every
+application's date, how many there are and how many stand at each step beside the jobs the filters leave
+(`Applications`; it was a list).
+
+**My search.** The suggestions are folded under their title, which stays in sight with how many it holds, under the
+green words and the red. 58 countries, every one in Europe (22 added: Albania, Andorra, Armenia, Azerbaijan, Belarus,
+Bosnia and Herzegovina, Faroe Islands, Georgia, Gibraltar, Guernsey, Isle of Man, Jersey, Kosovo, Liechtenstein,
+Moldova, Monaco, Montenegro, North Macedonia, Russia, San Marino, Türkiye, Vatican City); Åland and Svalbard are parts
+of Finland and Norway. 36 languages (25 added), folded after five as the countries are after three.
+- **The language filter hid every job written in a language nobody could pick**: Greek 43, Romanian 40, Czech 38,
+  Finnish 32, Slovak 23, Catalan 19 and more on the dev copy reached nobody. Every European language the reader has a
+  profile of is offered now.
+- The reader takes some languages for another, measured on a posting's worth of each: Serbian (Latin), Bosnian and
+  Montenegrin for Croatian, Serbian in Cyrillic for Macedonian, Icelandic for Norwegian, Luxembourgish for German,
+  Galician for Spanish, Belarusian for Ukrainian or Russian. Each of those offered admits the jobs read as those too
+  (`langfilter.READ_AS`). Irish, Maltese and Basque it read as nothing in particular (English or Catalan, Estonian or
+  Slovenian, Indonesian or Romanian), so they are not offered.
+
+**Measured** (`/feed`, a scratch copy of the dev database, the owner's account, in-process, median of 7, before and
+after back to back): the last day 24 to 26 ms, the last week 53 to 55, "Any time" 182-186 to 190-193. The page's
+answer for "Any time" grew from 17.5 to 38.8 KB, 348 towns where there were 41; Cloudflare compresses it on the way.
+
+**Tests.**New: places offered and picked many at once (`test_dashboard.py`), job sites, Bookmarks and Applied
+filtered, filters saved before, the town read once at the deploy; towns read in the posting's country and never off a
+word (`test_geo.py`), every country of Europe offered; a language the reader takes for another, and every European
+language offered (`test_user_filters.py`); in the browser, Where by country then city and after a reload, Bookmarks'
+search, Applied's calendar and step filter, and the folded suggestions. Changed: the Jobs filters' walk (job sites
+tapped), and the tests that read `/applied` as a list or a city by its slug. On 72190fa, with only the new names
+added to its code, 26 new server cases and the 5 new or changed browser tests fail; 8 cases pass on both, places the
+old reader also read as no town ("Remote", "European Union"). Gates: lint-imports 2 kept, 0 broken; ruff clean; the
+schema step on an empty database, exit 0; the contract current (made again, nothing changed); the site built; pytest
+2,020 passed, 7 skipped (the Postgres copy, the reference instance, five Stripe), 9 min 9 s on four workers, with
+only `MONGODB_URI` and `CHROME_BIN` set. After the last change, the Where hint ("Tap a country to see its cities")
+and "Show all 13 cities", the site was built again and the 143 tests of places, the Jobs API and the browser walks of
+the filters passed again.
+
 ## 2026-11-23, midnight — every company board a web crawl lists, found with no keyword, and a run's company boards kept to half the run
 
 The owner: "I heard you can also do this in the google search engine to get results too, site:jobs.ashbyhq.com(...)

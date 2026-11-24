@@ -206,6 +206,8 @@ export function Words({ tone, label, hint, values, onChange, suggested = [], sug
     if (clean && !has(clean)) onChange([...values, clean]);
     setDraft("");
   };
+  // The suggestions not taken yet.
+  const offered = suggested.filter((each) => !has(each.term));
 
   return (
     <div className="field">
@@ -229,18 +231,21 @@ export function Words({ tone, label, hint, values, onChange, suggested = [], sug
           One or two words work best.
         </p>
       ) : null}
-      {suggested.some((each) => !has(each.term)) ? (
-        <div className="suggested-box">
-          <p className="suggested-title">
+      {/* Folded under their title, which stays in sight (owner, 2026-11-24: "keeping 'Suggested for you — tap one
+          to add it' visible but collapsing suggested words"): opened, each is a tap from being taken. */}
+      {offered.length ? (
+        <details className="suggested-box">
+          <summary className="suggested-title">
             {suggestedTitle ?? (tone === "red" ? "Suggested — tap one to hide those jobs" : "Suggested — tap one to add it")}
-          </p>
+            <span className="suggested-count">{offered.length}</span>
+          </summary>
           <ul className="suggestions">
-            {suggested.filter((each) => !has(each.term)).map((each) => (
+            {offered.map((each) => (
               <Suggested key={each.term} tone={tone} term={each.term} reason={each.reason}
                          onTake={() => add(each.term)} />
             ))}
           </ul>
-        </div>
+        </details>
       ) : null}
       <div className="row add-word">
         <input

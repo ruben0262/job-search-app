@@ -52,7 +52,7 @@ def test_an_application_moves_forward_ends_and_can_be_taken_back_a_step(api):
     ended = http.put(f"/jobs/{job.id}/progress", json={"stage": "rejected"})
     assert _stages(ended) == ["interview", "rejected"]
 
-    (applied,) = http.get("/applied").json()
+    (applied,) = http.get("/applied").json()["jobs"]
     assert [step["stage"] for step in applied["progress"]] == ["interview", "rejected"]
     assert all(step["at"] for step in applied["progress"]), "each step keeps when it was said"
 

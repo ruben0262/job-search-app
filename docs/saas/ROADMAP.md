@@ -3960,6 +3960,30 @@ work, or opening and closing sessions faster, would help):
       another clock (CLAUDE.md section 6); the numbers above are what it would be measured against.
     - **Workday's window** is 96 hours, what its reader kept whatever the setting said (168) until now.
 
+57. **Filters on every list, every job's town, and all of Europe in My search** (owner, 2026-11-24: "filtering ...
+    not just the jobs page, but the bookmarks, and applied", "narrow down continent, then country and then city",
+    "all the languages and countries, in my search so nothing is missed from europe"). Built the same day, not
+    committed (CHANGELOG 2026-11-24). For the owner:
+    - **LinkedIn, done the same afternoon:** every country tried, eight asked for by a name of their own
+      (`linkedin.LINKEDIN_NAMES`). Georgia is asked for as "Tbilisi, Georgia", its capital's area: every name for
+      the whole country gave the American state.
+    - **The jobs' text and match-score features out of the jobs collection** (measured 2026-11-24, CHANGELOG
+      afternoon): 87% of a stored job, which the Jobs list never reads but MongoDB caches with it. Out, the eight days
+      the Jobs page reads go from about 1.9 GB to 0.24 GB, and server_db's cache (`SDB_CACHE_GB`, 3.5) can come down
+      toward 1 with the list still in memory. About fifteen readers change and every stored job moves once: say go.
+    - **A streaming JSON parser for the harvester** (`ijson`): a board's answer read as it arrives, about one job
+      of each in memory. Not installed: this session was not allowed to add a package.
+    - **120 company boards at once rather than 60**: a third faster on the laptop at the same memory, once the
+      heaps were capped. Raise it with the resolver of item 56, not before: 60 at once already failed the server's.
+    - **Russia and Belarus** are offered, as every country of Europe is. Say if they should not be.
+    - **Towns of 5,000 people and more**: 78.7% of the dev copy's jobs have a town, against 47.5% before. Towns of
+      1,000 and more would give 79.9% for about twice the memory. Each process that stores postings holds the
+      table: 26 MB, where the old one took 4, inside the harvester's 1 GB (item 56 says how little is spare).
+    - **Bookmarks' and Applied's filters** are kept while the site is open, not on the account as Jobs' are: a
+      search left in Bookmarks would hide bookmarks the next day. Keeping them would be a field each on the user.
+    - **The deploy reads every stored posting's place again, once** (`python -m libs.db`): 37,389 of 47,268
+      postings changed on a copy of the dev database, in 2.2 s.
+
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 
 **Why.** The owner's decision: users, their logins and everything stored about them live in MongoDB

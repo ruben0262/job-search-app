@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import json
 import os
 import re
 import threading
@@ -171,9 +172,10 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
 _LARGEST_ANSWER = 32_000_000
 
 
-def _conditional_get(url: str, etag: str | None,
-                     timeout: float = _TIMEOUT) -> tuple[httpx.Response | None, str | None, str]:
-    """Returns (response|None, new_etag, status). status in {'ok','304','dead'}."""
+def _conditional_body(url: str, etag: str | None,
+                      timeout: float = _TIMEOUT) -> tuple[bytearray | None, str | None, str]:
+    """A board's answer as read, unless it is unchanged (`etag`) or gone: (body|None, new_etag, status), status
+    in {'ok','304','dead'}."""
     with _http().stream("GET", url, headers={"if-none-match": etag} if etag else None, timeout=timeout) as r:
         if r.status_code == 304:
             return None, etag, "304"
@@ -186,9 +188,33 @@ def _conditional_get(url: str, etag: str | None,
             body += chunk
             if len(body) > _LARGEST_ANSWER:
                 raise RuntimeError(f"an answer over {_LARGEST_ANSWER // 1_000_000} MB")
-        # The body as read, decoded: its encoding headers would have it decoded again.
-        kept = [(k, v) for k, v in r.headers.multi_items() if k.lower() not in ("content-encoding", "content-length")]
-        return httpx.Response(200, headers=kept, content=bytes(body), request=r.request), r.headers.get("etag"), "ok"
+        return body, r.headers.get("etag"), "ok"
+
+
+def _conditional_get(url: str, etag: str | None,
+                     timeout: float = _TIMEOUT) -> tuple[httpx.Response | None, str | None, str]:
+    """Returns (response|None, new_etag, status). status in {'ok','304','dead'}."""
+    body, new_etag, status = _conditional_body(url, etag, timeout)
+    return (None if body is None else httpx.Response(200, content=bytes(body))), new_etag, status
+
+
+def _postings(body: bytearray, marked: str, keep: Callable[[dict], JobLink | None]) -> list[JobLink]:
+    """What a board's answer gives the run: each posting made into a job the moment it is read whole, or into
+    nothing for one outside the run's window, its texts let go at once. A posting is an object with the field
+    `marked`. Parsed whole first, OpenAI's 14 MB on Ashby held about 100 MB while it was read, and every posting
+    of it, though a run keeps the few in its window; Ashby's boards, Lever's and Recruitee's took 203, 228 and
+    95 MB above the harvester's 67 (2026-11-24)."""
+    found: list[JobLink] = []
+
+    def each(value: dict) -> dict | None:
+        if marked not in value:
+            return value
+        if (link := keep(value)) is not None:
+            found.append(link)
+        return None
+
+    json.loads(body, object_hook=each)
+    return found
 
 
 def _in_window(date: str | None, within: float | None) -> bool:
@@ -203,63 +229,64 @@ def fetch_greenhouse(token: str, etag: str | None = None,
     """A board's jobs without their text, which a new job's page gives once (the describer). With it
     (`content=true`) the largest boards answer 12 to 17 times as much, SpaceX 33 MB and Anduril 46 MB, and a board
     is sent whole again whenever one of its jobs changes: 28.9 MB for the laptop's 221 boards without (2026-11-23)."""
-    r, new_etag, status = _conditional_get(f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs", etag)
+    body, new_etag, status = _conditional_body(f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs", etag)
     if status != "ok":
         return (None if status == "304" else GONE), new_etag
-    out = []
-    for j in (r.json().get("jobs") or []):
+
+    def keep(j: dict) -> JobLink | None:
         url = (j.get("absolute_url") or "").strip()
-        if not url:
-            continue
         loc, date = ((j.get("location") or {}).get("name") or "").strip(), j.get("first_published") or j.get("updated_at")
-        if not _in_window(date, within):
-            continue
-        out.append(JobLink(url=url, title=(j.get("title") or "").strip(),
-                           company=(j.get("company_name") or token).strip(), location=loc,
-                           source="greenhouse", date_posted=date,
-                           snippet=(j.get("title") or ""), is_remote=(True if "remote" in loc.lower() else None)))
-    return out, new_etag
+        if not url or not _in_window(date, within):
+            return None
+        return JobLink(url=url, title=(j.get("title") or "").strip(),
+                       company=(j.get("company_name") or token).strip(), location=loc,
+                       source="greenhouse", date_posted=date,
+                       snippet=(j.get("title") or ""), is_remote=(True if "remote" in loc.lower() else None))
+
+    return _postings(body, "absolute_url", keep), new_etag
 
 
 def fetch_ashby(token: str, etag: str | None = None,
                 within: float | None = None) -> tuple[list[JobLink] | None, str | None]:
-    r, new_etag, status = _conditional_get(f"https://api.ashbyhq.com/posting-api/job-board/{token}", etag)
+    body, new_etag, status = _conditional_body(f"https://api.ashbyhq.com/posting-api/job-board/{token}", etag)
     if status != "ok":
         return (None if status == "304" else GONE), new_etag
-    out = []
-    for j in (r.json().get("jobs") or []):
+
+    def keep(j: dict) -> JobLink | None:
         url = (j.get("jobUrl") or j.get("applyUrl") or "").strip()
         if not url or j.get("isListed") is False or not _in_window(j.get("publishedAt"), within):
-            continue
+            return None
         loc = (j.get("location") or "").strip()
-        out.append(JobLink(url=url, title=(j.get("title") or "").strip(),
-                           company="", location=loc, source="ashby",
-                           date_posted=j.get("publishedAt"),
-                           # The HTML, whose lists are lists: the plain text makes each item a paragraph.
-                           snippet=(strip_html(j.get("descriptionHtml") or "") or j.get("descriptionPlain")
-                                    or j.get("title") or ""),
-                           is_remote=(True if (j.get("isRemote") or "remote" in loc.lower()) else None)))
-    return out, new_etag
+        return JobLink(url=url, title=(j.get("title") or "").strip(),
+                       company="", location=loc, source="ashby",
+                       date_posted=j.get("publishedAt"),
+                       # The HTML, whose lists are lists: the plain text makes each item a paragraph.
+                       snippet=(strip_html(j.get("descriptionHtml") or "") or j.get("descriptionPlain")
+                                or j.get("title") or ""),
+                       is_remote=(True if (j.get("isRemote") or "remote" in loc.lower()) else None))
+
+    return _postings(body, "jobUrl", keep), new_etag
 
 
 def fetch_lever(token: str, etag: str | None = None,
                 within: float | None = None) -> tuple[list[JobLink] | None, str | None]:
-    r, new_etag, status = _conditional_get(f"https://api.lever.co/v0/postings/{token}?mode=json", etag,
-                                           timeout=LEVER_TIMEOUT)
+    body, new_etag, status = _conditional_body(f"https://api.lever.co/v0/postings/{token}?mode=json", etag,
+                                               timeout=LEVER_TIMEOUT)
     if status != "ok":
         return (None if status == "304" else GONE), new_etag
-    out = []
-    for j in (r.json() or []):
+
+    def keep(j: dict) -> JobLink | None:
         url = (j.get("hostedUrl") or j.get("applyUrl") or "").strip()
         if not url or not _in_window(epoch_to_iso(j.get("createdAt")), within):
-            continue
+            return None
         loc = ((j.get("categories") or {}).get("location") or "").strip()
-        out.append(JobLink(url=url, title=(j.get("text") or "").strip(),
-                           company="", location=loc, source="lever",
-                           date_posted=epoch_to_iso(j.get("createdAt")),
-                           snippet=_lever_text(j) or j.get("text") or "",
-                           is_remote=(True if "remote" in loc.lower() else None)))
-    return out, new_etag
+        return JobLink(url=url, title=(j.get("text") or "").strip(),
+                       company="", location=loc, source="lever",
+                       date_posted=epoch_to_iso(j.get("createdAt")),
+                       snippet=_lever_text(j) or j.get("text") or "",
+                       is_remote=(True if "remote" in loc.lower() else None))
+
+    return _postings(body, "hostedUrl", keep), new_etag
 
 
 def _lever_text(posting: dict) -> str:
@@ -298,25 +325,24 @@ def fetch_smartrecruiters(token: str, etag: str | None = None,
 
 def fetch_recruitee(token: str, etag: str | None = None,
                     within: float | None = None) -> tuple[list[JobLink] | None, str | None]:
-    r, new_etag, status = _conditional_get(f"https://{token}.recruitee.com/api/offers/", etag)
+    body, new_etag, status = _conditional_body(f"https://{token}.recruitee.com/api/offers/", etag)
     if status != "ok":
         return (None if status == "304" else GONE), new_etag
-    out = []
-    for j in (r.json().get("offers") or []):
+
+    def keep(j: dict) -> JobLink | None:
         url = (j.get("careers_url") or "").strip()
-        if not url:
-            continue
-        loc = (j.get("location") or ", ".join(x for x in [j.get("city"), j.get("country")] if x)).strip()
         # Recruitee dates look like "2026-07-07 12:47:47 UTC" — drop the suffix so the parser accepts it.
         date = (j.get("published_at") or j.get("created_at") or "").replace(" UTC", "").strip() or None
-        if not _in_window(date, within):
-            continue
-        out.append(JobLink(url=url, title=(j.get("title") or "").strip(),
-                           company=(j.get("company_name") or token).strip(), location=loc,
-                           source="recruitee", date_posted=date,
-                           snippet=strip_html(j.get("description") or "") or j.get("title") or "",
-                           is_remote=(True if (j.get("remote") or "remote" in loc.lower()) else None)))
-    return out, new_etag
+        if not url or not _in_window(date, within):
+            return None
+        loc = (j.get("location") or ", ".join(x for x in [j.get("city"), j.get("country")] if x)).strip()
+        return JobLink(url=url, title=(j.get("title") or "").strip(),
+                       company=(j.get("company_name") or token).strip(), location=loc,
+                       source="recruitee", date_posted=date,
+                       snippet=strip_html(j.get("description") or "") or j.get("title") or "",
+                       is_remote=(True if (j.get("remote") or "remote" in loc.lower()) else None))
+
+    return _postings(body, "careers_url", keep), new_etag
 
 
 def fetch_breezy(token: str, etag: str | None = None,

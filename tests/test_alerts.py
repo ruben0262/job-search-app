@@ -262,8 +262,9 @@ def test_places_are_countries_or_cities_and_job_sites_narrow_them(db):
     alert = _alert(db, user, name="Here", keywords=[word], places=["denmark", "berlin"],
                    sources=["greenhouse"])
     copenhagen = _posting(db, word, country="DK", source="greenhouse")
-    berlin = _posting(db, word, country="DE", city="berlin", source="greenhouse")
-    _posting(db, word, country="DE", city="munich", source="greenhouse")
+    # A posting's town is its name, as a city is named for an alert (`libs.corpus.geo.posting_place`).
+    berlin = _posting(db, word, country="DE", city="Berlin", source="greenhouse")
+    _posting(db, word, country="DE", city="Munich", source="greenhouse")
     _posting(db, word, country="DK", source="linkedin")
     _posting(db, "Nurse", country="DK", source="greenhouse")
 

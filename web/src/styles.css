@@ -663,11 +663,11 @@ button.danger {
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
     .look-card, .toast-close, .bookmark, .bar-action, .again, .swatch, .more-tab, .more-row,
-    .get-app-pill),
+    .get-app-pill, .sort-option, .calendar-day, .calendar-step),
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
     .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
     .look-card, .toast-close, .bookmark, .bar-action, .again, .swatch, .more-tab, .more-row,
-    .get-app-pill):hover:not([disabled]) {
+    .get-app-pill, .sort-option, .calendar-day, .calendar-step):hover:not([disabled]) {
   box-shadow: none;
 }
 
@@ -1810,7 +1810,7 @@ td.num {
 /* Taps, not clicks. Admin is a laptop tool and keeps its dense controls. A link inside a sentence is a
    word of it: a thumb's height there pushed its line away from the one above ("Read it all"). A round
    one is out of it, or it is drawn an oval; a sheet's × reaches a thumb by its `::before` instead. */
-.app main:not(.admin) :is(button, .button):not(.theme-toggle, .swatch, .sheet .close, p .linklike),
+.app main:not(.admin) :is(button, .button):not(.theme-toggle, .swatch, .sheet .close, p .linklike, .calendar-day),
 .wizard :is(button, .button):not(.theme-toggle, .swatch, .sheet .close, p .linklike) {
   min-height: var(--control);
 }
@@ -2793,9 +2793,10 @@ button.toast-close:hover:not([disabled]) {
     font-size: var(--text-base);
   }
 
-  /* Two short names a row, not seventeen rows of one. */
+  /* Two short names a row, not seventeen rows of one, where two fit beside their switches: from a 390px screen.
+     Two always, and "Luxembourgish" ran 42px off a 320px one (2026-11-24). */
   .picker-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 9.5rem), 1fr));
   }
 
   /* Across the screen under the bar: hung from the bell, it ran off the left edge. */
@@ -5088,10 +5089,56 @@ input[type="checkbox"]:disabled {
 }
 
 .suggested-box .suggested-title {
-  margin: 0 0 0.55rem;
+  margin: 0;
   font-size: var(--text-meta);
   font-weight: 600;
   color: var(--muted);
+}
+
+/* Folded under its title (owner, 2026-11-24): the title a row to tap, how many it holds beside it, and the
+   selects' arrow at its end, turned when it is open. */
+.suggested-box > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.75rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.suggested-box > summary::-webkit-details-marker {
+  display: none;
+}
+
+.suggested-box > summary::after {
+  content: "";
+  flex: none;
+  width: 0.75rem;
+  height: 0.5rem;
+  margin-left: auto;
+  background: var(--arrow) center / contain no-repeat;
+  transition: transform 0.25s var(--out);
+}
+
+.suggested-box[open] > summary {
+  margin-bottom: 0.55rem;
+}
+
+.suggested-box[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.suggested-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgba(var(--ink-rgb), 0.08);
+  color: var(--ink);
+  font-size: var(--text-2xs);
+  font-weight: 700;
 }
 
 .suggested-box .suggestions {
@@ -5532,6 +5579,17 @@ input[type="checkbox"]:disabled {
   }
 }
 
+/* Bookmarks and Applied: the search and the button, one row on any screen. */
+.finder.plain {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+@media (max-width: 720px) {
+  .finder.plain input[type="search"] {
+    grid-column: auto;
+  }
+}
+
 /* On a small phone the time picked says what it is by itself ("Last 24 hours"), and "Posted" would cut it
    short: the word stays for a screen reader, which reads the control's own label. */
 @media (max-width: 400px) {
@@ -5638,6 +5696,275 @@ input[type="checkbox"]:disabled {
 
 .filter-foot button {
   white-space: nowrap;
+}
+
+/* Where: continents, countries and cities, each a row of chips under a small name, the cities with a box to
+   find one by its name. */
+.place-level {
+  margin-bottom: 0.6rem;
+}
+
+.place-label {
+  margin: 0.2rem 0 0.45rem;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.place-find {
+  margin-bottom: 0.6rem;
+}
+
+.filter-group .place-level .chips {
+  margin-bottom: 0.35rem;
+}
+
+.place-more {
+  font-size: var(--text-sm);
+}
+
+/* One order of three, each on its own row and every row alike (owner, 2026-11-24: "so it looks structured not all
+   over the place"): a round mark in a column of its own, filled for the one chosen, and beside it what the order is
+   called over what it goes by, both from the same left edge. A button centres what it holds, so the column is
+   stretched across it and its text set from the left. */
+.sort-options {
+  display: grid;
+  gap: 0.5rem;
+}
+
+button.sort-option {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  justify-content: stretch;
+  justify-items: start;
+  align-items: center;
+  gap: 0.15rem 0.85rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-color: var(--faint);
+  background: transparent;
+  color: var(--ink);
+  font-weight: 500;
+  text-align: left;
+}
+
+button.sort-option::before {
+  content: "";
+  grid-row: 1 / span 2;
+  width: 1.25rem;
+  aspect-ratio: 1;
+  border: 2px solid var(--faint);
+  border-radius: 50%;
+}
+
+button.sort-option:hover:not([disabled]):not([aria-checked="true"]) {
+  border-color: rgba(var(--accent-rgb), 0.6);
+  transform: none;
+}
+
+button.sort-option[aria-checked="true"] {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.16);
+}
+
+button.sort-option[aria-checked="true"]::before {
+  border-color: var(--accent);
+  background: radial-gradient(circle, var(--accent) 0 42%, transparent 46%);
+}
+
+.sort-name,
+.sort-hint {
+  grid-column: 2;
+}
+
+.sort-name {
+  font-weight: 600;
+}
+
+.sort-hint {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+
+/* ── the calendar of the days they applied (Applied) ────────────────────────────────────────────
+
+   A month in seven columns, Monday first, inside a card like a job's. A day they applied is filled with the
+   purple as deep as it was busy (one; two or three; four or more) and says how many in large, its date small in
+   its corner; a day with none is a quiet square with its date; today is ringed; a day picked to list its
+   applications is ringed in ink. Under the month, what it adds up to, three figures. */
+/* Opened from its button, before the filters (owner, 2026-11-24): over the list, just under the button, its right
+   edge under the button's; on a phone, where the button starts the row, as wide as the page from its left edge. */
+.calendar-holder {
+  position: relative;
+  display: grid;
+}
+
+.calendar {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 30;
+  width: min(23rem, calc(100vw - 2rem));
+  padding: 1rem;
+  border: 1px solid var(--faint);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.65), var(--lift);
+}
+
+.calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.calendar-head h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+button.calendar-step {
+  width: var(--control);
+  aspect-ratio: 1;
+  padding: 0;
+  border-color: var(--faint);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-xl);
+  line-height: 1;
+}
+
+.calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.calendar-weekday {
+  padding-bottom: 0.15rem;
+  color: var(--dim);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.calendar-day {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: rgba(var(--ink-rgb), 0.035);
+  color: var(--dim);
+  font-size: var(--text-meta);
+  font-weight: 500;
+}
+
+.calendar-day.ahead {
+  opacity: 0.35;
+}
+
+.calendar-day.today {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+button.calendar-day {
+  color: var(--ink);
+  box-shadow: none;
+}
+
+button.calendar-day:hover:not([disabled]) {
+  border-color: rgba(var(--ink-rgb), 0.45);
+}
+
+.calendar-day[data-level="1"] {
+  background: rgba(var(--accent-rgb), 0.28);
+}
+
+.calendar-day[data-level="2"] {
+  background: rgba(var(--accent-rgb), 0.58);
+}
+
+.calendar-day[data-level="3"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+button.calendar-day[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--bg-raised), 0 0 0 4px var(--ink);
+}
+
+button.calendar-day .calendar-date {
+  position: absolute;
+  top: 0.2rem;
+  left: 0.35rem;
+  font-size: var(--text-2xs);
+  opacity: 0.85;
+}
+
+.calendar-count {
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: 700;
+}
+
+.calendar-sums {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--hairline);
+}
+
+/* The figure over its name, as a screen reader still reads the name first. */
+.calendar-sums div {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.calendar-sums dt {
+  color: var(--dim);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.calendar-sums dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 650;
+}
+
+@media (max-width: 720px) {
+  .calendar {
+    right: auto;
+    left: 0;
+    padding: 0.85rem 0.65rem;
+  }
+
+  .calendar-days {
+    gap: 0.2rem;
+  }
+
+  .calendar-day {
+    border-radius: 9px;
+  }
 }
 
 .filter-foot button:last-child {

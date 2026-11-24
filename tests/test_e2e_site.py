@@ -911,6 +911,8 @@ def test_setting_up_shows_the_cover_letter_and_asks_about_you_on_a_screen_of_its
         save.click()
 
         expect(page.get_by_role("heading", name="What we found")).to_be_visible()
+        # Folded under their title, which is in sight (owner, 2026-11-24).
+        page.get_by_text("Suggested for you — tap one to add it").click()
         expect(page.locator(".suggestion", has_text="registered nurse")).to_be_visible()
         page.get_by_role("button", name="← About you").click()
         expect(page.get_by_label("In your own words")).to_have_value(wrote)
@@ -1904,14 +1906,17 @@ def _what_is_missing(page, card) -> None:
     page.mouse.move(1, 1)
     expect(toasts).to_have_count(0, timeout=TOAST_MS + 3000)
 
-def test_the_jobs_filters_narrow_the_list_stay_as_they_were_left_and_clear_back(site, capsys):
+def test_the_jobs_filters_narrow_the_list_stay_as_they_were_left_and_clear_back(site, db, capsys):
     """The page opens on "Last 24 hours" beside the search, and every other filter is behind one button, each
     under a heading that says what it is (owner, 2026-11-16: "simplify it"): the list follows each one as it
     is set, the way back to it says how many jobs it holds, and each one that is on is a chip under the search
     that takes it off. They stay as they were left, a reload or another device later (owner, 2026-11-07):
     reloaded the moment the last one changed, before its save would otherwise go. Clearing them keeps the time
-    chosen."""
-    base, email, _ = site
+    chosen. Job sites are tapped, as many as wanted (owner, 2026-11-24)."""
+    from libs.db.models import CorpusJob
+
+    base, email, ids = site
+    db[CorpusJob.COLLECTION].update_one({"_id": ids[TITLES[1]]}, {"$set": {"source": "greenhouse"}})
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
@@ -1924,10 +1929,14 @@ def test_the_jobs_filters_narrow_the_list_stay_as_they_were_left_and_clear_back(
 
         filters = page.get_by_role("dialog", name="Filters")
         page.get_by_role("button", name="Filters").click()
-        filters.get_by_label("Job site").select_option(label="Test (2)")
+        sites = filters.get_by_role("group", name="Job sites")
+        sites.get_by_role("button", name="Test 1").click()
+        expect(page.get_by_role("heading", name="1 job matches your search")).to_be_visible()
+        sites.get_by_role("button", name="Greenhouse 1").click()
         expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
+        sites.get_by_role("button", name="Greenhouse 1").click()
         filters.get_by_role("switch", name="Remote jobs only").check()
-        filters.get_by_role("button", name="Show 2 jobs").click()
+        filters.get_by_role("button", name="Show 1 job").click()
         expect(filters).to_have_count(0)
         on = page.get_by_role("group", name="Filters on")
         chips = on.get_by_role("button", name=re.compile("^Take off: "))
@@ -1937,12 +1946,13 @@ def test_the_jobs_filters_narrow_the_list_stay_as_they_were_left_and_clear_back(
         expect(page.get_by_role("button", name="Filters, 2 on")).to_be_visible()
 
         posted.select_option(label="Last 3 days")
-        expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
+        expect(page.get_by_role("heading", name="1 job matches your search")).to_be_visible()
         page.reload()
-        expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
+        expect(page.get_by_role("heading", name="1 job matches your search")).to_be_visible()
         expect(posted).to_have_value("72")
         page.get_by_role("button", name="Filters").click()
-        expect(filters.get_by_label("Job site")).to_have_value("test")
+        expect(sites.get_by_role("button", name="Test 1")).to_have_attribute("aria-pressed", "true")
+        expect(sites.get_by_role("button", name="Greenhouse 1")).to_have_attribute("aria-pressed", "false")
         expect(filters.get_by_role("switch", name="Remote jobs only")).to_be_checked()
         filters.get_by_role("button", name="Close").click()
 
@@ -1952,6 +1962,208 @@ def test_the_jobs_filters_narrow_the_list_stay_as_they_were_left_and_clear_back(
         expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
         expect(on).to_have_count(0)
         expect(posted).to_have_value("72")
+        browser.close()
+
+
+def test_where_narrows_by_country_then_city_many_of_each_and_stays_after_a_reload(site, db, capsys):
+    """Owner, 2026-11-24: "narrow down continent, then country and then city as well, AND we should be able to
+    choose multiple of each". A country tapped offers its own cities; a city tapped narrows its country to it,
+    and another country tapped beside it adds all of that country. Each is a chip, and they come back after a
+    reload."""
+    from libs.db import insert, now
+    from libs.db.models import CorpusJob, User, UserConfig
+
+    base, email, _ = site
+    for title, location, country, city in (("Backend Engineer", "Munich, Germany", "DE", "Munich"),
+                                           ("Backend Engineer", "Paris, France", "FR", "Paris")):
+        insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="test", title=title,
+                             company="Acme", location=location, country=country, city=city, language="en",
+                             first_seen_at=now(), described_at=now(), description=f"{title}. Python."))
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        user = db[User.COLLECTION].find_one({"email": email})
+        db[UserConfig.COLLECTION].update_one({"user_id": user["_id"]},
+                                             {"$set": {"config.sections.0.locations": ["germany", "france"]}})
+        page.reload()
+        expect(page.get_by_role("heading", name="4 jobs match your words")).to_be_visible()
+
+        page.get_by_role("button", name="Filters").click()
+        filters = page.get_by_role("dialog", name="Filters")
+        countries, cities = (filters.get_by_role("group", name=name) for name in ("Country", "City"))
+        expect(cities.get_by_role("button")).to_have_text(["Berlin 2", "Munich 1", "Paris 1"])
+        countries.get_by_role("button", name="Germany 3").click()
+        expect(page.get_by_role("heading", name="3 jobs match your search")).to_be_visible()
+        expect(cities.get_by_role("button")).to_have_text(["Berlin 2", "Munich 1"])
+        cities.get_by_role("button", name="Munich 1").click()
+        expect(page.get_by_role("heading", name="1 job matches your search")).to_be_visible()
+        countries.get_by_role("button", name="France 1").click()
+        expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
+        filters.get_by_role("button", name="Close").click()
+
+        on = page.get_by_role("group", name="Filters on")
+        chips = on.get_by_role("button", name=re.compile("^Take off: "))
+        expect(chips).to_have_count(3)
+        assert [chip.get_attribute("aria-label") for chip in chips.all()] == [
+            "Take off: Germany", "Take off: France", "Take off: Munich"]
+        page.reload()
+        expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
+        on.get_by_role("button", name="Take off: Munich").click()
+        expect(page.get_by_role("heading", name="4 jobs match your search")).to_be_visible()
+        browser.close()
+
+
+def test_the_orders_to_sort_by_are_one_list_from_one_left_edge_the_chosen_one_marked(site, capsys):
+    """Owner, 2026-11-24, of the filters' "Sort by": "correct the sort by section so it looks structured not
+    all over the place". Each order's name and what it goes by started where its button centred it, a
+    different edge each. One edge for all three, at a phone's width and a laptop's, the chosen one marked."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        page.get_by_role("button", name="Filters").click()
+        orders = page.get_by_role("radiogroup", name="Sort by")
+        for width in (1280, 390):
+            page.set_viewport_size({"width": width, "height": 900})
+            edges = orders.locator(".sort-name, .sort-hint").evaluate_all(
+                "(all) => [...new Set(all.map((each) => Math.round(each.getBoundingClientRect().left)))]")
+            assert len(edges) == 1, f"{width}px: names and hints start at {edges}"
+        expect(orders.get_by_role("radio", checked=True)).to_have_count(1)
+        orders.get_by_role("radio", name=re.compile("^Newest to your list")).click()
+        expect(orders.get_by_role("radio", name=re.compile("^Newest to your list"))).to_be_checked()
+        browser.close()
+
+
+def test_every_language_opened_on_my_search_fits_the_smallest_phone(site, capsys):
+    """Thirty-six languages two to a row ran 42px off a 320px screen ("Luxembourgish" beside its switch,
+    2026-11-24): one to a row where two do not fit, and nothing past the screen's edge."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 320, "height": 700}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        page.goto(f"{base}/words")
+        page.evaluate("document.querySelectorAll('dialog[open]').forEach(d => d.close())")
+        page.get_by_role("button", name=re.compile(r"^Show \d+ more languages$")).click()
+        expect(page.get_by_role("switch", name="Luxembourgish")).to_be_visible()
+        assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+        assert page.evaluate(FAULTS)["off"] == []
+        browser.close()
+
+
+def test_bookmarks_have_a_search_of_their_own(site, capsys):
+    """Owner, 2026-11-24: Bookmarks "should also have a basic search bar and filtering function too"."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        for title in TITLES[:2]:
+            card = page.locator("article.job-card").filter(
+                has=page.get_by_role("button", name=title, exact=True))
+            card.get_by_role("button", name="Bookmark this job").click()
+            expect(card.get_by_role("button", name="Remove bookmark")).to_be_visible()
+        page.get_by_role("navigation", name="Jobs").get_by_role("link", name="Bookmarks").click()
+        expect(page.get_by_role("heading", name="2 bookmarked jobs")).to_be_visible()
+
+        page.get_by_label("Search bookmarks").fill("senior")
+        expect(page.get_by_role("heading", name="1 bookmark matches your search")).to_be_visible()
+        expect(page.locator("article.job-card h3")).to_have_text([TITLES[1]])
+        page.get_by_label("Search bookmarks").fill("")
+        expect(page.get_by_role("heading", name="2 bookmarked jobs")).to_be_visible()
+        assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+        browser.close()
+
+
+def test_applied_shows_a_calendar_of_the_days_applied_and_a_day_tapped_lists_that_days(site, db, capsys):
+    """Owner, 2026-11-24: track applications "inside a calendar visually ... where people can see their
+    consistent efforts throughout a month via days", opened by "a button called calendar that does a popup
+    below the button", and filter them as every list is. Each day says how many were sent that day; a day
+    tapped lists that day's alone, said in a chip that takes it off; and how far each got is a filter too."""
+    from libs.db.models import User, UserJobState
+
+    base, email, ids = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        for title in TITLES[:2]:
+            page.locator("article.job-card").filter(has=page.get_by_role("button", name=title, exact=True)) \
+                .get_by_role("button", name="Mark as applied").click()
+        # Said once the server has both.
+        expect(page.get_by_text("You have applied to 2 jobs.")).to_be_visible()
+        user = db[User.COLLECTION].find_one({"email": email})
+        # The second a day and two hours before, in this machine's own time as in the browser's.
+        earlier = (datetime.now(UTC) - timedelta(hours=26)).astimezone()
+        db[UserJobState.COLLECTION].update_one({"user_id": user["_id"], "job_id": ids[TITLES[1]]},
+                                               {"$set": {"applied_at": earlier}})
+
+        page.goto(f"{base}/applied")
+        expect(page.get_by_role("heading", name="You applied to 2 jobs")).to_be_visible()
+        # A button before the filters, the month opening under it (owner, 2026-11-24): Escape closes it.
+        opener = page.get_by_role("button", name="Calendar")
+        calendar = page.get_by_role("dialog", name=re.compile("^Your applications in "))
+        opener.click()
+        expect(calendar).to_be_visible()
+        page.keyboard.press("Escape")
+        expect(calendar).to_have_count(0)
+        expect(opener).to_be_focused()
+        opener.click()
+        if earlier.month != datetime.now().astimezone().month:
+            calendar.get_by_role("button", name="The month before").click()
+        said = f"{earlier:%A}, {earlier:%B} {earlier.day}: 1 application"
+        calendar.get_by_role("button", name=said).click()
+        expect(calendar).to_have_count(0)
+        expect(page.get_by_role("heading", name="1 of your 2 applications")).to_be_visible()
+        expect(page.locator("article.job-card h3")).to_have_text([TITLES[1]])
+        page.get_by_role("group", name="Filters on").get_by_role(
+            "button", name=f"Take off: Applied on {earlier:%B} {earlier.day}").click()
+        expect(page.get_by_role("heading", name="You applied to 2 jobs")).to_be_visible()
+
+        page.locator("article.job-card").filter(has=page.get_by_role("button", name=TITLES[0], exact=True)) \
+            .get_by_role("button", name="I got an interview").click()
+        page.get_by_role("button", name="Filters").click()
+        page.get_by_role("group", name="Where it stands").get_by_role("button", name="Interview 1").click()
+        expect(page.get_by_role("heading", name="1 of your 2 applications")).to_be_visible()
+        expect(page.locator("article.job-card h3")).to_have_text([TITLES[0]])
+        assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+        browser.close()
+
+
+def test_my_searchs_suggestions_are_folded_under_their_title_and_one_tapped_is_added(site, db, capsys):
+    """Owner, 2026-11-24: "make the suggestions appear in a dropdown, keeping 'Suggested for you — tap one to
+    add it' visible but collapsing suggested words under both sections"."""
+    from libs.db.models import User
+
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        db[User.COLLECTION].update_one({"email": email}, {"$set": {"suggestions": {
+            "green": [{"term": "python", "reason": "In your CV"}],
+            "red": [{"term": "sales", "reason": "Not in your CV"}], "dismissed": []}}})
+        page.goto(f"{base}/words")
+        green = page.get_by_text("Suggested for you — tap one to add it")
+        red = page.get_by_text("Suggested — tap one to hide those jobs")
+        expect(green).to_be_visible()
+        expect(red).to_be_visible()
+        offered = [page.locator(".suggestion", has_text=word) for word in ("python", "sales")]
+        expect(offered[0]).to_be_hidden()
+        expect(offered[1]).to_be_hidden()
+
+        green.click()
+        offered[0].get_by_role("button", name="+ python").click()
+        expect(page.get_by_role("button", name="Remove python")).to_be_visible()
+        expect(offered[1]).to_be_hidden()
         browser.close()
 
 
@@ -2012,7 +2224,7 @@ def test_the_match_score_filter_is_a_row_of_numbers_that_keeps_the_jobs_scored_t
     # Their words are in it, so it is on their list, but it is not their job.
     insert(db, CorpusJob(
         url="https://jobs.example.com/sales", source="test", title="Sales Development Representative",
-        company="Acme", location="Berlin, Germany", country="DE", city="berlin", is_remote=True,
+        company="Acme", location="Berlin, Germany", country="DE", city="Berlin", is_remote=True,
         language="en", first_seen_at=now(), described_at=now(),
         description="Book meetings for our backend engineer recruiting platform: outbound calls, Salesforce, "
                     "a target every quarter."))
@@ -2892,7 +3104,7 @@ def _jobs(db, run: str, titles) -> dict[str, int]:
 
     return {title: insert(db, CorpusJob(
                 url=f"https://jobs.example.com/{run}/{n}", source="test", title=title, company="Acme",
-                location="Berlin, Germany", country="DE", city="berlin", is_remote=True, language="en",
+                location="Berlin, Germany", country="DE", city="Berlin", is_remote=True, language="en",
                 first_seen_at=now(), described_at=now(),
                 description=f"{title}. Python, Postgres, on call one week in six.")).id
             for n, title in enumerate(titles)}

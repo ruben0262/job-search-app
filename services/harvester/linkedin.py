@@ -83,13 +83,36 @@ class Sweep:
     refused_connections: int = 0
 
 
+# The countries whose own name LinkedIn takes for somewhere else, and the name it takes for each, measured on
+# 2026-11-24 a page of a week's jobs each (CHANGELOG): "Andorra" a town in Aragon, "Armenia" a city in
+# Colombia, "Georgia" the American state (under every name for the country tried, so its capital's area),
+# "Guernsey" a town in Wyoming, "Malta" one in Montana, "Montenegro" one in Brazil, "San Marino" the one in
+# California; "Kosovo" nothing at all, and "North Macedonia" two jobs where "Republic of North Macedonia" has
+# a page. Every other country's label is its name there: 1,095 of 1,105 jobs listed for the 57 countries were
+# in the country asked for, the rest in Montana for Malta, which then had its own name.
+LINKEDIN_NAMES: dict[str, str] = {
+    "AD": "Andorra la Vella, Andorra", "AM": "Republic of Armenia", "GE": "Tbilisi, Georgia",
+    "GG": "Bailiwick of Guernsey", "ME": "Crna Gora", "MK": "Republic of North Macedonia",
+    "MT": "Valletta, Malta", "SM": "San Marino, San Marino", "XK": "Prishtina, Kosovo",
+}
+
+
+def searched_as(code: str) -> str:
+    """What LinkedIn is asked for a country: its own name there, or its label."""
+    return LINKEDIN_NAMES.get(code) or COUNTRY_LABELS[code]
+
+
+# The country each name asked for is, so a job a sweep lists is read in the country it was listed in.
+SEARCHED: dict[str, str] = {searched_as(code): code for code in COUNTRY_LABELS}
+
+
 def wanted_places(configs: dict) -> list[str]:
     """LinkedIn's name for every country somebody picked, each once; a region is read as its countries.
     LinkedIn lists no further than 1,000 jobs, and the EU lists ~660 in 15 minutes (2026-11-04), so the
     30 minutes a sweep reaches back would lose ~300 every run. Its biggest country lists ~110."""
     codes = {code for slug in union_locations(configs) if slug in COUNTRIES
              for code in COUNTRIES[slug].countries}
-    return sorted(COUNTRY_LABELS[code] for code in codes if code in COUNTRY_LABELS)
+    return sorted(searched_as(code) for code in codes if code in COUNTRY_LABELS)
 
 
 def sweep_window(swept_at: datetime | None, *, now: datetime, most: int, oldest: datetime) -> int:
@@ -254,6 +277,10 @@ def _swept(db, corpus: CorpusRepository, report: LinkedInReport, *, now: datetim
         return
 
     jobs = [job for each in sweeps for job in each.jobs]
+    for each in sweeps:
+        # Listed in that country: where its place can be read two ways, it is the one there.
+        for job in each.jobs:
+            job.within = SEARCHED.get(each.place)
     report.new_jobs = _ingest(corpus, jobs)
     report.swept_places = len(sweeps)
     report.sweep_requests = sum(each.requests for each in sweeps)
