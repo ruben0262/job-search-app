@@ -2620,6 +2620,13 @@ export interface components {
             /** Waiting */
             waiting: number;
         };
+        /** Board */
+        Board: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+        };
         /** Body_upload_documents_post */
         Body_upload_documents_post: {
             /** File */
@@ -3930,17 +3937,13 @@ export interface components {
         };
         /**
          * Reach
-         * @description How much the platform reads, counted from what it reads. The landing page typed its own numbers
-         *     and still said 25 sources and ~940 company boards after both had changed (2026-11-06).
+         * @description What the landing page shows of what the platform reads, from the code that reads it: the page once
+         *     typed its own and still said 25 sources after that had changed (2026-11-06).
          */
         Reach: {
             ats: components["schemas"]["AtsMeasured"] | null;
-            /** Company Boards */
-            company_boards: number;
-            /** Jobs Week */
-            jobs_week: number;
-            /** Sources */
-            sources: number;
+            /** Boards */
+            boards: components["schemas"]["Board"][];
         };
         /**
          * ReadyDashboard

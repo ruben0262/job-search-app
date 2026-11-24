@@ -117,7 +117,8 @@ week"), with no figure beside them. The evidence for each stays linked in `Landi
 
 ## 7. The page, section by section
 
-Order: **Hero → What it is → How it works → See it working → Pricing → Get started → Ask us.** "Why it
+Order: **Hero → Where the jobs come from → What it is → How it works → See it working → Pricing → Get started →
+Ask us.** "Why it
 works" and its five figures are gone. What earned its place moved into the hero ("Be first. Be seen.") and
 How it works (the benefits). The onboarding steps now appear once, in Get started, instead of twice.
 
@@ -138,7 +139,18 @@ How it works (the benefits). The onboarding steps now appear once, in Get starte
   **early**, with **a CV made for the job**.
 - Buttons: **Start free →** · How it works. "Sign in" left the hero because the bar already has it.
 - Under the buttons: *No card needed.*
-- The four counts, as the server gives them.
+- The four counts that stood under the buttons are gone: the strip under the hero shows the sources instead
+  (owner, 2026-11-24).
+
+### Where the jobs come from (`#sources`)
+- **New jobs from all of these, the moment companies post them.** A small line, in the muted colour, over
+  two rows of every source the harvest reads (`/stats`, `HARVEST_SOURCES`): the boards, the company boards'
+  systems and LinkedIn, each its logo and its name. The top row drifts right and the one under it left (owner,
+  2026-11-24: "a double strip ... the top strip moves to the right and the bottom to the left").
+- "The moment companies post them" says what the page description already says ("the moment they're
+  posted"); it names no interval, which stays confidential (owner, 2026-11-17).
+- Each logo is the board's own icon, kept in the site (`web/public/boards`, whose README says where each came
+  from), so nothing loads from the boards.
 
 ### What it is (`#what`): unchanged
 - **Every job site. One list for you.**
@@ -202,8 +214,8 @@ How it works (the benefits). The onboarding steps now appear once, in Get starte
 
 ## 8. Open for the owner
 
-- **"Every job site."** Left as it is for now (owner, 2026-11-17). The site reads LinkedIn, Adzuna, 22
-  sources in all (2026-11-22) and company career pages. It does not read Indeed, Reed, Totaljobs or StepStone directly. A
+- **"Every job site."** Left as it is for now (owner, 2026-11-17). The site reads LinkedIn, Adzuna, Reed, 26
+  sources in all (2026-11-24) and company career pages. It does not read Indeed, Totaljobs or StepStone directly. A
   truer line that keeps the hook, if it is ever wanted: *"LinkedIn, job boards and company career pages.
   One list for you."*
 - **Freshness: "5 minutes".** The owner means how fresh a job is when somebody first sees it. Today a job is

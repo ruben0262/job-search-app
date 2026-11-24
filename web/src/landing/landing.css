@@ -550,51 +550,7 @@
   margin-top: -8px;
 }
 
-/* What the platform reads, counted by the server (`/stats`). */
-.landing .reach {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  width: 100%;
-  max-width: 760px;
-  margin: 40px 0 0;
-  animation: lp-rise 0.9s var(--out) 0.2s both;
-}
-
-.landing .reach > div {
-  padding: 16px;
-  border: 1px solid var(--glass-line);
-  border-radius: 18px;
-  background: var(--tile);
-}
-
-.landing .reach dt {
-  font: 600 var(--text-2xl)/1.1 var(--font-display);
-  letter-spacing: -0.04em;
-  font-variant-numeric: tabular-nums;
-}
-
-.landing .reach dd {
-  margin: 4px 0 0;
-  color: var(--dim);
-  font-size: var(--text-meta);
-}
-
-@keyframes lp-rise {
-  from {
-    opacity: 0;
-    translate: 0 24px;
-  }
-}
-
 @media (min-width: 768px) {
-  /* Three or four across, whichever the server counted. */
-  .landing .reach {
-    grid-template-columns: none;
-    grid-auto-columns: minmax(0, 1fr);
-    grid-auto-flow: column;
-  }
-
   /* Less above the halo on a short screen, down to the bar's own height: a laptop 720px tall keeps the
      buttons above the fold, and so does a phone on its side. */
   .landing .hero {
@@ -602,14 +558,50 @@
   }
 }
 
-/* Two to a row on a phone: an odd last one, when three were counted, takes the row. */
-@media (max-width: 767px) {
-  .landing .reach > div:last-child:nth-child(odd) {
-    grid-column: span 2;
-  }
+/* ── sections ──────────────────────────────────────────────────────────────────────────────── */
+
+/* Every source the harvest reads (`Sources`), under a line of its own, in the room the hero and What it is
+   already leave either side of it. Not `.sources`: that is Admin's table of them (`styles.css`). */
+.landing .section.source-strip {
+  padding-block: 8px 0;
+  text-align: center;
 }
 
-/* ── sections ──────────────────────────────────────────────────────────────────────────────── */
+.landing .source-strip h2 {
+  max-width: none;
+  margin: 0 auto 18px;
+  color: var(--muted);
+  font: 500 var(--text-lg)/1.4 var(--font-body);
+  letter-spacing: 0;
+}
+
+.landing .source-strip .drift-row {
+  --gap: 10px;
+  padding-block: 5px;
+}
+
+/* A source: its logo on white, as each draws it to be seen, and its name. */
+.landing .strip-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 18px 6px 6px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--tile);
+  color: var(--ink);
+  font: 500 var(--text-control)/1 var(--font-body);
+  white-space: nowrap;
+}
+
+.landing .strip-source img {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: #fff;
+  object-fit: contain;
+}
 
 .landing .section {
   position: relative;
@@ -1574,7 +1566,10 @@
   fill: #f5b83d;
 }
 
-.landing .review-row {
+/* A row that drifts without end, the reviews' and the sources': its list twice over, moved by half its width,
+   `--each` a card (`--n` of them) at one pace, rightward the other way. A finger or the pointer on it holds it. */
+.landing .drift-row {
+  --gap: 16px;
   margin-inline: calc(-1 * var(--pad));
   padding-block: 8px;
   overflow: hidden;
@@ -1582,33 +1577,33 @@
   mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
 }
 
-.landing .review-track {
+.landing .drift-track {
   display: flex;
   width: max-content;
-  animation: review-drift calc(var(--n) * 9s) linear infinite;
+  animation: drift calc(var(--n) * var(--each, 4.5s)) linear infinite;
 }
 
-.landing .review-row:nth-child(odd) .review-track {
+.landing .drift-track.rightward {
   animation-direction: reverse;
 }
 
-.landing .review-row:hover .review-track,
-.landing .review-row:active .review-track,
-.landing .review-row:focus-within .review-track {
+.landing .drift-row:hover .drift-track,
+.landing .drift-row:active .drift-track,
+.landing .drift-row:focus-within .drift-track {
   animation-play-state: paused;
 }
 
-@keyframes review-drift {
+@keyframes drift {
   to {
     translate: -50% 0;
   }
 }
 
-.landing .review-set {
+.landing .drift-set {
   display: flex;
-  gap: 16px;
+  gap: var(--gap);
   margin: 0;
-  padding: 0 16px 0 0;
+  padding: 0 var(--gap) 0 0;
   list-style: none;
 }
 
@@ -1680,17 +1675,17 @@
   font-size: var(--text-sm);
 }
 
-/* Motion turned off: the rows stand still and scroll by hand, each review once. */
+/* Motion turned off: the rows stand still and scroll by hand, each card once. */
 @media (prefers-reduced-motion: reduce) {
-  .landing .review-track {
+  .landing .drift-track {
     animation: none;
   }
 
-  .landing .review-row {
+  .landing .drift-row {
     overflow-x: auto;
   }
 
-  .landing .review-set[aria-hidden] {
+  .landing .drift-set[aria-hidden] {
     display: none;
   }
 }

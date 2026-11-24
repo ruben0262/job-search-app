@@ -268,18 +268,18 @@ export function Landing() {
             </div>
             <p className="lp-note" data-reveal style={after(0.75)}>No card needed.</p>
           </div>
-          {reach ? (
-            <dl className="reach">
-              <div><dt><Count to={reach.sources} /></dt><dd>Job sources</dd></div>
-              {/* Each left out while it counts nothing: a harvest that has stopped is not a quiet week. */}
-              {reach.company_boards ? (
-                <div><dt><AtLeast n={reach.company_boards} /></dt><dd>Company career pages</dd></div>
-              ) : null}
-              {reach.jobs_week ? <div><dt><AtLeast n={reach.jobs_week} /></dt><dd>New jobs this week</dd></div> : null}
-              {/* All day and night; how often is not said (owner, 2026-11-17: "confidential"). */}
-              <div><dt>24/7</dt><dd>Rapid checks</dd></div>
-            </dl>
-          ) : null}
+        </section>
+
+        {/* Every source the harvest reads, a logo each, in two rows drifting opposite ways: the numbers that were
+            under the hero, shown instead (owner, 2026-11-24). The server's one list (`/stats`), so it cannot fall
+            behind what is read; drawn when it comes, so not one of the reveals counted as the page opens. */}
+        <section id="sources" className="section source-strip" aria-labelledby="sources-title">
+          {/* A phrase is never broken: one line on a laptop, two at the comma on a phone. */}
+          <h2 id="sources-title" data-reveal>
+            <span className="keep">New jobs from all of these,</span>{" "}
+            <span className="keep">the moment companies post them.</span>
+          </h2>
+          {reach ? <Sources boards={reach.boards} /> : null}
         </section>
 
         <section id="what" className="section">
@@ -619,29 +619,26 @@ function Words({ children, from = 0 }: { children: string; from?: number }) {
   ));
 }
 
-/** A number that counts up to itself once, as the page opens. */
-function Count({ to }: { to: number }) {
-  const [shown, setShown] = useState(() => (still() ? to : 0));
-  useEffect(() => {
-    if (still()) return;
-    const start = performance.now();
-    let frame = 0;
-    const step = (now: number) => {
-      const k = clamp((now - start) / 1500);
-      setShown(Math.round(to * (1 - (1 - k) ** 4)));
-      if (k < 1) frame = requestAnimationFrame(step);
-    };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [to]);
-  return <>{shown.toLocaleString("en")}</>;
-}
-
-/** A count as a round number it is at least, so a big one reads at a glance and stays true: 43 is "40+",
- * 341 "340+", 72,345 "72,000+". Under ten, itself. */
-function AtLeast({ n }: { n: number }) {
-  const step = n < 10 ? 1 : n < 100 ? 5 : 10 ** (Math.floor(Math.log10(n)) - 1);
-  return <><Count to={Math.floor(n / step) * step} />{n < 10 ? "" : "+"}</>;
+/** The sources in two rows, the top drifting right and the one under it left (owner, 2026-11-24), each its logo
+ * and its name. A row is its sources twice over, so it has no end as it drifts; the second time is not read out. */
+function Sources({ boards }: { boards: Reach["boards"] }) {
+  const rows = [boards.filter((_board, i) => i % 2 === 0), boards.filter((_board, i) => i % 2 === 1)];
+  return rows.map((row, i) => (
+    <div key={i} className="drift-row" style={{ "--n": row.length } as CSSProperties}>
+      <div className={i === 0 ? "drift-track rightward" : "drift-track"}>
+        {[false, true].map((again) => (
+          <ul key={String(again)} className="drift-set" aria-hidden={again || undefined}>
+            {row.map((board) => (
+              <li key={board.key} className="strip-source">
+                <img src={`/boards/${board.key}.png`} alt="" width="32" height="32" decoding="async" />
+                {board.name}
+              </li>
+            ))}
+          </ul>
+        ))}
+      </div>
+    </div>
+  ));
 }
 
 /** What it is, drawn: the job sites, what is left out, and the list that is yours, jobs travelling from one

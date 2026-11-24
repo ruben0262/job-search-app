@@ -14,6 +14,46 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-24 — Every source's logo under the hero, in two rows drifting opposite ways, where the four counts were
+
+The owner: "make a double strip between 'Get seen first.' section and 'Every job site. One list for you.' where the
+top strip moves to the right and the bottom to the left, and we pull all of the logos of those sources and add them
+there, we can save the logos in the app ... remove the 'Job sources', 'Company career pages' and all those
+containers from the hero section ... above these two strips we can add a small heading to show all the sources we
+have currently implemented, saying that we also get access to jobs instantly as soon as companies make their job
+postings available."
+
+- **The strip** (`#sources`, `Landing.tsx` `Sources`). There are two rows, every source in `HARVEST_SOURCES`
+  between them, the 26 the harvest reads. That includes the ten company-board systems (Greenhouse, Ashby, Lever,
+  SmartRecruiters, Recruitee, Breezy, Workday, Personio, Workable, Teamtailor) and LinkedIn. Each source is its logo
+  and its name, the name being the one the Jobs page uses (`board_name`). The top row drifts right and the one
+  under it left, and a finger or the pointer holds a row still. Over the rows sits one line: "New jobs from all of
+  these, the moment companies post them." That is what the page's description already says, and it names no
+  interval. With less motion asked for, the rows stand still and scroll by hand, as the reviews do.
+- **One way to drift.** The reviews' rows were the only rows that drifted. Their CSS is now any row's
+  (`.drift-row`, `.drift-track`, `.drift-set`), with `--each` the time a card takes and `.rightward` the other way.
+  The reviews and the sources both use it. It is a translate, which the compositor draws, and the section pauses
+  off the screen with the rest (`.asleep`).
+- **The logos are in the site** (`web/public/boards/<key>.png`, about 110 KB in all). Each is the board's own icon,
+  taken from its site on 2026-11-24: the icon a phone is given, or its biggest favicon, or Google's favicon of the
+  site. There are four exceptions: Personio comes from Simple Icons (CC0); Recruitee's dots are cut from its own
+  wordmark; Feina Activa uses the Generalitat's emblem; and Arbeitnow's dot is drawn again in its colour (#0891b2),
+  because its icon is 15 pixels. Every file was drawn by Chromium at 128x128 on transparency, so no file from another
+  site is served as it came (an SVG can carry script). `web/public/boards/README.md` says where each came from.
+- **Removed**: the four counts under the hero's buttons (`.reach`, `Count`, `AtLeast`, the rise they came in on),
+  and `/stats`'s `sources`, `company_boards` and `jobs_week`, which nothing else read. `/stats` no longer counts
+  the live company boards or the week's runs on every visit. It serves the list (`boards`) and the ATS figure.
+- `.sources` was taken: it is Admin's table of the same sources in `styles.css`, which the landing page loads too.
+  The strip is `.source-strip` and each source `.strip-source`.
+- Four sources read only with their key at the harvester: Findwork, Adzuna, Reed, and NAV, whose token is
+  awaited. They are on the strip as they were in the count it replaces.
+- Tests:
+  - `test_board_logos.py`: a PNG of 128x128 for every source and none for any other. `/stats` names every source
+    in the harvest's order, and serves nothing but the list and the ATS figure.
+  - The landing walk checks that each source is read out once, by name; that all 52 logos are drawn (each row
+    holds its sources twice); that the top row moves right and the other left; and that the counts are gone.
+    Both fail on the last commit.
+
 ## 2026-11-23, midnight — every company board a web crawl lists, found with no keyword, and a run's company boards kept to half the run
 
 The owner: "I heard you can also do this in the google search engine to get results too, site:jobs.ashbyhq.com(...)

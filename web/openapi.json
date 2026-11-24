@@ -1303,6 +1303,24 @@
         "title": "Backlog",
         "type": "object"
       },
+      "Board": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name"
+        ],
+        "title": "Board",
+        "type": "object"
+      },
       "Body_upload_documents_post": {
         "properties": {
           "file": {
@@ -5016,7 +5034,7 @@
         "type": "object"
       },
       "Reach": {
-        "description": "How much the platform reads, counted from what it reads. The landing page typed its own numbers\nand still said 25 sources and ~940 company boards after both had changed (2026-11-06).",
+        "description": "What the landing page shows of what the platform reads, from the code that reads it: the page once\ntyped its own and still said 25 sources after that had changed (2026-11-06).",
         "properties": {
           "ats": {
             "anyOf": [
@@ -5028,23 +5046,16 @@
               }
             ]
           },
-          "company_boards": {
-            "title": "Company Boards",
-            "type": "integer"
-          },
-          "jobs_week": {
-            "title": "Jobs Week",
-            "type": "integer"
-          },
-          "sources": {
-            "title": "Sources",
-            "type": "integer"
+          "boards": {
+            "items": {
+              "$ref": "#/components/schemas/Board"
+            },
+            "title": "Boards",
+            "type": "array"
           }
         },
         "required": [
-          "sources",
-          "company_boards",
-          "jobs_week",
+          "boards",
           "ats"
         ],
         "title": "Reach",

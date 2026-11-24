@@ -368,33 +368,49 @@ def test_a_person_links_their_discord_from_the_bar_and_then_joins(site, capsys, 
         browser.close()
 
 
-def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in_a_picture_and_a_word(
-        site, capsys):
-    """The landing page's numbers are the server's (`/stats`): typed into it, they said 25 sources long
-    after that was true. A big one is said as the round number it is at least, so it reads at a glance
-    and stays true (owner, 2026-11-07). The promise is the biggest words on the page, and How it works says
-    what the app does for them rather than how they sign up; the five market figures are gone (owner,
-    2026-11-17). Sign in and sign up follow the address, going back included. And on a phone the bar is an
-    app's (owner, 2026-11-17): four places and More, each a picture over its word, the rest in More's sheet,
-    and a tap shows no box of the phone's own. Its card says where people apply: on the job's own site, never
-    here (owner, 2026-11-06)."""
-    from libs.db import database, insert
-    from libs.db.models import AtsToken, CountryCount
+def _every_source_drifts_under_the_hero(page) -> None:
+    """Each source once, read out by its name, half to a row, its logo drawn; the second time round in a row
+    is not read. On the screen, the top row drifts right and the one under it left."""
+    from libs.corpus.boards import board_name
     from libs.settings import HARVEST_SOURCES
 
+    strip = page.locator("#sources")
+    expect(strip.get_by_role("heading")).to_have_text(
+        "New jobs from all of these, the moment companies post them.")
+    expect(page.locator(".hero")).not_to_contain_text("Job sources")
+    names = [board_name(key) for key in HARVEST_SOURCES]
+    expect(strip.locator(".drift-set:not([aria-hidden]) li")).to_have_text(names[::2] + names[1::2])
+    strip.scroll_into_view_if_needed()
+    drawn = "logos => logos.filter((logo) => logo.naturalWidth).length"
+    for _ in range(50):
+        if strip.locator("img").evaluate_all(drawn) == 2 * len(HARVEST_SOURCES):
+            break
+        page.wait_for_timeout(100)
+    assert strip.locator("img").evaluate_all(drawn) == 2 * len(HARVEST_SOURCES), "a logo not drawn"
+    where = "tracks => tracks.map((track) => track.getBoundingClientRect().left)"
+    before = strip.locator(".drift-track").evaluate_all(where)
+    page.wait_for_timeout(800)
+    after = strip.locator(".drift-track").evaluate_all(where)
+    assert after[0] > before[0] and after[1] < before[1], f"from {before} to {after}"
+    page.evaluate("scrollTo(0, 0)")
+
+
+def test_the_landing_page_shows_every_source_and_a_phone_shows_each_place_in_a_picture_and_a_word(
+        site, capsys):
+    """Under the hero, every source the harvest reads, its logo and its name, in two rows drifting
+    opposite ways, the top one rightward, where the hero's numbers were (owner, 2026-11-24). They are the
+    server's one list (`/stats`): typed into the page, its numbers said 25 sources long after that was true.
+    The promise is the biggest words on the page, and How it works says what the app does for them rather
+    than how they sign up; the five market figures are gone (owner, 2026-11-17). Sign in and sign up follow
+    the address, going back included. And on a phone the bar is an app's (owner, 2026-11-17): four places and
+    More, each a picture over its word, the rest in More's sheet, and a tap shows no box of the phone's own.
+    Its card says where people apply: on the job's own site, never here (owner, 2026-11-06)."""
     base, email, _ = site
-    # 43 company boards answering, and 72,345 new jobs found an hour ago.
-    for n in range(43):
-        insert(database(), AtsToken(ats="greenhouse", token=f"company-{n}"))
-    hour = datetime.now(UTC) - timedelta(hours=1)
-    insert(database(), CountryCount(id=f"{hour:%Y-%m-%dT%H:%M}|DE", hour=hour, country="DE", jobs=72_345))
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         page.goto(f"{base}/#/")
-        reach = page.locator(".reach div")
-        expect(reach).to_have_text([f"{len(HARVEST_SOURCES)}Job sources", "40+Company career pages",
-                                    "72,000+New jobs this week", "24/7Rapid checks"])
+        _every_source_drifts_under_the_hero(page)
         # The promise first, in the biggest words, then what it is; and the main button says what starting
         # costs (owner, 2026-11-17).
         expect(page.locator("h1")).to_have_text("Get seen first.")
@@ -428,6 +444,7 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in
         # 2026-11-07). What it is, then how it works for them: what it does, not the sign-up (owner,
         # 2026-11-17).
         expect(page.locator("main section h2")).to_have_text([
+            "New jobs from all of these, the moment companies post them.",
             "Every job site. One list for you.", "You apply. We do the rest.", "See it working.",
             "Search smarter. Beat the crowd. Join now.", "Start in a few minutes.",
             "Got a question? Ask us."])

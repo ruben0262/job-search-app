@@ -56,11 +56,11 @@ export function Reviews() {
         </p>
       </div>
       {rows.map((row, i) => (
-        <div key={i} className="review-row" style={{ "--n": row.length } as CSSProperties}>
-          <div className="review-track">
-            <ul className="review-set">{row.map((review) => <Card key={review.name} review={review} />)}</ul>
+        <div key={i} className="drift-row" style={{ "--n": row.length, "--each": "9s" } as CSSProperties}>
+          <div className={i % 2 ? "drift-track rightward" : "drift-track"}>
+            <ul className="drift-set">{row.map((review) => <Card key={review.name} review={review} />)}</ul>
             {/* The same again, so the row has no end as it drifts: not read out a second time. */}
-            <ul className="review-set" aria-hidden="true">
+            <ul className="drift-set" aria-hidden="true">
               {row.map((review) => <Card key={review.name} review={review} />)}
             </ul>
           </div>

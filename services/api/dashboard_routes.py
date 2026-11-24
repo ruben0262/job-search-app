@@ -19,7 +19,7 @@ from libs.corpus.geo import CITIES, COUNTRY_LABELS
 from libs.corpus.postings import paragraphs
 from libs.corpus.repository import TYPED
 from libs.db import get, now
-from libs.db.models import AtsToken, BuiltDocument, CorpusJob, CountryCount, User, UserJobState
+from libs.db.models import BuiltDocument, CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents import about
 from libs.documents.saved import for_jobs
@@ -273,31 +273,29 @@ class AtsMeasured(BaseModel):
 ATS_MEASURED = AtsMeasured(passed=285, of=288, prompt="6fcbbabfca70")
 
 
+class Board(BaseModel):
+    # The source's key: its logo is `web/public/boards/<key>.png` (`tests/test_board_logos.py`).
+    key: str
+    # Its name as people write it (`libs.corpus.boards.board_name`), as the Jobs page names it too.
+    name: str
+
+
 class Reach(BaseModel):
-    """How much the platform reads, counted from what it reads. The landing page typed its own numbers
-    and still said 25 sources and ~940 company boards after both had changed (2026-11-06)."""
-    # The one source list (`HARVEST_SOURCES`), LinkedIn included; two of them run only with their key.
-    sources: int
-    # Company boards still answering: a dead one is kept so it is not found again, and not counted.
-    company_boards: int
-    # How often the sites are read is not served: confidential (owner, 2026-11-17), and no page says it.
-    # New jobs found in the last seven days, counted as the admin's chart counts them (`CountryCount`, one
-    # row a run a country): what was found, never a typed number.
-    jobs_week: int
+    """What the landing page shows of what the platform reads, from the code that reads it: the page once
+    typed its own and still said 25 sources after that had changed (2026-11-06)."""
+    # Every source the harvest reads (`HARVEST_SOURCES`), the company boards' systems and LinkedIn among them,
+    # in the strip under the hero, a logo each (owner, 2026-11-24). Four read only with their key at the
+    # harvester: Findwork, Adzuna, Reed, and NAV, whose token is awaited.
+    boards: list[Board]
     # What our own tests measured of the CVs made here (`ATS_MEASURED`), or None while the CV prompt is not
     # the one they measured: the page then says no figure rather than an old one.
     ats: AtsMeasured | None
 
 
 @router.get("/stats", response_model=Reach)
-def stats(db: Database = Depends(get_db)) -> Reach:
+def stats() -> Reach:
     """Public: the landing page asks before anybody has an account."""
-    week = db[CountryCount.COLLECTION].aggregate([
-        {"$match": {"hour": {"$gte": now() - timedelta(days=7)}}},
-        {"$group": {"_id": None, "jobs": {"$sum": "$jobs"}}}])
-    return Reach(sources=len(HARVEST_SOURCES),
-                 company_boards=db[AtsToken.COLLECTION].count_documents({"dead_at": None}),
-                 jobs_week=next(week, {}).get("jobs", 0),
+    return Reach(boards=[Board(key=key, name=board_name(key)) for key in HARVEST_SOURCES],
                  ats=ATS_MEASURED if prompts.version("write_cv.md") == ATS_MEASURED.prompt else None)
 
 
