@@ -283,11 +283,13 @@ def test_a_build_is_its_owners_alone(ready):
 def test_a_refusal_says_what_to_do_and_is_not_a_dead_letter(ready):
     """A dead letter pages the operator; a posting whose text is gone is not an incident."""
     from libs.db import get
-    from libs.db.models import CorpusJob, QueueJob
+    from libs.db.models import QueueJob
 
     api = ready
     build_id = _ask(api).json()["id"]
-    api.db[CorpusJob.COLLECTION].update_one({"_id": api.job.id}, {"$set": {"description": ""}})
+    from libs.corpus.texts import store
+
+    store(api.db, api.job.id, "")
     _work(api)
 
     status = _status(api, build_id)

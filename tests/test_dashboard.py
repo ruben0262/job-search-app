@@ -192,8 +192,7 @@ def test_remote_only_narrows_the_matches_and_unknown_is_not_remote(api):
 def test_a_salary_in_the_description_reaches_the_row_without_the_description(api):
     """The one thing the description holds that the table wants, extracted server-side for free."""
     http, db, _, jobs = api
-    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {
-        "description": "Backend role paying €60,000 - €80,000 per year. We build things."}})
+    _text(db, jobs[0], "Backend role paying €60,000 - €80,000 per year. We build things.")
 
     row = next(job for job in http.get("/feed").json()["jobs"] if job["id"] == jobs[0].id)
     assert row["salary"]["min"] == 60000
@@ -260,7 +259,9 @@ def test_no_document_yet_leaves_out_the_ones_with_a_cv_made(api):
 
 
 def _text(db, job, text: str) -> None:
-    db[CorpusJob.COLLECTION].update_one({"_id": job.id}, {"$set": {"description": text}})
+    from libs.corpus.texts import store
+
+    store(db, job.id, text)
 
 
 def _words(db, user, words: list[str]) -> None:
@@ -613,8 +614,8 @@ def test_a_list_carries_none_of_a_jobs_text_and_one_request_brings_the_texts_of_
     before any is opened. A job with no text, or no such job, is left out; a hundred is the most at once."""
     http, db, _, jobs = api
     long = "We build payment systems.  \n\n" + "Python and Postgres all day. " * 40
-    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {"description": long}})
-    db[CorpusJob.COLLECTION].update_one({"_id": jobs[1].id}, {"$set": {"description": "Short and sweet."}})
+    _text(db, jobs[0], long)
+    _text(db, jobs[1], "Short and sweet.")
 
     listed = http.get("/feed")
     texts = http.get("/jobs/descriptions", params={"ids": [jobs[0].id, jobs[1].id, 999_999]})
@@ -637,8 +638,7 @@ def test_a_description_stored_as_one_line_is_shown_in_paragraphs(api):
                "technology solutions that support the objectives of the business.")
     prose = [f"Sentence {n} says one more thing about the job, at about the length a sentence has."
              for n in range(6)]
-    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id},
-                                        {"$set": {"description": " ".join([heading, *prose])}})
+    _text(db, jobs[0], " ".join([heading, *prose]))
 
     text = http.get(f"/jobs/{jobs[0].id}/description").json()["text"]
 

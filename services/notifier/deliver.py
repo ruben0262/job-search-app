@@ -16,6 +16,7 @@ from time import monotonic, sleep
 from pymongo.database import Database
 
 from libs import limits
+from libs.corpus.texts import with_texts
 from libs.db import find, get, now
 from libs.db.models import Alert, CorpusJob, PushSubscription, QueueJob, User
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN
@@ -68,7 +69,8 @@ def deliver(db: Database, user_id: _uuid.UUID, *,
     batch = owed(db, user_id)[:limit]
     if not batch:
         return 0
-    jobs = {job.id: job for job in find(db, CorpusJob, {"_id": {"$in": [row["job_id"] for row in batch]}})}
+    jobs = {job.id: job for job in with_texts(db, find(db, CorpusJob,
+                                                         {"_id": {"$in": [row["job_id"] for row in batch]}}))}
     alerts = {alert.id: alert for alert in find(db, Alert, {"user_id": user_id})}
     mine = set(green_words(TenantRepository(db).get_config(user_id)))
 

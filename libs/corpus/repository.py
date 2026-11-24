@@ -15,6 +15,7 @@ from libs.corpus import langfilter, pay, workfilter
 from libs.corpus.freshness import DATE_ONLY, PlatformWindows, showable
 from libs.corpus.geo import posting_place
 from libs.corpus.keys import canonical_url, content_key
+from libs.corpus.texts import store, texts, with_texts
 from libs.corpus.words import terms_of
 from libs.db import insert, next_ids, now
 from libs.db.models import CorpusJob, CountryCount, Word
@@ -232,17 +233,17 @@ class CorpusRepository:
         """Attach fetched description text, up to `MAX_DESCRIPTION` of it, and which of everyone's words the
         job has (`libs.corpus.terms`), in the same write: a job's words are found the moment its text is."""
         description = description[:MAX_DESCRIPTION]
-        row = self._corpus.find_one({"_id": job_id}, {"description": 1, "title": 1, "location": 1,
-                                                      "is_remote": 1, "workplace": 1, "described_at": 1})
+        row = self._corpus.find_one({"_id": job_id}, {"title": 1, "location": 1, "is_remote": 1,
+                                                      "workplace": 1, "described_at": 1})
         if row is None:
             return False
-        if row["description"] == description:
+        if texts(self._db, [job_id]).get(job_id) == description:
             self._corpus.update_one({"_id": job_id}, {"$set": {"description_fetched_at": now()}})
             return False
 
         vocabulary = self._vocabulary()
         language = langfilter.detect_language(description)
-        changes = {"description": description, "description_fetched_at": now(),
+        changes = {"description_fetched_at": now(),
                    # Read once here rather than per reader per pass: the language is a fact about the posting,
                    # and so is the pay it states, which a minimum salary is compared with (`libs.corpus.pay`).
                    "language": language,
@@ -257,6 +258,8 @@ class CorpusRepository:
         if row["workplace"] is None:
             changes["workplace"] = workfilter.classify(
                 row["title"], row["location"] or "", description, row["is_remote"])
+        # The text first: a posting that reads as described has its text to read (`libs.corpus.texts`).
+        store(self._db, job_id, description)
         self._corpus.update_one({"_id": job_id}, {"$set": changes})
         # A word that joined the vocabulary while this was written: `terms.catch_up` looks for a new word only
         # in postings that already have their words, and this one may not have had them yet when it looked.
@@ -291,8 +294,8 @@ class CorpusRepository:
         return self._corpus.count_documents(_awaiting(linkedin, windows))
 
     def _jobs(self, where: dict, limit: int) -> list[CorpusJob]:
-        return [CorpusJob.from_doc(row) for row in
-                self._corpus.find(where, sort=[("first_seen_at", -1)], limit=limit)]
+        return with_texts(self._db, (CorpusJob.from_doc(row) for row in
+                                     self._corpus.find(where, sort=[("first_seen_at", -1)], limit=limit)))
 
     def record_describe_failure(self, job_id: int) -> int:
         """One more failed read. Returns the new count, so the caller can log the abandonment."""

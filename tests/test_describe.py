@@ -54,6 +54,13 @@ def _board(repo: CorpusRepository, **kwargs) -> int:
 
 # ── which rows are picked up ──────────────────────────────────────────────────────────────────
 
+
+def _text(session, job_id: int) -> str | None:
+    """A posting's text, where it is kept (`libs.corpus.texts`)."""
+    from libs.corpus.texts import texts
+
+    return texts(session, [job_id]).get(job_id)
+
 def test_a_row_with_no_description_is_awaiting_one(repo):
     corpus, _session = repo
     job_id = _board(corpus)
@@ -102,7 +109,7 @@ def test_a_fetched_description_replaces_the_teaser(repo):
     report = describe_pending(corpus, FakeClient(), linkedin=False)
 
     assert report.described == 1
-    assert "A real description." in get(session, CorpusJob, job_id).description
+    assert "A real description." in _text(session, job_id)
 
 
 def test_a_fetch_that_returns_nothing_leaves_the_row_for_the_next_pass(repo):
@@ -113,7 +120,7 @@ def test_a_fetch_that_returns_nothing_leaves_the_row_for_the_next_pass(repo):
     report = describe_pending(corpus, FakeClient("", 429), linkedin=False)
 
     assert report.described == 0 and report.still_thin == 1
-    assert get(session, CorpusJob, job_id).description == "teaser"
+    assert _text(session, job_id) == "teaser"
     assert job_id in [job.id for job in corpus.awaiting_description(linkedin=False)]
 
 
@@ -271,7 +278,7 @@ def test_marking_closed_keeps_the_row_and_its_description(repo):
 
     job = get(session, CorpusJob, job_id)
     assert job.closed_at is not None
-    assert job.description, "closing a posting must not touch the text somebody may still read"
+    assert _text(session, job_id), "closing a posting must not touch the text somebody may still read"
 
 
 def test_closing_twice_does_not_move_the_timestamp(repo):
@@ -369,7 +376,7 @@ def test_pages_are_fetched_several_at_a_time_and_every_one_is_stored(repo):
     report = describe_pending(corpus, Concurrent(), linkedin=True, workers=4)
 
     assert report.described == 8
-    assert all("A real description." in get(session, CorpusJob, i).description for i in ids)
+    assert all("A real description." in _text(session, i) for i in ids)
 
 
 def test_a_description_is_kept_whole_up_to_the_ceiling(repo):
@@ -382,8 +389,8 @@ def test_a_description_is_kept_whole_up_to_the_ceiling(repo):
     corpus.set_description(kept, whole)
     corpus.set_description(cut, long)
 
-    assert get(session, CorpusJob, kept).description == whole
-    assert get(session, CorpusJob, cut).description == long[:MAX_DESCRIPTION]
+    assert _text(session, kept) == whole
+    assert _text(session, cut) == long[:MAX_DESCRIPTION]
 
 
 # ── a dead posting stops costing us anything (2026-08-07) ─────────────────────────────────────

@@ -182,9 +182,11 @@ def test_a_posting_with_a_cover_letter_built_is_never_archived(ctx, tmp_path):
 
     archive_expired(s, directory=tmp_path)
 
+    from libs.corpus.texts import texts
+
     job = get(s, CorpusJob, job_id)
     assert job is not None, "a posting somebody built a cover letter for left the corpus"
-    assert job.description is not None, "and its text must still be there"
+    assert texts(s, [job_id]).get(job_id), "and its text must still be there"
 
 
 def test_a_posting_the_user_applied_to_is_never_archived(ctx, tmp_path):

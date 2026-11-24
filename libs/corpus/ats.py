@@ -71,38 +71,26 @@ class AtsRepository:
         return {row["token"]: row["name"] for row in self._tokens.find(
             {"ats": ats, "name": {"$nin": [None, ""]}}, {"token": 1, "name": 1})}
 
-    def mark_dead(self, ats: str, token: str) -> None:
-        """A board that 404s. Kept, not deleted — see `live_tokens`."""
-        self._tokens.update_one({"ats": ats, "token": token, "dead_at": None},
-                                {"$set": {"dead_at": now()}})
-
     # ── etags ────────────────────────────────────────────────────────────────────────────────
 
     def etags(self, ats: str) -> dict[str, str]:
         """Every known ETag for this ATS as `{token: etag}` — the shape the poll loop expects."""
         return {row["token"]: row["etag"] for row in self._etags.find({"ats": ats}, {"token": 1, "etag": 1})}
 
-    def set_etag(self, ats: str, token: str, etag: str) -> None:
-        """Record a validator."""
-        if not etag:
-            return
-        self._etags.update_one({"ats": ats, "token": token},
-                               {"$set": {"etag": etag, "updated_at": now()}}, upsert=True)
-
-    def forget_etag(self, ats: str, token: str) -> None:
-        """Drop a validator for a dead or empty board."""
-        self._etags.delete_one({"ats": ats, "token": token})
-
-    def record_poll(self, ats: str, token: str, *, etag: str | None, alive: bool) -> None:
-        """Apply one board's poll outcome: not `alive` is a board its ATS said is not there, never one that
-        failed to answer or had nothing open (`services.harvester.sources.ats.gather_ats`)."""
-        if not alive:
-            self.forget_etag(ats, token)
-            self.mark_dead(ats, token)
-            return
-        if etag:
-            self.set_etag(ats, token, etag)
-
+    def record_polls(self, ats: str, polls: Iterable[tuple[str, str | None, bool]]) -> None:
+        """Each board's poll, `(token, etag, alive)`, in a write for all of them rather than one each: one a
+        board was 14,000 round trips a run with every board a crawl lists (2026-11-24). A board's validator is
+        kept where it sent one (a 304 sends the one it had); not `alive` is a board its ATS said is not there,
+        never one that failed to answer or had nothing open (`services.harvester.sources.ats.gather_ats`): its
+        validator goes, so one that comes back is read whole, and the board is kept, given up."""
+        polls = list(polls)
+        if tags := [UpdateOne({"ats": ats, "token": token}, {"$set": {"etag": etag, "updated_at": now()}},
+                              upsert=True) for token, etag, alive in polls if alive and etag]:
+            self._etags.bulk_write(tags, ordered=False)
+        if gone := [token for token, _etag, alive in polls if not alive]:
+            self._etags.delete_many({"ats": ats, "token": {"$in": gone}})
+            self._tokens.update_many({"ats": ats, "token": {"$in": gone}, "dead_at": None},
+                                     {"$set": {"dead_at": now()}})
 
 def revive_all_once(db: Database) -> int:
     """Every board given up before 2026-11-20 asked again, once ever (its counter, `next_ids`, says so

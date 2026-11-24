@@ -31,6 +31,7 @@ from pathlib import Path
 
 from pymongo.database import Database
 
+from libs.corpus.texts import forget, texts
 from libs.db import now
 from libs.db.models import CorpusJob, UserJobState
 from libs.settings import corpus_retention_days
@@ -98,11 +99,15 @@ def archive_expired(db: Database, *, retention_days: int | None = None,
     path: Path | None = None
     states = 0
     if ids:
-        path = write_archive([{"id": row.pop("_id"), **row} for row in rows], directory)
+        # Each with its text, which is kept beside it (`libs.corpus.texts`) and goes with it.
+        text = texts(db, ids)
+        path = write_archive([{"id": row["_id"], **{k: v for k, v in row.items() if k != "_id"},
+                               "description": text.get(row["_id"])} for row in rows], directory)
         # Nobody applied to these postings, so every state row for them goes with them: a skip too,
         # since there is nothing left to show.
         states = db[UserJobState.COLLECTION].delete_many({"job_id": {"$in": ids}}).deleted_count
         db[CorpusJob.COLLECTION].delete_many({"_id": {"$in": ids}})
+        forget(db, ids)
 
     states += forget_stale_state(db, cutoff=cutoff, kept=kept, limit=limit)
     if ids or states:

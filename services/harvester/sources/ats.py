@@ -35,7 +35,9 @@ LEVER_TIMEOUT = 60
 # connections. The ATS families are read at the same time (`cycle._gather`), each with its own workers, and
 # without this they would outnumber the connections: a read then waits for one on its own clock, and is
 # timed out by a board that never heard of it. A worker waits here instead, on no clock, for its turn.
-AT_ONCE = 60
+# 120 with names asked of a public resolver (`deploy/compose.yml`): 10,730 boards, two runs, 9,099 reached
+# against 6,034 at 60 on the LAN's resolver, at 0.28 GB against 0.26 (2026-11-24). A slow resolver fails at 60.
+AT_ONCE = 120
 _BOARD_TURNS = threading.BoundedSemaphore(AT_ONCE)
 
 # One pooled client shared by every board poll.
@@ -83,7 +85,7 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
                ) -> list[JobLink]:
     """Poll every known company board for one ATS, conditionally where the board supports ETags.
 
-    A board is given up (`AtsRepository.record_poll`) only when its ATS says it is not there (`GONE`). One
+    A board is given up (`AtsRepository.record_polls`) only when its ATS says it is not there (`GONE`). One
     that did not answer (a timeout, a 429, a 5xx, the resolver down) says nothing about itself, and one
     with nothing open today has jobs another day: both are asked again next run. Either used to read as an
     empty board, an empty board as a dead one, and nothing asks a dead board again: 542 of the dev copy's 565
@@ -153,8 +155,7 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
                 seen.add(jl.url)
                 out.append(jl)
     if use_cond:
-        for token, etag, alive in outcomes:
-            repo.record_poll(ats, token, etag=etag, alive=alive)
+        repo.record_polls(ats, outcomes)
     if unanswered:
         logger.warning("%s: %d of %d boards did not answer twice, and are asked next run: %s", ats,
                        sum(unanswered.values()), len(companies), dict(unanswered.most_common(3)))

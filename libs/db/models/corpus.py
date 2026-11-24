@@ -17,8 +17,23 @@ WORDS_INDEX = "open_terms_newest"
 
 
 @dataclass(kw_only=True)
+class CorpusText(Document):
+    """A posting's whole text, kept beside it under its id rather than in it (`libs.corpus.texts`). It was 58%
+    of a stored posting, 4,006 bytes of 6,857, which the Jobs list never reads and the database kept in memory
+    with every posting it did read (2026-11-24): apart, the list reads the rest."""
+
+    COLLECTION = "corpus_texts"
+    BACKED_UP = False
+    OWNER = None
+
+    id: int
+    description: str
+
+
+@dataclass(kw_only=True)
 class CorpusJob(Document):
-    """One public posting. Its integer id is what the site, the alerts and Telegram's buttons carry."""
+    """One public posting. Its integer id is what the site, the alerts and Telegram's buttons carry. Its text,
+    `description`, is carried with it in this process and stored beside it (`CorpusText`), never in it."""
 
     COLLECTION = "corpus"
     BACKED_UP = False
@@ -101,6 +116,14 @@ class CorpusJob(Document):
     fetched_at: datetime | None = None
     first_seen_at: datetime = field(default_factory=now)
     schema_version: int = 1
+
+    def to_doc(self) -> dict:
+        data = super().to_doc()
+        data.pop("description")
+        return data
+
+    def beside(self) -> list[Document]:
+        return [CorpusText(id=self.id, description=self.description)] if self.description else []
 
 
 @dataclass(kw_only=True)

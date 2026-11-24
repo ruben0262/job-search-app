@@ -41,6 +41,7 @@ from pymongo import UpdateOne
 from pymongo.database import Database
 
 from libs.corpus.langfilter import detect_language
+from libs.corpus.texts import texts
 from libs.db import now
 from libs.db.models import CorpusJob, FitScore, User
 from libs.documents.read import fold, read
@@ -140,11 +141,11 @@ def catch_up(db: Database, *, deadline: float) -> int:
     corpus, given, asked = db[CorpusJob.COLLECTION], 0, Counter()
     while monotonic() < deadline:
         rows = list(corpus.find({"described_at": {"$ne": None}, "fit_version": {"$ne": VERSION}},
-                                {"title": 1, "description": 1, "language": 1},
-                                sort=[("first_seen_at", -1)]).limit(_BATCH))
+                                {"title": 1, "language": 1}, sort=[("first_seen_at", -1)]).limit(_BATCH))
         if not rows:
             break
-        made = {row["_id"]: job(row["title"], row.get("description"), row.get("language")) for row in rows}
+        text = texts(db, (row["_id"] for row in rows))
+        made = {row["_id"]: job(row["title"], text.get(row["_id"]), row.get("language")) for row in rows}
         corpus.bulk_write([UpdateOne({"_id": key}, {"$set": {"fit": features, "fit_version": VERSION}})
                            for key, features in made.items()], ordered=False)
         given += len(rows)

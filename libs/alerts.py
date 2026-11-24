@@ -35,6 +35,7 @@ from libs.corpus.freshness import platform_windows, showable
 from libs.corpus.geo import CITIES, COUNTRIES
 from libs.corpus.repository import TYPED
 from libs.corpus.terms import learn
+from libs.corpus.texts import texts
 from libs.corpus.words import norm, terms_of
 from libs.db import find, insert, lease, next_ids, now
 from libs.db.models import Alert, AlertCursor, CorpusJob, User, UserConfig, UserJobState, Word
@@ -197,11 +198,10 @@ def _with_words(db: Database, rows: list[dict]) -> list[dict]:
     (`libs.corpus.words.terms_of`), not passed over for a word it has."""
     if unsearched := [row["_id"] for row in rows if row.get("terms_at") is None]:
         vocabulary = sorted(db[Word.COLLECTION].distinct("_id"))
-        texts = {doc["_id"]: doc.get("description") for doc in db[CorpusJob.COLLECTION].find(
-            {"_id": {"$in": unsearched}}, {"description": 1})}
+        text = texts(db, unsearched)
         for row in rows:
-            if row["_id"] in texts:
-                row["terms"] = terms_of(row.get("title"), texts[row["_id"]], vocabulary)["terms"]
+            if row["_id"] in text:
+                row["terms"] = terms_of(row.get("title"), text[row["_id"]], vocabulary)["terms"]
     return rows
 
 

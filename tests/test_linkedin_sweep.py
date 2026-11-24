@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from libs.db import insert, lease
-from libs.db.models import CorpusJob, SweptPlace, User, UserConfig
+from libs.db.models import CorpusJob, CorpusText, SweptPlace, User, UserConfig
 from services.harvester import describer, linkedin
 
 NOW = datetime(2026, 7, 31, 12, 0, tzinfo=UTC)
@@ -143,7 +143,7 @@ def test_every_job_stored_is_described_by_the_describer_without_waiting_for_the_
     _described(db)
 
     assert len(linkedin_site.opened) == 25
-    assert db[CorpusJob.COLLECTION].count_documents({"description": {"$regex": "in Python"}}) == 25
+    assert db[CorpusText.COLLECTION].count_documents({"description": {"$regex": "in Python"}}) == 25
 
 
 def test_one_proxy_address_refusing_every_connection_stops_neither_the_lists_nor_the_texts(db, site):
@@ -158,7 +158,7 @@ def test_one_proxy_address_refusing_every_connection_stops_neither_the_lists_nor
 
     assert report.new_jobs == 25
     assert db[SweptPlace.COLLECTION].count_documents({"_id": "Germany"}) == 1, "read to its end"
-    assert db[CorpusJob.COLLECTION].count_documents({"description": {"$regex": "in Python"}}) == 25
+    assert db[CorpusText.COLLECTION].count_documents({"description": {"$regex": "in Python"}}) == 25
 
 
 @pytest.mark.parametrize("addresses", [2, 5])

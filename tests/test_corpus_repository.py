@@ -183,7 +183,9 @@ def test_rewriting_identical_text_is_not_a_change(repo):
 
     assert r.set_description(job_id, "Go, gRPC, Postgres.") is False
     assert r.set_description(job_id, "Rust, Kafka, ClickHouse.") is True
-    assert _get(s, job_id).description == "Rust, Kafka, ClickHouse."
+    from libs.corpus.texts import texts
+
+    assert texts(s, [job_id]) == {job_id: "Rust, Kafka, ClickHouse."}
 
 
 # ── retention ────────────────────────────────────────────────────────────────────────────────

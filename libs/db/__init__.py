@@ -33,7 +33,14 @@ def database() -> Database:
             raise RuntimeError("MONGODB_URI is not set. Expected e.g. mongodb+srv://<user>:<password>@"
                                "<cluster>.mongodb.net, as in certificates/mongodb.env")
         _client = MongoClient(uri, uuidRepresentation="standard", tz_aware=True, appname="mahoraga",
-                              serverSelectionTimeoutMS=10_000)
+                              serverSelectionTimeoutMS=10_000,
+                              # A pooled connection idle this long is closed: each one held costs server_db
+                              # about a megabyte, and a process kept every one it had ever opened.
+                              maxIdleTimeMS=60_000,
+                              # One answer awaited this long is a connection that died without saying so,
+                              # never a slow question: none here takes a minute (2026-11-24). Without it a
+                              # request waited on a dead connection for good.
+                              socketTimeoutMS=300_000)
     return _client[os.environ.get("MONGODB_DB") or "mahoraga"]
 
 
@@ -120,12 +127,19 @@ class Document:
             data["_id"] = data.pop("id")
         return data
 
+    def beside(self) -> list[Document]:
+        """What of it is stored in a collection of its own, beside it, by `insert`: nothing, for most."""
+        return []
+
 
 def insert[D: Document](db: Database, document: D) -> D:
-    """Store a new document, issuing its integer id first where its collection uses one."""
+    """Store a new document, issuing its integer id first where its collection uses one, and what of it is
+    kept beside it (`Document.beside`)."""
     if document.SEQUENCE and getattr(document, "id", None) is None:
         document.id = next_ids(db, document.COLLECTION)[0]
     db[document.COLLECTION].insert_one(document.to_doc())
+    for kept in document.beside():
+        db[kept.COLLECTION].replace_one({"_id": kept.id}, kept.to_doc(), upsert=True)
     return document
 
 

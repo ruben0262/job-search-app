@@ -258,7 +258,7 @@ def test_workable_is_asked_two_boards_at_a_time():
         def names(self, _ats):
             return {}
 
-        def record_poll(self, *_args, **_kwargs):
+        def record_polls(self, *_args, **_kwargs):
             pass
 
         def record_asked(self, *_args, **_kwargs):
@@ -633,7 +633,7 @@ def test_a_job_carries_its_companys_own_name_where_the_board_does_not_say_it(mon
         def names(self, _ats):
             return {"openai": "OpenAI"}
 
-        def record_poll(self, *_args, **_kwargs):
+        def record_polls(self, *_args, **_kwargs):
             pass
 
         def record_asked(self, *_args, **_kwargs):
@@ -969,7 +969,7 @@ def _boards(count: int):
         def names(self, _ats):
             return {}
 
-        def record_poll(self, *_args, **_kwargs):
+        def record_polls(self, *_args, **_kwargs):
             pass
 
         def record_asked(self, *_args, **_kwargs):
@@ -1030,7 +1030,8 @@ def test_never_more_boards_are_read_at_once_than_the_client_has_connections():
     """**A relationship, not a stopwatch.** Every ATS reads with workers of its own and all of them share
     one client. Read together, their workers outnumber its connections: a read then waits for a connection on
     its own clock, and is timed out by boards it never asked. So a worker takes a turn first, and there are
-    as many turns as connections. Three families of thirty want to read here; sixty do, and thirty wait."""
+    as many turns as connections. Here half as many again want to read as there are turns, in families of
+    thirty; as many as there are turns do, and the rest wait."""
     import threading
 
     from services.harvester.sources.ats import AT_ONCE, gather_ats
@@ -1050,13 +1051,13 @@ def test_never_more_boards_are_read_at_once_than_the_client_has_connections():
         return [], None
 
     families = [threading.Thread(target=gather_ats, args=({"concurrency": 30}, logging.getLogger("test")),
-                                 kwargs={"ats": name, "repo": _boards(30), "fetch_company": fetch})
-                for name in ("greenhouse", "lever", "ashby")]
+                                 kwargs={"ats": f"ats{n}", "repo": _boards(30), "fetch_company": fetch})
+                for n in range(-(-AT_ONCE * 3 // 2 // 30))]
     for family in families:
         family.start()
     try:
         assert full.wait(timeout=30), "the premise: as many boards are being read as there are connections"
-        # A moment in which the thirty that wait would have come in, were anything to let them.
+        # A moment in which the ones that wait would have come in, were anything to let them.
         over.wait(timeout=0.3)
     finally:
         go.set()

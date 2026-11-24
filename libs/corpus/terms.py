@@ -26,10 +26,11 @@ from pymongo import UpdateOne
 from pymongo.database import Database
 
 from libs.corpus.freshness import candidate_since, platform_windows
+from libs.corpus.texts import texts
 from libs.corpus.words import terms_of
 from libs.db import now
-from libs.db.models import CorpusJob, UserConfig, Word
-from libs.matching import green_words, has_any
+from libs.db.models import CorpusJob, CorpusText, UserConfig, Word
+from libs.matching import green_words, pattern, text_has_any
 from libs.obs import audit
 from libs.settings import TERMS_BUDGET_SECONDS
 
@@ -104,12 +105,13 @@ def _unsearched(db: Database, vocabulary: list[str], *, deadline: float) -> int:
     corpus, given = db[CorpusJob.COLLECTION], 0
     while monotonic() < deadline:
         rows = list(corpus.find({"terms_at": None, "described_at": {"$ne": None}, "closed_at": None},
-                                {"title": 1, "description": 1}).limit(BATCH))
+                                {"title": 1}).limit(BATCH))
         if not rows:
             break
+        text = texts(db, (row["_id"] for row in rows))
         # Only while it still has none: a text stored meanwhile found its own.
         corpus.bulk_write([UpdateOne({"_id": row["_id"], "terms_at": None}, {"$set": {
-            **terms_of(row.get("title"), row.get("description"), vocabulary), "terms_at": now()}})
+            **terms_of(row.get("title"), text.get(row["_id"]), vocabulary), "terms_at": now()}})
             for row in rows], ordered=False)
         given += len(rows)
     return given
@@ -120,18 +122,24 @@ def _backfill(db: Database, word: str, *, since, upto, deadline: float) -> int:
     time, back to `since`: older ones are never shown (`freshness.candidate_since`). At least one stretch a
     run, however little time is left, so a word is never starved. Where it got to is kept on the word, so
     a run out of time goes on from there next run; at `since` it is indexed, and matching reads it from
-    the index. The database picks out the postings with the word, so only those cross the network."""
+    the index. The postings' titles are read here and their texts searched in the database, kept apart
+    (`libs.corpus.texts`), so only the texts with the word cross the network."""
     corpus, words, found_in = db[CorpusJob.COLLECTION], [word], 0
+    in_title = pattern(words)
     upto = upto or now()
     while upto > since:
         start = max(since, upto - STRETCH)
+        titles = {row["_id"]: row.get("title") for row in corpus.find(
+            {"closed_at": None, "terms_at": {"$ne": None}, "first_seen_at": {"$gte": start, "$lt": upto}},
+            {"title": 1})}
+        named = sorted(job for job, title in titles.items() if in_title.search(title or ""))
+        text = {row["_id"]: row["description"] for row in db[CorpusText.COLLECTION].find(
+            {"_id": {"$in": list(titles)}, "$or": [{"_id": {"$in": named}}, text_has_any(words)]})}
         writes = []
-        for row in corpus.find({"closed_at": None, "terms_at": {"$ne": None},
-                                "first_seen_at": {"$gte": start, "$lt": upto}, **has_any(words)},
-                               {"title": 1, "description": 1}):
-            terms = terms_of(row.get("title"), row.get("description"), words)
+        for job_id in sorted({*named, *text}):
+            terms = terms_of(titles[job_id], text.get(job_id), words)
             if terms["terms"]:
-                writes.append(UpdateOne({"_id": row["_id"]}, {"$addToSet": {
+                writes.append(UpdateOne({"_id": job_id}, {"$addToSet": {
                     "terms": {"$each": terms["terms"]}, "title_terms": {"$each": terms["title_terms"]}}}))
         for at in range(0, len(writes), BATCH):
             corpus.bulk_write(writes[at:at + BATCH], ordered=False)

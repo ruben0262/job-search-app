@@ -18,7 +18,7 @@ brings their own keywords; those keywords surface their industry's companies on 
 those postings carry ATS URLs; and the boards join the list. Nobody curates it.
 
 The patterns are deliberately narrow. A wrong token is a board that 404s every cycle until
-`mark_dead` catches it, so anything that does not clearly name a company is skipped rather than
+`record_polls` gives it up, so anything that does not clearly name a company is skipped rather than
 guessed at.
 """
 from __future__ import annotations

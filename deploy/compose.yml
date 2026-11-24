@@ -9,6 +9,12 @@
 
 name: job-search-platform          # pinned — never let the dir name own the volume
 
+# Where the services that read the web look names up. Every Workday, Personio, Teamtailor, Recruitee and Breezy board
+# is a host of its own, 4,918 of them: the LAN's resolver took 5 to 20 s a name, and failed 228 of 300 asked 60 at
+# once, where Cloudflare's answered 300 in 1.2 s (2026-11-23); two runs with it reached half again as many boards
+# (owner, 2026-11-24: "switch the dns"). Docker's own resolver still answers the services' names.
+x-web-names: &web_names [1.1.1.1, 9.9.9.9]
+
 services:
   # One shared harvest cycle, then exit. Behind the `tools` profile so a bare `up` never starts it:
   # this is a one-shot invoked by a timer, and a `restart: always` one-shot would spin forever.
@@ -60,6 +66,7 @@ services:
       - ../archive:/var/lib/jobsearch/archive
     # A cycle is network-bound and short. The ceiling is a guard against a runaway source, not a
     # target - and the box has 4 GB of swap now, so exceeding it degrades rather than OOM-killing.
+    dns: *web_names
     mem_limit: 1g
     cpus: 2
 
@@ -82,6 +89,7 @@ services:
       LOG_DIR: /var/log/jobsearch
     volumes:
       - ../logs:/var/log/jobsearch
+    dns: *web_names
     mem_limit: 512m
     cpus: 1
 
@@ -103,6 +111,7 @@ services:
       LOG_DIR: /var/log/jobsearch
     volumes:
       - ../logs:/var/log/jobsearch
+    dns: *web_names
     mem_limit: 512m
     cpus: 1
 

@@ -3945,14 +3945,10 @@ work, or opening and closing sessions faster, would help):
     ```
 
     For the owner:
-    - **Names, then memory.** A run waits on names: every Workday, Personio, Teamtailor, Recruitee and Breezy board
-      is a host of its own (4,918). The laptop's resolver took 5 to 20 s a name; Cloudflare's 300 names in 1.2 s.
-      As it is, two runs reached 2,021 then 3,115 of 10,730 boards (every board in about four runs) in 0.36 and
-      0.52 GB. With `dns: [1.1.1.1, 9.9.9.9]` on the `harvester` and `seed-ats` services, 7,266 then 2,799
-      (nearly every board in two) in 0.71 and 0.86 GB, inside the harvester's 1 GB with little to spare: its
-      `mem_limit` at 1.5g with it would leave room (the VM has 8 GB; 5.8 GB of ceilings during a harvest).
-      Neither is set: first see how fast the server's own resolver is (`time getent hosts
-      acme.wd3.myworkdayjobs.com` for a few names it has not asked before).
+    - **Names: done** (owner, 2026-11-24: "switch the dns"). The harvester, the describer and the seed ask
+      1.1.1.1 and 9.9.9.9 (`deploy/compose.yml`, `x-web-names`), 120 boards at once: 10,730 boards in 0.27 to
+      0.28 GB, 9,099 reached over two runs against 6,034. If the server cannot reach them, every source fails at
+      once and the harvest log says so: remove `dns: *web_names` and set `AT_ONCE` back to 60.
     - **Personio** answers about 2.5 asks a second whatever it is asked (2 at once: 1,852 refused, 465 answered in
       three minutes). Asking it at that pace, rather than refusing most, would be its own small change.
     - **The company boards as a process of their own** (the owner's "async runs"): reading them all the time
@@ -3967,10 +3963,12 @@ work, or opening and closing sessions faster, would help):
     - **LinkedIn, done the same afternoon:** every country tried, eight asked for by a name of their own
       (`linkedin.LINKEDIN_NAMES`). Georgia is asked for as "Tbilisi, Georgia", its capital's area: every name for
       the whole country gave the American state.
-    - **The jobs' text and match-score features out of the jobs collection** (measured 2026-11-24, CHANGELOG
-      afternoon): 87% of a stored job, which the Jobs list never reads but MongoDB caches with it. Out, the eight days
-      the Jobs page reads go from about 1.9 GB to 0.24 GB, and server_db's cache (`SDB_CACHE_GB`, 3.5) can come down
-      toward 1 with the list still in memory. About fifteen readers change and every stored job moves once: say go.
+    - **The jobs' text out of the jobs collection: built** (2026-11-24 evening, CHANGELOG): a stored job 6,509 bytes
+      to 2,735 on the dev copy, the Jobs page level, the deploy moving every text once. The match score's features
+      stay in the job (29% of it): the Jobs page works the score out in the database from them, and apart, every
+      page would join them in. For the owner, a day after the deploy: how much of server_db's cache the platform
+      uses (`db.serverStatus().wiredTiger.cache["bytes currently in the cache"]`), and `SDB_CACHE_GB` (3.5) brought
+      down toward it with room to spare, in server_db's own setup.
     - **A streaming JSON parser for the harvester** (`ijson`): a board's answer read as it arrives, about one job
       of each in memory. Not installed: this session was not allowed to add a package.
     - **120 company boards at once rather than 60**: a third faster on the laptop at the same memory, once the

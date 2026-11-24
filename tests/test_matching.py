@@ -198,16 +198,15 @@ def test_more_of_their_words_ranks_a_job_higher_and_a_title_breaks_the_tie(accou
 
 
 @needs_db
-def test_the_text_stays_in_the_database_unless_it_is_asked_for(account):
+def test_the_text_stays_in_the_database(account):
     """The jobs page needs the words, not the text, and the text was most of what crossed the network.
-    An alert asks for it: its card reads the salary off it."""
+    What shows a text reads it by the job's id (`libs.corpus.texts`)."""
     from libs.matching import matching_jobs
 
     db, user = account
     _jobs(db, ("Backend Engineer", "Pays €70,000 per year.", True, 1))
 
     assert [m.job.description for m in matching_jobs(db, user)] == [None]
-    assert [m.job.description for m in matching_jobs(db, user, text=True)] == ["Pays €70,000 per year."]
 
 
 @needs_db

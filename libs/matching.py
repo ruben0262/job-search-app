@@ -19,6 +19,7 @@ from libs.contracts.config import migrate_config
 from libs.corpus import pay
 from libs.corpus.freshness import PlatformWindows, platform_windows
 from libs.corpus.geo import continent_of, countries_in
+from libs.corpus.texts import JOINED
 from libs.corpus.words import norm
 from libs.db import find
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState, Word
@@ -71,12 +72,17 @@ def found(regex: re.Pattern, text: str | None) -> set[str]:
     return {norm(hit) for hit in regex.findall(text or "")}
 
 
+def text_has_any(words: list[str]) -> dict:
+    """A query condition: the description has one of these words, judged in the database, over a posting's
+    text where it is kept (`libs.corpus.texts`) or brought in (`texts.JOINED`)."""
+    return {"$expr": {"$regexMatch": {"input": {"$ifNull": ["$description", ""]},
+                                      "regex": _UNICODE + pattern(words).pattern, "options": "i"}}}
+
+
 def has_any(words: list[str]) -> dict:
     """A query condition: the title or the description has one of these words, judged in the database."""
-    regex = _UNICODE + pattern(words).pattern
-    return {"$or": [{"title": {"$regex": regex, "$options": "i"}},
-                    {"$expr": {"$regexMatch": {"input": {"$ifNull": ["$description", ""]}, "regex": regex,
-                                               "options": "i"}}}]}
+    return {"$or": [{"title": {"$regex": _UNICODE + pattern(words).pattern, "$options": "i"}},
+                    text_has_any(words)]}
 
 
 class Matches(list):
@@ -145,7 +151,7 @@ def _asked(config: dict | None, filters: UserFilters,
 
 
 def _read(db: Database, user: User, *, described_since: datetime | None = None,
-          since: datetime | None = None, scan: int = SCAN, text: bool = False, fit: bool = False,
+          since: datetime | None = None, scan: int = SCAN, fit: bool = False,
           skip: set[int] | frozenset[int] = frozenset(), only: int | None = None,
           delay: int | None = None, windows: PlatformWindows | None = None) -> tuple[list[dict], dict] | None:
     """The stages that read this person's matches, the newest `scan` of them, each with `words` and
@@ -199,27 +205,28 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
     pending = {word for word in mine if word not in indexed}
 
     newest = [{"$sort": {"first_seen_at": -1, "_id": -1}}, {"$limit": scan}]
-    # Its words found where its text is at hand, and the text left behind unless the caller shows it.
-    # What the fit score reads of a posting leaves too, unless the caller scores the page it shows.
-    left = [*([] if text else ["description"]), *([] if fit else ["fit"])]
-    found_there = [_words(mine, pending), {"$match": {"words.0": {"$exists": True}}},
-                   *([{"$unset": left}] if left else [])]
-    searches = [[{"$match": {"$and": [*where, {"terms_at": None, **has_any(mine)}]}}, *newest, *found_there]]
+    # Its words found, and the text they were read in let go: a posting's text is kept beside it (`libs.corpus
+    # .texts`) and brought in only where a word is read in it, a posting not searched yet or a word still
+    # pending. What the fit score reads of a posting leaves too, unless the caller scores the page it shows.
+    left = ["description", *([] if fit else ["fit"])]
+    found_there = [_words(mine, pending), {"$match": {"words.0": {"$exists": True}}}, {"$unset": left}]
+    searches = [[{"$match": {"$and": [*where, {"terms_at": None}]}}, *JOINED, {"$match": has_any(mine)},
+                 *newest, *found_there]]
     how: dict = {}
     if indexed:
         # Found by the words stored on it, and with every word of theirs stored, nothing below reads its
         # text: left behind before the newest are sorted and not after, so what is sorted is a tenth the
         # size. 567 ms to 456 for a list of 5,894 (2026-11-21). With a word still pending, the text is read
         # for it, and leaves after.
-        early = [{"$unset": left}] if left and not pending else []
+        early = [{"$unset": left}]
         # First: what the database is told about how to read applies to the question it begins with.
         searches.insert(0, [{"$match": {"$and": [*where, {"terms": {"$in": indexed}}]}}, *early, *newest,
-                            *found_there])
+                            *(JOINED if pending else []), *found_there])
         how = {} if only is not None or described_since is not None else {"hint": WORDS_INDEX}
     if pending:
         # A word not searched for yet, read in the newest candidates' text meanwhile. Only that word: when
         # every word was read this way, adding one cut a list from ~1,500 jobs to 458 (2026-11-04).
-        searches.append([{"$match": {"$and": where}}, *newest, *found_there])
+        searches.append([{"$match": {"$and": where}}, *newest, *JOINED, *found_there])
     first, *rest = searches
     joined = [{"$unionWith": {"coll": CorpusJob.COLLECTION, "pipeline": each}} for each in rest]
     # A posting two of the questions found is one posting.
@@ -236,12 +243,12 @@ def _match(row: dict) -> Match:
 
 
 def matching_jobs(db: Database, user: User, *, described_since: datetime | None = None,
-                  since: datetime | None = None, scan: int = SCAN, text: bool = False,
+                  since: datetime | None = None, scan: int = SCAN,
                   skip: set[int] | frozenset[int] = frozenset()) -> Matches:
     """This person's matches, the most of their words first, then newest first (`_read`). Only the words
     come back, unless `text` asks for the description too, for a caller that shows it (an alert's salary
     line)."""
-    read = _read(db, user, described_since=described_since, since=since, scan=scan, text=text, skip=skip)
+    read = _read(db, user, described_since=described_since, since=since, scan=scan, skip=skip)
     if read is None:
         return Matches()
     stages, how = read

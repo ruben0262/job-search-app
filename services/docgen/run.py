@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 from libs import prompts, templates
+from libs.corpus.texts import with_texts
 from libs.db import get
 from libs.db.models import CorpusJob, User
 from libs.obs import audit
@@ -155,7 +156,7 @@ def _load(db, user_id: _uuid.UUID, job_id: int) -> tuple[User, CorpusJob]:
     job = get(db, CorpusJob, job_id)
     if job is None:
         raise NotBuildable(f"job {job_id} is no longer in the corpus")
-    return user, job
+    return user, with_texts(db, [job])[0]
 
 
 def _languages(db, user_id: _uuid.UUID) -> tuple[str, ...]:

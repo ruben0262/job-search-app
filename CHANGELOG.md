@@ -14,6 +14,35 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-24, evening — a posting's text kept beside it, one write a run for the company boards, and connections closed when idle
+
+The owner: "is there a way we could read the company boards fast, without it taking so long, and taking so much usage
+up in memory? Also we should configure the db and perhaps split it so its not so harsh on server-db and make sure that
+we have proper communications between the app and db as well, with writes and reads too."
+
+- **A posting's text is kept beside it** (`corpus_texts`, `libs.corpus.texts`), not in it. It was 58% of a stored
+  posting, which the Jobs list never reads and the database kept in memory with every posting it did. On a copy of
+  the dev database: 51,356 postings, 334 MB to 141 MB, 6,509 bytes each to 2,735; the texts 195 MB apart. The deploy
+  moves them once (`python -m libs.db`): 51,356 in 5.8 s. The Jobs page, words indexed, same totals, median of nine
+  in two rounds each: 103 to 319 ms after against 60 to 362 before, the spread of the page itself; profiled, its main
+  question took 56 ms before and 59 after. What reads a text reads it by id: the page's texts, an opened job,
+  alerts, notification cards, CVs and letters, the score's features, the words index. The feed brings a text in only
+  where a word is read in it, a posting not yet searched or a word still pending (none on the dev copy). The archive
+  writes each posting with its text and deletes both. `insert` stores a posting's text beside it (`Document.beside`).
+  The match score's features stay in the posting: the Jobs page works the score out in the database from them.
+- **The company boards' validators in one write a run** (`AtsRepository.record_polls`), not one a board: 3,000
+  boards 1,875 ms and 3,060 round trips locally, now 248 ms and 3. `set_etag`, `forget_etag`, `mark_dead` and
+  `record_poll` are gone with it.
+- **Connections:** a pooled connection idle a minute is closed (each held costs server_db about a megabyte, and a
+  process kept every one it had opened), and an answer awaited five minutes is a dead connection (none here takes
+  one), where a request used to wait on one for good.
+- **The company boards at full size** (10,730 boards a crawl lists, two runs, `MALLOC_ARENA_MAX=2`): as it would
+  deploy, 353 and 349 s of the run's half, 0.23 and 0.26 GB, where the same load took 1.6 to 1.9 GB before the
+  memory work of the afternoon; 2,854 then 3,180 boards a run. With names answered at once (ROADMAP item 56) and
+  120 boards at once: 372 and 339 s, 0.27 and 0.28 GB, 6,670 then 2,429, half again as many over two runs. Both
+  made so on the owner's yes ("switch the dns"): the harvester, the describer and the seed ask Cloudflare's and
+  Quad9's resolvers (`deploy/compose.yml`, `x-web-names`), and `AT_ONCE` is 120.
+
 ## 2026-11-24, last — The hero's circle higher, midway between the bar and the title
 
 The owner: "lets move the spinning circle higher, than the text on the hero page so its in the middle between the nav

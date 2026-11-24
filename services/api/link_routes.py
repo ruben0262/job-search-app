@@ -27,6 +27,7 @@ from pymongo.database import Database
 from libs import fit
 from libs.corpus.postings import PAGE_HEADERS, job_link, linkedin_id, read_link
 from libs.corpus.repository import LINK, MAX_DESCRIPTION, MIN_DESCRIPTION, TYPED, CorpusRepository
+from libs.corpus.texts import with_texts
 from libs.corpus.words import terms_of
 from libs.db import get, now
 from libs.db.models import CorpusJob, User, UserJobState
@@ -312,6 +313,7 @@ def job_cards(db: Database, user_id: _uuid.UUID, ids: list[int], *, why: bool = 
     for row in rows:
         scores[row["_id"]] = row.pop("fit_score", None)
         jobs[row["_id"]] = CorpusJob.from_doc(row)
+    with_texts(db, jobs.values())
     documents, kept = for_jobs(db, user_id, list(jobs)), bookmarked(db, user_id, list(jobs))
     cards = []
     for job_id in ids:

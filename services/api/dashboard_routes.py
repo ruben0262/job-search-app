@@ -19,6 +19,7 @@ from libs.corpus.freshness import platform_windows, shelf_life
 from libs.corpus.geo import CITIES, CONTINENTS, continent_of, country_name
 from libs.corpus.postings import paragraphs
 from libs.corpus.repository import TYPED
+from libs.corpus.texts import texts
 from libs.db import get, now
 from libs.db.models import BuiltDocument, CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
@@ -457,13 +458,12 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
         background.add_task(fit.fill, db, user_id)
     ids = [match.job.id for match in found.matches]
     # The text of the page's jobs only: matching never brings it back. Nothing is asked about no jobs.
-    texts = {row["_id"]: row.get("description") for row in db[CorpusJob.COLLECTION].find(
-        {"_id": {"$in": ids}}, {"description": 1})} if ids else {}
+    text = texts(db, ids)
     documents = for_jobs(db, user_id, ids) if ids else {}
     kept = bookmarked(db, user_id, ids) if ids else set()
     return Feed(**dict(offers_of(found.sources, found.countries, found.cities)),
                 total=found.total, arrived=found.arrived,
-                jobs=[feed_row(match, texts.get(match.job.id), documents.get(match.job.id, []),
+                jobs=[feed_row(match, text.get(match.job.id), documents.get(match.job.id, []),
                                bookmarked=match.job.id in kept) for match in found.matches],
                 words=[FeedWord(name=name, jobs=count) for name, count in found.words],
                 as_of=as_of, shelf_hours=shortest, shelf_longest_hours=longest, delay_hours=delay,
@@ -524,13 +524,12 @@ class JobTexts(BaseModel):
 def _texts(db: Database, user_id: _uuid.UUID, ids: list[int]) -> dict[int, str]:
     """The whole text of each of these jobs that this account may read: as stored, or in paragraphs if it
     was stored as one line (`paragraphs`). The one rule for one job and for a page of them."""
-    where: dict = {"_id": {"$in": sorted(theirs_among(db, user_id, ids))},
-                   "description": {"$nin": [None, ""]}}
+    where: dict = {"_id": {"$in": sorted(theirs_among(db, user_id, ids))}}
     if (behind := jobs_as_of(db, get(db, User, user_id))) is not None:
         # Not the text of a job a waiting account's list does not show yet, asked for by its number.
         where["$or"] = [{"source": TYPED}, {"described_at": {"$lte": behind}}]
-    return {row["_id"]: paragraphs(row["description"])
-            for row in db[CorpusJob.COLLECTION].find(where, {"description": 1})}
+    readable = db[CorpusJob.COLLECTION].distinct("_id", where)
+    return {job_id: paragraphs(text) for job_id, text in texts(db, readable).items() if text}
 
 
 @router.get("/jobs/descriptions")

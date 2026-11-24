@@ -15,7 +15,8 @@ alert of an account that had paused them all is switched off, once ever (`libs.a
 the pause having gone. And every company board given up before a failed poll was told from a missing board is
 asked again, once ever (`libs.corpus.ats.revive_all_once`). And every stored posting's country and town is
 read again, once ever, by the reader that knows every town of 5,000 people (`libs.corpus.repository
-.read_places_once`).
+.read_places_once`). And every posting's text still inside it is moved beside it
+(`libs.corpus.texts.move_once`).
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ import sys
 from libs.alerts import alerts_for_existing, paused_for_existing
 from libs.corpus.ats import revive_all_once
 from libs.corpus.repository import read_places_once
+from libs.corpus.texts import move_once
 from libs.db import database, ensure_schema
 from libs.db.models import MODELS
 from libs.llm.accounts import settle
@@ -46,6 +48,8 @@ def main() -> int:
         print(f"ats_tokens: {revived} board(s) given up before 2026-11-20 are asked again")
     if placed := read_places_once(db):
         print(f"corpus: {placed} posting(s) given their town, or their country, by the reader of every town")
+    if moved := move_once(db):
+        print(f"corpus: {moved} posting(s) gave their text to corpus_texts")
     ensure_schema(db, prune="--prune" in sys.argv[1:])
     for model in MODELS:
         indexes = len(list(db[model.COLLECTION].list_indexes()))

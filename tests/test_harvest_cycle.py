@@ -136,9 +136,11 @@ def test_a_snippet_saves_the_description_fetch(ctx):
     run_cycle(s, source_configs=_sources(himalayas={}),
               run_source=lambda *a: [_link(snippet="A real description. " * 30)])
 
+    from libs.corpus.texts import texts
+
     job = s[CorpusJob.COLLECTION].find_one({})
     assert job is not None
-    assert job["description"] == "A real description. " * 30, "the snippet is stored as the text"
+    assert texts(s, [job["_id"]])[job["_id"]] == "A real description. " * 30, "the snippet is its text"
 
 
 # ── who is in the fold ────────────────────────────────────────────────────────────────────────
@@ -313,7 +315,7 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering():
         def names(self, _ats):
             return {}
 
-        def record_poll(self, *_args, **_kwargs):
+        def record_polls(self, *_args, **_kwargs):
             pass
 
         def record_asked(self, *_args, **_kwargs):
