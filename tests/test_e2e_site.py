@@ -375,8 +375,7 @@ def _every_source_drifts_under_the_hero(page) -> None:
     from libs.settings import HARVEST_SOURCES
 
     strip = page.locator("#sources")
-    expect(strip.get_by_role("heading")).to_have_text(
-        "New jobs from all of these, the moment companies post them.")
+    expect(strip.get_by_role("heading")).to_have_text("Straight from the source. The moment a job goes live.")
     expect(page.locator(".hero")).not_to_contain_text("Job sources")
     names = [board_name(key) for key in HARVEST_SOURCES]
     expect(strip.locator(".drift-set:not([aria-hidden]) li")).to_have_text(names[::2] + names[1::2])
@@ -444,7 +443,7 @@ def test_the_landing_page_shows_every_source_and_a_phone_shows_each_place_in_a_p
         # 2026-11-07). What it is, then how it works for them: what it does, not the sign-up (owner,
         # 2026-11-17).
         expect(page.locator("main section h2")).to_have_text([
-            "New jobs from all of these, the moment companies post them.",
+            "Straight from the source. The moment a job goes live.",
             "Every job site. One list for you.", "You apply. We do the rest.", "See it working.",
             "Search smarter. Beat the crowd. Join now.", "Start in a few minutes.",
             "Got a question? Ask us."])

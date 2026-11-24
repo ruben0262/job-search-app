@@ -143,12 +143,13 @@ How it works (the benefits). The onboarding steps now appear once, in Get starte
   (owner, 2026-11-24).
 
 ### Where the jobs come from (`#sources`)
-- **New jobs from all of these, the moment companies post them.** A small line, in the muted colour, over
-  two rows of every source the harvest reads (`/stats`, `HARVEST_SOURCES`): the boards, the company boards'
+- **Straight from the source. The moment a job goes live.** ("The moment a job goes live." in the purple),
+  over two rows of every source the harvest reads (`/stats`, `HARVEST_SOURCES`): the boards, the company boards'
   systems and LinkedIn, each its logo and its name. The top row drifts right and the one under it left (owner,
   2026-11-24: "a double strip ... the top strip moves to the right and the bottom to the left").
-- "The moment companies post them" says what the page description already says ("the moment they're
-  posted"); it names no interval, which stays confidential (owner, 2026-11-17).
+- It replaced "New jobs from all of these, the moment companies post them." (owner, 2026-11-24: "something more
+  powerful", and never "these" or "them" on the page). "The moment a job goes live" says what the page
+  description already says ("the moment they're posted"); it names no interval, which stays confidential.
 - Each logo is the board's own icon, kept in the site (`web/public/boards`, whose README says where each came
   from), so nothing loads from the boards.
 

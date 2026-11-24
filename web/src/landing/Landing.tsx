@@ -274,10 +274,11 @@ export function Landing() {
             under the hero, shown instead (owner, 2026-11-24). The server's one list (`/stats`), so it cannot fall
             behind what is read; drawn when it comes, so not one of the reveals counted as the page opens. */}
         <section id="sources" className="section source-strip" aria-labelledby="sources-title">
-          {/* A phrase is never broken: one line on a laptop, two at the comma on a phone. */}
+          {/* Where the jobs come from and how soon, in two beats as the page's other titles go (owner, 2026-11-24:
+              "something more powerful", and never "these" or "them"). A phrase is never broken. */}
           <h2 id="sources-title" data-reveal>
-            <span className="keep">New jobs from all of these,</span>{" "}
-            <span className="keep">the moment companies post them.</span>
+            <span className="keep">Straight from the source.</span>{" "}
+            <span className="glow keep">The moment a job goes live.</span>
           </h2>
           {reach ? <Sources boards={reach.boards} /> : null}
         </section>

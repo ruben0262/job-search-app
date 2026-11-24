@@ -406,7 +406,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
-  align-content: start;
+  /* The halo, the title and the words in the middle of the screen, the room shared above and below (owner,
+     2026-11-24: "to fill out all that empty area at the bottom"); a screen too short for them starts at the top. */
+  align-content: center;
   min-height: 100svh;
   padding: calc(70px + env(safe-area-inset-top)) var(--pad) 110px;
   text-align: center;
@@ -569,10 +571,9 @@
 
 .landing .source-strip h2 {
   max-width: none;
-  margin: 0 auto 18px;
-  color: var(--muted);
-  font: 500 var(--text-lg)/1.4 var(--font-body);
-  letter-spacing: 0;
+  margin: 0 auto 22px;
+  font: 600 clamp(var(--text-xl), 3.4vw, var(--text-title))/1.2 var(--font-display);
+  letter-spacing: -0.03em;
 }
 
 .landing .source-strip .drift-row {

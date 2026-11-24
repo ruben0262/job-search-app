@@ -14,6 +14,22 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-24, later — "Straight from the source. The moment a job goes live." over the strip, and the hero in the middle of the screen
+
+The owner: "we need something more powerful and better than 'New jobs from all of these, the moment companies post
+them.' ... we should not refer to things as 'them' or 'these' ... lets also move the main title and writing sections
+to the middle of the screen on the heros sections please to fill out all that empty area at the bottom".
+
+- **The strip's line** is now **Straight from the source. The moment a job goes live.**, in two beats as the page's
+  other titles go, the second in the purple. It is drawn in the titles' typeface at a section title's size, no
+  longer a small muted line. It says what the page's description already says ("the moment they're posted"), names
+  no interval, and passed the AI-language check.
+- **The hero is centred.** The halo, the title, the words and the buttons are in the middle of the screen, with the
+  room shared above and below (`align-content: center`). Under the hero's buttons a third of the screen had stood
+  empty since the counts left. A screen too short for them starts at the top, as before.
+- Tests: the landing walk reads the new line in both places it checks it. Checked alone on the last commit (the
+  owner's uncommitted edit to the hero beside it is not in this commit): 14 landing and logo tests passed.
+
 ## 2026-11-24 — Every source's logo under the hero, in two rows drifting opposite ways, where the four counts were
 
 The owner: "make a double strip between 'Get seen first.' section and 'Every job site. One list for you.' where the
