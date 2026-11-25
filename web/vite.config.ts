@@ -28,7 +28,8 @@ const gets = Object.entries(openapi.paths as Record<string, { get?: { responses:
   }] : []));
 const pageAsked = (method: string | undefined, accept: string | undefined, url: string | undefined) => {
   const path = (url ?? "").split("?")[0] ?? "";
-  if (method !== "GET" || (path.split("/").pop() ?? "").includes(".")) return false;
+  if (!["GET", "HEAD"].includes(method ?? "") || (path.split("/").pop() ?? "").includes(".")
+      || path.startsWith("/.well-known/")) return false;
   const api = gets.filter(({ pattern }) => pattern.test(path));
   return api.length === 0 || ((accept ?? "").includes("text/html") && !api.some(({ own }) => own));
 };

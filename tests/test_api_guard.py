@@ -160,6 +160,9 @@ def test_the_payment_form_is_allowed_everything_stripe_says_it_needs():
     ("GET", "/health", "*/*", False),
     ("GET", "/pricing", "*/*", False),
     ("GET", "/legal/terms", "*/*", False),
+    # HEAD as GET: a link checker's or an uptime monitor's. And machines' addresses are never a page.
+    ("HEAD", "/terms", "*/*", True),
+    ("GET", "/.well-known/api-catalog", "text/html", False),
 ])
 def test_a_browser_going_to_an_address_gets_the_page_and_the_pages_code_gets_the_data(method, path, accept,
                                                                                          page):

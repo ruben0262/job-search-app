@@ -14,7 +14,9 @@
     <!-- What makes the site an app a phone installs, and lets an iPhone add it to its home screen, which Web
          Push there requires. Its icons are the brand kit's (`branding/build.py` writes them here). -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <!-- The wheel, in the purple (`src/wheel.tsx` draws the same mark). -->
+    <!-- The wheel, in the purple (`src/wheel.tsx` draws the same mark); the .ico for whatever asks for that
+         file by name, sized so a browser that reads SVG still takes the SVG. -->
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- The theme, before first paint, deliberately: a React effect runs after the first frame, so a

@@ -328,7 +328,8 @@ export function Phone() {
 
   return (
     <figure className="phone" data-reveal aria-label="The Jobs page, on a phone">
-      <div className="phone-screen" ref={screen}>
+      {/* Made-up jobs: never quoted in a search result as if they were real (`data-nosnippet`). */}
+      <div className="phone-screen" ref={screen} data-nosnippet>
         <div className="phone-bar" aria-hidden="true">
           <span className="brand"><Mark />Mahoraga</span>
           {/* The bell alone, as a phone's bar has it: help and the theme are in More. */}
@@ -532,7 +533,7 @@ export function Alerts() {
   // Newest first; one more than shown, folding away.
   const cards = Array.from({ length: Math.min(arrived, SHOWN + 1) }, (_, i) => arrived - 1 - i);
   return (
-    <div className="alerts" ref={box} role="img" aria-label="New jobs arriving as alerts on a phone"
+    <div className="alerts" ref={box} role="img" aria-label="New jobs arriving as alerts on a phone" data-nosnippet
          style={room ? { height: room } : undefined}>
       {cards.map((n, i) => {
         const [title, from, place, words] = ALERTS[n % ALERTS.length]!;

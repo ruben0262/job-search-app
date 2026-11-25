@@ -50,11 +50,13 @@ export function PriceCards({ pricing, preview = false, onChoose, busy = false }:
       <>
         {off && before ? (
           <span className="price-was">
-            <span className="unseen">Was </span><s>{money(before, of.currency)}</s>
+            <span className="unseen">Was </span><s>{money(before, of.currency)}</s>{" "}
             <em>{off}% off</em>
           </span>
         ) : null}
-        <strong>{money(of.amount, of.currency)}</strong><span>/{per}</span>
+        {/* Spaced for whatever reads the text rather than the layout (a search engine, a screen reader's
+            line): "€19.9985% off€2.99" (SEO re-audit, 2026-11-25). Between flex items a space draws nothing. */}
+        {" "}<strong>{money(of.amount, of.currency)}</strong><span>/{per}</span>
       </>
     );
   };
@@ -67,7 +69,7 @@ export function PriceCards({ pricing, preview = false, onChoose, busy = false }:
       <div className={three ? "price-cards three" : "price-cards"}>
         <PriceCard card={cards.free} said={lines.free} href="/signup" preview={preview} busy={busy}
                    onChoose={onChoose && (() => onChoose("free"))}
-                   amount={plan ? <><strong>{nothing(plan.currency)}</strong><span>for good</span></> : null}
+                   amount={plan ? <><strong>{nothing(plan.currency)}</strong>{" "}<span>for good</span></> : null}
                    under={null} />
         {three ? (
           <PriceCard card={cards.starter} said={lines.starter} href="/signup?plan=starter" preview={preview}

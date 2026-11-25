@@ -2792,7 +2792,7 @@ def _priced(cards) -> None:
     expect(cards.last.locator(".price-was s")).to_have_text("£29.99")
     expect(cards.last.locator(".price-was em")).to_have_text("83% off")
     expect(cards.nth(1).locator(".price-amount")).to_contain_text("£2.99")
-    expect(cards.nth(1).locator(".price-was")).to_have_text("Was £18.9984% off")
+    expect(cards.nth(1).locator(".price-was")).to_have_text("Was £18.99 84% off")
 
 
 def _starter_without_a_trial(page, cards) -> None:

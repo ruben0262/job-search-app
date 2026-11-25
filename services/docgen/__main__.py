@@ -123,6 +123,9 @@ def main() -> int:
     ensure_schema()
     # Launched now, so the first person after a restart does not wait for it.
     pdf.browser()
+    if not pages.INSIDE:
+        logger.warning("docgen: SITE_INSIDE_URL is not set; the public pages are not drawn, and crawlers "
+                       "get the empty file")
     run_worker(database(), "docgen", os.environ.get("WORKER_NAME", "docgen-1"), handle,
                idle_sleep=INTERACTIVE_IDLE_SLEEP_SEC, periodic=sweep)
     return 0

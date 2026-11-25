@@ -248,6 +248,8 @@ def icons(out: Out) -> None:
     out.png(doc(wheel(50, 50, 100, WHITE), 0, 0, 100, 100)[0], 96, 96, fav / "badge-96.png")
     for name in ("apple-touch-icon", "icon-192", "icon-512", "icon-maskable-512", "badge-96"):
         (SITE / f"{name}.png").write_bytes((fav / f"{name}.png").read_bytes())
+    # Asked for at this address by whatever does not read the page's head: link unfurlers, crawlers.
+    (SITE / "favicon.ico").write_bytes((fav / "favicon.ico").read_bytes())
     out.all(HERE / "social/avatar", full, 100, 100, 800, jpg=PURPLE)
 
 

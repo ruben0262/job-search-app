@@ -85,10 +85,12 @@ def page_asked(scope: Scope) -> bool:
     often the same words (`/applied`, `/alerts`): a browser going there is given the page, and the page's
     own code asking is given the data, told apart by what is asked for (`Accept`). Every other address is a
     page, whatever the request says it takes: bingbot asks with `*/*`, and was given a 404 for every page
-    but the first (SEO audit, 2026-11-25). An address that names a file, and one the API answers a browser
-    at itself, are left as they are."""
+    but the first (SEO audit, 2026-11-25). Asked with HEAD too, as a link checker or an uptime monitor asks.
+    An address that names a file, one under `/.well-known/` (machines' addresses, never a page), and one the
+    API answers a browser at itself, are left as they are."""
     path = scope["path"]
-    if scope["method"] != "GET" or "." in path.rsplit("/", 1)[-1]:
+    if scope["method"] not in ("GET", "HEAD") or "." in path.rsplit("/", 1)[-1] \
+            or path.startswith("/.well-known/"):
         return False
     api = _api_gets(path)
     return not api or (b"text/html" in dict(scope["headers"]).get(b"accept", b"") and not any(api))

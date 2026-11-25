@@ -18,7 +18,9 @@ import json
 import logging
 import os
 import re
+import struct
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
@@ -26,7 +28,8 @@ from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
 from libs import pages, settings
-from libs.legal import DOCUMENTS
+from libs.legal import DOCUMENTS, LEGAL_VERSION
+from libs.legal.documents import render
 from libs.notify import site_url
 from services.api.deps import get_db
 
@@ -35,8 +38,14 @@ logger = logging.getLogger(__name__)
 # What a link to the site shows, and the brand's square mark: `branding/build.py` writes both there.
 PREVIEW, LOGO = "/og-image.png", "/icon-512.png"
 
+# About how much of a description a search result shows before it cuts it off.
+DESCRIBED_IN = 160
+
 _TITLE = re.compile(r"<title>(.*?)</title>", re.S)
 _DESCRIPTION = re.compile(r'\s*<meta\s+name="description"\s+content="([^"]*)"\s*/?>', re.S)
+# A legal page's "short version", the lines at its head that say it in plain words.
+_SHORT = re.compile(r"^> - (.+)$", re.M)
+_MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 
 router = APIRouter()
 
@@ -47,7 +56,7 @@ def web() -> Path:
     return Path(os.environ.get("WEB_DIR", "/app/web"))
 
 
-@router.get("/", include_in_schema=False)
+@router.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
 def page(request: Request, db: Database = Depends(get_db)) -> Response:
     """The page at the address the guard was asked for (`request.state.page`), `/` when it was `/`."""
     path = getattr(request.state, "page", "/")
@@ -72,43 +81,90 @@ def robots() -> PlainTextResponse:
 
 @router.get("/sitemap.xml", include_in_schema=False)
 def sitemap() -> Response:
-    """The public pages, at the address the site is reached at. No dates: a guessed one teaches an engine to
-    ignore them."""
-    listed = "".join(f"<url><loc>{html.escape(site_url(path))}</loc></url>" for path in pages.PUBLIC)
+    """The public pages, at the address the site is reached at. A legal page dated by its version, the day it
+    last changed; the landing page by nothing, since a guessed date teaches an engine to ignore them all."""
+    dated = {path: f"<lastmod>{LEGAL_VERSION}</lastmod>" for path in pages.PUBLIC if path != "/"}
+    listed = "".join(f"<url><loc>{html.escape(site_url(path))}</loc>{dated.get(path, '')}</url>"
+                     for path in pages.PUBLIC)
     return Response('<?xml version="1.0" encoding="UTF-8"?>\n'
                     f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{listed}</urlset>\n',
                     media_type="application/xml")
 
 
+# The pages a crawler was given the empty file for, as there was no copy of this deploy: said once each.
+_UNDRAWN: set[tuple[str, str | None]] = set()
+
+
 def _drawn(db: Database, path: str, shell: str) -> str | None:
     try:
-        return pages.drawn(db, path, shell)
+        copy = pages.drawn(db, path, shell)
     except PyMongoError:
         logger.warning("pages: could not read the drawn copy of %s; sending the file its code draws", path,
                        exc_info=True)
         return None
+    if copy is None and (path, pages.code(shell)) not in _UNDRAWN:
+        # Minutes after a deploy, until docgen draws it; for good if docgen cannot reach the site.
+        _UNDRAWN.add((path, pages.code(shell)))
+        logger.warning("pages: no copy of %s drawn by this deploy yet; a crawler got the empty file", path)
+    return copy
 
 
 def _head(db: Database, shell: str, path: str) -> str:
-    """`index.html` saying which public page it is. The brand is the file's own title, and the description
-    its own: the landing page's, which a legal page leaves out so an engine quotes the page itself."""
+    """`index.html` saying which public page it is. The brand is the file's own title. The landing page's
+    description is the file's own; a legal page's is the start of its "short version", in its own words."""
     brand = _TITLE.search(shell).group(1)
     name = path.strip("/")
     title = f"{DOCUMENTS[name]} · {brand}" if name else brand
-    described = _DESCRIPTION.search(shell)
     if name:
-        shell = _DESCRIPTION.sub("", shell, count=1)
+        description = _short_version(db, name)
+        own = f'\n    <meta name="description" content="{html.escape(description)}" />' if description else ""
+        shell = _DESCRIPTION.sub(lambda _: own, shell, count=1)
         shell = shell.replace(f"<title>{brand}</title>", f"<title>{title}</title>", 1)
+    else:
+        described = _DESCRIPTION.search(shell)
+        description = html.unescape(described.group(1)) if described else None
     said = {"og:type": "website", "og:site_name": brand, "og:title": title, "og:url": site_url(path),
-            "og:image": site_url(PREVIEW)}
-    if described and not name:
-        said["og:description"] = html.unescape(described.group(1))
+            **({"og:description": description} if description else {}), **_preview(brand)}
     tags = [f'<link rel="canonical" href="{html.escape(site_url(path))}" />',
-            *(f'<meta property="{key}" content="{html.escape(value)}" />' for key, value in said.items()),
+            # A search engine may show the page's picture large, in results and Discover.
+            '<meta name="robots" content="max-image-preview:large" />',
+            *(f'<meta property="{key}" content="{html.escape(str(said[key]))}" />' for key in said),
             '<meta name="twitter:card" content="summary_large_image" />']
     if not name:
         tags.append(_who(db, brand))
     return shell.replace("</head>", "\n".join(tags) + "\n</head>", 1)
+
+
+def _short_version(db: Database, name: str) -> str | None:
+    """As many lines of a legal page's short version as a search result shows whole, the first always."""
+    try:
+        lines = _SHORT.findall(render(db, name)["markdown"])
+    except PyMongoError:
+        logger.warning("pages: could not read the %s page; it goes out without a description", name,
+                       exc_info=True)
+        return None
+    said = ""
+    for line in lines:
+        plain = _MARKDOWN_LINK.sub(r"\1", line).replace("**", "").strip()
+        if said and len(said) + 1 + len(plain) > DESCRIBED_IN:
+            break
+        said = f"{said} {plain}".strip()
+    return said or None
+
+
+def _preview(brand: str) -> dict[str, object]:
+    """The picture a link shows, with its size read from the file itself: a link previewer that knows the
+    size draws the card at once, the first time the link is shared, instead of after fetching it."""
+    said: dict[str, object] = {"og:image": site_url(PREVIEW), "og:image:alt": brand}
+    try:
+        header = (web() / PREVIEW.lstrip("/")).read_bytes()[:24]
+    except OSError:
+        logger.warning("pages: %s is not in the web build; link previews show no picture", PREVIEW)
+        return {}
+    if header[:8] == b"\x89PNG\r\n\x1a\n":
+        width, height = struct.unpack(">II", header[16:24])
+        said |= {"og:image:type": "image/png", "og:image:width": width, "og:image:height": height}
+    return said
 
 
 def _who(db: Database, brand: str) -> str:
@@ -121,7 +177,9 @@ def _who(db: Database, brand: str) -> str:
     home = site_url("/")
     graph = [{"@type": "Organization", "@id": f"{home}#organization", "name": brand, "url": home,
               "logo": site_url(LOGO), **({"sameAs": profiles} if profiles else {})},
-             {"@type": "WebSite", "@id": f"{home}#website", "name": brand, "url": home,
+             # The address as a second name: what Google may call the site when "Mahoraga" is somebody else's.
+             {"@type": "WebSite", "@id": f"{home}#website", "name": brand,
+              "alternateName": urlparse(home).hostname, "url": home,
               "publisher": {"@id": f"{home}#organization"}}]
     # `</` closed the script early in a link that held it.
     data = json.dumps({"@context": "https://schema.org", "@graph": graph}).replace("</", "<\\/")

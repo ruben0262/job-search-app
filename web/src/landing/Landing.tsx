@@ -303,7 +303,7 @@ export function Landing() {
           <div className="perks">
             {perks(reach?.ats).map(([name, text, art], i) => (
               <article key={name} className="tile perk" data-reveal data-spot style={after((i % 2) * 0.08)}>
-                <div className="perk-art" aria-hidden="true">{art}</div>
+                <div className="perk-art" aria-hidden="true" data-nosnippet>{art}</div>
                 <h3>{name}</h3>
                 <p>{text}</p>
               </article>
