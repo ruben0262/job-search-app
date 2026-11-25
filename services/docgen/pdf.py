@@ -144,6 +144,34 @@ class Chrome:
         finally:
             self._call("Target.closeTarget", {"targetId": tab}, deadline)
 
+    def draw(self, url: str, path: str) -> str:
+        """A page of the site as a visitor sees it once its code has run (`services.docgen.pages`): in a
+        browser context of its own, so it is nobody's session, then closed with it. The whole document, or
+        "" when its code drew no heading (a page that could not reach the API draws none)."""
+        deadline = time.monotonic() + COMPILE_TIMEOUT_SEC
+        context = self._call("Target.createBrowserContext", {}, deadline)["browserContextId"]
+        try:
+            tab = self._call("Target.createTarget", {"url": url, "browserContextId": context},
+                             deadline)["targetId"]
+            session = self._call("Target.attachToTarget", {"targetId": tab, "flatten": True},
+                                 deadline)["sessionId"]
+            # Half the build's own time to draw a heading, so the page answers before the browser is given up.
+            settled = f"({_SETTLED})({json.dumps(path)}, {COMPILE_TIMEOUT_SEC * 500})"
+            asked = {"expression": settled, "awaitPromise": True, "returnByValue": True}
+            while True:
+                try:
+                    drawn = self._call("Runtime.evaluate", asked, deadline, session)["result"].get("value")
+                except CompileFailed as exc:
+                    # Asked of the blank tab while the page replaced it: asked again of the page.
+                    if "context" not in str(exc) and "navigated" not in str(exc):
+                        raise
+                    continue
+                if drawn is not None:
+                    return drawn
+        finally:
+            # A deadline of its own: the page's may be what ran out.
+            self._call("Target.disposeBrowserContext", {"browserContextId": context}, time.monotonic() + 10)
+
     def close(self) -> None:
         self.process.kill()
         self.process.wait()
@@ -178,6 +206,25 @@ class Chrome:
         return json.loads(message)
 
 
+# Run in a page of the site being drawn: null while the tab is still blank, then the whole document once the
+# site's code has drawn a heading and asked for nothing more for a second (the landing page's prices and
+# sources arrive after its heading), or "" when no heading comes `within` milliseconds.
+_SETTLED = """async (path, within) => {
+  if (location.pathname !== path) { await new Promise((wait) => setTimeout(wait, 50)); return null; }
+  const asked = () => performance.getEntriesByType("resource").length;
+  let seen = -1, quietSince = 0;
+  for (const deadline = Date.now() + within; Date.now() < deadline;) {
+    if (asked() !== seen) { seen = asked(); quietSince = Date.now(); }
+    if (document.readyState === "complete" && document.querySelector("#root h1")
+        && Date.now() - quietSince >= 1000) {
+      await document.fonts.ready;
+      return "<!doctype html>\\n" + document.documentElement.outerHTML;
+    }
+    await new Promise((wait) => setTimeout(wait, 100));
+  }
+  return "";
+}"""
+
 _chrome: Chrome | None = None
 
 
@@ -201,6 +248,17 @@ def render(html: str) -> bytes:
     """
     try:
         return browser().print(html)
+    except (CompileFailed, OSError, ValueError) as exc:
+        _discard()
+        if isinstance(exc, CompileFailed):
+            raise
+        raise CompileFailed(f"chrome did not run: {type(exc).__name__}: {exc}") from exc
+
+
+def draw(url: str, path: str) -> str:
+    """A page of the site as drawn (`Chrome.draw`). A browser that failed is thrown away, as for `render`."""
+    try:
+        return browser().draw(url, path)
     except (CompileFailed, OSError, ValueError) as exc:
         _discard()
         if isinstance(exc, CompileFailed):

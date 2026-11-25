@@ -15,3 +15,12 @@ device keeps are in `libs.legal.disclosure`; the pages themselves in `libs.legal
 #   anybody's search. CVs and letters only on the person's own AI account (2026-11-09).
 # - 2026-11-19: a Discord account may be linked: Discord and RoleLogic named, and Stripe receives its ID.
 LEGAL_VERSION = "2026-11-19"
+
+# Each page's address on the site (`/terms` …) and its title. Here, with nothing imported, so the docgen
+# worker can know the public pages (`libs.pages`) without the sign-in code `documents` needs (argon2).
+DOCUMENTS = {
+    "terms": "Terms of Service",
+    "privacy": "Privacy Policy",
+    "cookies": "Cookie Policy",
+    "data": "Data Use Policy",
+}

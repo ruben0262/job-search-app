@@ -181,7 +181,7 @@ function Adds({ lines, on }: { lines: Line[]; on: "free" | "member" }) {
           <svg viewBox="0 0 20 20" aria-hidden="true">
             <circle cx="10" cy="10" r="10" /><path d="M6 10.4l2.6 2.6 5.6-5.6" pathLength={1} />
           </svg>
-          <span>{line.text}<Explain text={line.more} /></span>
+          <span>{line.text}<Explain text={line.more} about={line.text} /></span>
         </li>
       ))}
     </ul>

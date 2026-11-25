@@ -16,17 +16,21 @@ const prefixes = new Set(Object.keys(openapi.paths).map((path) => path.split("/"
 // permissive CORS headers that would then be untested in production.
 // A page's address and the data behind it are often the same words (`/applied`, `/alerts`). A browser going
 // to one is given the page and the page's own code asking is given the data, told apart by what is asked for,
-// as the API itself tells them apart (`services/api/guard.py`): the same rule, read off the same contract. The
-// API's own addresses that answer a browser (a file to download, the way back from Discord) go to it.
+// as the API itself tells them apart (`services/api/guard.py`): the same rule, read off the same contract. Any
+// other address is a page whatever is asked for, and the API's own addresses that answer a browser (a file to
+// download, the way back from Discord) go to it.
 type Answers = Record<string, { content?: Record<string, unknown> }>;
-const browsersOwn = Object.entries(openapi.paths as Record<string, { get?: { responses: Answers } }>)
-  .filter(([, item]) => item.get && !Object.entries(item.get.responses)
-    .some(([code, answer]) => /^[23]/.test(code) && "application/json" in (answer.content ?? {})))
-  .map(([path]) => new RegExp(`^${path.replace(/\{[^/]+\}/g, "[^/]+")}$`));
+const gets = Object.entries(openapi.paths as Record<string, { get?: { responses: Answers } }>)
+  .flatMap(([path, item]) => (item.get ? [{
+    pattern: new RegExp(`^${path.replace(/\{[^/]+\}/g, "[^/]+")}$`),
+    own: !Object.entries(item.get.responses)
+      .some(([code, answer]) => /^[23]/.test(code) && "application/json" in (answer.content ?? {})),
+  }] : []));
 const pageAsked = (method: string | undefined, accept: string | undefined, url: string | undefined) => {
   const path = (url ?? "").split("?")[0] ?? "";
-  return method === "GET" && (accept ?? "").includes("text/html") && !(path.split("/").pop() ?? "").includes(".")
-    && !browsersOwn.some((own) => own.test(path));
+  if (method !== "GET" || (path.split("/").pop() ?? "").includes(".")) return false;
+  const api = gets.filter(({ pattern }) => pattern.test(path));
+  return api.length === 0 || ((accept ?? "").includes("text/html") && !api.some(({ own }) => own));
 };
 
 // What a page would only find late, said in its head, each named after what is in it and so renamed by

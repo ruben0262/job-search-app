@@ -63,7 +63,7 @@ job-search-app/
 │   ├── scorer/                  # multi-tenant model serving, LRU
 │   ├── trainer/                 # queue worker, concurrency 1, CPU-fenced
 │   ├── notifier/                # per-user Telegram delivery
-│   ├── docgen/                  # CV/cover builds — Chrome lives only here
+│   ├── docgen/                  # CV/cover builds, and the public pages drawn for crawlers — Chrome lives only here
 │   ├── capture/                 # Managed Agents profile capture
 │   └── embedder/                # TEI + gateway — ALREADY BUILT, relocated (§6)
 │
@@ -171,7 +171,9 @@ Three things, all already established:
 Each service gets its own `requirements.txt` and Dockerfile — **already the pattern** in the reference
 instance (four Dockerfiles). Keep it:
 
-- `docgen` is the only image with Chrome.
+- `docgen` is the only image with Chrome. It also draws the site's public pages for the clients that run
+  no JavaScript (`services/docgen/pages.py`), through the API's address on the compose network, and the API
+  serves those copies (`services/api/page_routes.py`, `libs/pages.py`): the API image stays without one.
 - `trainer`/`scorer` are the only images with scikit-learn and numpy.
 - `api` and `notifier` stay small and fast to rebuild — which matters, because they are what you
   restart most.

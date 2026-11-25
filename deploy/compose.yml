@@ -148,6 +148,9 @@ services:
       SECRETS_KEK: ${SECRETS_KEK:?docgen decrypts the AI account an AI-written document is written with}
       # The freshness check before a build goes through the site proxy when there is one.
       HARVEST_PROXY: ${HARVEST_PROXY:-}
+      # Where docgen's browser reaches the site to draw its public pages for the crawlers that do not run
+      # its code (`services.docgen.pages`): the API itself, on this network, never through the tunnel.
+      SITE_INSIDE_URL: http://platform-api:8000
       LOG_DIR: /var/log/jobsearch
       # One worker, deliberately: a signed-in account's tool renews its login during a call, and two
       # calls renewing one account at once could retire each other's (`libs.llm.cli`).

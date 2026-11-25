@@ -123,10 +123,14 @@ works" and its five figures are gone. What earned its place moved into the hero 
 How it works (the benefits). The onboarding steps now appear once, in Get started, instead of twice.
 
 ### Page title and link preview (`web/index.html`)
-- Title: **Mahoraga · The job search that runs itself**
-- Description: *New jobs from LinkedIn, job boards and company career pages, in one list, the moment
-  they're posted. A CV made for each in one tap, made to pass official ATS checks. Free to start.* It
-  gives no interval: how often the sites are read is confidential (owner, 2026-11-17).
+- Title: **Mahoraga** (owner, 2026-11-21, kept 2026-11-25; the page's own title stays *Get seen first.*).
+  A legal page puts its name before it, "Terms of Service · Mahoraga" (`services/api/page_routes.py`).
+- Description, 151 characters so a search result shows it whole: *New jobs from LinkedIn, job boards and
+  company career pages, the moment they're posted. A CV for each, made to pass official ATS checks. Free
+  to start.* It gives no interval: how often the sites are read is confidential (owner, 2026-11-17). It
+  was 180 characters until 2026-11-25, and Google cut it off at about 155 (SEO audit).
+- Link preview: the brand kit's `og-image.png` (the wheel, the name and "The job search that runs
+  itself."), with the title and description above.
 
 ### Hero
 - **Get seen first.** (the h1; "first." in the purple). One line of three words: the owner's "be first" and

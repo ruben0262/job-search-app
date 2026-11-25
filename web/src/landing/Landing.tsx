@@ -609,7 +609,7 @@ function Ask() {
   );
 }
 
-/** Words that arrive one after another out of a blur. Read whole: the text is the words, spaced. */
+/** Words that rise into place one after another. Read whole: the text is the words, spaced. */
 function Words({ children, from = 0 }: { children: string; from?: number }) {
   return children.split(" ").map((word, i) => (
     <Fragment key={i}>

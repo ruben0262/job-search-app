@@ -7,13 +7,14 @@ import { redrawToasts } from "./toast";
 
 /** A small question mark after a line that says more about it, pointed at, tapped or reached by keyboard
  * (owner, 2026-11-16: "a small hovering question mark and if users hover over it they can read it"). A tap
- * opens and closes it, since a phone has nothing to point with. */
-export function Explain({ text }: { text: string }) {
+ * opens and closes it, since a phone has nothing to point with. Named after the line it explains (`about`):
+ * eleven buttons all called "What this means" told a screen reader or an agent nothing (SEO audit, 2026-11-25). */
+export function Explain({ text, about }: { text: string; about: string }) {
   const id = useId();
   const [open, setOpen] = useState(false);
   return (
     <span className={open ? "explain open" : "explain"} onMouseLeave={() => setOpen(false)}>
-      <button type="button" className="explain-mark" aria-label="What this means" aria-describedby={id}
+      <button type="button" className="explain-mark" aria-label={`${about}: what this means`} aria-describedby={id}
               aria-expanded={open} onClick={() => setOpen(!open)} onBlur={() => setOpen(false)}>?</button>
       <span className="explain-text" role="tooltip" id={id}>{text}</span>
     </span>

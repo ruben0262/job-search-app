@@ -6,6 +6,7 @@ import os
 from contextlib import contextmanager
 
 import httpx
+from pymongo.errors import PyMongoError
 
 import libs.notify as notifylib
 from libs import settings
@@ -21,7 +22,7 @@ from libs.proxy import site_proxy
 from libs.queue.worker import INTERACTIVE_IDLE_SLEEP_SEC, Terminal, run_worker
 from libs.secrets import SecretStore, install, redacting
 from libs.secrets.process import keep_to_itself
-from services.docgen import pdf, run
+from services.docgen import pages, pdf, run
 from services.docgen.run import NotBuildable
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,17 @@ def purge(db) -> None:
         logger.info("docgen: deleted %d unkept document(s) older than %d hour(s)", gone, hours)
 
 
+def sweep(db) -> None:
+    """Between documents: the purge, then one of the site's public pages drawn if one is due."""
+    purge(db)
+    try:
+        pages.draw_due(db)
+    except (httpx.HTTPError, pdf.CompileFailed, PyMongoError) as exc:
+        # The API restarting with a deploy, most often: tried again at the next pass.
+        logger.warning("docgen: could not draw a public page (%s: %s); tried again next pass",
+                       type(exc).__name__, exc)
+
+
 def main() -> int:
     configure("docgen")
     install()
@@ -112,7 +124,7 @@ def main() -> int:
     # Launched now, so the first person after a restart does not wait for it.
     pdf.browser()
     run_worker(database(), "docgen", os.environ.get("WORKER_NAME", "docgen-1"), handle,
-               idle_sleep=INTERACTIVE_IDLE_SLEEP_SEC, periodic=purge)
+               idle_sleep=INTERACTIVE_IDLE_SLEEP_SEC, periodic=sweep)
     return 0
 
 

@@ -92,6 +92,8 @@ def site(monkeypatch, built, db):
     ids = _jobs(db, run, TITLES)
     app.dependency_overrides[deps.get_mailer] = ConsoleSender
     app.mount("/", StaticFiles(directory=built, html=True), name="e2e-site")
+    # Its pages, each told the address it was asked at (`page_routes`), from the same build.
+    monkeypatch.setenv("WEB_DIR", str(built))
     base, stop = _serve(app, monkeypatch)
     try:
         yield base, f"jordan.{run}@example.com", ids
@@ -559,6 +561,34 @@ def test_the_legal_pages_are_plain_text_from_the_foot_and_say_who_runs_the_site(
             page.locator("main.legal").get_by_role("link", name="Back").click()
             expect(page.locator(".foot-row")).to_be_attached()
         browser.close()
+
+
+def test_a_crawler_reads_each_public_page_as_a_visitor_sees_it(site, db, monkeypatch):
+    """bingbot, the AI crawlers and link previews run none of the site's code, and every page was the word
+    "Mahoraga" to them (SEO audit, 2026-11-25). The docgen worker's browser draws each public page as a
+    visitor sees it, one a pass; a crawler is given that, and a browser the file its code draws, as before."""
+    import httpx
+
+    from libs import pages
+    from libs.corpus.boards import board_name
+    from libs.settings import HARVEST_SOURCES
+    from services.docgen import pages as drawing
+
+    base, _email, _ = site
+    monkeypatch.setattr(drawing, "INSIDE", base)
+    assert sorted(drawing.draw_due(db) for _ in pages.PUBLIC) == sorted(pages.PUBLIC), "each page once"
+    assert drawing.draw_due(db) is None, "nothing is drawn again while every copy is of this deploy and new"
+
+    def words(path: str, **headers: str) -> str:
+        answer = httpx.get(f"{base}{path}", headers={"accept": "*/*", **headers})
+        body = re.search(r"<body[^>]*>(.*)</body>", answer.text, re.S).group(1)
+        return " ".join(re.sub(r"<[^>]+>", " ", body).split())
+
+    home, terms = words("/"), words("/terms")
+    assert "Get seen first." in home, "the landing page's heading"
+    assert board_name(HARVEST_SOURCES[0]) in home, "drawn once its data had come, the sources strip with it"
+    assert "Terms of Service" in terms and len(terms.split()) > 1000, "the terms themselves"
+    assert words("/terms", **{"sec-fetch-dest": "document"}) == "", "a browser: the file its code draws"
 
 
 def test_the_phone_goes_through_the_site_by_itself_until_a_visitor_touches_it(site):

@@ -361,19 +361,17 @@
   margin-inline: auto;
 }
 
-/* Words out of a blur, one after another, as the page opens; the rest as it is reached. */
+/* The hero's words rise into place one after another as the page opens, there from the first frame; the rest
+   as it is reached. They came out of a blur from nothing, and the headline, the page's largest text, was there
+   1.3 s after the first paint: 5.40 s against 4.09 s, medians of 5 runs on a throttled phone (2026-11-25). */
 .landing .word-in {
   display: inline-block;
-  opacity: 0;
-  filter: blur(10px);
   translate: 0 0.3em;
-  transition: opacity 1s var(--out), filter 1s var(--out), translate 1.1s var(--out);
+  transition: translate 1.1s var(--out);
   transition-delay: calc(var(--base, 0s) + var(--i) * 60ms);
 }
 
 .landing.lp-in .word-in {
-  opacity: 1;
-  filter: none;
   translate: none;
 }
 

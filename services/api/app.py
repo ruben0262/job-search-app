@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -31,6 +29,8 @@ from services.api.guard import Guard
 from services.api.link_routes import router as link_router
 from services.api.notification_routes import router as notification_router
 from services.api.onboarding_routes import router as onboarding_router
+from services.api.page_routes import router as page_router
+from services.api.page_routes import web
 from services.api.pricing_routes import router as pricing_router
 from services.api.push_routes import router as push_router
 from services.api.saved_routes import router as saved_router
@@ -80,6 +80,7 @@ app.include_router(suggestion_router)
 app.include_router(support_router)
 app.include_router(telegram_router)
 app.include_router(template_router)
+app.include_router(page_router)
 
 
 @app.get("/health")
@@ -89,8 +90,8 @@ def health() -> dict:
     return {"status": "ok", "public_url": site_url()}
 
 
-# The SPA is served by this process, from `/app/web` in the image.
-_WEB = Path(os.environ.get("WEB_DIR", "/app/web"))
+# The SPA's files are served by this process (its pages by `page_routes`).
+_WEB = web()
 if _WEB.is_dir():
     app.mount("/", StaticFiles(directory=_WEB, html=True), name="web")
 else:

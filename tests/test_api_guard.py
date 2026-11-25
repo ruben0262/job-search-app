@@ -151,6 +151,15 @@ def test_the_payment_form_is_allowed_everything_stripe_says_it_needs():
     # And a file of the site's own.
     ("GET", "/assets/index-abc123.js", "text/html", False),
     ("GET", "/sw.js", "text/html", False),
+    # Any other client at an address that is not one of the API's: the page. bingbot asks with `*/*`, a link
+    # preview or curl often with nothing, and every page but the first was a 404 to them (2026-11-25).
+    ("GET", "/terms", "*/*", True),
+    ("GET", "/signup", "", True),
+    ("GET", "/", "*/*", True),
+    # The API's own addresses stay its data for them: `deploy/reach.sh` reads `/health` with curl's `*/*`.
+    ("GET", "/health", "*/*", False),
+    ("GET", "/pricing", "*/*", False),
+    ("GET", "/legal/terms", "*/*", False),
 ])
 def test_a_browser_going_to_an_address_gets_the_page_and_the_pages_code_gets_the_data(method, path, accept,
                                                                                          page):

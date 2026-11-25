@@ -283,6 +283,8 @@ def social(out: Out) -> None:
     for name, (w, h, logo_w, tag) in shapes.items():
         img = out.png(banner(w, h, logo_w, tag), w, h, HERE / f"social/{name}.png", html=True)
         img.convert("RGB").save(HERE / f"social/{name}.jpg", quality=92)
+    # What a link to the site shows (`services/api/page_routes.py` names it in every public page's head).
+    (SITE / "og-image.png").write_bytes((HERE / "social/og-image.png").read_bytes())
 
 
 SHEET_CSS = f"""

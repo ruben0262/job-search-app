@@ -17,19 +17,11 @@ from libs.auth.sessions import ACCESS_TTL, REFRESH_TTL
 from libs.auth.tokens import RESET_TTL, VERIFICATION_TTL
 from libs.db import BACKUP_KEEP_DAYS
 from libs.db.models.contact import CONTACT_KEEP_YEARS
-from libs.legal import LEGAL_VERSION
+from libs.legal import DOCUMENTS, LEGAL_VERSION
 from libs.legal.disclosure import RECIPIENTS, STORED, span
 from libs.notify import site_url
 
 HERE = Path(__file__).parent
-
-# Each page's address on the site (`/terms` …) and its title.
-DOCUMENTS = {
-    "terms": "Terms of Service",
-    "privacy": "Privacy Policy",
-    "cookies": "Cookie Policy",
-    "data": "Data Use Policy",
-}
 
 # How long the database server's own encrypted copies reach back: its restic policy keeps one a month for
 # twelve months (the server_db project's `bin/sdb`, `--keep-monthly 12`). In that project, not this one, so

@@ -117,13 +117,13 @@ function PriceCard({ card, said, href, preview, onChoose, busy, lit = false, bad
         {said.everything ? (
           <li className="everything">
             {TICK}
-            <span><span className="line">{said.everything.text}</span><Explain text={said.everything.more} /></span>
+            <span><span className="line">{said.everything.text}</span><Explain text={said.everything.more} about={said.everything.text} /></span>
           </li>
         ) : null}
         {said.gives.map((line, i) => (
           <li key={`in${i}`}>
             {TICK}
-            <span><span className="line">{line.text}</span><Explain text={line.more} /></span>
+            <span><span className="line">{line.text}</span><Explain text={line.more} about={line.text} /></span>
           </li>
         ))}
         {/* A bonus (owner, 2026-11-17: "people tend to react to them great"): given apart, in a box of its own,
@@ -132,13 +132,13 @@ function PriceCard({ card, said, href, preview, onChoose, busy, lit = false, bad
           <li key={`bonus${i}`} className="bonus">
             <span className="bonus-tag"><Gift />Bonus</span>
             {TICK}
-            <span><span className="line">{line.text}</span><Explain text={line.more} /></span>
+            <span><span className="line">{line.text}</span><Explain text={line.more} about={line.text} /></span>
           </li>
         ))}
         {said.lacks.map((line, i) => (
           <li key={`out${i}`} className="out">
             <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" /><path d="M7 7l6 6M13 7l-6 6" /></svg>
-            <span><span className="unseen">Not included: </span><span className="line">{line.text}</span><Explain text={line.more} /></span>
+            <span><span className="unseen">Not included: </span><span className="line">{line.text}</span><Explain text={line.more} about={line.text} /></span>
           </li>
         ))}
       </ul>
