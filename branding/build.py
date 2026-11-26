@@ -262,28 +262,34 @@ def member(out: Out) -> None:
     out.all(HERE / "member/member-seal-on-light", seal(PURPLE), 100, 100, 512)
 
 
-def banner(w: int, h: int, logo_w: int, tag_px: int) -> str:
-    """Graphite, the name and the tagline, and a large faint wheel off the right edge."""
+def banner(w: int, h: int, logo_w: int, tag_px: int, *, centred: bool = False) -> str:
+    """Graphite, the name and the tagline, and a large faint wheel off the right edge. `centred`: the name and
+    the tagline in the middle on two lines, the wheel behind them, so that a square cut from the middle, as
+    some apps show a link's picture, keeps all of it (owner, 2026-11-26: "centre the preview image")."""
     big = h * 1.5
     ghost = doc(wheel(50, 50, 100, PURPLE, 1.2), 0, 0, 100, 100)[0]
+    place = ("align-items:center;text-align:center" if centred
+             else f"padding-left:{round(w * 0.08)}px")
+    behind = f"left:{(w - big) / 2}px" if centred else f"right:{-big * 0.3}px"
     return (
         f'<div style="position:relative;width:{w}px;height:{h}px;overflow:hidden;background:{GRAPHITE};'
-        f'display:flex;flex-direction:column;justify-content:center;padding-left:{round(w * 0.08)}px;'
-        f'box-sizing:border-box">'
-        f'<div style="position:absolute;width:{big}px;right:{-big * 0.3}px;top:{(h - big) / 2}px;'
+        f'display:flex;flex-direction:column;justify-content:center;{place};box-sizing:border-box">'
+        f'<div style="position:absolute;width:{big}px;{behind};top:{(h - big) / 2}px;'
         f'opacity:0.16">{fit(ghost)}</div>'
         f'<div style="width:{logo_w}px;position:relative">{fit(horizontal(PURPLE, PAPER)[0])}</div>'
         f'<p style="position:relative;margin:{round(tag_px * 0.9)}px 0 0;font:600 {tag_px}px/1.15 Sora;'
-        f'letter-spacing:-0.02em;color:{PAPER}">{TAGLINE[0]} '
+        f'letter-spacing:-0.02em;color:{PAPER}">{TAGLINE[0]}{"<br>" if centred else " "}'
         f'<span style="color:{LILAC}">{TAGLINE[1]}</span></p>'
         f"</div>"
     )
 
 
 def social(out: Out) -> None:
-    shapes = {"og-image": (1200, 630, 560, 52), "banner": (1500, 500, 520, 46)}  # w, h, logo, words
-    for name, (w, h, logo_w, tag) in shapes.items():
-        img = out.png(banner(w, h, logo_w, tag), w, h, HERE / f"social/{name}.png", html=True)
+    # w, h, logo, words, centred: the link preview is cut to a square by some apps, the profile banner never.
+    shapes = {"og-image": (1200, 630, 500, 48, True), "banner": (1500, 500, 520, 46, False)}
+    for name, (w, h, logo_w, tag, centred) in shapes.items():
+        drawn = banner(w, h, logo_w, tag, centred=centred)
+        img = out.png(drawn, w, h, HERE / f"social/{name}.png", html=True)
         img.convert("RGB").save(HERE / f"social/{name}.jpg", quality=92)
     # What a link to the site shows (`services/api/page_routes.py` names it in every public page's head).
     (SITE / "og-image.png").write_bytes((HERE / "social/og-image.png").read_bytes())
