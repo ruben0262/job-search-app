@@ -74,3 +74,4 @@ scripts/coverlab/
 # `scripts/cvlab/run.py --candidate` reads them from here; re-pull with the query in that file.
 scripts/cvlab/candidates/
 scripts/cvlab/out/
+mahoraga.cc-audit/
