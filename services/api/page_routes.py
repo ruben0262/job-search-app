@@ -73,13 +73,13 @@ def page(request: Request, db: Database = Depends(get_db)) -> Response:
     return HTMLResponse(_head(db, shell, path))
 
 
-@router.get("/robots.txt", include_in_schema=False)
+@router.api_route("/robots.txt", methods=["GET", "HEAD"], include_in_schema=False)
 def robots() -> PlainTextResponse:
     """Every address may be read; the ones for no index say so themselves, which a `Disallow` would hide."""
     return PlainTextResponse(f"User-agent: *\nAllow: /\n\nSitemap: {site_url('/sitemap.xml')}\n")
 
 
-@router.get("/sitemap.xml", include_in_schema=False)
+@router.api_route("/sitemap.xml", methods=["GET", "HEAD"], include_in_schema=False)
 def sitemap() -> Response:
     """The public pages, at the address the site is reached at. A legal page dated by its version, the day it
     last changed; the landing page by nothing, since a guessed date teaches an engine to ignore them all."""

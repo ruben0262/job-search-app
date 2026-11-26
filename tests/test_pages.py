@@ -156,11 +156,15 @@ def test_a_crawler_given_the_empty_file_is_said_once_a_page(http, db, caplog, mo
     assert len(said) == 2 and "/terms" in said[0] and "/privacy" in said[1]
 
 
-def test_a_page_answers_head_as_it_answers_get(http):
-    """A link checker or an uptime monitor asks with HEAD, and every page but `/` was a JSON 404 to it."""
+def test_every_public_address_answers_head_as_it_answers_get(http):
+    """A link checker or an uptime monitor asks with HEAD, and every page but `/` was a JSON 404 to it; the
+    sitemap still was on 2026-11-26, while Search Console said it "couldn't fetch" it."""
     for path in ("/", "/terms", "/jobs"):
         answer = http.head(path, headers={"accept": "*/*"})
         assert answer.status_code == 200 and answer.headers["content-type"].startswith("text/html"), path
+    for path, kind in (("/robots.txt", "text/plain"), ("/sitemap.xml", "application/xml")):
+        answer = http.head(path)
+        assert answer.status_code == 200 and answer.headers["content-type"].startswith(kind), path
     assert http.head("/.well-known/api-catalog").status_code == 404, "machines' addresses are never a page"
 
 
