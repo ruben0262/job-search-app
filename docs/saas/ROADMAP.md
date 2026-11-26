@@ -3761,6 +3761,18 @@ work, or opening and closing sessions faster, would help):
       (worse); Haiku at high nothing for twice the cost. **Waiting:** GPT's readers on Opus's letters after the
       ChatGPT reset (gate 2, 34 reads, about 4% of a week), then the owner: Opus for letters or not (a letters-only model setting,
       and Opus on people's own Claude plans to check).
+    - **2026-11-26: v23 live on unfinished reads; no subject line or company block, the role in bold** (CHANGELOG).
+      The owner, on their own letter: too much about themselves and their tools, too little about the job. The
+      reviewers were changed first (the needs a letter answers counted by code, runs of detail marked down, a mark
+      for wanting the CV and one for answering the posting). v22, the first wording, answered more needs and claimed
+      more than the record: not made live by the rule written before it was read. v23 (no joining sentence, the
+      proving figure kept) is level on Haiku by Claude's hiring manager and answers more needs on Sol, and is marked
+      lower on the three developer postings. Made live on the owner's word ("v23 now"). **Waiting:** (1) the reads
+      not run: Claude's letter reviewer on Haiku's v23, its hiring manager on Sol's, and every GPT read of v23
+      (about two of ChatGPT's five-hour windows, a read now costing twice what it did); a reader two standard
+      errors down on the mark or on accuracy takes v23 out (`history/write_cover.2026-11-26.pre-v23.md` is v20).
+      (2) Developer letters on Haiku. (3) A recruiter's posting: the opening is sent back unless it names the
+      recruiter as the company. (4) `scripts/cvlab/variants/cover/v20.md` and `v23.md` go once the reads are in.
 
 54. **Plans and the landing page: what waits for the owner** (2026-11-16, CHANGELOG).
     - At Stripe, live: a Starter product with a recurring monthly price of £2.99; its id as

@@ -19,10 +19,10 @@ carries, and code writes the rest (`services/docgen/build.py`):
   `section-title`, `competencies`, `entry`, `entry-head`, `entry-title`, `entry-date`, `entry-desc`,
   `plain-list`. These are the scaffold's fourteen class names, measured on every account's `base_cv.html`
   in 2026-08.
-- **Letter:** the CV's header, then `letter-meta` holding `letter-to` (company, place), then
-  `letter-subject` ("Application for …"), then `letter`. The company and place are filled from the job by
-  code, and `letter-meta` is left out when the job names neither; the subject line is the model's, so it is
-  in the letter's language.
+- **Letter:** the CV's header, then `letter`, from its greeting to its signature. Nothing stands between
+  them (owner, 2026-11-26): no block for the company and its place, which code used to write from the job,
+  and no subject line, which the model used to write. The job is named in the letter's own words, its title
+  in `strong`.
 
 **What every document carries, whoever writes it** (owner, 2026-11-08):
 

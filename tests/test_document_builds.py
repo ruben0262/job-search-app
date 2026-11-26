@@ -42,8 +42,7 @@ COVER_TEXT = "Dear hiring team, I build billing systems that do not page anyone 
 # What the providers answer, a CV and a letter in their tags: each build keeps the one it asked for.
 WRITTEN = """<cv><p class="profile">Backend engineer.</p>
 <div class="section"><div class="section-title">Experience</div><ul><li>Built billing</li></ul></div></cv>
-<letter><p class="letter-subject">Application for Backend Engineer</p>
-<div class="letter"><p>Dear Hiring Manager,</p><p>I build billing systems.</p></div></letter>"""
+<letter><div class="letter"><p>Dear Hiring Manager,</p><p>I build billing systems.</p></div></letter>"""
 
 
 @pytest.fixture()
@@ -221,7 +220,7 @@ def test_the_document_built_is_the_kind_asked_for(ready):
     assert 'filename="Alice_Example_Cover.pdf"' in download.headers["content-disposition"]
     sent = api.sent[0].content.decode()
     assert "You are writing a cover letter" in sent and "do not page anyone at night" in sent
-    assert "Application for Backend Engineer" in api.rendered[-1]
+    assert "I build billing systems." in api.rendered[-1]
 
 
 def test_asking_twice_while_it_waits_is_the_same_build(ready):

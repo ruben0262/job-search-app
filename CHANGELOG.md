@@ -14,6 +14,139 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-26, afternoon — letters held against the posting: v23 live on the owner's word, no subject line or company block, the role in bold, and reviewers that count the needs a letter answers
+
+The owner, reading the letter the site made them for a recruiter's "Software Engineer – Python & Infrastructure
+Automation" posting: it "reads good", but "it feels like we've gone into an interview to talk about ourselves without
+much reference to what the job is actually about, and we're getting too specific with the details"; a letter is there
+so that the reader goes on to the CV; and the company's block and the subject line above it should go, the role named
+in the text. Then: "yes to all three, bold the role wherever it will appear, and run v21 ... we have a coded reviewer
+which is a problem ... before running any tests the evaluation needs to be fixed as well", and "lets aim to finish
+these improvements and test it in this session".
+
+**What was wrong, counted before anything changed** (the 56 v20 letters kept on the bench, no call). Of the sentences
+between a letter's opening and its last two paragraphs, 85% (Haiku, 39 letters) and 83% (Sol, 17) had no word for the
+job, the company or the reader; 19% and 21% of their words were also the posting's, against 40% and 31% in the
+paragraph on why this employer (paired, +0.21 ± 0.03 and +0.10 ± 0.04). Both of Claude's reviewers listed about five
+things the record could have answered and the letter left out, in every letter, and the hiring manager asked for the
+work to be tied to the posting in 19 of Haiku's 39. The owner's own letter named 17 tools and abbreviations the
+posting never uses. Five lines of `write_cover.md` ask for exactly this ("the way a strong interview answer does",
+"pick the one piece of their work", "let the reader connect it to the job", "with a number when their documents give
+one", "if another applicant could have written a sentence"): all five were in the first version of 2026-11-11 and none
+was ever measured alone. The prompt they replaced had both rules the owner now asked for ("the top 3–4 critical
+requirements ... each addressed once", "abstract beats exhaustive", `libs/scaffolds/tailor_cover.md`), never carried
+over.
+
+**The evaluation first** (the owner's order). The reviewers marked what the old lines asked for, so they could not
+see the complaint, and would have marked a better letter down.
+
+- `scripts/cvlab/eval_cover.md`, `eval_hire.md`: the reader holds the letter against the posting and opens the CV for
+  the detail. Each lists what the employer needs most, whether the person's record can answer it, and the line of the
+  letter that does. A run of tools, versions, settings or figures takes marks off as a claim with nothing behind it
+  does. `fit` asks whether the needs are answered and whether the reader can tell which part of the job a paragraph is
+  about; a mark each for whether the reader wants the CV (`wants_cv`) and whether the posting is answered
+  (`answers_job`). Both look hardest at work said in the job's terms at a kind, size or setting the record does not
+  give, which speaking closer to the posting invites.
+- Counted by code, not by the reviewer (`run.needs_of`): the needs the record can answer, those the letter answers (a
+  half for one answered partly, none where the line it names is not in the letter), their share, and the needs
+  answered that the record cannot (`needs_unbacked`). And with no reviewer (`run.answering`): the share of the work a
+  letter tells whose words are the posting's too, the figures in it, and the names in it the posting never uses.
+- A changed reviewer reads everything again, so v20's letters were read again; the reviews they had are kept in
+  `scripts/cvlab/out/answer-2026-11-26/v20-reviews-before/`.
+- **What it costs now.** GPT's reviewer (gpt-6.2-astra, medium) takes about twice what it did: 28 reads took the
+  ChatGPT plan's five hours from 26% to 76% and its week from 10% to 17% (1.8% and 0.25% a read; 0.8% and 0.125% on
+  2026-11-20). A whole read of one wording on both platforms no longer fits a day.
+
+**The rule, written into the run's `progress` at 11:46, before any new letter was written.** v22 becomes the live
+prompt if, on the held-out people, (a) what it is for moved (the needs answered, or the answering mark, up by two
+standard errors on a writer and down on none, the names the posting never uses not up), (b) nothing that decides is two
+standard errors down on any reader or writer (the mark, honesty, accuracy; lines not theirs and needs answered
+without the record not up; on the trap no more lines not theirs than v20), (c) the checks no worse. A GPT reader two
+standard errors down takes it out; a read not run is reported as not run.
+
+**Round one** (14 held-out people, never tuned on, weak own documents; a variant minus v20, ± one standard error, *
+where it is two or more). v21 is v20 with four lines changed (the task, plan step 2, the middle, a final check); v22 is
+v21 with no subject line and the job's title in bold.
+
+| | v21 | v22 |
+|---|---|---|
+| Haiku, Claude's hiring manager | −1.0 ± 1.2; accuracy −0.86 ± 0.33 *; lines not theirs +0.64 ± 0.29 * | −3.3 ± 0.9 *; accuracy −0.64 ± 0.31 *; proof −0.36 ± 0.13 * |
+| Haiku, Claude's letter reviewer | +0.7 ± 1.3 | −0.3 ± 1.6; needs answered +0.32 ± 0.12 * |
+| Haiku, GPT's hiring manager | not read | +2.1 ± 1.2; accuracy +0.50 ± 0.47 |
+| Sol, Claude's letter reviewer | not written | −2.2 ± 1.1; lines not theirs +1.00 ± 0.31 *; share of needs answered +0.09 ± 0.04 * |
+| Sol, Claude's hiring manager | not written | −1.4 ± 1.1; proof −0.43 ± 0.14 * |
+| the trap, Haiku (3 postings) | level | −6.0 ± 2.1 * and −5.3 ± 1.9 *; a line more not theirs a letter |
+
+Figures a letter fell by about one on both writers (−1.14 ± 0.42 *, −1.07 ± 0.35 *); the names a posting never uses
+and the posting's words in the work told did not move. The two hiring managers disagreed letter by letter (the same
+way in 4 of 14, r = 0.37): Claude's missed the figures that had gone ("no figures", "thin") and found joining
+sentences the record does not state ("is what I do every day on site", "so I know how to find and fix a production
+bottleneck", "I am used to the physical side"), which is the second risk raised before the run. The subject line's
+own share, v22 against v21: −2.3 ± 1.0 * by Claude's hiring manager, −1.0 ± 1.3 by its letter reviewer. **By the rule
+v22 was not made live.**
+
+**Round two**, cut to what the Claude plan had left (its five hours stood at 65% and the owner needed room on it to
+try the site). v23 is v22 with the middle told as the work itself in words the posting's reader knows as the job, no
+sentence joining the two ("Your role asks for…", "so I know how to…"), and the figure that shows each piece's size
+kept.
+
+- Haiku's 14 held-out letters, Claude's hiring manager (13 read): −0.8 ± 1.5, accuracy −0.46 ± 0.29, proof −0.23 ±
+  0.12, the share of needs answered +0.02 ± 0.04. Level.
+- Sol's 14, Claude's letter reviewer: −0.2 ± 1.5; the share of needs answered 0.72 → 0.85 (+0.13 ± 0.05 *); evidence
+  +0.43 ± 0.17 *; honesty +0.07 ± 0.29; lines not theirs +0.14 ± 0.27 (v22: +1.00).
+- The trap, Haiku, 3 developer postings: Claude's hiring manager −7.0 ± 2.7 *, its letter reviewer −4.7 ± 3.2; lines
+  not theirs 13 → 12 over both readers. Haiku still wrote "that is the kind of integration work I have already done".
+- The checks, drawn again with no call by the code as committed: one page in every look; ATS in all six looks 96.9 →
+  98.0 (Haiku) and 99.0 → 100 (Sol); no AI language; first drafts sent back 2 → 3 of 14 (Haiku: a colon, and two
+  openings that do not name the board's company) and 1 → 1 (Sol). Haiku 10 s faster a letter (−10.2 ± 3.0 *), tokens
+  out level; Sol level.
+- **Not read:** Claude's letter reviewer on Haiku's v23, its hiring manager on Sol's, both on Sol's trap, and every GPT
+  read of v23 (both plans' five hours). v23s (v23 with the subject line, to read the subject line's share a second
+  time) was written and not read. So gates 2, 9 and 10 of `CLAUDE.md` §3b are met on one platform in part and on the
+  other not at all.
+
+**The owner's decision.** Asked with these numbers and with what was not read, between the company block alone, v23
+now, and the header alone, the owner chose **"v23 now"**: for every account, on unfinished evidence, the old prompt
+kept so that it can be put back.
+
+**What is live.** `libs/prompts/write_cover.md` is v23 (`5d8aac62972b`; v20, `f42e0895942b`, kept as
+`libs/scaffolds/history/write_cover.2026-11-26.pre-v23.md`). A letter begins at its greeting:
+
+- **No company block.** `build.assemble` no longer writes one (`Request.letter_to` gone, with the six looks' rules
+  for it and its shape in the look pictures). It printed the board's fields as they came: a recruiter's name and
+  "Vilnius, Vilniaus, Lithuania" over a letter for the recruiter's client. Tabula, built around the block, lost the
+  18 mm it kept for a window envelope.
+- **No subject line.** The prompt asks for none, and code decides it (`CLAUDE.md` §0): `build.answer` keeps a letter
+  from its greeting, so a subject or an address a model writes from habit never reaches the page. `letter-subject`
+  left the markup, the looks and the pictures. Of the 68 v22 and v23 letters none had one. The job title was already
+  in the letter's own words in 36 of 39 (Haiku) and 15 of 17 (Sol) v20 letters, and in the subject of 9 and 4.
+- **The job's title in bold**, in the opening and wherever else it is named: in every one of the 68.
+- **A bold word read whole** (`checks.text`): with a space where each tag was, "<strong>Backend Engineer</strong>,"
+  gave its comma away as a word, in the word count a letter is held to and in what a reviewer is shown.
+
+The drafts not made live are in `libs/scaffolds/history/` with their rows: v21, v22, v23s, and v20h (v20 with only the
+header changed, never run). `scripts/cvlab/variants/cover/v14.md` is gone (the reads it waited for were by reviewers
+that no longer exist); `v20.md` and `v23.md` stay until the reads below are in, since a kept letter is found by its
+wording's name.
+
+**Tests** (each shown failing on the commit before, in a scratch checkout): a letter begins at its greeting with no
+block above it; a subject line a model still writes is left out; a bold title is counted as the words it is; the look
+pictures draw neither part; a reviewer's needs are counted only where the line is in the letter and the record can
+answer; a letter is counted on how far it speaks of its posting; a letter with no subject is shown to its reviewer
+from its greeting. The bench still reads a letter kept from before today with its subject line (`every_look` draws
+it as kept).
+
+**Raised, not changed** (`CLAUDE.md` §5).
+
+- **A recruiter's posting.** `checks.letter` sends back any opening that does not name `job.company`, and for a
+  recruiter's posting that is the recruiter ("the role at Radley James", for a client the posting does not name; "A1
+  Personnel" was sent back the other way in this run). A rule of its own is the owner's to decide.
+- **Developer letters on Haiku** are the weakest reading of v23 (three postings, one reader). Sol's were not read.
+- **The reads still owed** decide whether v23 stays: about 34 on the Claude plan and about two of ChatGPT's five-hour
+  windows. A reader two standard errors down on the mark or on accuracy takes it out.
+- **The reviewers' cost** (above) makes "a reviewer on each platform" a two-day read for one wording. Fewer letters a
+  read, or GPT's reviewer on the hiring manager's read alone, would be the owner's choice.
+
 ## 2026-11-24, evening — a posting's text kept beside it, one write a run for the company boards, and connections closed when idle
 
 The owner: "is there a way we could read the company boards fast, without it taking so long, and taking so much usage

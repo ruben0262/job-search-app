@@ -1,9 +1,9 @@
 """The looks a CV and a cover letter can have, and the one each person picked.
 
 **A template is a stylesheet over one markup.** Every CV the platform makes carries the same class names
-(`cv-header`, `section-title`, `entry`, `entry-date`…), and every letter the same frame (`letter-meta`
-holding `letter-to`, then `letter-subject` and `letter`; never a date of its own). So a template is one
-HTML file in `cv/` or `cover/` whose `<head>` holds its look and nothing else: the writer
+(`cv-header`, `section-title`, `entry`, `entry-date`…), and every letter the same frame (`letter`, from
+its greeting to its signature; never a date of its own, a subject line or a block for the company). So a
+template is one HTML file in `cv/` or `cover/` whose `<head>` holds its look and nothing else: the writer
 fills the body when the document is made, and the template lays it out. Each person has one of each,
 `User.cv_template` and `User.cover_template` (owner, 2026-11-07); none picked is `DEFAULT`.
 
@@ -77,7 +77,7 @@ def split_style(html: str) -> tuple[str, str]:
 #   pdfminer read every one as before. The name has its space too: Ledger draws it after the contact
 #   line, and the last link ran into it.
 _SPACED_BLOCKS = (".cv-name", ".cv-contact span:first-child", ".profile", ".section-title", ".entry-title",
-                  ".entry-date", ".entry-desc", "li", ".letter-to", ".letter-subject", ".letter p")
+                  ".entry-date", ".entry-desc", "li", ".letter p")
 EVERY_LOOK = ("\n/* Every look (libs/templates EVERY_LOOK): what an ATS needs to read each word whole. */\n"
               "body { font-variant-ligatures: none; }\n"
               ".cv-contact { flex-wrap: wrap; }\n"
@@ -360,8 +360,7 @@ _SKETCH = {
           + _section("24mm", _entry("64%", "16mm"), _entry("56%", "16mm"))
           + _section("18mm", f'<p class="entry-desc">{_lines("96%", "62%")}</p>')
           + _section("22mm", f'<ul class="plain-list"><li>{_shape("54%", line=True)}</li></ul>'),
-    "cover": _HEADER + f'<div class="letter-meta"><p class="letter-to">{_lines("34mm", "26mm")}</p></div>'
-             + f'<p class="letter-subject">{_shape("46%")}</p><div class="letter">'
+    "cover": _HEADER + '<div class="letter">'
              + f'<p>{_shape("24%", line=True)}</p><p>{_lines("96%", "90%", "58%")}</p>'
              + f'<p>{_lines("94%", "40%")}</p>'
              + f'<ul>{_items("84%", "76%", "88%")}</ul>'

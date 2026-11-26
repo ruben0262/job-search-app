@@ -314,7 +314,8 @@ def measured(candidate: Candidate, posting: Posting, page: str, document: bytes 
         row |= {"title_exact": int(f" {_words(checkers.job_title(posting.title))} " in f" {_words(said)} "),
                 "company_as_said": says_company_as_people_do(said, posting.company),
                 # What reads as written by AI (`checks.AI_LANGUAGE`), anywhere in it: §3b wants none.
-                "ai_language": len(build.checks.ai_language(said, but=posting.description or ""))}
+                "ai_language": len(build.checks.ai_language(said, but=posting.description or "")),
+                **answering(body, posting, candidate.user.full_name or "")}
     if document:
         passed = (ats_checks(document, page, posting.title, report, row["ats_read_issues"]) if kind == "cv"
                   else ats_letter_checks(document, page, posting, report))
@@ -326,6 +327,60 @@ def measured(candidate: Candidate, posting: Posting, page: str, document: bytes 
 
 def _words(text: str) -> str:
     return " ".join(each for each in re.findall(r"\w+", text.casefold()) if each != "and")
+
+
+# Words that say nothing of the work, in a posting or in a letter: left out before the two are set side by
+# side.
+_EMPTY_WORDS = frozenset({
+    "the", "and", "for", "with", "that", "this", "these", "those", "from", "into", "over", "under", "about",
+    "across", "within", "through", "are", "was", "were", "been", "being", "have", "has", "had", "not",
+    "does", "did", "will", "would", "can", "could", "should", "may", "might", "must", "also", "more",
+    "most", "than", "then", "but", "who", "what", "which", "when", "where", "how", "all", "any", "each",
+    "every", "both", "such", "other", "own", "same", "new", "you", "your", "yours", "they", "their", "them",
+    "our", "ours", "its", "his", "her", "she", "him", "work", "works", "working", "worked", "job", "jobs",
+    "role", "roles", "team", "teams", "experience", "experienced", "including", "include", "includes",
+    "strong", "ability", "able", "well", "good", "high", "using", "use", "used", "uses", "based", "one",
+    "two", "three", "four", "five", "years", "year", "day", "days", "time", "full", "part", "please",
+    "apply", "looking", "join", "like", "want", "wants", "there", "here", "while", "very", "much", "many",
+    "some", "out", "off"})
+# A name as it stands in a sentence: an abbreviation ("UFW", "CI/CD"), a word with a figure or a capital
+# inside it ("fail2ban", "OAuth2", "TypeScript"), or a capitalised word not beginning its sentence ("Ubuntu").
+_NAMED = re.compile(r"(?<![\w/])(?:[A-Z]{2,}[\w+#/.-]*|[A-Za-z]+\d[\w.+-]*|[A-Za-z][a-z]+[A-Z]\w*)(?![\w/])")
+_MID_SENTENCE = re.compile(r"(?<=[a-z0-9,;] )[A-Z][a-z]{2,}(?!\w)")
+_FIGURE = re.compile(r"(?<![\w.])\d[\d.,]*")
+
+
+def answering(body: str, posting: Posting, name: str = "") -> dict:
+    """How far a letter speaks of the job it is for, counted by code (owner, 2026-11-26: a letter read "like
+    we've gone into an interview to talk about ourselves without much reference to what the job is actually
+    about", and "too specific with the details"). Rules, so that no reviewer's taste decides them:
+
+    - `posting_words`: of the paragraphs between the opening and the last two (the work a letter tells), the
+      share of their words the posting uses too; None for a posting that is not in English, whose words an
+      English letter cannot share, and for a letter with no such paragraph;
+    - `figures`: the numbers in the letter;
+    - `names_unasked`: the names in it that the posting never uses (tools, versions, products, employers),
+      apart from the person's own and the company's.
+
+    None is a mark to push up or down alone: the posting's words rise with its wording said back, which the
+    reviewers mark down (`eval_cover.md`, fit), and a letter with no name in it proves nothing."""
+    prose = build.checks._prose(body)
+    said = " ".join(prose)
+
+    def words(text: str) -> list[str]:
+        return [each for each in re.findall(r"[^\W\d_]{3,}", text.casefold()) if each not in _EMPTY_WORDS]
+
+    asked = f"{posting.title} {unescape(posting.description or '')}"
+    theirs = set(words(asked))
+    told = words(" ".join(prose[1:-2]))
+    english = build.checks.language(" ".join(asked.split())) == "en"
+    known = {each.casefold() for each in re.findall(r"[^\W_]+", f"{asked} {name} {posting.company}")}
+    names = {found.group(0).strip(".,") for found in (*_NAMED.finditer(said), *_MID_SENTENCE.finditer(said))}
+    return {"posting_words": round(sum(each in theirs for each in told) / len(told), 3) if told and english
+            else None,
+            "figures": len(_FIGURE.findall(said)),
+            "names_unasked": len({each.casefold() for each in names
+                                  if not set(re.findall(r"[^\W_]+", each.casefold())) <= known})}
 
 
 def says_company_as_people_do(text: str, company: str) -> int | None:
@@ -347,11 +402,9 @@ def letter_text(page: str, *, subject: bool = False) -> str:
     the sign-off and the name. The subject line stays out, as it does from a letter box; `subject` puts it
     first, as the person the letter is sent to reads it. The letters' reviewer was not shown it until
     2026-11-18, and a school leaver's subject said he specialised in "employee benefits"."""
-    def plain(part: str) -> str:
-        return " ".join(unescape(re.sub(r"<[^>]+>", " ", part)).split())
-
     found = re.search(r'(?s)<div class="letter">(.*)</div>', page)
     heading = re.search(r'(?s)<p class="letter-subject">(.*?)</p>', page)
+    plain = build.checks.text
     blocks = [f"Subject: {plain(heading.group(1))}"] if subject and heading else []
     letter = found.group(1) if found else body_of(page)
     for attributes, inner in re.findall(r"(?s)<p([^>]*)>(.*?)</p>", letter):
@@ -476,7 +529,9 @@ def every_look(candidate: Candidate, posting: Posting, page: str, kind: str = "c
     we can choose the cover letter for also works with it"). A letter is written the same for every look,
     so this is the letter a person who picked another look gets; a CV is written for its look's page, so for
     a CV it is the same CV redrawn, as the site's ATS figure was measured (2026-11-16)."""
-    body, scores, failed = build.clean(body_of(page)), [], {}
+    # A letter kept from before 2026-11-26 has a subject line, which the markup no longer has (`build.clean`
+    # would take its class off): it is drawn again as it was kept, so the job title it named there is found.
+    body, scores, failed = body_of(page) if kind == "cover" else build.clean(body_of(page)), [], {}
     for look in templates.of_kind(kind):
         drawn = build.assemble(request_for(candidate, posting, None, kind, look.id), body)
         document, read = rendered(drawn, f"{posting.slug} in {look.id}", kind)
@@ -596,8 +651,36 @@ def read_verdict(reply: str, text: str, dimensions: tuple[str, ...] | None = Non
             "not_theirs": [each for each in answer.get("not_theirs") or []
                            if isinstance(each, dict) and quoted(each.get("line"))],
             "left_out": answer.get("left_out") or [], "top_fixes": answer.get("top_fixes") or [],
+            **needs_of(answer.get("needs"), quoted),
             # The hiring manager's chance of an interview, out of 100 (`eval_hire.md`).
             "interview": chance if isinstance(chance := answer.get("interview"), int | float) else None}
+
+
+NEEDS = ("needs_can", "needs_answered", "needs_share", "needs_unbacked")
+
+
+def needs_of(needs: object, quoted) -> dict:
+    """What a letter's reviewer says of each thing the employer needs most (`eval_cover.md`, `eval_hire.md`;
+    owner, 2026-11-26: "the way recruiters measure that is by comparing the cover letter, to the job
+    description"), counted here and not by the reviewer: `needs_can`, how many of them the person's record
+    can answer; `needs_answered`, how many of those the letter answers, a half for one answered partly, and
+    none where the line it names is not in the letter; `needs_share`, the one over the other; and
+    `needs_unbacked`, the needs the letter answers that their record cannot: a claim bigger than the record,
+    which speaking closer to the posting invites. All None for a reviewer that lists no needs (a CV's)."""
+    listed = [each for each in needs or [] if isinstance(each, dict) and each.get("need")]
+    if not listed:
+        return dict.fromkeys(("needs", *NEEDS))
+
+    def met(each: dict) -> float:
+        how = str(each.get("answered") or "").strip().casefold()
+        return {"yes": 1.0, "partly": 0.5}.get(how, 0.0) if quoted(each.get("line")) else 0.0
+
+    can = [each for each in listed if each.get("in_their_record") is True]
+    answered = sum(met(each) for each in can)
+    return {"needs": listed, "needs_can": len(can), "needs_answered": answered,
+            "needs_share": round(answered / len(can), 3) if can else None,
+            "needs_unbacked": sum(1 for each in listed
+                                  if each.get("in_their_record") is not True and met(each))}
 
 
 def _rate_limited(exc: Exception) -> bool:
@@ -632,7 +715,8 @@ def _verdict(client, posting: Posting, text: str, report: dict, *, kept: pathlib
 
 # How a document is put to its reviewer. A change here is a change of reviewer: write it in.
 SHOWN = {"cv": "the CV's text; the posting as its writer is given it",
-         "cover": "the letter's text, its subject line first; the posting as its writer is given it"}
+         "cover": ("the letter's text, its subject line first where it has one; the posting as its writer is "
+                   "given it")}
 
 
 def reviewer(kind: str, model: str | None = None, how: str = "", hire: bool = False) -> str:
@@ -816,6 +900,7 @@ def _run_cell(client, candidate: Candidate, posting: Posting, *, variant: str, s
            # What the reviewer found in the CV that is not in their documents, and what it left unused.
            "judge_not_theirs": len(verdict["not_theirs"]) if verdict and "not_theirs" in verdict else None,
            "judge_left_out": len(verdict["left_out"]) if verdict and "left_out" in verdict else None,
+           **{key: (verdict or {}).get(key) for key in NEEDS},
            "dimensions": dimensions, "interview": (verdict or {}).get("interview"),
            "top_fixes": (verdict or {}).get("top_fixes") or []}
     logger.info("%-7s %-10s %-42s #%d  %4.1fs in=%s pages=%s invented=%s judge=%s", candidate.name, variant,
@@ -986,7 +1071,8 @@ MECHANICAL = ("first_person", "profile_first_person", "third_person", "profile_t
               "present_in_ended", "past_in_held",
               "task_bullets", "said_twice",
               "colon_bullets", "emdash_violations",
-              "cliches", "ai_language", "profile_words", "entries", "bullets", "est_pages", "pages", "fitted",
+              "cliches", "ai_language", "posting_words", "figures", "names_unasked",
+              "profile_words", "entries", "bullets", "est_pages", "pages", "fitted",
               "ats_issues",
               "ats_score", "ats_title", "ats_dates", "ats_every_look",
               "faults", "invented", "seconds", "tokens_in", "tokens_out", "over_ceiling")
@@ -998,7 +1084,8 @@ COLUMNS = (("1st person", "first_person"), ("profile 1p", "profile_first_person"
            ("past in a held job", "past_in_held"), ("task bullets", "task_bullets"),
            ("said twice in the same words", "said_twice"),
            ("colon bullets", "colon_bullets"), ("em-dash", "emdash_violations"), ("clichés", "cliches"),
-           ("AI language", "ai_language"),
+           ("AI language", "ai_language"), ("the posting's words in the work told", "posting_words"),
+           ("figures", "figures"), ("names the posting never uses", "names_unasked"),
            ("profile words", "profile_words"), ("entries", "entries"), ("pages", "pages"),
            ("lines taken up", "fitted"), ("ATS checks passed, of 100", "ats_score"),
            ("ATS checks in every look, of 100", "ats_every_look"),
@@ -1007,12 +1094,12 @@ COLUMNS = (("1st person", "first_person"), ("profile 1p", "profile_first_person"
            ("seconds", "seconds"), ("tokens in", "tokens_in"), ("tokens out", "tokens_out"),
            ("over a key's ceiling", "over_ceiling"))
 
-LETTER_DIMENSIONS = ("opening", "why_here", "evidence", "fit", "voice", "honesty", "close")
-HIRE_DIMENSIONS = ("first_lines", "best_case", "proof", "doubts", "stands_out", "accuracy")
+LETTER_DIMENSIONS = ("opening", "why_here", "evidence", "fit", "wants_cv", "voice", "honesty", "close")
+HIRE_DIMENSIONS = ("first_lines", "best_case", "answers_job", "proof", "doubts", "stands_out", "accuracy")
 DIMENSIONS = ("six_second_pull", "role_angle_fit", "relevance_coverage", "achievement_quality",
               "human_voice", "defensibility", "keyword_integration")
 # What the reviewer lists beside its marks, as counts.
-FOUND = ("judge_not_theirs", "judge_left_out")
+FOUND = ("judge_not_theirs", "judge_left_out", "needs_share", "needs_unbacked")
 
 
 def _value(row: dict, key: str):

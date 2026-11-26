@@ -501,7 +501,8 @@ def test_asking_for_no_judgement_returns_none_rather_than_reading_the_cache():
 
 # ── tools that are not ours (`checkers.py`) ─────────────────────────────────────────────────────
 
-# A letter as `build.assemble` lays it out: the header, the company block, the subject, then the letter.
+# A letter as the bench keeps it on disk from before 2026-11-26, when `build.assemble` still wrote a block
+# for the company above it: the header, that block, the subject, then the letter. Read as it always was.
 LETTER_PAGE = ('<!DOCTYPE html>\n<html lang="en">\n<head>\n<title>Maya Example, cover letter</title>\n'
                '</head>\n<body>\n<div class="cv-header">\n<div class="cv-name">Maya Example</div>\n'
                '<div class="cv-contact"><span>Leeds, UK</span></div>\n</div>\n<hr class="header-rule">\n'
@@ -550,6 +551,19 @@ def test_a_letter_is_pasted_as_a_person_would_paste_it():
     # Its reviewer reads it as the person it is sent to does: the subject line first.
     assert letter_text(LETTER_PAGE, subject=True).startswith(
         "Subject: Data analyst specialising in operations\n\nDear Hiring Manager,")
+
+
+def test_a_letter_with_no_subject_line_is_read_from_its_greeting_with_its_bold_title_whole():
+    """A letter has no subject line since 2026-11-26 and names its job in bold. Its reviewers are shown it
+    from the greeting, and a word in bold is one word with the comma after it: read with a space where each
+    tag was, "Analyst ," would have been marked as the letter's own slip."""
+    from scripts.cvlab.run import letter_text
+
+    page = LETTER_PAGE.replace('<p class="letter-subject">Data analyst specialising in operations</p>\n', "")
+    page = page.replace("<p>Second one.</p>", "<p>I want the <strong>Analyst</strong>, here.</p>")
+
+    assert letter_text(page, subject=True) == ("Dear Hiring Manager,\n\nFirst paragraph here.\n\nI want the "
+                                               "Analyst, here.\n\nKind regards,\nMaya Example")
 
 
 def test_the_header_contact_is_read_back_as_it_was_written():
@@ -1018,6 +1032,75 @@ def test_the_hiring_managers_read_is_kept_beside_the_letter_reviewers_with_the_c
     again = bench._run_cell(None, candidate, posting, variant="live", sample=1, template=wording,
                             out=tmp_path, args=args, judge=HiringManager())
     assert again["interview"] == 65 and len(read) == 1
+
+
+def test_a_letters_reviewer_says_which_needs_it_answers_and_code_counts_them():
+    """Owner, 2026-11-26: "the way recruiters measure that is by comparing the cover letter, to the job
+    description", and a letter read "without much reference to what the job is actually about". Each reviewer
+    lists what the employer needs most and the line that answers each, and code counts them (rules before AI):
+    only where the line is in the letter, only against what the person's record can answer, and a need the
+    letter answers that the record cannot is counted apart, as the claim bigger than the record it is."""
+    from scripts.cvlab import run as bench
+
+    posting = bench.Posting({"slug": "job", "group": "g", "candidate": "maya", "title": "Analyst",
+                             "company": "Acme", "description": "We need an analyst."})
+    letter = ("Dear Hiring Manager,\n\nI rebuilt the stock count for a bike shop.\n\nI report on sales each "
+              "week.\n\nKind regards,\nMaya")
+    needs = [{"need": "stock control", "in_their_record": True, "answered": "yes",
+              "line": "I rebuilt the stock count for a bike shop."},
+             {"need": "weekly reporting", "in_their_record": True, "answered": "partly",
+              "line": "I report on sales each week."},
+             {"need": "forecasting", "in_their_record": True, "answered": "yes", "line": "not in the letter"},
+             {"need": "SQL", "in_their_record": True, "answered": "no", "line": ""},
+             {"need": "managing a team", "in_their_record": False, "answered": "yes",
+              "line": "I report on sales each week."}]
+
+    class Reviewer:
+        def complete_text(self, **call):
+            return json.dumps({"dimensions": {
+                "wants_cv": {"score": 6, "evidence": "I report on sales each week."},
+                "answers_job": {"score": 4, "evidence": "I report on sales each week."}}, "needs": needs})
+
+    for hire, kept in ((False, {"wants_cv"}), (True, {"answers_job"})):
+        verdict = bench.judge_one(Reviewer(), posting, letter, {}, "Her documents.", kind="cover", hire=hire)
+        assert set(verdict["dimensions"]) == kept, "each reviewer keeps its own marks"
+        assert verdict["needs_can"] == 4 and verdict["needs_answered"] == 1.5
+        assert verdict["needs_share"] == 0.375 and verdict["needs_unbacked"] == 1
+    # A reviewer that lists no needs (a CV's) is not counted as answering none.
+    assert bench.read_verdict(json.dumps(REVIEW), cvchecks.text_of(CV))["needs_share"] is None
+
+
+def test_a_letter_is_counted_on_how_far_it_speaks_of_its_posting():
+    """The same complaint, by rule and with no reviewer: of the work a letter tells, between its opening and
+    its last two paragraphs, how many of its words are the posting's too; the numbers in it; and the names in
+    it the posting never uses. The owner's own letter gave 17 such names, an Ubuntu version among them, to a
+    posting that asked for Python services and automation."""
+    from scripts.cvlab.run import Posting, answering
+
+    posting = Posting({"slug": "job", "group": "g", "candidate": "maya", "title": "Infrastructure Engineer",
+                       "company": "Acme", "description": "You will build Python services and automate our "
+                       "infrastructure, own releases through the pipeline and keep production reliable."})
+
+    def letter(work: str) -> str:
+        return ('<div class="letter"><p>Dear Hiring Manager,</p><p>Opening at Acme.</p>'
+                f"<p>{work}</p><p>Why I want this at Acme.</p><p>What I would build there.</p>"
+                '<p class="closing">Kind regards,</p><p class="signature">Maya Example</p></div>')
+
+    answers = answering(letter("I build Python services and automate the infrastructure they run on. I own "
+                               "their releases through the pipeline and keep production reliable."), posting)
+    recites = answering(letter("I set up an Ubuntu 24.04 server with fail2ban and UFW. Deduplication handles "
+                               "10k records in 1ms with a classifier at 0.82, tested in Playwright."),
+                        posting, "Maya Example")
+
+    assert answers["posting_words"] > 0.6 and recites["posting_words"] < 0.2
+    assert recites["figures"] == 4 and answers["figures"] == 0
+    # Ubuntu, fail2ban, UFW and Playwright.
+    assert recites["names_unasked"] == 4 and answers["names_unasked"] == 0
+    # Python is the posting's own word, Acme the company and Maya the person: none is a name it never uses.
+    german = Posting({"slug": "job", "group": "g", "candidate": "maya", "title": "Elektriker",
+                      "description": "Wir suchen einen Elektriker für die Gebäudetechnik in unserem Werk, "
+                      "mit abgeschlossener Ausbildung und Erfahrung in der Instandhaltung von Anlagen."})
+    assert answering(letter("I maintain the plant."), german)["posting_words"] is None
 
 
 def test_what_other_tools_said_reaches_the_comparison():

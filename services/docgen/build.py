@@ -5,7 +5,9 @@ carries the job and everything the person gave us: every CV they switched on, fo
 letter too, their "About you", their other files and their languages. Then what to do, then a final
 check. Code decides everything it can (CLAUDE.md §0): the model writes the middle of the document in the
 one markup every look lays out (`libs/templates`), and code writes the rest of it: the header (their name,
-contact details and links), on a letter the company and its place, and the look they picked.
+contact details and links) and the look they picked. A letter begins at its greeting (owner, 2026-11-26):
+no block for the company and its place above it, without which it "would look smoother", and no subject
+line, the job named in bold in the letter's own words instead.
 
 What comes back is cleaned to that markup and nothing else, so no style, script or hidden text can reach
 an employer. Then it is checked (`problems`): too many pages, a number found nowhere in the person's
@@ -94,8 +96,6 @@ class Request:
     # Their name, and the header and title of the page, written by code.
     name: str
     header: str
-    # On a letter, the company as people call it (`checks.employer`) and its place.
-    letter_to: str
     look: Template
     # Every text a number or a name in the document may come from: their documents and the posting.
     sources: str
@@ -135,10 +135,7 @@ def prepare(kind: str, *, user, job, documents: dict[str, list[str]], look: Temp
     theirs = "\n".join(text_ for kind_ in documents for text_ in texts(documents, kind_))
     sources = "\n".join([theirs, job.title or "", company, place, job.description or ""])
     return Request(kind=kind, prompt=text, name=name, header=header, look=look, sources=sources,
-                   theirs=theirs,
-                   letter_to="<br>".join(escape(each) for each in (checks.employer(company) or company, place)
-                                         if each), company=company,
-                   posting=job.description or "")
+                   theirs=theirs, company=company, posting=job.description or "")
 
 
 def draft(client, request: Request, *, model: str, revision: tuple[str, str] | None = None,
@@ -174,18 +171,19 @@ def answer(reply: str | None, kind: str) -> str | None:
         return None
     body = found[-1]
     if kind == "cover":
+        # A letter is its greeting to its signature and nothing above them: a subject line or an address a
+        # model still writes from habit is left out here, whatever the prompt asked (CLAUDE.md §0).
+        body = body[body.index(_LETTER_OPENS):] if _LETTER_OPENS in body else body
         return _undated(checks.paragraphs_split(_EMDASH.sub(", ", body)))
     return _one_profile(strip_prose_emdashes(body))
 
 
 def assemble(request: Request, body: str) -> str:
-    """The whole page: the look, the header, a letter's company and place, then what the model wrote."""
-    meta = (f'<div class="letter-meta">\n<p class="letter-to">{request.letter_to}</p>\n</div>\n'
-            if request.kind == "cover" and request.letter_to else "")
+    """The whole page: the look, the header, then what the model wrote."""
     title = f"{request.name}, {'CV' if request.kind == 'cv' else 'cover letter'}".strip(", ")
     return ('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n'
             f"<title>{escape(title)}</title>\n{request.look.style}\n</head>\n<body>\n"
-            f"{request.header}\n{meta}{body}\n</body>\n</html>\n")
+            f"{request.header}\n{body}\n</body>\n</html>\n")
 
 
 @dataclass(frozen=True)
@@ -303,8 +301,9 @@ def _header(facts, identity: dict) -> tuple[str, str]:
 # The markup every look lays out (libs/templates/README.md), and nothing else.
 _TAGS = frozenset({"p", "div", "span", "ul", "li", "strong", "em", "b", "i", "a", "br"})
 _CLASSES = frozenset({"profile", "section", "competencies", "section-title", "entry", "entry-head",
-                      "entry-title", "entry-date", "entry-desc", "plain-list", "letter-subject", "letter",
-                      "closing", "signature"})
+                      "entry-title", "entry-date", "entry-desc", "plain-list", "letter", "closing",
+                      "signature"})
+_LETTER_OPENS = '<div class="letter">'
 # Gone with everything inside them.
 _DROPPED = frozenset({"script", "style", "head", "title", "template", "noscript", "svg", "math", "iframe",
                       "object", "header", "footer", "nav"})

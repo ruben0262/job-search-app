@@ -159,10 +159,8 @@ def _render(template, *, long: bool = False, name: str = "Alex Morgan", contact=
                 + _section("Certifications", _plain(["PRINCE2 Practitioner, 2020"]))
                 + "".join(_section(title, _plain(lines)) for title, lines in (MORE_SECTIONS if long else [])))
     else:
-        body = (header + '<div class="letter-meta"><p class="letter-to">Lumen Energy<br>Amsterdam, '
-                'Netherlands</p></div><p class="letter-subject">Application for Project Manager</p>'
-                '<div class="letter"><p>Dear Hiring Manager,</p>'
-                "<p>I am applying for the Project Manager role at Lumen Energy.</p>"
+        body = (header + '<div class="letter"><p>Dear Hiring Manager,</p>'
+                "<p>I am applying for the <strong>Project Manager</strong> role at Lumen Energy.</p>"
                 "<p>Some of what I have done that fits it:</p>"
                 + _plain([bullet for _title, _dates, bullets in JOBS for bullet in bullets[:1]])
                 + "<p>I would welcome the chance to talk about it.</p>"
@@ -236,7 +234,10 @@ def test_every_look_makes_a_pdf_an_ats_reads_in_order_in_the_face_it_asked_for(t
                 f"{lines[heading:heading + 3]}")
             assert lines.index(next(line for line in lines if line.startswith("education"))) > heading
         else:
-            assert "application for project manager" in lines, f"{template.id} lost the subject line"
+            # A letter begins at its greeting, and its job title, set in bold, is read in its sentence.
+            greeting = lines.index("dear hiring manager,")
+            assert "project manager role at lumen energy" in " ".join(lines[greeting + 1:greeting + 3]), (
+                f"{template.id}: the greeting is not followed by the letter: {lines[greeting:greeting + 3]}")
 
         fonts = {str(font.get_object().get("/BaseFont")).split("+")[-1].casefold()
                  for page in reader.pages
@@ -303,23 +304,22 @@ def test_the_name_is_read_first_however_wide_the_contact_line_under_it(template,
 
 
 @pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
-@pytest.mark.parametrize("template", templates.CATALOGUE, ids=lambda each: f"{each.kind}-{each.id}")
+@pytest.mark.parametrize("template", templates.of_kind("cv"), ids=lambda each: each.id)
 def test_every_look_reads_its_capitals_as_whole_words(template):
-    """A heading or a subject the model writes, set in capitals and spaced out, read whole by both readers in
-    every language the panel writes. Kestrel's 0.8pt on 9pt split a pair of narrow capitals for pdfminer,
-    "ROOM AT TENDANT" in a letter's subject and "TEL JESKÖRŰ" in a Hungarian one, and would have split a
-    Hungarian CV's "VÉGZETTSÉG" or an Italian "PROGETTI" heading (2026-11-18), under the 0.1 of the size
-    that rule 3 allowed."""
+    """A heading the model writes, set in capitals and spaced out, read whole by both readers in every
+    language the panel writes. Kestrel's 0.8pt on 9pt split a pair of narrow capitals for pdfminer, "ROOM AT
+    TENDANT" in a letter's subject and "TEL JESKÖRŰ" in a Hungarian one, and would have split a Hungarian
+    CV's "VÉGZETTSÉG" or an Italian "PROGETTI" heading (2026-11-18), under the 0.1 of the size that rule 3
+    allowed. A letter has no subject line since 2026-11-26, and so nothing set in capitals."""
     from services.docgen import pdf
 
     words = ["Room Attendant", "Settings", "Committee", "Skills", "Little", "Teljeskörű", "Végzettség",
              "Attività", "Progetti", "Allotted", "Tattoo", "Kettle", "Yttrium", "Lettere", "Fully", "Jelly",
              "Wavy Tyre"]
-    placed = (lambda word: _section(word, '<p class="entry-desc">Text.</p>')) if template.kind == "cv" else (
-        lambda word: f'<p class="letter-subject">{word}</p><div class="letter"><p>Text.</p></div>')
     head, rest = _render(template).split("<body>", 1)
     header = rest.split('<hr class="header-rule">', 1)[0] + '<hr class="header-rule">'
-    page = f"{head}<body>{header}{''.join(placed(word) for word in words)}</body></html>"
+    sections = "".join(_section(word, '<p class="entry-desc">Text.</p>') for word in words)
+    page = f"{head}<body>{header}{sections}</body></html>"
     for reader, text in _read(pdf.render(page)).items():
         flat = f" {' '.join(text.split()).casefold()} "
         split = [word for word in words if f" {word.casefold()} " not in flat]
@@ -332,17 +332,17 @@ def test_every_look_reads_its_capitals_as_whole_words(template):
 def test_every_letter_look_holds_the_longest_letter_the_checks_pass_on_one_page(template):
     """A letter is one page in whichever look was picked (owner, 2026-11-18: "make sure all the formats that
     we can choose the cover letter for also works with it"). The longest letter the docgen worker lets
-    through (`checks.LETTER_WORDS`), in six paragraphs under a two-line subject, fits each look's page
-    without being drawn smaller: a longer limit or a larger look has to be measured again."""
+    through (`checks.LETTER_WORDS`), in six paragraphs, fits each look's page without being drawn smaller:
+    a longer limit or a larger look has to be measured again."""
     from services.docgen import checks, pdf
 
     words = ("We count stock every week and keep the yard safe for everyone on the shift. " * 40).split()[
         :checks.LETTER_WORDS[1]]
     paragraphs = "".join(f"<p>{' '.join(words[at:at + 54])}</p>" for at in range(0, len(words), 54))
-    letter = ('<p class="letter-subject">Warehouse Operator, a forklift operative specialising in '
-              'counterbalance work, loading and dispatch</p><div class="letter"><p>Dear Hiring Manager,</p>'
+    letter = ('<div class="letter"><p>Dear Hiring Manager,</p>'
               + paragraphs + '<p class="closing">Kind regards,</p><p class="signature">Alex Morgan</p></div>')
-    page = re.sub(r'(?s)<p class="letter-subject">.*</div>', lambda _: letter, _render(template))
+    page = re.sub(r'(?s)<div class="letter">.*</div>', lambda _: letter, _render(template))
+    assert letter in page
     assert checks.letter_words(letter) == checks.LETTER_WORDS[1]
     _, report = pdf.fitted(page, kind="cover")
     pdf._discard()
@@ -559,9 +559,11 @@ def test_a_picture_is_the_look_in_abstract_shapes_with_nothing_written(template)
     written = re.sub(r"(?s)<style>.*?</style>", "", html)
     assert "".join(re.findall(r">([^<]*)<", written)).strip() == "", f"{template.id}'s picture has writing"
     parts = ("cv-name", "cv-contact", "header-rule") + (
-        ("letter-to", "letter-subject", "letter") if template.kind == "cover"
+        ("letter",) if template.kind == "cover"
         else ("profile", "section-title", "entry-title", "entry-date"))
     assert all(f'class="{part}"' in body for part in parts)
+    # A letter is drawn as it is made: from its greeting, with no company block or subject line above it.
+    assert "letter-to" not in body and "letter-subject" not in body
 
 
 # ── the colour ────────────────────────────────────────────────────────────────────────────────

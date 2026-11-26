@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <!--
   KESTREL: a cover letter template (libs/templates/README.md). Only the <head> is used; the letter is
-  written into the body when it is made. The Kestrel CV's header, then the company, the subject in
-  small spaced capitals, and a short letter. No date: a letter carries none of its own (owner, 2026-11-08).
+  written into the body when it is made. The Kestrel CV's header, then a short letter. No date: a letter carries none of its own (owner, 2026-11-08).
 -->
 <html lang="en">
 <head>
@@ -25,23 +24,11 @@ a { color: #0e7490; text-decoration: none; }
 .cv-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2pt 14pt; }
 .cv-name { font-size: 23pt; font-weight: 700; color: #0f172a; letter-spacing: -0.2pt; line-height: 1.05; }
 /* The contact line on a line of its own under the name, not beside it (README rule 7): set beside it, a line
-   short enough to fit there was read before the name by pdfminer, with the company block below it, for a
+   short enough to fit there was read before the name by pdfminer, with the company block then below it, for a
    phone, an email and a town (2026-11-18). */
 .cv-contact { font-size: 9.5pt; color: #475569; display: flex; flex-basis: 100%; }
 .cv-contact span + span::before { content: "·"; margin: 0 5pt; color: #94a3b8; }
 .header-rule { border: none; border-top: 1pt solid #e2e8f0; margin: 6pt 0 16pt; }
-
-.letter-meta { display: flex; justify-content: space-between; align-items: flex-start; gap: 12pt; margin-bottom: 14pt; }
-.letter-meta p { margin: 0; }
-.letter-subject {
-  font-size: 9pt;
-  font-weight: 700;
-  text-transform: uppercase;
-  /* 0.8pt split narrow capitals for pdfminer, "AT TENDANT" (README rule 3). */
-  letter-spacing: 0.5pt;
-  color: #0e7490;
-  margin-bottom: 12pt;
-}
 
 p, ul { margin: 0 0 9pt; }
 ul { padding-left: 13pt; }

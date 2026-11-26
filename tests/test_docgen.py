@@ -153,21 +153,46 @@ def test_an_ampersand_is_never_shown_as_its_code():
     job.company, job.title = "Fennel &amp; Flint", "R&amp;D Chef"
     letter = _request("cover", job=job)
     assert "Fennel & Flint" in letter.prompt and "R&D Chef" in letter.prompt and "&amp;" not in letter.prompt
-    assert "Fennel &amp; Flint" in letter.letter_to and "amp;amp" not in letter.letter_to
     assert letter.company == "Fennel & Flint"
 
 
-def test_a_letter_is_addressed_to_the_company_as_people_call_it():
-    """Owner, 2026-11-19: "the company name should be mentioned, not the long posted versions but from bosch
-    group we should say bosch". Code writes the block above the subject from the board's field, and it
-    showed the field as typed: a strapline ("VNOM | We get the job done"), "Group", every legal form."""
+def test_a_subject_line_the_model_still_writes_is_left_out_of_the_letter():
+    """Owner, 2026-11-26: no subject line above a letter ("Python developer with secured Linux deployment and
+    Docker Compose experience" was theirs), the job named in the letter's own words instead. The prompt asks
+    for none, and code decides it (CLAUDE.md §0): a letter is its greeting to its signature, so a subject a
+    model writes from habit, or an address, never reaches the page."""
+    written = build.answer(LETTER_ANSWER, "cover")
+
+    assert written.startswith('<div class="letter"><p>Dear Hiring Manager,</p>')
+    assert "Application for Backend Engineer" not in written and "letter-subject" not in written
+    addressed = LETTER_ANSWER.replace("<letter>", "<letter><p>Northwind<br>Berlin</p>")
+    assert build.answer(addressed, "cover") == written
+
+
+def test_a_job_title_in_bold_is_counted_as_the_words_it_is():
+    """A letter sets its job title in bold (owner, 2026-11-26: "bold the role wherever it will appear"). Read
+    with a space where each tag was, "<strong>Backend Engineer</strong>," gave its comma away as a word of
+    its own, in the word count a letter is held to and in what a reviewer is shown."""
+    letter = _letter("I would like the <strong>Backend Engineer</strong>, <em>remote</em>, role at "
+                     "Northwind.")
+
+    assert checks.letter_words(letter) == 10
+    assert build.text_of(letter).count("Backend Engineer, remote, role") == 1
+
+
+def test_a_letter_begins_at_its_greeting_with_no_block_for_the_company_above_it():
+    """Owner, 2026-11-26: without the company and its place above it the letter "would look smoother". Code
+    wrote that block from the board's fields as they came, so a letter for a recruiter's client was headed
+    with the recruiter and a board's place ("Radley James", "Vilnius, Vilniaus, Lithuania"). Nothing stands
+    between the header and what the model wrote now, whatever the job's company and place are."""
+    written = build.answer(LETTER_ANSWER, "cover")
+    page = build.assemble(_request("cover"), written)
+
+    after_header = page.split('<hr class="header-rule">', 1)[1]
+    assert after_header.strip().startswith(written.strip())
+    assert "letter-to" not in page and "letter-meta" not in page and "Berlin" not in after_header
+    # The letter's own words are still checked against the company as the board gave it.
     job = FakeJob()
-    for field, shown in (("Bosch Group", "Bosch"), ("VNOM | We get the job done", "VNOM"),
-                         ("J. RETTENMAIER &amp; SÖHNE GmbH + Co KG", "J. RETTENMAIER &amp; SÖHNE"),
-                         ("Fennel & Flint", "Fennel &amp; Flint"), ("Northwind", "Northwind")):
-        job.company = field
-        assert _request("cover", job=job).letter_to == f"{shown}<br>Berlin", field
-    # The letter's own words are still checked against the field as the board gave it.
     job.company = "Bosch Group"
     assert _request("cover", job=job).company == "Bosch Group"
 
@@ -327,22 +352,6 @@ def test_the_page_has_their_header_and_the_look_they_picked():
     contact = page[page.index('class="cv-contact"'):]
     assert contact.index("+49 151 2345 6789") < contact.index("alice@example.com") < contact.index(
         "<span>Berlin, Germany</span>") < contact.index("github.com/alice")
-
-
-def test_a_letter_names_the_company_and_its_place_above_the_subject():
-    body = build.assemble(_request("cover"), build.answer(LETTER_ANSWER, "cover")).split("<body>", 1)[1]
-
-    assert '<p class="letter-to">Northwind<br>Berlin</p>' in body
-    assert body.index("letter-to") < body.index("letter-subject") < body.index('class="letter"')
-
-
-def test_a_letter_for_a_job_with_no_company_or_place_has_no_block_for_them():
-    job = FakeJob()
-    job.company, job.location = None, None
-
-    page = build.assemble(_request("cover", job=job), build.answer(LETTER_ANSWER, "cover"))
-
-    assert "letter-meta" not in page.split("<body>", 1)[1]
 
 
 # ── the checks ────────────────────────────────────────────────────────────────────────────────
@@ -623,7 +632,7 @@ def test_a_posting_with_no_description_is_refused_before_anything_is_sent(monkey
     assert client.calls == [] and fake_chrome["calls"] == 0
 
 
-def test_a_cover_letter_is_written_in_its_own_look_with_the_company_above_it(monkeypatch, fake_chrome):
+def test_a_cover_letter_is_written_in_its_own_look(monkeypatch, fake_chrome):
     session, user = _session(monkeypatch, user=_user(cover_template="tabula"))
 
     result = _ai(session, user, FakeClient(LETTER_ANSWER), kind="cover")
@@ -631,8 +640,7 @@ def test_a_cover_letter_is_written_in_its_own_look_with_the_company_above_it(mon
     page = fake_chrome["html"][0]
     assert result.filename == "Alice_Example_Cover.pdf"
     assert templates.find("cover", "tabula").style in page
-    assert '<p class="letter-to">Northwind<br>Berlin</p>' in page
-    assert "Application for Backend Engineer" in page
+    assert "Dear Hiring Manager," in page and "Application for Backend Engineer" not in page
 
 
 # ── the PDF ───────────────────────────────────────────────────────────────────────────────────
@@ -753,8 +761,7 @@ def test_a_cover_letter_is_not_judged_by_the_cvs_checklist():
 
 def _letter(*paragraphs: str) -> str:
     body = "".join(f"<p>{each}</p>" for each in paragraphs)
-    return ('<p class="letter-subject">Backend engineer specialising in payments</p><div class="letter">'
-            f'<p>Dear Hiring Manager,</p>{body}<p class="closing">Kind regards,</p>'
+    return (f'<div class="letter"><p>Dear Hiring Manager,</p>{body}<p class="closing">Kind regards,</p>'
             '<p class="signature">Alice Example</p></div>')
 
 

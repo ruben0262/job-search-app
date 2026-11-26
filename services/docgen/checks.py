@@ -152,8 +152,13 @@ _STRAPLINE = re.compile(r"\s+\|.*$")
 _LETTER_OF = re.compile(r"[^\W\d_]")
 
 
+# A word in bold or italics is one word with what touches it: "<strong>Analyst</strong>," is "Analyst,", and
+# read as "Analyst ," its comma was counted as a word (a letter now sets its job title in bold, 2026-11-26).
+_INLINE = re.compile(r"(?i)</?(?:strong|em|b|i)>")
+
+
 def text(html: str) -> str:
-    return " ".join(unescape(_TAG.sub(" ", html)).split())
+    return " ".join(unescape(_TAG.sub(" ", _INLINE.sub("", html))).split())
 
 
 def language(prose: str) -> str:
