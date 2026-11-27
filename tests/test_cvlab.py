@@ -326,6 +326,49 @@ def test_the_bench_writes_a_chatgpt_letter_lean_as_production_does():
     assert told == [True]
 
 
+def test_the_bench_can_write_on_the_claude_code_of_its_own_machine_as_production_calls_a_sign_in(
+        tmp_path, monkeypatch):
+    """Owner, 2026-11-27: rounds "without taking up much usage from the other claude account". With
+    `--own-claude` the bench's Claude is the Claude Code signed in on the machine it runs on: the tool is
+    given exactly what production gives it for a person's sign-in (the same arguments, the platform's system
+    prompt, no tools), under the real home with no sign-in folder of its own, in one folder kept for it. A
+    ChatGPT writer is still the account's: only Claude has a login of the machine's to use."""
+    import sys
+
+    from libs.llm import cli
+    from scripts.cvlab import run as bench
+
+    tool = tmp_path / "claude"
+    tool.write_text(f"""#!{sys.executable}
+import json, os, sys
+args = sys.argv[1:]
+at = args.index("--system-prompt-file") + 1
+said = {{"args": args[:at] + ["<system>"] + args[at + 1:], "system": open(args[at]).read(),
+        "prompt": sys.stdin.read(), "home": os.environ["HOME"], "cwd": os.getcwd(), "beside": os.listdir("."),
+        "own_folder": os.environ.get("CLAUDE_CONFIG_DIR")}}
+print(json.dumps({{"type": "result", "is_error": False, "result": json.dumps(said)}}))
+""")
+    tool.chmod(0o755)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("CLAUDE_CLI", str(tool))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(cli, "environment", cli.environment)  # the bench's own is taken out again after
+    monkeypatch.setattr(bench._OwnClaude, "WORK", tmp_path / "work")
+    asked = {"model": "claude-haiku-5-5", "system": "Write letters plainly.", "max_tokens": 1,
+             "effort": "medium", "messages": [{"role": "user", "content": "The job: a nurse."}]}
+
+    stored = cli.CliClient("claude_login", json.dumps({".credentials.json": "{}"}), lambda renewed: None)
+    as_production = json.loads(stored.complete_text(**asked))
+    own = json.loads(bench._LazyClient(None, "someone@example.com", own=True).opened().complete_text(**asked))
+
+    assert own["args"] == as_production["args"] and "--tools" in own["args"]
+    assert (own["system"], own["prompt"]) == ("Write letters plainly.", "The job: a nurse.")
+    assert own["home"] == str(home) and own["own_folder"] is None and as_production["own_folder"]
+    assert own["cwd"] == str(tmp_path / "work") and own["beside"] == []
+    assert not bench._LazyClient(None, "someone@example.com", "codex", own=True)._own
+
+
 def test_the_bench_writes_no_letter_for_someone_without_one_of_their_own_as_the_site_does(tmp_path):
     """The site makes no cover letter for someone who has not uploaded one of their own
     (`libs.documents.needs`), and 19 of the letter bench's 25 people had none: a case no person can reach

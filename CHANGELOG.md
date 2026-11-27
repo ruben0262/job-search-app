@@ -14,6 +14,75 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-27, afternoon — the letter prompt tested until a difference could be told from luck: no content wording beats v23, one line for recruiters' postings is live (v32), and the bench can run on its own machine's Claude
+
+The owner: "we have usage remaining now so we can run multiple tests and quickly evolve our cover letter prompt", then
+"can we make sure we take significant tests, for each prompt version that we'll analyse, without taking up much usage
+from the other claude account and gpt accounts".
+
+**The reads v23 went live without** (the script queued for them died with a restart the night before; run first).
+v23 against v20 on Haiku's 14 held-out letters: GPT's hiring manager +0.6 ± 1.7 (accuracy 0.0 ± 0.5), Claude's letter
+reviewer +0.1 ± 1.5, with its mark for wanting the CV −0.50 ± 0.17 *. On Sol's: Claude's hiring manager +0.3 ± 1.5, the
+share of needs answered 0.72 → 0.85 by its letter reviewer. No reader two standard errors down on the mark or on
+accuracy, so by the rule v23 stays. GPT's letter reviewer and its reads of Sol were not run.
+
+**The bench on the Claude Code of its own machine** (`scripts/cvlab/run.py --own-claude`, `_OwnClaude`). The reading was
+what a round cost the linked accounts (two reads a letter). The tool is given exactly what production gives it for a
+person's sign-in (the same arguments, the platform's system prompt, no tools, no settings), under the real home with no
+sign-in folder of its own, in one empty folder: a letter came back at 6,748 tokens in where the same call on the linked
+account had 6,770, and the tool's own record of where it has run gained nothing. Claude's two reviewers run the same
+way, so they are the same instruments. A test holds the arguments equal to a stored sign-in's. **What it cost:** this
+plan's usage cannot be read from here, the first two rounds were sized by guess, and the plan ran out at 12:36 with the
+session on it; an hour and a half was lost until it reset. Rounds after that were cut and chained in one script.
+
+**The sets.** To tune on: 30 pairs (the panel's 11 people with two postings each, and 4 IT postings for each of the two
+developers). To decide on, never tuned on that day: 27 pairs (14 held-out people, 4 other IT postings for each
+developer, the trap's 3, and the owner's own recruiter's posting for both developers). One letter a pair, Haiku;
+variant minus v23, ± one standard error, * at two.
+
+**Screening, four single changes on the 30 tune pairs.** What each did in the letters, by code, then the marks:
+
+| | in the letters | Claude's hiring manager | its letter reviewer |
+|---|---|---|---|
+| v24, the opening on the work that answers the job's first need | openings on a feeling or a general line 3 → 0 of 30 | +0.9 ± 0.9 | −0.1 ± 0.8 |
+| v25, one true reason for this employer, nothing said back | wishes stated 0.53 → 0.30 a letter | +0.8 ± 0.8 | +0.5 ± 1.0 (voice +0.33 ± 0.13 *) |
+| v26, no gap named, no wish the job cannot meet | gaps named 0.50 → 0.07 a letter | +0.7 ± 0.9 (doubts +0.00 ± 0.14) | −0.3 ± 0.9 |
+| v27, the strongest proof for each need, no list of duties or tools | no count moved | **+2.8 ± 1.0 *** (interview +3.0 ± 1.4 *) | +0.7 ± 1.2 |
+
+By the rule written before the read, only v27 was kept. v31 (all four together) was level with v27 (+0.13 ± 0.85).
+
+**Deciding, on the 27 pairs v27 was not picked on:** Claude's hiring manager **−0.5 ± 1.3**, its letter reviewer −0.3 ±
+1.2; the share of needs answered +0.06 ± 0.02 *; developers' letters +0.5 ± 1.6 (13 pairs). The gain did not repeat:
++2.8 was the best of four on the pairs it was chosen on, which is what choosing does. Pooled over all 57 pairs, +1.3 ±
+0.8 and +0.2 ± 0.8. **v27 is not proposed, and v23 stays.** Sol and GPT were not spent on a wording that had already
+failed on Haiku.
+
+**What this says.** Six wordings in two days (v21 to v27) and none is told from v20 or v23 by either of Claude's
+reviewers at the size these sets can see (about 1.3 marks in 100 on 27 pairs, 0.8 on 57). The changes do change the
+letters (the counts above), and the reviewers do not mark the changed letters higher. What they write most often as
+the reason for not inviting is not the letter's wording: the person's record against the job (a requirement it does
+not show, another place, another language), which no wording supplies. The one lever measured larger is the model
+(2026-11-21, on v20: Opus 5.5 the letter reviewer +5.0 ± 1.4, the hiring manager +2.9 ± 1.5), still the owner's to
+decide.
+
+**One line that does what it says: a recruiter's posting** (v32 = v23 with one sentence in the opening rule: when a
+recruiter wrote the posting for a client, the job is not at the recruiter; say the recruiter is hiring for it and call
+the client what the posting calls it). The owner's own letter said "the role at Radley James", which is the
+recruiter. Counted by code on five recruiter pairs: Haiku, three letters a pair, the job placed at the recruiter in
+**12 of 15 letters on v23 and 0 of 14 on v32**; Sol, one a pair, **3 of 5 and 0 of 5**; every v32 letter says the
+recruiter is hiring for a client, and still names the recruiter, as `checks.letter` asks. On the 27 decide pairs
+Claude's hiring manager is level (+0.1 ± 0.9, n=26; accuracy +0.54 ± 0.22 *; lines not theirs −0.31 ± 0.21), first
+drafts sent back 3 and 3, ATS in all six looks 98.3 against 98.4, every letter one page. In 3,000 stored postings,
+6.6% of the English ones use a recruiter's wording ("our client", "partnering with a"), by a crude pattern. **Not
+read:** Claude's letter reviewer and GPT's readers on v32. **Made live on the owner's word**, asked with these numbers
+and with what was not read: `libs/prompts/write_cover.md` is v32 (`a599fbbcd000`), and v23 (`5d8aac62972b`) is kept
+as `libs/scaffolds/history/write_cover.2026-11-27.pre-v32.md`.
+
+The drafts not adopted are in `libs/scaffolds/history/` with their rows (v24 to v27, v31); `variants/cover/v20.md` is
+gone, its owed reads done, and `v23.md` and `v32.md` stay until v32's remaining reads, since a kept letter is found by
+its wording's name. Tools and the run's log: `scripts/cvlab/out/evolve-2026-11-27/` (`progress` holds each rule
+as it was written before its read).
+
 ## 2026-11-27 — the suite read test by test and made quicker, only the tests a change can reach before a commit, one command for the gates, and the workflow on GitHub fixed and switched off
 
 The owner (2026-11-26): "lets fix the ci/cd pipeline of this project to make sure it passes all the checks on github,

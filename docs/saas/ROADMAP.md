@@ -3773,6 +3773,15 @@ work, or opening and closing sessions faster, would help):
       errors down on the mark or on accuracy takes v23 out (`history/write_cover.2026-11-26.pre-v23.md` is v20).
       (2) Developer letters on Haiku. (3) A recruiter's posting: the opening is sent back unless it names the
       recruiter as the company. (4) `scripts/cvlab/variants/cover/v20.md` and `v23.md` go once the reads are in.
+    - **2026-11-27: tested until a difference could be told from luck** (CHANGELOG). The reads v23 went live
+      without are in and it stays. Four single changes and their sum, on 30 pairs to tune on and 27 never tuned on,
+      written and read on the bench's own machine's Claude (`--own-claude`): the one that led on the tune pairs (v27,
+      +2.8 ± 1.0) was −0.5 ± 1.3 on the others, so no content wording replaces v23. **v32 is live** on the owner's
+      word: v23 with one line for a recruiter's posting (the job placed at the recruiter in 12 of 15 letters → 0 of 14
+      on Haiku, 3 of 5 → 0 of 5 on Sol; level elsewhere). **Waiting:** (1) v32's reads not run (Claude's letter
+      reviewer, GPT's readers), then `variants/cover/v23.md` and `v32.md` go. (2) The model for letters, the only
+      lever measured larger than any wording (2026-11-21). (3) Whether wording rounds go on at all: these sets cannot
+      see under about a mark.
 
 54. **Plans and the landing page: what waits for the owner** (2026-11-16, CHANGELOG).
     - At Stripe, live: a Starter product with a recurring monthly price of £2.99; its id as

@@ -53,6 +53,7 @@ import pathlib
 import re
 import statistics
 import sys
+import tempfile
 import threading
 import time
 import unicodedata
@@ -735,16 +736,57 @@ def _lean(args) -> bool:
                                                            or args.kind in build.LEAN)
 
 
+class _OwnClaude(cli.CliClient):
+    """Claude Code as it is signed in on the machine the bench runs on, called as production calls a person's
+    sign-in (`CliClient._run`: the same arguments, the platform's system prompt in place of the tool's, no
+    tools, no settings), so that a round is written and read on the plan of whoever runs the bench and not on
+    the account a person tries the site with (owner, 2026-11-27: "without taking up much usage from the other
+    claude account"). Nothing is unpacked and nothing is saved: the tool keeps its sign-in where it always
+    does, under the real home, and every call runs in the one empty folder, so that the tool's own record of
+    the folders it has run in gains one line and not one a call. The bench's alone (`--own-claude`)."""
+
+    WORK = pathlib.Path(tempfile.gettempdir()) / "cvlab-own-claude"
+
+    def __init__(self) -> None:
+        super().__init__("claude_login", "", lambda _renewed: None)
+        cli.environment = _own_environment
+
+    def complete_text(self, *, model: str, system: str, messages: list[dict], max_tokens: int,
+                      effort: str | None = None, lean: bool | None = None) -> str:
+        del max_tokens
+        prompt = "\n\n".join(str(message["content"]) for message in messages)
+        self.WORK.mkdir(mode=0o700, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="ai-") as folder:
+            (pathlib.Path(folder) / "system.md").write_text(system)
+            return self._run(model, pathlib.Path.home(), self.WORK, pathlib.Path(folder), prompt,
+                             effort=effort, lean=lean)
+
+
+_stored_environment = cli.environment
+
+
+def _own_environment(kind: str, home: pathlib.Path) -> dict[str, str]:
+    """The tool's environment without a sign-in folder of its own, for Claude: it reads the one under the home
+    it is given. Put in place by the first `_OwnClaude` of a run, in which no stored Claude sign-in is opened
+    (`_LazyClient` opens the one or the other for every Claude client); other tools' are untouched."""
+    env = _stored_environment(kind, home)
+    if kind == "claude_login":
+        env.pop(cli.TOOLS[kind].home_env, None)
+    return env
+
+
 class _LazyClient:
     """The client, created the first time something actually calls it: on `--account`, the AI account
-    that person has in use in the local database, else an API key."""
+    that person has in use in the local database, else an API key; with `own`, for Claude, the Claude Code
+    of the machine itself (`_OwnClaude`)."""
 
     # The sign-ins this run has opened (`_signed_in`).
     opened_ids: ClassVar[set] = set()
 
     def __init__(self, key_file: str | None, account: str | None, provider: str | None = None,
-                 tune: dict | None = None):
+                 tune: dict | None = None, own: bool = False):
         self._key_file, self._account, self._provider = key_file, account, provider
+        self._own = own and provider in (None, "anthropic")
         # Set on the client once it is opened, where it has them: a Codex reviewer's `lean` and effort.
         self._tune = tune or {}
         self._client = None
@@ -759,7 +801,8 @@ class _LazyClient:
         holds: a ChatGPT letter is written lean only on a `CliClient`, and this wrapper is not one."""
         with self._lock:
             if self._client is None:
-                self._client = self._signed_in() if self._account else client_for(*credential(self._key_file))
+                self._client = (_OwnClaude() if self._own else self._signed_in() if self._account
+                                else client_for(*credential(self._key_file)))
         return self._client
 
     def _signed_in(self):
@@ -997,14 +1040,15 @@ def run(args) -> int:
     # all cached makes no call at all, and the docstring promises that costs nothing — it was
     # refusing to start without a credential it would never have used.
     provider = getattr(args, "provider", None)
-    client = _LazyClient(args.key_file, args.account, provider)
+    own = bool(getattr(args, "own_claude", False))
+    client = _LazyClient(args.key_file, args.account, provider, own=own)
     # The reviewer is Claude's whoever writes, on the account in use; or one on another platform
     # (`--judge-provider`), so a model's letters can be read by its own platform's best (owner, 2026-11-19).
     if getattr(args, "judge_provider", None):
         judge = _LazyClient(args.key_file, args.account, args.judge_provider,
                             tune={"lean": True, "codex_effort": args.judge_effort})
     else:
-        judge = _LazyClient(args.key_file, args.account) if provider else client
+        judge = _LazyClient(args.key_file, args.account, own=own) if provider else client
 
     # Every cell up front, so the work can be spread across threads instead of across processes.
     # Four processes was the previous shape and it cost a merge step, four log files, and a rate
@@ -1222,6 +1266,10 @@ def main() -> int:
     parser.add_argument("--baseline", default="live", help="the variant every other is measured against")
     parser.add_argument("--candidates", default="andras,owner",
                         help="comma-separated: a folder under --candidates-dir, or NAME=db:EMAIL")
+    parser.add_argument("--own-claude", action="store_true",
+                        help="Claude writes and reviews as the Claude Code signed in on this machine, called "
+                             "as production calls a person's sign-in, and not on an account linked on the "
+                             "site: a round then spends the plan of whoever runs the bench")
     parser.add_argument("--account", default=None,
                         help="write and judge on the AI account this person has in use in the local database")
     parser.add_argument("--candidates-dir", default="scripts/cvlab/candidates")
