@@ -1,128 +1,42 @@
-# CI — boundary contracts and the tests that need no live stack.
+# CI: the gates of CLAUDE.md §7, on a clean machine.
 #
-# Wired on the first commit of the platform layout, deliberately: import boundaries are trivial to
-# establish now and painful to retrofit once eight services import each other
-# (CODE_STRUCTURE.md §1, ROADMAP.md Phase 1 step 0a).
+# **Switched off for now (owner, 2026-11-26): it starts only when somebody starts it by hand.** Nothing runs
+# on a push or a pull request, so it spends none of the account's Actions minutes. To run it once: the
+# Actions tab, "ci", "Run workflow". To switch it back on, give `on:` its `push` and `pull_request` again.
 #
-# Python 3.12 matches the gateway image (python:3.12-slim). CI should not be the only place the
-# tree runs on a different interpreter than production.
+# What it runs is `scripts/gates.sh --all`, the same file a commit is checked with locally. Before that
+# this workflow kept a list of its own, and by the time it was looked at again it asked for a Postgres, ran
+# Alembic and imported five services that had been gone for a month. One list cannot drift from itself.
+#
+# Python 3.12 is what every image is built on (`python:3.12-slim`).
 name: ci
 
 on:
-  push:
-    branches: [main]
-    # **Documentation does not need eleven jobs and a Postgres.** ROADMAP and CHANGELOG entries are
-    # a large share of the commits here, and each one was costing a full matrix run — 90% of the
-    # month's Actions allowance was gone by the 5th (ROADMAP 6al).
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-  pull_request:
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
+  workflow_dispatch:
 
-# **One run per branch, and a new push cancels the one it supersedes.** Several pushes in a row is
-# the normal shape of work here, and without this every superseded run kept a Postgres service
-# container and nine matrix jobs alive to the end for a commit nobody would ever look at.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  boundaries:
-    name: import boundaries
+  gates:
+    name: the gates, all of them
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - run: pip install -r requirements-dev.txt
-      # Contracts live in pyproject.toml: services may not import each other, libs may not import
-      # services. Failing here is the point — a violation is cheap to fix the day it is written.
-      - run: lint-imports --verbose
-      # Added 2026-07-27, after noticing ruff had only ever been run by hand — which means it was
-      # only ever run on the files someone remembered to name. Rules are pinned explicitly in
-      # pyproject.toml so a ruff release cannot fail an unrelated commit.
-      - run: ruff check .
-
-  schema:
-    name: migrations + schema invariants
-    runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
-      # A real Postgres, not SQLite. The schema depends on things SQLite does not have — partial
-      # unique indexes, JSONB, TIMESTAMPTZ, ON DELETE RESTRICT — so testing against a stand-in would
-      # prove nothing about what actually runs.
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_DB: jobsearch
-          POSTGRES_USER: jobsearch
-          POSTGRES_PASSWORD: ci
+      # A real MongoDB at the version the platform runs: the schema's rules and indexes are the database's
+      # own, and a stand-in would prove nothing about them. Every run works in databases of its own.
+      mongo:
+        image: mongo:8.0
+        ports: ["27017:27017"]
         options: >-
-          --health-cmd "pg_isready -U jobsearch" --health-interval 5s
-          --health-timeout 5s --health-retries 10
-        ports: ["5432:5432"]
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping: 1}).ok'" --health-interval 5s
+          --health-timeout 5s --health-retries 12
     env:
-      DATABASE_URL: postgresql+psycopg://jobsearch:ci@127.0.0.1:5432/jobsearch
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - run: pip install -r requirements-dev.txt
-      # Migrations run as their own step here for the same reason they do in production: this also
-      # proves `alembic upgrade head` works from an empty database, every time.
-      - run: alembic upgrade head
-      # Autogenerate against the just-migrated database must produce nothing. A non-empty diff means
-      # someone changed a model without writing the migration, which is only otherwise discovered
-      # when a deploy fails.
-      - name: models and migrations agree
-        # Every failure mode below is checked explicitly, because two earlier versions of this step
-        # reported success while checking nothing:
-        #
-        #   1. It globbed for `*drift-check*.py`, which Alembic never writes — `file_template`
-        #      slugifies the hyphen to `drift_check`. grep errored, `if` read that as false, pass.
-        #   2. Rewritten with `set -e`, a failed `generated=$(ls …)` assignment still did not abort,
-        #      so an Alembic error (e.g. "target database is not up to date") also passed.
-        #
-        # A drift check that cannot fail is worse than none, because it is also reassuring. So:
-        # assert Alembic succeeded, assert a file appeared, and only then inspect it.
-        run: |
-          set -uo pipefail
-          if ! alembic revision --autogenerate -m driftcheck; then
-            echo "::error::alembic autogenerate failed — see output above"
-            exit 1
-          fi
-          generated=$(ls libs/db/migrations/versions/*driftcheck*.py 2>/dev/null || true)
-          if [ -z "$generated" ]; then
-            echo "::error::autogenerate reported success but wrote no file — check file_template"
-            exit 1
-          fi
-          if grep -qE '^\s+op\.' "$generated"; then
-            echo "::error::models drifted from migrations — run 'alembic revision --autogenerate'"
-            cat "$generated"
-            rm -f "$generated"
-            exit 1
-          fi
-          rm -f "$generated"
-          echo "no drift: models and migrations agree"
-
-      # The runner ships Chrome, so the one test that drives a real browser runs here rather than
-      # skipping — but a headless Chrome with no fonts installed rasterises nothing, and the PDF
-      # came back with 34 extractable characters. Fonts are what make that test meaningful instead
-      # of a check that Chrome exits zero.
-      - name: fonts, so the PDF test renders text a reader could extract
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-liberation
-
-      - run: pytest tests/ -v
-
-  web:
-    name: web (types match the API)
-    runs-on: ubuntu-latest
+      MONGODB_URI: mongodb://127.0.0.1:27017
+      # A hosted runner has two cores for a private repository. Four workers, each with a Chromium and a
+      # server, would wait on each other there, and a browser test gives a page five seconds.
+      GATES_WORKERS: "2"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -134,51 +48,38 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
-      # Only the API's own declared dependencies, which makes this job a second, free
-      # check: if `services/api/requirements.txt` is missing something the service
-      # imports, the schema dump below fails here rather than the container failing to
-      # start on the box. It caught `httpx` on its first run.
-      - run: pip install -r services/api/requirements.txt
+      # At the versions the images are built with (`scripts/pin_runtime.py`), not whatever is newest today:
+      # a fresh install took newer ones, and the test that holds the two together failed for it.
+      - run: pip install -c deploy/docker/constraints.txt -r requirements-dev.txt
       - run: npm ci
         working-directory: web
-
-      # The check `web/README.md` promised: the committed schema and types are regenerated and
-      # diffed. An unexpected diff means somebody changed a response shape without meaning to —
-      # which is exactly the change that otherwise surfaces as a runtime `undefined` in front of a
-      # user, weeks later, with nothing pointing back at the commit that caused it.
-      - name: the committed API contract is current
+      # The faces the docgen image installs (`deploy/docker/Dockerfile.docgen`). Chrome falls back to
+      # another face without a word, and the tests of each look read the face out of the PDF.
+      - name: the fonts the documents are set in
+        run: >-
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends fontconfig
+          fonts-lato fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core
+      # The Chromium this Playwright was made for, and where it is, so no browser test skips.
+      - name: a Chromium for the browser tests
         run: |
-          python scripts/dump_openapi.py
-          npx openapi-typescript openapi.json -o src/api-types.ts
-          if ! git diff --exit-code -- openapi.json src/api-types.ts; then
-            echo "::error::the API changed but the generated contract was not regenerated — run 'npm run types' in web/"
-            exit 1
-          fi
-        working-directory: web
+          python -m playwright install --with-deps chromium
+          python -c "from playwright.sync_api import sync_playwright as p; b = p().start(); print('CHROME_BIN=' + b.chromium.executable_path); b.stop()" >> "$GITHUB_ENV"
+      - run: scripts/gates.sh --all
 
-      # tsc runs first inside `build`, so a component reading a field the API does not return is a
-      # compile error here rather than a blank panel in production.
-      - run: npm run build
-        working-directory: web
-
-  # Each service's declared dependencies are installed **alone**, then its entrypoint is imported.
+  # Each service's declared dependencies are installed **alone**, as its image installs them, then its entry
+  # point is imported.
   #
-  # This exists because the same bug shipped twice: `httpx` missing from `api`, then `cryptography`
-  # missing from `scorer` and `trainer`. Both are reached indirectly — `libs/obs` imports
-  # `libs/secrets`, which needs cryptography — so a development environment that has everything
-  # installed cannot see the gap, and the failure lands as a container that will not start.
+  # This exists because the same bug shipped twice: `httpx` missing from `api`, then `cryptography` missing
+  # from two others. Both are reached indirectly, so a development environment that has everything installed
+  # cannot see the gap, and the failure lands as a container that will not start.
   #
-  # **One job, one venv per service**, rather than a nine-way matrix. The isolation is the whole
-  # point and it is preserved — each service still installs only its own requirements into an empty
-  # environment — but nine runners cost nine billed minutes before a single package is downloaded,
-  # and GitHub rounds every job up to the minute. Consolidating keeps the guarantee and pays for it
-  # once (ROADMAP 6al).
-  #
-  # `fail-fast` behaviour is kept by collecting failures and reporting them together at the end: a
-  # missing dependency in `scorer` should not hide one in `trainer`.
+  # One job with a venv per service, not a job per service: the isolation is kept, and GitHub rounds every
+  # job up to the minute. Failures are collected and reported together: one service's missing dependency
+  # should not hide another's.
   service-deps:
     name: every service starts from its own requirements
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -189,52 +90,50 @@ jobs:
         run: |
           set -uo pipefail
           failed=""
-          while read -r service module; do
+          while read -r service module pins; do
             [ -z "$service" ] && continue
             echo "::group::$service"
             rm -rf /tmp/venv
             python -m venv /tmp/venv
-            if ! /tmp/venv/bin/pip install -q -r "services/$service/requirements.txt"; then
+            # shellcheck disable=SC2086 - $pins is two words or none
+            if ! /tmp/venv/bin/pip install -q $pins -r "services/$service/requirements.txt"; then
               echo "::error::$service: its requirements do not install"
               failed="$failed $service"
               echo "::endgroup::"
               continue
             fi
-            # The environment a container would have: nothing set, because a missing variable must
-            # fail loudly at use rather than at import.
-            if ! ACCESS_TOKEN_SECRET="ci-import-check-$service-xxxxxxxxxxxxxxxxxxxx"                  /tmp/venv/bin/python -c "import $module"; then
+            # The environment a container would have: nothing set but the one secret the API reads as it is
+            # imported, because a missing variable must fail loudly at use and not at import.
+            if ! ACCESS_TOKEN_SECRET="ci-import-check-$service-xxxxxxxxxxxxxxxxxxxx" \
+                 /tmp/venv/bin/python -c "import $module"; then
               echo "::error::$service: $module does not import from its own requirements"
               failed="$failed $service"
             fi
             echo "::endgroup::"
           done <<'SERVICES'
-          api services.api.app
-          capture services.capture.__main__
-          labeller services.labeller.__main__
-          notifier services.notifier.__main__
+          api services.api.app -c deploy/docker/constraints.txt
+          docgen services.docgen.__main__ -c deploy/docker/constraints.txt
+          harvester services.harvester.__main__ -c deploy/docker/constraints.txt
+          notifier services.notifier.__main__ -c deploy/docker/constraints.txt
           oauthbroker services.oauthbroker.__main__
-          scorer services.scorer.__main__
-          setupagent services.setupagent.__main__
-          trainer services.trainer.__main__
           SERVICES
           if [ -n "$failed" ]; then
             echo "::error::these services cannot start from their own requirements:$failed"
             exit 1
           fi
 
-  # Secret leakage. Every push is scanned over the full history, because a key that was committed
-  # and then removed is still in every clone — the removal commit is where people stop looking and
-  # the history is where the key still lives. This platform holds other people's Claude keys and
-  # proxy credentials, so the bar is "a leaked credential never reaches the remote", not "we would
-  # probably notice". Local-only files (accounts.local.txt, certificates/, .pwenc*) are gitignored;
-  # this job is the backstop for the day one of them is added with -f.
+  # Secret leakage. The whole history is scanned, because a key that was committed and then removed is still
+  # in every clone: the removal commit is where people stop looking and the history is where the key still
+  # lives. This platform holds other people's AI accounts and proxy credentials, so the bar is "a leaked
+  # credential never reaches the remote", not "we would probably notice". Local-only files (`certificates/`)
+  # are gitignored; this job is the backstop for the day one of them is added with -f.
   secrets:
     name: secret leakage scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          # The whole history, not the tip — see above.
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v2
         env:

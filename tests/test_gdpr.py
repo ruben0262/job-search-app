@@ -11,26 +11,45 @@ pytest.importorskip("fastapi")
 PASSWORD = "correct horse battery staple"
 
 
-@pytest.fixture()
-def api(db, monkeypatch):
+@pytest.fixture(scope="module")
+def password_hash():
+    """The password as an account keeps it, hashed once for every test here: each hash takes 64 MiB and a
+    thirtieth of a second by design (`libs.auth.passwords`)."""
+    from libs.auth.passwords import hash_password
+
+    return hash_password(PASSWORD)
+
+
+@pytest.fixture(scope="module")
+def running(_database):
+    """The real app, started once for the tests here, not once a test: each start lays the whole schema
+    again (`services.api.app.lifespan`), which was most of what a short test took."""
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
     os.environ.setdefault("SECRETS_KEK", "k1:" + "A" * 43 + "=")
-    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
 
     from fastapi.testclient import TestClient
 
-    from libs.auth.passwords import hash_password
-    from libs.db import insert
-    from libs.db.models import User
     from services.api.app import app
-    from tests.conftest import access_cookie
-
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash=hash_password(PASSWORD),
-                           status="active", full_name="Alice Example"))
 
     with TestClient(app, base_url="https://testserver") as http:
-        http.cookies.set("access_token", access_cookie(db, user.id), path="/")
-        yield http, db, user
+        yield http
+
+
+@pytest.fixture()
+def api(db, monkeypatch, password_hash, running):
+    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
+
+    from libs.db import insert
+    from libs.db.models import User
+    from tests.conftest import access_cookie
+
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash=password_hash,
+                           status="active", full_name="Alice Example"))
+
+    # One browser for them all: whatever the test before left it holding is dropped first.
+    running.cookies.clear()
+    running.cookies.set("access_token", access_cookie(db, user.id), path="/")
+    return running, db, user
 
 
 # ── the legal pages ──────────────────────────────────────────────────────────────────────────

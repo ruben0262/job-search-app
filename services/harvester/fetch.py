@@ -86,9 +86,3 @@ def make_site_client(proxy_url: str, **kwargs: Any) -> httpx.Client:
     opts = _options(kwargs)
     direct = opts.pop("transport", None)
     return httpx.Client(mounts=_mounts(proxy_url, direct), **opts)
-
-
-def is_proxied(url: str) -> bool:
-    """Whether this URL would be routed through the proxy. Mirrors `_mounts`' host matching."""
-    host = (httpx.URL(url).host or "").lower().removeprefix("www.")
-    return any(host == h or host.endswith(f".{h}") for h in PROXIED_HOSTS)

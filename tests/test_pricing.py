@@ -5,7 +5,6 @@ the trial setting."""
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 
 import pytest
@@ -50,26 +49,23 @@ def first(area: str) -> dict:
 
 
 def everything_in(plan: str) -> dict:
-    """A paid card's first line, all of the card before it, by that card's name (owner, 2026-11-17)."""
-    return {"text": f"Everything in {plan} plan",
-            "more": f"Every line ticked on the {plan} plan is in this plan too."}
+    """A paid card's first line, all of the card before it, by that card's name (owner, 2026-11-17): the
+    operator's line, with the name where it says {plan}."""
+    return {key: words.replace("{plan}", plan) for key, words in LINES["everything"].items()}
 
 
-def texts(lines: list[dict]) -> list[str]:
-    return [line["text"] for line in lines]
+def after(wait: str) -> dict:
+    """How soon a plan that waits sees a new job: the operator's line, with its wait where it says {wait}."""
+    return {key: words.replace("{wait}", wait) for key, words in LINES["wait"].items()}
 
 
 @pytest.fixture()
-def api(db, monkeypatch):
-    os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
+def api(db, running, monkeypatch):
     monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
     monkeypatch.setenv("ADMIN_EMAILS", ADMIN)
     for name in ("STRIPE_SECRET_KEY", "STRIPE_PRICE_ID"):
         monkeypatch.delenv(name, raising=False)
 
-    from fastapi.testclient import TestClient
-
-    from services.api.app import app
     from tests.conftest import access_cookie
 
     operator = insert(db, User(email=ADMIN, password_hash="x", status="active"))
@@ -78,8 +74,9 @@ def api(db, monkeypatch):
     def sign_in(http, user):
         http.cookies.set("access_token", access_cookie(db, user.id), path="/")
 
-    with TestClient(app, base_url="https://testserver") as http:
-        yield http, db, operator, ordinary, sign_in
+    # Nobody signed in, as a browser that has just opened the site: the test before may have left one.
+    running.cookies.clear()
+    return running, db, operator, ordinary, sign_in
 
 
 def on(db, plan: str) -> User:
@@ -113,11 +110,9 @@ def test_each_card_says_how_soon_its_plan_sees_a_job_and_what_it_gives_and_lacks
 
     assert lines["free"] == {
         "everything_in": None, "everything": None,
-        "gives": [{"text": "See new jobs after 7 days",
-                   "more": "A new job joins your list 7 days after we find it."}, *EVERY],
+        "gives": [after("7 days"), *EVERY],
         "bonus": [], "lacks": [MOMENT, first("alerts"), first("match_scores"), first("cvs")], "adds": []}
-    three_days = {"text": "See new jobs after 3 days",
-                  "more": "A new job joins your list 3 days after we find it."}
+    three_days = after("3 days")
     assert lines["starter"] == {
         "everything_in": "free", "everything": everything_in("Free"),
         "gives": [three_days, *said("alerts"), *said("match_scores")],
@@ -150,37 +145,6 @@ def test_once_starter_is_sold_member_has_everything_in_it_and_says_only_what_it_
     assert lines["member"]["everything"] == everything_in("Starter")
 
 
-def test_free_and_starter_cross_out_a_few_telling_things_and_the_membership_none_and_gives_a_bonus(
-        api, monkeypatch):
-    """Owner, 2026-11-17: Free ticks what every account has, a thing a line ("add more positives ... expand
-    the save, filter and track jobs to 3 different points"); then "adding like 3-4 negatives to each offer
-    except member ... make them powerful and the most important", so Free no longer crosses out fewer than
-    Starter; Starter's alerts are one line, "A daily email of new jobs" gone; and "the ATS check as a bonus
-    to the members plan ... show that properly on the offer", said apart from what it ticks."""
-    from services.api import billing_routes
-    from services.api.billing_routes import Plan
-
-    http, *_ = api
-    monkeypatch.setattr(billing_routes, "plan", lambda db, which="member": Plan(
-        amount=299 if which == "starter" else 499, currency="gbp", interval="month", interval_count=1,
-        trial_days=7))
-
-    lines = http.get("/pricing").json()["lines"]
-    free, starter, member = lines["free"], lines["starter"], lines["member"]
-
-    assert [line["text"] for line in free["gives"]] == [
-        "See new jobs after 7 days", "Every job site in one list", "Jobs from company sites",
-        "Never the same job twice", "Filter jobs your way", "Save jobs for later", "Track every application"]
-    assert free["lacks"] == [MOMENT, first("alerts"), first("match_scores"), first("cvs")]
-    assert starter["everything"] == everything_in("Free")
-    assert texts(starter["gives"][1:]) == ["Job alerts sent to you", "Match score on every job",
-                                           "Filter by match score"], "every line of what it adds"
-    assert starter["lacks"] == [MOMENT, first("cvs"), first("covers"), first("add_job")]
-    assert member["everything"] == everything_in("Starter") and member["lacks"] == []
-    assert member["bonus"] == said("ats_checks")
-    assert not any(line in member["gives"] for line in said("ats_checks")), "the bonus said once, apart"
-
-
 def test_how_soon_each_card_says_follows_the_waits_set_in_admin(api):
     """The waits are the operator's, and the cards say them as they are set: never typed into the words."""
     http, db, *_ = api
@@ -188,9 +152,8 @@ def test_how_soon_each_card_says_follows_the_waits_set_in_admin(api):
     settings.put(db, "free_delay_hours", 120)
     settings.put(db, "starter_delay_hours", 24)
     lines = http.get("/pricing").json()["lines"]
-    assert lines["free"]["gives"][0]["text"] == "See new jobs after 5 days"
-    assert lines["starter"]["gives"][0] == {
-        "text": "See new jobs after 24 hours", "more": "A new job joins your list 24 hours after we find it."}
+    assert lines["free"]["gives"][0] == after("5 days")
+    assert lines["starter"]["gives"][0] == after("24 hours")
     assert lines["member"]["gives"][0] == MOMENT
 
     # Nobody waits: Free's card says every job comes the moment it is found, the cards after it have it in
@@ -226,9 +189,12 @@ def ticked(lines: dict, plan: str) -> list[dict]:
     return [*(ticked(lines, before) if before else []), *lines[plan]["gives"], *lines[plan]["bonus"]]
 
 
-@pytest.mark.parametrize("sold", [False, True])
-@pytest.mark.parametrize("channel", ["", "https://chat.example.com/mahoraga-members"])
-@pytest.mark.parametrize("waits", [(168, 72), (120, 0), (0, 0)])
+# Each wait with Starter sold and not, which decide between them what a card says of how soon; the chat's link
+# changes one line whatever they are, so it is set in half of them, once with each.
+@pytest.mark.parametrize(("waits", "sold", "channel"), [
+    ((168, 72), False, ""), ((168, 72), True, "https://chat.example.com/mahoraga-members"),
+    ((120, 0), False, "https://chat.example.com/mahoraga-members"), ((120, 0), True, ""),
+    ((0, 0), False, ""), ((0, 0), True, "https://chat.example.com/mahoraga-members")])
 def test_what_each_card_promises_is_what_an_account_on_that_plan_gets(api, monkeypatch, channel, waits, sold):
     """The cards and the site ask the same plans: an account on each plan has every area its card ticks,
     "Everything in" and the bonus included, and every line of each, and none its card crosses out; its card
@@ -294,8 +260,7 @@ def test_what_moving_up_from_free_adds_is_what_that_plan_has_and_free_does_not(a
     for plan in ("starter", "member"):
         account, adds = on(db, plan), lines[plan]["adds"]
         wait = delay_hours(db, account)
-        own = MOMENT if not wait else {key: line.replace("{wait}", _span(wait))
-                                       for key, line in LINES["wait"].items()}
+        own = after(_span(wait)) if wait else MOMENT
         soon = [line for line in adds if line == MOMENT or line["text"].startswith(waiting)]
         assert soon == ([own] if wait < waits[0] else []), (plan, "its own wait, never the one before's")
         held = [area for area in AREAS[1:] if area != "team_access" and has(db, account.id, area)]
@@ -383,7 +348,8 @@ def test_each_price_is_shown_reduced_from_the_operators_figure_and_nothing_else(
     """Owner, 2026-11-16: the crossed-out price is the operator's figure, and anything saved there that is not
     a price shows none rather than breaking the page."""
     http, db, *_ = api
-    assert http.get("/pricing").json()["was"] == {"member": 2999, "starter": 1899}
+    figures = settings.DEFAULT_PRICE_WAS
+    assert figures and http.get("/pricing").json()["was"] == figures
 
     settings.put(db, "price_was", {"member": 0, "starter": "a lot"})
     assert http.get("/pricing").json()["was"] == {}
@@ -545,7 +511,7 @@ def test_saved_lines_that_no_longer_read_are_the_defaults_and_the_log_says_so(ap
     http, db, *_ = api
     settings.put(db, "pricing_lines", {**LINES, "wait": {"text": "No wait here", "more": "None."}})
     with caplog.at_level(logging.WARNING, logger="services.api.pricing_routes"):
-        assert http.get("/pricing").json()["lines"]["free"]["gives"][0]["text"] == "See new jobs after 7 days"
+        assert http.get("/pricing").json()["lines"]["free"]["gives"][0] == after("7 days")
     assert "the saved lines do not read" in caplog.text
 
     older = {**LINES, "areas": {key: value for key, value in LINES["areas"].items() if key != "ats_checks"}}

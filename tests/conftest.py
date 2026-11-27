@@ -24,6 +24,53 @@ needs_db = pytest.mark.skipif(not os.environ.get("MONGODB_URI"),
                               reason="MONGODB_URI not set (no MongoDB to test against)")
 
 
+def pytest_addoption(parser) -> None:
+    parser.addoption(
+        "--affected", nargs="?", const="HEAD", default=None, metavar="REV",
+        help="run only the test files that what changed since REV can reach (tests/affected.py). "
+             "REV is HEAD when left out: the work not yet committed.")
+
+
+def _affected(config) -> tuple[list[str], str | None, list[str]] | None:
+    """What `--affected` picked, worked out once a process: every worker picks the same from the same tree."""
+    if config.getoption("affected") is None:
+        return None
+    if not hasattr(config, "_affected"):
+        from tests import affected
+        config._affected = affected.reached(affected.changed(config.getoption("affected")))
+    return config._affected
+
+
+def pytest_ignore_collect(collection_path, config) -> bool | None:
+    picked = _affected(config)
+    if picked is None or not collection_path.name.startswith("test_") or collection_path.suffix != ".py":
+        return None
+    from tests.affected import ROOT
+    return collection_path.relative_to(ROOT).as_posix() not in picked[0] or None
+
+
+def pytest_terminal_summary(terminalreporter, config) -> None:
+    """Said beside the counts, however quiet the run (`-q` prints no header): a short run is not taken for the
+    whole suite, nor a file no test reaches for a tested one."""
+    picked = _affected(config)
+    if picked is None:
+        return
+    from tests import affected
+    files, everything, unreached = picked
+    terminalreporter.write_line(
+        f"affected: {len(files)} of {len(affected.tests())} test files, by what changed since "
+        f"{config.getoption('affected')}" + (f" ({everything})" if everything else ""))
+    if unreached:
+        terminalreporter.write_line(f"no test reaches: {', '.join(unreached)}")
+
+
+def pytest_sessionfinish(session, exitstatus) -> None:
+    """A change no test can reach has nothing to run: a pass, and not pytest's "no tests collected"."""
+    picked = _affected(session.config)
+    if picked is not None and not picked[0] and exitstatus == pytest.ExitCode.NO_TESTS_COLLECTED:
+        session.exitstatus = pytest.ExitCode.OK
+
+
 @pytest.fixture(scope="session")
 def _database():
     uri = _test_uri()
@@ -47,6 +94,19 @@ def db(_database):
     yield _database
     for name in _database.list_collection_names():
         _database[name].delete_many({})
+
+
+@pytest.fixture(scope="module")
+def running(_database):
+    """The real API, started once for a file's tests and not once a test: each start lays the whole schema
+    again (`services.api.app.lifespan`), which was most of what a short test took. Asked over https, as its
+    cookies are."""
+    os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
+    from fastapi.testclient import TestClient
+
+    from services.api.app import app
+    with TestClient(app, base_url="https://testserver") as http:
+        yield http
 
 
 def agreed() -> dict:

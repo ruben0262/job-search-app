@@ -57,10 +57,6 @@ def test_a_word_is_excluded_however_it_is_capitalised_and_in_any_alphabet(db):
     assert _kept(db, filters, "Seniority Analyst", "Főnökség Zrt")
 
 
-def test_an_account_that_excluded_nothing_excludes_nothing(db):
-    assert _kept(db, UserFilters(), "Senior Engineer", "Anything")
-
-
 def test_only_the_title_and_company_are_searched(db):
     """Never the description."""
     filters = UserFilters(exclude=("agency",))
@@ -96,12 +92,6 @@ def test_the_widest_selection_across_sections_wins():
 
 
 # ── freshness ─────────────────────────────────────────────────────────────────────────────────
-
-
-def test_the_window_is_the_operators_and_arrives_from_the_caller():
-    """`posted_within_hours` left the stored config on 2026-08-01; the window is platform-wide now."""
-    assert built(config(), max_age_hours=6).max_age_hours == 6
-    assert built(None, max_age_hours=72).max_age_hours == 72
 
 
 def test_the_filter_never_invents_a_window_of_its_own():

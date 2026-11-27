@@ -7,6 +7,7 @@ CLI's JSON with `response`. Each says back what reached it, and renews its login
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import sys
 import threading
@@ -299,21 +300,30 @@ def test_calls_on_one_sign_in_run_together_while_its_session_lasts_and_a_renewal
     """Owner, 2026-11-20: cut the bench's hours, fairly. Calls on one sign-in once ran one at a time, because
     a renewal retires the copy every other call holds (one retired the local Claude sign-in, 2026-11-14).
     A tool renews only when the session runs out, so calls run together while it lasts; one that may renew
-    runs alone, and the sign-in it renewed is the one kept and used after it."""
+    runs alone, and the sign-in it renewed is the one kept and used after it.
+
+    Together is seen, not timed: the stand-in holds each call until all that should run beside it are in
+    it too, and calls made to wait their turn never are (one held alone gives up, and `most` says so). Only
+    the renewal takes a moment, which is the calls behind it being given the time to start beside it, were
+    they let."""
     saved, running, most, renewed_beside = [], [0], [0], []
     lock = threading.Lock()
+    beside: list[threading.Barrier] = []
 
     class Tool(cli.CliClient):
         def _run(self, model, home, work, folder, prompt, **_call):
             with lock:
                 running[0] += 1
                 most[0] = max(most[0], running[0])
-            time.sleep(0.3)
             credentials = home / ".credentials.json"
             # As the real tool does: it renews the session it was given only if that has run out.
             if json.loads(credentials.read_text())["claudeAiOauth"]["expiresAt"] / 1000 < time.time():
+                time.sleep(0.3)
                 renewed_beside.append(running[0] - 1)
                 credentials.write_text(json.loads(_signed_in(3600))[".credentials.json"])
+            else:
+                with contextlib.suppress(threading.BrokenBarrierError):
+                    beside[-1].wait()
             with lock:
                 running[0] -= 1
             return "ok"
@@ -327,11 +337,13 @@ def test_calls_on_one_sign_in_run_together_while_its_session_lasts_and_a_renewal
             thread.join()
 
     fresh = Tool("claude_login", _signed_in(3600), saved.append)
+    beside.append(threading.Barrier(3, timeout=5))
     together(fresh, 3)
     assert most[0] == 3 and saved == []
 
     most[0] = 0
     stale = Tool("claude_login", _signed_in(-60), saved.append)
+    beside.append(threading.Barrier(2, timeout=5))
     together(stale, 3)
     # Renewed once, with nothing else running; then the other two ran together on the renewed sign-in.
     assert renewed_beside == [0] and len(saved) == 1 and most[0] == 2

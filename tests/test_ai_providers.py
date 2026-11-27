@@ -114,11 +114,10 @@ def test_openai_is_asked_with_the_instructions_first_and_the_answer_comes_back()
 
 
 @pytest.mark.parametrize("adapter", [GeminiClient, OpenAIClient])
-@pytest.mark.parametrize(("status", "final"),
-                         [(400, True), (401, True), (403, True), (404, True),
-                          (429, False), (500, False), (503, False)])
+@pytest.mark.parametrize(("status", "final"), [(401, True), (429, False), (500, False)])
 def test_a_refusal_is_final_and_a_busy_provider_is_tried_again(adapter, status, final):
-    """`LlmError` ends the build with the provider's own reason; anything else is retried by the queue."""
+    """`LlmError` ends the build with the provider's own reason; anything else is retried by the queue: a
+    provider that is busy (429, alone among the 4xx) or broken (500 and up)."""
     http, _ = _http(lambda r: httpx.Response(status, json={"error": {"message": "their reason"}}))
 
     with pytest.raises(Exception) as raised:

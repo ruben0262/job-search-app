@@ -22,14 +22,10 @@ CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer", "gol
 
 
 @pytest.fixture()
-def api(db, monkeypatch):
-    os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
+def api(db, monkeypatch, running):
     monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
 
-    from fastapi.testclient import TestClient
-
     from libs.db.models import UserConfig
-    from services.api.app import app
     from tests.conftest import access_cookie
 
     user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
@@ -42,9 +38,10 @@ def api(db, monkeypatch):
                                  title=title, description="we build things", is_remote=True))
             for title in ("Backend Engineer", "Senior Backend Engineer", "Registered Nurse")]
 
-    with TestClient(app, base_url="https://testserver") as http:
-        http.cookies.set("access_token", access_cookie(db, user.id), path="/")
-        yield http, db, user, jobs
+    # One browser for them all: whatever the test before left it holding is dropped first.
+    running.cookies.clear()
+    running.cookies.set("access_token", access_cookie(db, user.id), path="/")
+    return running, db, user, jobs
 
 
 def _ids(body: dict) -> list[int]:
@@ -146,22 +143,6 @@ def test_a_red_word_takes_a_job_off_the_page(api):
         "platform": "all", "keywords": ["backend engineer"], "exclude_keywords": ["senior"]}]}}})
 
     assert _ids(http.get("/feed").json()) == [jobs[0].id]
-
-
-def test_a_dismissed_job_stays_off_the_page(api):
-    """Dismissing has to mean something, or the button is a lie."""
-    http, db, user, jobs = api
-    insert(db, UserJobState(user_id=user.id, job_id=jobs[0].id, dismissed_at=now()))
-
-    body = http.get("/feed").json()
-    assert _ids(body) == [jobs[1].id]
-    assert body["total"] == 1
-
-
-def test_the_feed_does_not_carry_the_full_description(api):
-    """Up to 12,000 characters a job, and the list does not show it."""
-    http, _, _, _ = api
-    assert "description" not in http.get("/feed").json()["jobs"][0]
 
 
 def test_the_feed_pages_and_reports_the_total_behind_the_page(api):

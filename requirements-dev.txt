@@ -54,6 +54,10 @@ python-docx>=1.1
 # written from its text; the tests read it back. Capped below 2.9, out for less than two weeks when added.
 fpdf2>=2.8.9,<2.9
 python-multipart>=0.0.20
+# tests/test_deploy_config.py reads `deploy/compose.yml` with it. It went undeclared until 2026-11-26: here it
+# came in beside uvicorn's extras, and on a machine that had only this file three deploy tests could not
+# import it. Capped at the major, and held at the images' version by `deploy/docker/constraints.txt`.
+pyyaml>=6.0,<7
 # services/api's membership: tests run the real SDK against a fake Stripe at the network, so what is sent
 # and read is the SDK's own. Capped at the major, as the service is: each major pins an API version.
 stripe>=16.1,<17

@@ -53,19 +53,11 @@ def test_a_posting_whose_text_is_read_waits_for_nothing_more(db):
     assert all(not entry["waiting"] for entry in pipeline(db)["stages"])
 
 
-def test_a_row_with_no_description_waits_at_describe(db):
-    """Each stage counts what *it* is holding."""
-    from libs.ops.pipeline import pipeline
-
-    _job(db)
-
-    assert stage(pipeline(db), "describe")["waiting"] == 1
-
-
 # A trimmed row used to be the case here: retention nulled a description in place, leaving a row
 # that read as waiting to be described forever. Retention deletes the row now, so there is no such
-# state to exclude — the backlog cannot count what is not there. The closed-posting case below is
-# the one that still needs asserting, because a closed row does stay in the corpus.
+# state to exclude — the backlog cannot count what is not there. The closed-posting case is the one
+# that still needs asserting, because a closed row does stay in the corpus: it is held where the page
+# and the describer are compared, `test_counters_match_workers.py`.
 
 
 def test_the_verdict_is_about_age_not_size(db):
@@ -275,21 +267,6 @@ def test_a_job_a_worker_is_running_is_counted_as_running(db):
 
     notify = next(lane for lane in pipeline(db)["lanes"] if lane["lane"] == "notify")
     assert notify["running"] == 1
-
-
-def test_the_page_and_the_describer_count_the_same_rows(db):
-    """Same defect, same shape: a closed row is never fetched and must not read as waiting."""
-    from libs.corpus.repository import CorpusRepository
-    from libs.ops.pipeline import pipeline
-
-    _job(db, description=None, closed_at=datetime.now(UTC))
-    waiting = _job(db, description=None)
-
-    stages = {stage["key"]: stage for stage in pipeline(db, hours=24)["stages"]}
-    pending = CorpusRepository(db).awaiting_description(limit=1000)
-
-    assert [row.id for row in pending] == [waiting.id], "the closed one is never fetched"
-    assert stages["describe"]["waiting"] == len(pending)
 
 
 def test_the_queue_says_which_account_each_lane_is_working_for(db):

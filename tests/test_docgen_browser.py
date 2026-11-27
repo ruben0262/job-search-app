@@ -44,7 +44,7 @@ def test_the_browser_is_started_without_the_platforms_keys(monkeypatch):
     try:
         names = _environment_of_the_browser(browser.process)
     finally:
-        browser.process.kill()
+        browser.close()
 
     assert "PATH" in names, "the premise: this is the browser's environment"
     assert not {"SECRETS_KEK", "MONGODB_URI"} & names

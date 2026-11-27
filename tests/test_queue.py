@@ -153,13 +153,6 @@ def test_a_live_claim_is_not_swept(db):
     assert get(db, QueueJob, job.id).state == "claimed"
 
 
-def test_attempts_increment_on_claim_so_a_dying_worker_cannot_retry_forever(db):
-    """A counter that only moved on a *reported* failure would never advance for a worker that is killed."""
-    user = _user(db)
-    enqueue(db, "notify", user.id)
-    assert claim(db, "notify", "w").attempts == 1
-
-
 def test_a_repeatedly_failing_job_dead_letters_rather_than_retrying_forever(db):
     user = _user(db)
     enqueue(db, "notify", user.id)

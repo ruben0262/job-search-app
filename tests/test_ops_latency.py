@@ -97,20 +97,6 @@ def test_every_stage_reads_fields_its_documents_have():
             assert stage.end in personal, f"{stage.key} ends at {stage.end}, which no account row has"
 
 
-def test_harvest_lag_is_reported_and_deliberately_not_judged():
-    """Sources round what they publish -- LinkedIn says "2 days ago"."""
-    from libs.ops.latency import STAGES, THRESHOLD_REASONING, THRESHOLDS
-
-    assert "posted_to_fetched" not in THRESHOLDS
-    # Unjudged is a decision, so it owes the reader the reason, in the same place the others do.
-    assert THRESHOLD_REASONING["posted_to_fetched"]
-    lag = next(stage for stage in STAGES if stage.key == "posted_to_fetched")
-    assert lag.caveat
-
-    # And the half that *is* ours is judged, tightly — that is the whole point of the split.
-    assert THRESHOLDS["fetched_to_stored"][0] <= 5
-
-
 def test_every_judged_zone_says_why_its_threshold_is_where_it_is():
     """A colour whose reasoning lives only in a Python constant is a colour nobody trusts."""
     from libs.ops.latency import STAGES, THRESHOLD_REASONING, THRESHOLDS

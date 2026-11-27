@@ -48,16 +48,6 @@ def test_deleting_an_account_does_not_delete_the_corpus(db):
     assert get(db, CorpusJob, job_id) is not None, "the posting survives"
 
 
-def test_the_adapter_tags_every_link_with_its_query():
-    """Tagged where the query and its results are both in scope, or it cannot be tagged at all."""
-    from services.harvester.sources.base import JobLink
-
-    link = JobLink(url="https://www.linkedin.com/jobs/view/3", title="Stress Engineer",
-                   source="linkedin", found_via="graduate software engineer")
-
-    assert link.as_corpus_row()["discovered_via"] == "graduate software engineer"
-
-
 def test_a_feed_with_no_query_stores_null_rather_than_an_empty_string():
     """A feed source has no search term. NULL says that; "" reads as a term somebody typed."""
     from services.harvester.sources.base import JobLink

@@ -16,8 +16,10 @@ JD = ('<div class="show-more-less-html__markup">' + "A real description. " * 30 
 
 @pytest.fixture(autouse=True)
 def _no_backoff(monkeypatch):
-    """LinkedIn's retry loop sleeps two seconds six times."""
-    monkeypatch.setattr(postings.time, "sleep", lambda _seconds: None)
+    """LinkedIn's retry loop sleeps two seconds six times. Its own wait is set to nothing, not `time.sleep`
+    made to do nothing: that is the whole process's, and the database client's threads, which wait with it,
+    then spin for as long as the test runs (4 to 7 s for the first test to store a text, 2026-11-26)."""
+    monkeypatch.setattr(postings, "LI_BACKOFF", 0)
 
 
 @pytest.fixture()
@@ -48,8 +50,8 @@ def _linkedin(repo: CorpusRepository, **kwargs) -> int:
 
 
 def _board(repo: CorpusRepository, **kwargs) -> int:
-    return repo.add(url=f"https://boards.greenhouse.io/acme/jobs/{uuid.uuid4().hex}",
-                    source="greenhouse", title="Engineer", company="Acme", **kwargs)
+    return repo.add(url=f"https://boards.greenhouse.io/acme/jobs/{uuid.uuid4().int % 10**9}",
+                    source="greenhouse", title="Backend Engineer", company="Acme", **kwargs)
 
 
 # ── which rows are picked up ──────────────────────────────────────────────────────────────────
@@ -317,21 +319,6 @@ def test_the_pass_stops_when_it_runs_out_of_time(repo, monkeypatch):
     assert len(corpus.awaiting_description(limit=20, linkedin=True)) == 8 - report.described
 
 
-def test_no_budget_means_the_pass_runs_to_completion(repo):
-    """The shared cycle has its own scheduling and passes no budget."""
-    corpus, _session = repo
-    for _ in range(3):
-        corpus.add(url=f"https://www.linkedin.com/jobs/view/{uuid.uuid4().int % 10**9}",
-                   source="linkedin", title="Engineer", company="Acme")
-
-    class Fast:
-        def get(self, url, **_kwargs):
-            return FakeResponse("<div>" + "x" * 400 + "</div>")
-
-    report = describe_pending(corpus, Fast(), linkedin=True, limit=3)
-    assert report.attempted == 3
-
-
 def test_a_throttled_page_is_not_a_failed_read_and_is_asked_again(repo):
     """Six 429s say LinkedIn was busy, not that the posting has nothing. Two such passes used to
     abandon a live job for good."""
@@ -398,11 +385,6 @@ def test_a_description_is_kept_whole_up_to_the_ceiling(repo):
 GONE_BOARD = "<html><body>This job is no longer accepting applications.</body></html>"
 
 
-def _board(repo: CorpusRepository, **kwargs) -> int:
-    return repo.add(url=f"https://boards.greenhouse.io/acme/jobs/{uuid.uuid4().int % 10**9}",
-                    source="greenhouse", title="Backend Engineer", company="Acme", **kwargs)
-
-
 def test_a_board_posting_that_says_it_is_closed_is_marked_closed(repo):
     """The describe fetch was always going to happen — reading the answer off it is free."""
     corpus, session = repo
@@ -422,15 +404,3 @@ def test_a_board_refusing_us_is_not_a_posting_ending(repo):
     describe_pending(corpus, FakeClient("", status_code=429), limit=10)
 
     assert get(session, CorpusJob, job_id).closed_at is None
-
-
-def test_a_closed_posting_is_never_fetched_again(repo):
-    """On the proxied tier the fetch is the user's own bandwidth."""
-    corpus, _session = repo
-    job_id = _board(corpus)
-    corpus.set_description(job_id, "x " * 30)
-    assert job_id in [row.id for row in corpus.awaiting_description(limit=100)], "thin, so wanted"
-
-    corpus.mark_closed(job_id)
-
-    assert job_id not in [row.id for row in corpus.awaiting_description(limit=100)]

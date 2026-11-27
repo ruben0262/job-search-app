@@ -387,8 +387,19 @@ def test_a_run_stops_at_its_first_document_when_it_cost_far_more_than_those_kept
     assert told(write(19_700), new, ".cover", SimpleNamespace(costs_more=True))[1]["tokens_in"] == 19_700
 
 
+@pytest.fixture(scope="module")
+def chrome():
+    """One Chrome for every test here that draws a PDF, closed after the last of them: starting another
+    costs a third of a second, and one left running is handed on to whatever test comes next."""
+    from services.docgen import pdf
+
+    yield
+    pdf._discard()
+
+
 @pytest.mark.skipif(not os.path.exists(os.environ.get("CHROME_BIN", "")),
                     reason="needs CHROME_BIN: a real Chrome renders the PDF")
+@pytest.mark.usefixtures("chrome")
 def test_the_ats_checks_say_which_a_cv_passes():
     """Each ATS check is a yes or a no that does not depend on what the person has done (owner,
     2026-11-15). A CV with the posting's title in it and its dates in one form passes them all; one that
@@ -491,12 +502,17 @@ def test_a_verdict_is_used_again_only_by_the_reviewer_that_wrote_it(tmp_path, mo
     assert len(asked) == 2
 
 
-def test_asking_for_no_judgement_returns_none_rather_than_reading_the_cache():
-    """`--dry-run` without `--judge` reports the mechanical checks only, on purpose."""
-    from scripts.cvlab.run import _verdict
+def test_asking_for_no_judgement_returns_none_rather_than_reading_the_cache(tmp_path):
+    """`--dry-run` without `--judge` reports the mechanical checks only, on purpose: a verdict kept beside
+    the document, which a run with `--judge` would use, stays out of it."""
+    from scripts.cvlab.run import _verdict, reviewer
 
-    assert _verdict(None, None, "<html></html>", {}, kept=pathlib.Path("nope.json"),
-                    judge=False, force=False) is None
+    kept = tmp_path / "cell.verdict.json"
+    kept.write_text(json.dumps({"overall_100": 61, "dimensions": {}, "reviewer": reviewer("cv")}),
+                    encoding="utf-8")
+    assert _verdict(None, None, "<html></html>", {}, kept=kept, judge=True, force=False), "the premise"
+
+    assert _verdict(None, None, "<html></html>", {}, kept=kept, judge=False, force=False) is None
 
 
 # ── tools that are not ours (`checkers.py`) ─────────────────────────────────────────────────────
@@ -723,12 +739,15 @@ def test_a_kept_answer_is_used_and_the_site_is_not_asked_again(tmp_path, monkeyp
 
 
 def test_a_checker_is_only_asked_about_its_own_kind_of_document(tmp_path, monkeypatch):
-    def asked(_):
-        raise AssertionError("the letter checker was asked about a CV")
-
-    monkeypatch.setitem(checkers.CHECKERS, "letter", (asked, "cover"))
+    """Counted, not raised: a checker that raises is a site that failed, and leaves the same empty row."""
+    asked = []
+    monkeypatch.setitem(checkers.CHECKERS, "letter",
+                        (lambda document: asked.append(document) or {"scores": {"score": 80.0}}, "cover"))
 
     assert checkers.measure(["letter"], _document(tmp_path)) == {}
+    assert asked == [], "the letter checker was asked about a CV"
+    assert checkers.measure(["letter"], _document(tmp_path, kind="cover")) == {"letter.score": 80.0}
+    assert len(asked) == 1
 
 
 def test_a_site_that_fails_leaves_the_row_without_it_and_says_so(tmp_path, monkeypatch, caplog):
@@ -832,6 +851,7 @@ def test_a_wording_reads_what_is_known_about_the_company_or_that_nothing_is():
 
 @pytest.mark.skipif(not os.path.exists(os.environ.get("CHROME_BIN", "")),
                     reason="needs CHROME_BIN: a real Chrome renders the PDF")
+@pytest.mark.usefixtures("chrome")
 def test_a_letter_has_ats_checks_of_its_own():
     """A letter through an ATS procedure too (owner, 2026-11-16): read whole, the name first, the employer and
     the posting's title in it, its length, one page.
@@ -864,7 +884,6 @@ def test_a_letter_has_ats_checks_of_its_own():
         report = pdf.inspect_pdf(document, kind="cover")
         passed = bench.ats_letter_checks(document, page, posting, report)
         assert [name for name, ok in passed.items() if not ok] == failed, page[:0]
-    pdf._discard()
 
 
 def test_a_letter_names_the_job_roughly_as_the_posting_does():
@@ -916,6 +935,7 @@ def test_a_letter_is_counted_on_calling_its_employer_what_people_call_it():
 
 @pytest.mark.skipif(not os.path.exists(os.environ.get("CHROME_BIN", "")),
                     reason="needs CHROME_BIN: a real Chrome renders the PDF")
+@pytest.mark.usefixtures("chrome")
 def test_a_letter_is_checked_in_every_look_a_person_can_pick():
     """Owner, 2026-11-18: "make sure all the formats that we can choose the cover letter for also works with
     it". The same letter drawn in each letter look and read as an ATS reads it, and a fault named in every
@@ -1112,7 +1132,7 @@ def test_what_other_tools_said_reaches_the_comparison():
             for variant, match in (("live", 40.0), ("v2", 55.0))]
     board = scoreboard(rows)
 
-    assert "What tools that are not ours said" in board
+    assert "| live | 1 | 40.0 |" in board and "| v2 | 1 | 55.0 |" in board, "their means, by variant"
     assert "| resymatch.match | +15.00" in board
 
 

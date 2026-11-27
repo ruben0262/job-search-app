@@ -53,9 +53,8 @@ def test_a_corrupt_stored_hash_is_a_failed_login_not_a_500():
 
 def test_every_problem_is_reported_at_once():
     """A form that reveals one rule per attempt is how a user tries six times."""
-    problems = password_problems("short", email="alice@example.com")
-    assert any("at least" in p for p in problems)
-    assert password_problems("x" * MIN_PASSWORD_LENGTH) == []
+    problems = password_problems(" alice ", email="alice@example.com")
+    assert len(problems) == 3, "too short, a space at each end, and their own address in it"
 
 
 def test_a_password_containing_the_email_is_refused():
@@ -78,14 +77,23 @@ def _user(db) -> User:
 def test_only_so_many_passwords_are_checked_at_once(monkeypatch):
     """Each check takes 64 MiB by design, and the API's container has a ceiling: nothing bounded how many ran
     together, so a flood of sign-ins could take all of it (2026-11-20). The rest wait their turn."""
-    waiting, release, inside = threading.Condition(), threading.Event(), [0]
+    turn, let_out = threading.Condition(), threading.Semaphore(0)
+    inside, most, checked = [0], [0], [0]
 
     class Slow:
+        """A check that stays inside until it is let out, and says how many were inside with it."""
+
         def verify(self, *_args) -> bool:
-            with waiting:
+            with turn:
                 inside[0] += 1
-                waiting.notify_all()
-            return release.wait(10)
+                most[0] = max(most[0], inside[0])
+                turn.notify_all()
+            out = let_out.acquire(timeout=10)
+            with turn:
+                inside[0] -= 1
+                checked[0] += 1
+                turn.notify_all()
+            return out
 
     monkeypatch.setattr(passwords, "_HASHER", Slow())
     threads = [threading.Thread(target=verify_password, args=("stored", "typed"), daemon=True)
@@ -93,15 +101,20 @@ def test_only_so_many_passwords_are_checked_at_once(monkeypatch):
     for thread in threads:
         thread.start()
     try:
-        with waiting:
-            # Every thread is started: without a bound all of them are inside within the moment allowed.
-            crowded = waiting.wait_for(lambda: inside[0] > passwords.HASHES_AT_ONCE, timeout=1)
-            assert not crowded and inside[0] == passwords.HASHES_AT_ONCE
+        with turn:
+            assert turn.wait_for(lambda: inside[0] >= passwords.HASHES_AT_ONCE, timeout=10), "the premise"
+            # Every thread is started, and none of those inside leaves before it is let out, one at a time:
+            # without a bound the rest are inside with them long before the last is.
+            for done in range(1, len(threads) + 1):
+                let_out.release()
+                assert turn.wait_for(lambda done=done: checked[0] == done, timeout=10)
     finally:
-        release.set()
+        for _ in threads:
+            let_out.release()
         for thread in threads:
             thread.join(10)
-    assert inside[0] == len(threads), "and every one of them was checked in its turn"
+    assert most[0] == passwords.HASHES_AT_ONCE, "never more inside than may be"
+    assert checked[0] == len(threads), "and every one of them was checked in its turn"
 
 
 @needs_db

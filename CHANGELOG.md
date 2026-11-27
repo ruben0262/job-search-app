@@ -14,6 +14,506 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-27 — the suite read test by test and made quicker, only the tests a change can reach before a commit, one command for the gates, and the workflow on GitHub fixed and switched off
+
+The owner (2026-11-26): "lets fix the ci/cd pipeline of this project to make sure it passes all the checks on github,
+and for now lets also remove it, because its not needed and only occupies the github allowance"; "stop running the
+full suite all the time when we make changes to the code before we commit, ideally we would only run parts that can
+be affected"; and, before that, "review all the tests that we currently have and make sure we have regression tests
+in place, and that important tests are the only ones that actually exist ... remove tests that take an extended
+period of time to run (unless they are crucial and regression tests)".
+
+**Measured first** (2026-11-26, on mains, `pytest tests/ -q -rs -n 4`): 2,114 passed, 7 skipped in **10 min 55 s**.
+934 s of test time, 681 of it in `test_e2e_site.py` and 170 in `test_templates.py`: two files were 91%, the other 88
+together 84 s. Two causes, neither of them a slow server:
+
+- **Every click waited about a second.** Each screen slides in (`page-in`, 600 ms, then 250-300 ms of transitions) and
+  Playwright waits for a button to stop moving before it presses it. The walk nearly every browser test starts with,
+  sign-up to the Jobs page, took 7.04 s, of which the server's answers were 0.15 s. With the context opened under
+  `prefers-reduced-motion` (the stylesheet switches all motion off there, `web/src/styles.css`) the same walk took
+  1.78 s.
+- **Four workers were not sharing.** `pytest-xdist` deals tests out in fixed shares by default, the 77 browser tests
+  sit together, and they landed on one worker: 655 s of wall time for 681 s of browser tests, three workers idle.
+  `--dist worksteal` lets an idle worker take from a busy one.
+
+**The review.** Nine reviewers (sessions of Claude, one area of the suite each, no file shared) read every test
+against
+written rules: remove what only pins wording or looks (R1), what asserts how code is arranged (R2), what another
+test asserts through the same seam, named (R3), what can no longer run or tests something gone (R4), what waits a
+fixed moment (R5), what is slow and neither crucial nor a regression (R6); keep anything with an incident behind it,
+anything about money, sign-in, isolation, deletion or secrets, every relationship test, and anything in doubt. A
+usage limit cut seven of them off half way; each wrote its record to disk before going on, and the records are what
+the list below is made from.
+
+- **2,121 tests collected before, 1,997 after.** 64 test functions removed, 5 moved to a file of their own,
+  and nine grids of cases thinned to the cases that differ in kind (the widest: a name read first over a contact
+  line, 84 prints to 42, each dropped case shown to fail only where a kept one did, in the looks as they were before
+  each fix).
+- **Tests that could not fail, found and rewritten** (each shown failing against the fault put back): the bench's
+  "no judgement reads no cache" (no cache existed, so it passed either way) and "a checker is asked only about its
+  own kind" (its stub raised what the code swallows); the bell's "once however often it is pressed" (rows folded
+  into a dict before being counted); "a tab nobody looks at asks the server nothing" (a tab never hidden asked
+  nothing either, one run in three); "a trailing ISO code places a city we do not know" (all four cities are known
+  by name now: it passed with the rule deleted); and `test_ai_accounts`' settle test, which switched a database
+  rule off and never back on, so a test of `test_secrets` passed only because an app start in between restored it.
+- **No fixed waits left in the browser walk**: 5 s twice, 4 s, 3 s and 1.5 s five times, each now a wait on the thing
+  itself or on the test's own clock (`page.clock`), and the self-playing phone demo's test removed. The help chat's
+  tests waited out real leases (4.2 s to 0.9 s); `test_api_auth` slept 1.5 s for an email.
+- **What made the rest quicker**: every browser context opened with `**STILL` (motion on only in the test about
+  motion); one Chrome for all of `test_templates.py` (about 150 launches to 1); `test_columns_have_producers` ran a
+  regex over 1.3 MB of source once a column, 270 times (2.2 s to 0.3 s); a deploy test read 1,937 git-ignored files
+  under `scripts/cvlab/out`; `test_describe` and `test_postings` switched `time.sleep` off for the whole process, so
+  pymongo's own threads spun through every test (5.1-24 s to 0.7-1.5 s; they set the product's backoff to 0 now); and
+  the API is started once a file, not once a test (`running`, in `conftest.py`: six copies of it written by six
+  reviewers, made one).
+- **Two regression tests added**: every module a container starts is checked against its image (the describer was on
+  no list, the class of the 2026-11-10 broker crash; shown failing without it); and the picker's own 18.
+
+**After.** The machine was on battery for every run of 2026-11-27, its processor held at 1.2 GHz of 4.8 (a walk that
+took 1.78 s on mains took 4.75 s), so these are a floor, and the suite was not timed on mains:
+
+- `pytest tests/ -q -rs -n 4 --dist worksteal`: **1,992 passed, 6 skipped in 4 min 50 s**, and in 4 min 54 s again
+  through `scripts/gates.sh`. Against 10 min 55 s on mains that is more than twice as quick on a machine running at
+  a quarter of its speed.
+- The tests are bound by the processor now and not by waiting, which is why a throttled one shows the gain least:
+  the browser walk's tests sum to 716 s with four running at once here, against 681 s nearly alone on mains.
+
+**What less motion uncovered.** Two races a click's second of waiting had hidden, both met by a test that marks a
+job as applied: Applied reads its list once, so opened before the server has the mark it says "0 jobs"; and a jobs
+list still being read is drawn again when its answer comes, which takes the "Moved to Applied" line and its Undo
+with it. One test failed for the first in the first clean-checkout run, another for the second one run in three.
+Every such step now goes through `_mark_applied`, which waits for the list to be at rest (`aria-busy`) and for the
+server's answer: 54 of 54 over six runs of the nine tests that use it. Both are the site's to fix (below).
+Six workers were no quicker than four on fifteen browser tests (50 s against 47 s): four stays.
+
+**Only what a change can reach: `pytest --affected`** (`tests/affected.py`, `tests/test_affected.py`, the hooks in
+`tests/conftest.py`). Read off the code on every run, so there is no recorded map to go stale. A changed file
+reaches a test that imports it, through any number of modules, by an `import` or by a module's name in a string
+(what `importlib` and `monkeypatch` take); a file that is not Python, or a module nothing imports, counts as the
+modules beside it; a test that names a top folder as a path is reached by everything under it, which is how the
+tests that read the tree are picked; the fixtures, pytest's settings, the pinned versions or a Python file gone
+reach everything. A changed file no test reaches is named in the run's first lines.
+
+- **Checked against what each test file was seen to open** (an audit hook, one process a test file): on the
+  committed tree 1,825 reads by 88 files, on the finished tree **1,909 reads by 91 files, none not picked**. (The
+  picker's own test is left out: it parses every Python file to build the graph.)
+- **What it does not buy, measured**: replayed over the last 150 commits, the pick held the browser walk in 131.
+  Commits here are wide, and anything under `web/` or anything the API imports reaches the walk, rightly. So the
+  time comes from the suite being quicker, and the pick pays on narrow work: the harvester's entry point picks 12
+  of 92 files, a board's adapter 19, the bench 8, and none of them the walk. `test_templates.py` was split for
+  this: its five API tests moved to
+  `test_template_picks.py`, so the 155 prints are picked by `libs/templates` and `services/docgen` only (13 files
+  reached, from 139).
+- Considered and not built: a recorded map of what each test executes (`pytest-testmon`'s way). Finer, but a second
+  source of truth that goes stale silently, the defect this project ships most (CLAUDE.md §5).
+
+**One command: `scripts/gates.sh`.** The gates of CLAUDE.md §7 in their order, the affected tests by default and
+`--all` for every test. It exports `MONGODB_URI` and `CHROME_BIN` by name (the rest of `certificates/dev.env` fails
+24 tests), refuses Atlas, and refuses to start without a Chromium, since every browser test would skip and the run
+still print green. Its contract gate asks that writing the contract again changes nothing, which is what "current"
+means before a commit; `git diff --exit-code` failed there on any API change not yet committed. The five gates
+before the tests take 26 s.
+
+**The workflow on GitHub.** `.github/workflows/ci.yml` asked for a Postgres, ran Alembic, and imported five services
+removed on 2026-10-30. It is rewritten for what runs now and calls `scripts/gates.sh --all`, so it has no list of
+its own; and it starts only by hand (`workflow_dispatch`), which spends no minutes. What a clean machine failed on,
+found by building one here (a fresh venv from `requirements-dev.txt` alone, the committed tree):
+
+- **PyYAML was declared nowhere.** Three tests of `test_deploy_config.py` import it; here it came in beside
+  uvicorn's extras. Now in `requirements-dev.txt`.
+- **A fresh install is newer than the images.** `test_the_images_install_the_versions_the_gates_ran_on` failed
+  (`annotated-doc` 0.0.7 against 0.0.5). The workflow installs with `-c deploy/docker/constraints.txt`.
+- With both: 1,817 passed on the committed tree, the same under `TZ=UTC`. Each of the five services installs alone
+  from its own requirements, as its image does, and imports.
+- **The workflow's own job, rehearsed here** in a clean checkout of this tree: a fresh venv at the pinned versions,
+  `TZ=UTC`, two workers, `scripts/gates.sh --all`. The first run failed one browser test (the race above, which is
+  how it was found); the second passed every gate, **1,992 passed, 6 skipped in 6 min 28 s**. `npm ci` and the
+  fonts' install were not rehearsed (the checkout borrowed this machine's `node_modules` and fonts).
+- **The pick on this tree**, in the same checkout: a line added to `README.md` runs nothing, says `no test reaches:
+  README.md` and passes; to the harvester's entry point, 12 of 92 files, 199 tests, 19 s; to the bench's `run.py`,
+  134 tests, 27 s.
+- **Not run: the workflow on GitHub itself** (no credential here), and the secret scan, whose job is unchanged
+  (fetching its tool was refused here). The first run by hand is the proof.
+
+**CLAUDE.md**: §7 rewritten around the one command and the affected run; §2 gains the owner's three rules on what
+is not a test of the site (wording and looks, a fixed wait, a slow test that is not crucial). `tests/README.md`
+rewritten; `libs/corpus/README.md` no longer describes the comparison against the reference's checkout.
+
+### Removed, each with its reason
+
+**The browser walk (`test_e2e_site.py`)**
+
+- `test_the_phone_goes_through_the_site_by_itself_until_a_visitor_touches_it` | R1 + R5 + R6 | the landing page's
+  self-playing phone demo (owner's remove-list), 30 s, two fixed 5 s waits. Nothing else covers the tour; that is the
+  intent. Its `reduced_motion="reduce"` call site went with it.
+
+*Renamed, cosmetic part dropped (2)*
+- `test_the_theme_button_is_a_circle_on_every_page_and_switches_the_theme` ->
+  `test_the_theme_button_is_on_every_page_and_switches_the_theme`. Dropped: width == height (R1, "a button being a
+  circle"). Kept: the button is on landing, sign-in, sign-up, forgot (laptop and phone), onboarding, the membership
+  page and Jobs, and switches the theme; More's Dark mode switch; the phone's `theme-color` following.
+- `test_the_landing_page_shows_every_source_and_a_phone_shows_each_place_in_a_picture_and_a_word` ->
+  `test_the_landing_page_shows_every_source_and_a_phones_bar_is_four_places_and_more`. Dropped from `_a_phones_bar`:
+  five `svg` counted (R1, "a picture and a word") and the tap-highlight colour (R1). Kept: the bar's order, More's
+  rows in order, More -> My search, More lit.
+
+*Copy pins loosened or removed (the tests stay)*
+- `test_step_two_says_what_it_found_...`: the static hint "At least 3, more is better. Like “nurse” or “excel”." being
+  visible: removed.
+- `test_the_plan_is_picked_after_the_email_link_...`: `.price-band` text `["Price locked for life"] * 2` ->
+  `to_have_count(2)`.
+- `test_a_phone_is_asked_to_install_the_app_...`: the three benefit lines removed. Kept: the iPhone-only sentence, the
+  three how-to steps, "Tap Add to Home Screen".
+- `test_a_free_account_sees_each_job_a_week_late_...`: the watching of the upgrade page's switch playing by itself
+  (about 10 s of product timers, two fixed waits) removed. Kept: under less motion it rests on Member from the start,
+  and a tap on Free shows Free.
+
+**Looks and docgen**
+
+- tests/test_cv_template.py::test_the_scaffold_keeps_the_sections_a_recruiter_scans_for | R4 | body of
+  libs/scaffolds/base_cv.html is read by nothing since 2026-11-10; only its style block is (Meridian).
+- tests/test_cv_template.py::test_the_layout_is_the_hand_tuned_one | R3 + R4 | @page and A4 are held by
+  tests/test_templates.py::test_every_look_is_an_a4_page_with_margins[cv-meridian]; the rest is that unread body.
+- tests/test_cv_template.py::test_the_class_names_docgen_relies_on_are_all_present | R4 | class attributes of the
+  unread body. The live relationship is held by
+  tests/test_prompt_templates.py::test_every_class_a_prompt_asks_for_is_one_the_cleaner_keeps and the em-dash strip by
+  tests/test_docgen.py::test_em_dashes_leave_a_cvs_sentences_and_stay_in_its_titles.
+- tests/test_cv_template.py::test_the_file_on_disk_is_the_one_the_package_serves | R2 | compared the file with itself:
+  SCAFFOLD_CV and the path in the test are the same file.
+
+*Thinned grid*
+
+tests/test_templates.py::test_the_name_is_read_first_however_wide_the_contact_line_under_it | R3 | 84 -> 42 cases (14
+looks x 3; was 14 looks x 2 names x 3 line widths). Every look keeps all three. Kept, and why each differs:
+- Ledger CV and Ledger letter as they were (3pt under the name): four parts failed under both names (pdfminer), three
+  and one part passed under both.
+- Ledger with the room under the name varied: CV at 6 and 8pt, letter at 6, 8, 10, 12 and 13pt: only "Bo Li" with four
+  parts failed; "Ciara Nolan" with four parts read right. From 10pt (CV) and 14pt (letter) nothing failed. So the
+  short name is the tighter of the two and the long name with four parts adds nothing.
+- Kestrel letter as it was, in the markup letters had then (company block and subject line): three parts and one part
+  failed under both names, four parts under neither. So the three dropped cases failed only where a kept one did. The
+  kept three were re-run through the test function itself against the old Ledger CV and letter: ("Bo Li", 4) fails on
+  both, as it should.
+
+**API and sign-in**
+
+- tests/test_api_auth.py::test_a_second_sign_up_with_a_new_password_spends_the_links_before_it | R3 | same two
+  sign-ups, first link 400, newest 200, in
+  test_an_unconfirmed_address_is_whoever_signs_up_for_it_last_and_a_confirmed_one_stays_theirs
+- tests/test_admin.py::test_the_user_list_shows_what_an_operator_actually_needs | R2 | only key presence, which the
+  AccountRow response model guarantees; the address in the list is asserted by
+  test_each_tab_is_answered_whole_with_one_of_everything_it_can_hold and
+  test_the_account_list_comes_a_page_at_a_time_and_finds_an_account_by_its_address
+- tests/test_dashboard.py::test_a_dismissed_job_stays_off_the_page | R3 |
+  test_a_skipped_job_leaves_the_jobs_page_until_it_is_shown_again does it through the button's own route (hidden
+  writes dismissed_at); page and total come from one query
+- tests/test_dashboard.py::test_the_feed_does_not_carry_the_full_description | R3 |
+  test_a_list_carries_none_of_a_jobs_text_and_one_request_brings_the_texts_of_its_jobs (whole answer searched) and
+  test_a_salary_in_the_description_reaches_the_row_without_the_description (same key asserted absent)
+- tests/test_onboarding.py::test_finishing_does_not_start_the_notifier | R4 | asserted User.active is False; the field
+  was retired 2026-11-19 and nothing writes it, so it cannot fail. "complete" is asserted by
+  test_finishing_needs_a_cv_a_name_and_a_whole_search_and_nothing_else
+- tests/test_onboarding.py::test_saving_your_links_marks_the_profile_files_as_behind | R4 | asserted the
+  hard_data_changed_at stamp; nothing reads it since the setup agents' profile files left the tree (grep: written at
+  onboarding_routes.py:224/251, read nowhere)
+- tests/test_onboarding.py::test_saving_your_search_settings_marks_the_profile_files_as_behind | R4 | same stamp, same
+  reason
+
+**Billing and AI accounts**
+
+-
+  tests/test_pricing.py::test_free_and_starter_cross_out_a_few_telling_things_and_the_membership_none_and_gives_a_bonus
+  | R1 + R3 | its only own assertions were ten default marketing lines typed out; the rest is in
+  test_each_card_says_how_soon_its_plan_sees_a_job_and_what_it_gives_and_lacks (Free's and Starter's ticks, crosses
+  and "Everything in"), test_once_starter_is_sold_member_has_everything_in_it_and_says_only_what_it_adds (Member's
+  "Everything in Starter", its bonus, and its ticks without the bonus) and
+  test_what_each_card_promises_is_what_an_account_on_that_plan_gets (Member crosses out nothing, Starter sold or not).
+  Its helper `texts` went with it.
+- tests/test_ai_providers.py::test_a_refusal_is_final_and_a_busy_provider_is_tried_again | R3 | 14 -> 6 cases (2
+  adapters x 7 statuses -> x 3). Kept 401 (final), 429 (retried, the one 4xx that is), 500 (retried, where "500 and
+  up" begins). Dropped 400, 403, 404 and 503: `libs/llm/rest.py::_refuse` has two conditions (`== 429`, `>= 500`) and
+  both adapters go through it.
+- tests/test_pricing.py::test_what_each_card_promises_is_what_an_account_on_that_plan_gets | R3 | 12 -> 6 cases. Kept
+  every wait setting with Starter sold and not (those two decide between them what a card says of how soon); the
+  chat's link, which changes one line whatever they are (`lines_of`: `said`), is set in three of the six, so every
+  pair of values still appears. Done because CLAUDE.md §2 now says "a grid of cases holds the cases that differ in
+  kind, not every combination". This is the cards-against-plans relationship test: if you would sooner have all 12
+  back, it is three decorator lines.
+
+**Harvester**
+
+
+tests/test_harvester_sources.py
+- `test_every_registry_entry_is_callable_and_well_formed` | R2 | REGISTRY is built as `{s.key: s for s in
+  (Source(...), ...)}`, so "is a Source" and "key agrees" cannot fail; only shape.
+- `test_the_outer_concurrency_cap_is_not_raised` | R2 | `assert OUTER_CONCURRENCY == 8`, a constant against its own
+  literal. Its incident was JobSpy's nested pools; JobSpy is gone. What bounds board reads now (`ats.AT_ONCE`) is held
+  by `test_never_more_boards_are_read_at_once_than_the_client_has_connections`, which stays. **Decision for the owner:
+  this one had an incident date in its docstring. Say so if it should come back.**
+- `test_joblink_defaults_are_safe_for_an_unknown_field` | R2 | asserts four dataclass defaults of `JobLink`; every
+  other test here builds a `JobLink` from a url alone and stores it.
+- `test_every_adapter_module_imports` (4 cases) | R3 | the file's own first import (`from services.harvester.sources
+  import REGISTRY`) imports all four modules, so a broken one fails collection of the whole file; still covered by
+  `test_every_board_with_an_adapter_is_one_a_run_can_be_told_to_read`. Its `ADAPTERS` constant went with it.
+
+tests/test_harvest_cycle.py
+- `test_an_operators_window_reaches_a_source_under_every_key_it_reads` | R3 | greenhouse getting the window under both
+  keys is asserted, same call, by `test_a_source_whose_window_an_operator_narrowed_actually_narrows`; the window
+  reaching a non-ATS board (himalayas) by
+  `test_harvester_sources.py::test_a_run_reads_the_platforms_settings_once_for_every_board`.
+- `test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent` | R3 | asserted
+  "keywords"/"location_keywords" absent for 4 boards;
+  `test_no_board_is_handed_anybodys_words_to_ask_for_or_to_keep_jobs_by` asserts it for every board through the same
+  call, and `test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering` holds the incident by
+  behaviour. Its story ("six hours of zero ingestion from eleven sources") was carried into the survivor's docstring.
+- `test_with_no_users_at_all_sources_stay_enabled_and_unfiltered` | R3 |
+  `test_the_boards_a_run_reads_are_the_boards_admin_lists` builds with no users and asserts every listed board is
+  there; "unfiltered" is `test_no_board_is_handed_anybodys_words...`.
+- `test_a_harvest_runs_without_an_embedder` | R4 | nothing in libs/services/deploy reads `EMBEDDER_URL` any more
+  (grep: only this test), so it cannot fail for its reason; what is left of it (the entry point runs the cycle and
+  returns 0) is `test_linkedin_is_read_beside_the_boards_and_the_words_found_after_both`.
+
+tests/test_describe.py
+- `test_no_budget_means_the_pass_runs_to_completion` | R3 | a pass with no budget reading every waiting job is
+  asserted by `test_pages_are_fetched_several_at_a_time_and_every_one_is_stored` (8 of 8, no budget). Its docstring
+  was also out of date: the cycle passes a budget now.
+- `test_a_closed_posting_is_never_fetched_again` | R3 | **the behaviour is kept**: it marked a board job closed and
+  asserted it left `awaiting_description`. `test_a_closed_posting_is_marked_and_leaves_the_queue` asserts the same
+  thing (closed, then not in `awaiting_description`) and stays; the query has one `{"closed_at": None}` condition for
+  every source (`repository.awaiting_description_conditions`), so LinkedIn's row and a board's row take the same path.
+
+tests/test_postings.py
+- `test_a_missing_repost_marker_is_unknown_not_a_denial` | R3 | the same three `parse_reposted` answers (reposted
+  True, posted None, no caption None) are in `test_a_repost_is_distinguished_from_a_posting`.
+- `test_the_easy_apply_fetch_is_gone` | R2 | `hasattr` checks on the module: a function absent, a function present.
+- `test_the_easy_apply_signal_is_read_from_where_the_application_happens` | R2 | `postings.parse_easy_apply` has no
+  caller anywhere in libs/services/scripts/deploy (grep), so no behaviour depends on what it returns. See product
+  findings: the function itself is dead.
+
+tests/test_proxy_isolation.py
+- `test_a_redirect_out_of_linkedin_is_not_proxied` | R3 | **the behaviour is kept**: despite its name it followed no
+  redirect; it asserted that `boards.greenhouse.io/acme/jobs/1` does not get LinkedIn's transport.
+  `test_only_linkedin_is_proxied` asserts that for the same address (and three more) with the same helper, and stays.
+- `test_is_proxied_agrees_with_the_routing_it_describes` | R2 | `fetch.is_proxied` has no caller outside this test
+  (grep), so nothing depends on it. See product findings.
+
+tests/test_source_config.py
+- `test_adzuna_is_asked_for_no_word_only_the_countries_people_picked` | R3 | its two assertions are elsewhere: london
+  -> `["gb"]` in `test_adzuna_asks_the_countries_the_users_named` (next test in the file), no "keywords" for adzuna in
+  `test_harvest_cycle.py::test_no_board_is_handed_anybodys_words_to_ask_for_or_to_keep_jobs_by`; at the request
+  itself, `test_harvester_sources.py::test_adzuna_is_asked_each_countrys_newest_with_no_word_two_countries_a_run`.
+- `test_the_call_budget_has_one_definition` | R2 | a `hasattr` absence by one name and
+  `DEFAULT_SOURCE_QUERIES_PER_CYCLE["adzuna"] == 2` against its literal. That the budget reaches the reader is
+  `test_adzuna_is_asked_each_countrys_newest_with_no_word_two_countries_a_run` (two countries a run).
+
+**Corpus and matching**
+
+
+tests/test_corpus_archive.py
+- `test_a_fresh_posting_is_left_alone` | R3 | a 3-day-old posting stays;
+  `test_by_default_a_job_leaves_after_thirty_days_and_one_somebody_applied_to_stays` asserts the same at the boundary
+  (29 days stays, 31 leaves).
+- `test_an_applied_row_survives_the_sweep` | R3 | same setup (applied + sent row, 200 days) is Alice in
+  `test_a_sent_row_goes_even_when_the_posting_stays_for_somebody_else`, which asserts her row stays;
+  `test_a_posting_the_user_applied_to_is_never_archived` counts the row with `applied_at` set.
+- `test_the_batch_is_bounded_so_retention_cannot_own_the_cycle` | R3 | only asserted `limit=2` moves 2 of 3;
+  `test_the_oldest_postings_leave_first` asserts `limit=1` moves 1 of 2 (and which), and
+  `test_the_archive_is_written_small_...` now runs two `limit=2` passes over 4.
+
+tests/test_corpus_provenance.py
+- `test_the_adapter_tags_every_link_with_its_query` | R3 | `JobLink.as_corpus_row()` carrying `found_via`;
+  `test_the_linkedin_ingest_records_what_returned_each_posting` runs the same JobLink through `_ingest` (which calls
+  `as_corpus_row`) and reads the stored row.
+
+tests/test_corpus_repository.py
+- `test_a_genuinely_new_job_is_not_a_duplicate` | R3 | `find_duplicate` is None on an empty corpus;
+  `test_the_same_role_in_another_city_is_not_a_duplicate` and `test_an_unresolvable_apply_url_does_not_match_anything`
+  assert None against a corpus that holds a near match.
+- `test_the_apply_url_layer_ignores_tracking_noise` | R3 |
+  `test_a_linkedin_listing_resolving_to_a_known_ats_url_is_a_duplicate` already passes the apply URL with
+  `?gh_src=linkedin` and matches on `application_url`; the noise forms themselves are in test_dedup_parity
+  (`test_tracking_parameters_do_not_make_a_new_job`).
+- `test_the_repository_no_longer_trims_rows_in_place` | R2 | two `hasattr` checks that methods removed on 2026-08-11
+  are absent; the behaviour (row gone whole, never hollowed) is
+  `test_a_posting_past_the_window_leaves_the_corpus_whole` in test_corpus_archive.
+- `test_the_country_column_is_read_from_the_same_place_the_filter_will_be` | R3 | stored country through `repo.add` is
+  `test_a_new_row_carries_the_country_it_was_read_from`; its other three assertions are pure geo (`allows`), in
+  test_geo `test_a_uk_job_never_reaches_a_user_who_asked_for_the_eu`.
+
+tests/test_dedup_parity.py
+- `test_no_divergence_from_the_reference_on_random_input` | R4 | needs a checkout at `d:\Projects\job-search`; on
+  Linux that is a relative path with backslashes in its name, so it skipped in every run here and on the server. No
+  copy of the reference on this machine. Removed with `REFERENCE` and `_have_reference`. The 57 golden cases
+  (tests/golden/dedup_cases.json) still run and are untouched.
+
+tests/test_geo.py
+- `test_a_posting_that_names_no_place_stays_unknown` | R3 | `read_country` is None for words that name nowhere;
+  `test_a_posting_that_names_no_country_reads_as_unknown` asserts it (and `posting_country`) for 8 such inputs, 3 of
+  them the same.
+- thinned `test_a_country_is_read_from_the_way_boards_actually_write_it` 9 -> 4 cases | R3 | kept: city + country, the
+  short alias "UK", country alone after a dash, state code + two-word country. Dropped five more "known city, country
+  name" rows.
+- thinned `test_a_bare_city_still_identifies_its_country` 4 -> 2 | R3 | kept Munich and Wrocław (accented); dropped
+  Barcelona, Manchester.
+- thinned `test_a_country_in_its_own_language_or_a_us_state_is_read_as_its_country` 9 -> 7 | R3 | dropped "Cypern"
+  (same kind as "Spanien") and "Wrocław, Polska" (the city alone already gives PL, so it could not fail for the
+  alias).
+- Not thinned: the 57-row LinkedIn table (owner, 2026-11-24, one row a country, held whole by
+  `test_every_country_offered_has_a_place_linkedin_wrote_for_it_above`), and the tables whose rows are the incident's
+  own postings.
+
+tests/test_matching.py
+- `test_a_minimum_salary_drops_what_pays_less_and_keeps_what_does_not_say` | R3 | same seam (`set_description` then
+  `matching_jobs`) as the 9-case `test_a_job_is_dropped_for_pay_only_when_its_stated_top_is_known_and_below`: its
+  cases 1, 2 and 7 are below-minimum dropped, above kept, no salary kept.
+
+tests/test_ranking.py (its age-window and exclusion tests were earlier copies of ones in test_user_filters.py, same
+seam `candidate_conditions`)
+- `test_the_age_window_is_enforced_in_the_one_question_every_match_asks` | R3 | test_user_filters
+  `test_a_posting_older_than_the_account_asked_for_never_reaches_the_model` (same docstring) and
+  `test_a_real_timestamp_is_still_judged_on_the_posting_time` (LinkedIn, the harder case).
+- `test_a_posting_inside_the_window_is_kept` | R3 | the `drops` fixture asserts a posting inside the window is kept
+  before every test that uses it; also the fresh half of
+  `test_a_posting_older_than_the_account_asked_for_never_reaches_the_model`.
+- `test_a_posting_with_no_dates_at_all_is_kept` | R3 | test_user_filters
+  `test_an_undated_posting_is_aged_from_when_we_found_it` (recent undated kept, and old undated dropped).
+- `test_the_window_is_the_operators_and_is_never_defaulted_in_the_filter` | R3 | test_user_filters
+  `test_the_filter_never_invents_a_window_of_its_own` asserts the same setting key and, stronger, that no window is a
+  TypeError.
+- `test_a_v1_config_keeps_its_window_and_its_exclusions` | R3 | test_user_filters
+  `test_a_v1_config_is_migrated_before_it_is_read`: same flat config, same two assertions.
+- `test_the_age_window_is_not_the_notification_interval` | R2 | only asserted which field names a pydantic model has.
+- `test_an_excluded_keyword_matches_the_company_too` | R3 | company match is test_user_filters
+  `test_a_short_exclusion_matches_the_word_and_not_the_inside_of_another` and
+  `test_a_multi_word_exclusion_still_works`; config -> exclusion wiring stays in
+  `test_an_excluded_keyword_is_a_hard_no_before_scoring`.
+- `test_an_excluded_term_in_the_description_does_not_drop_the_job` | R3 | test_user_filters
+  `test_only_the_title_and_company_are_searched`.
+- Also: three section headers with no test under them, the helper's unused `max_age_hours` parameter, and the
+  docstring ("Opportunity ranking ...": there is none in the file).
+
+tests/test_user_filters.py
+- `test_an_account_that_excluded_nothing_excludes_nothing` | R3 | test_ranking
+  `test_no_excluded_keywords_drops_nothing` (an explicit empty list through the config);
+  `test_a_closed_posting_is_never_a_candidate` keeps an open posting with no exclusions.
+- `test_the_window_is_the_operators_and_arrives_from_the_caller` | R2 | a field equal to the argument passed; the
+  window being enforced is `test_a_posting_older_than_the_account_asked_for_never_reaches_the_model`.
+
+tests/test_suggestions.py
+- `test_taking_and_dismissing_a_word_are_not_routes_any_more` | R4 | asserted 404 for two routes removed on
+  2026-11-02.
+
+tests/test_fit.py
+- `test_a_panel_person_has_a_profile[3 people]` -> one `test_every_panel_person_has_a_profile` | R3 + speed | see
+  Fixed.
+
+*Put back*
+- test_fit `test_a_new_cv_changes_the_score_on_the_next_read`: I removed it as covered by
+  `test_a_new_cv_changes_what_the_filter_keeps_at_once`, then found that one passes with a stale card number and a
+  fresh filter. Restored unchanged.
+
+**Alerts, mail, chat, queue and ops**
+
+- tests/test_queue.py::test_attempts_increment_on_claim_so_a_dying_worker_cannot_retry_forever | R3 | Its whole body
+  was `assert claim(...).attempts == 1`. The same thing through the same seam (`claim`) is asserted, and more of it,
+  by `test_a_job_that_always_kills_its_worker_dies_and_is_not_claimed_for_ever`, which asserts `job.attempts ==
+  attempt` after every claim from 1 to MAX_ATTEMPTS and then that the job is dead (the 2026-11-20 regression itself),
+  and by `test_an_expired_claim_returns_to_ready` (`recovered.attempts == 2`). The name reads like the guard; the
+  guard is the other test. Came with the feature commit bb5515c (2026-07-27), not with a fix. If you would rather keep
+  it, it costs about 5 ms: restore from git.
+- tests/test_ops_health.py::test_an_idle_queue_is_not_a_problem | R3 | Empty lanes produce no alert: the same path
+  with the same zeros as `test_a_healthy_platform_produces_no_alerts` (whose default lane is notify, 0 ready).
+- tests/test_ops_health.py::test_every_alert_says_what_to_do | R2 | Asserted each Alert's `action` string is over 20
+  characters: the length of a literal, not what it says. Several alerts at once stays covered by
+  `test_pages_sort_above_warnings` and `test_health_reads_a_live_database_without_scanning_it`.
+- tests/test_ops_health.py::test_the_summary_is_readable_when_nothing_is_wrong | R1 | Its one assertion was the words
+  "No alerts" in the empty summary. (Then-unused import `render` removed.)
+- tests/test_ops_latency.py::test_harvest_lag_is_reported_and_deliberately_not_judged | R2 | Four assertions on
+  constants (a key absent from a dict, two strings non-empty, a number <= 5). The decision itself, lag shown but not
+  judged, is asserted through `stage_breakdown` by `test_an_unjudged_zone_is_not_the_same_answer_as_too_little_data`
+  (verdict "unjudged", judged False), and "every zone has its reasoning" by
+  `test_every_judged_zone_says_why_its_threshold_is_where_it_is`.
+- tests/test_timing.py::test_a_stage_records_how_long_it_took | R3 | `timed()` records a stage: the same seam as
+  `test_stages_keep_the_order_they_ran_in`, which records three; its other assertion was `ms >= 0`.
+
+**Relationship and deploy tests**
+
+- `test_config_schema.py::test_the_schema_version_is_recorded_so_old_rows_stay_readable` | R2 | a constant being an
+  int of 1 or more; the stored version is
+  `test_tenant_repository.py::test_config_round_trips_and_records_its_schema_version`.
+- `test_entrypoints.py::test_the_entrypoint_imports` (5 cases) | R3 | the same five modules are imported by
+  `test_service_entrypoints.py::test_entrypoint_imports`, which finds them by listing.
+- `test_limits_are_wired.py::test_every_limit_offers_values_an_operator_can_pick` | R3 |
+  `test_every_limit_in_the_catalogue_has_a_control_an_operator_can_reach` asserts the same choices.
+- `test_settings_are_wired.py::test_the_cycle_budget_fits_inside_the_unit_that_kills_it` | R3 | implied by
+  `test_schedules.py::test_a_new_words_search_stops_in_time_for_the_run_to_end_inside_its_unit`.
+- `test_pipeline_shape.py::test_a_row_with_no_description_waits_at_describe` | R3 | the first assertion of
+  `test_a_posting_whose_text_is_read_waits_for_nothing_more`.
+- `test_pipeline_shape.py::test_the_page_and_the_describer_count_the_same_rows` | R3 |
+  `test_counters_match_workers.py` has a test of the same name that asserts more.
+- `test_service_worker.py`: 4 cases to 3 (`/alerts` took the same branch as `/jobs?job=7`).
+
+**Documents and the bench**: no test removed. `test_documents.py` unsupported formats 4 cases to 2,
+`test_tool_calls.py` refused turns 8 to 6 (400 takes the branch 401 does), one assertion of a default against its
+literal dropped.
+
+### Gaps seen, not filled
+
+- A provider refusing mid-build on a person's own account (`services/docgen/__main__.py::_with_ai`) is taken through
+  the worker by no test; nor is a password-protected PDF (`libs/documents/extract.py::_pdf`).
+- A customer with two subscriptions (`billing_routes`: `sync`, `_rank`); a renewing sign-in call arriving while
+  others run (`CliClient._turn`, the 2026-11-14 retirement); the ceiling `MAX_LIVE_SESSIONS`.
+- How many countries a LinkedIn sweep reads at once (`linkedin.sweep_places(readers=...)`); Adzuna sending no
+  `where`; Teamtailor missing from the hand-kept list in `test_a_job_a_board_returned_survives_...`.
+- Nothing changes a password from Settings in a browser; `KNOWN_COLLISIONS` in `test_columns_have_producers.py` has
+  no check that its 16 names still collide (13 no longer do).
+- The Kestrel letter's fix cannot be failed by any case in today's letter markup; `libs/prompts/support.md` is not in
+  the names-nobody check.
+
+### Decided by the owner the same day, and done
+
+"drop sign up test, lets log the profession feed failed returns, remove dead code, remove tests with those bad
+docstrings."
+
+- **The sign-up walk's stopwatch is gone**: `test_sign_up_confirm_sign_in_and_reset_the_password` walks the same
+  steps (sign up, confirm, sign in, forget, reset, sign in again, the old password refused) with no bound of 1.5 s a
+  step, which had failed twice on a loaded machine (1.90 s, 1.5036 s). The walk itself is kept: it is the only
+  browser test of signing in and of resetting a password.
+- **A refused Profession feed is said.** `gather_profession` had no `raise_for_status()`, so a 403 with a page of its
+  own came back as no jobs and not a line (§8). It raises into the warning the reader already had, and Profession is
+  on the refusal test's list (shown failing without the line).
+- **Dead code removed** (§3), each with no caller in `libs`, `services`, `scripts` or `deploy`:
+  `libs/corpus/postings.py::parse_easy_apply`; `services/harvester/fetch.py::is_proxied`; the column
+  `users.hard_data_changed_at`, written by two onboarding routes and read by nothing since the profile files left
+  the tree (`User.RETIRED` has it, so the deploy's prune takes it off the stored rows); and the one-time copy of the
+  old server's accounts, `deploy/scripts/copy_accounts.py`, which refused any database that holds accounts, with its
+  test, its fixture and its steps in `deploy/README.md` and `deploy/SERVER.md`. The old server's accounts are given
+  up with it; all of it is in git.
+- After these, `scripts/gates.sh` on the tree as committed: **1,992 passed, 5 skipped in 5 min 00 s** (the five are
+  Stripe's own test mode), every other gate clean.
+- **The tests removed with an incident in their docstring stay removed**: `test_the_outer_concurrency_cap_is_not_raised`,
+  the two `hard_data_changed_at` tests of `test_onboarding.py`, the four of `test_cv_template.py`.
+
+### Found in the product, not changed
+
+- **Dead code left** (§3): the `instant` and no-mode branches of `services/docgen/__main__.py::handle`, and the
+  body of `libs/scaffolds/base_cv.html` (only its style block is read; it is a scaffold, §3a).
+- **Numbers in the code** (§5): `OUTER_CONCURRENCY = 8` (its comment's incident was JobSpy's); the password re-ask
+  limit in `account_routes.py` is a second copy of `LOGINS_PER_EMAIL`; `ruff`, `pytest` and `import-linter` have no
+  cap in `requirements-dev.txt` (a clean install took ruff 0.17.6 against 0.17.3 here; both pass today).
+- **Three faults a person on a slow connection could meet**: a job marked applied and Applied opened before the
+  server has answered is missing from Applied until it is read again (`AppliedPage.tsx` reads once; and after a
+  full load the mark is sent by the next page, `web/src/marks.ts`); "Mark as applied" pressed while the jobs list
+  is being read loses its "Moved to Applied" line and Undo when the answer comes (`JobsPage.tsx`, `reload` empties
+  `marked`); a tab looked at again waits for the poll before asking about a document being made
+  (`web/src/documents.tsx`).
+- Seven newer boards raise on a refusal but are not on the refusal test's list (arbeitnow, remoteok, platsbanken,
+  reed, teachingvacancies, nav, feinaactiva).
+- The first GET of each API process builds the whole OpenAPI contract, about 0.4 s (`guard.py`). `scripts/cvlab/out`
+  is 414 MB of ignored files inside a folder tests walk.
+- CLAUDE.md §3a still calls `libs/scaffolds` "what a new account is seeded with"; `services/docgen/build.py` says
+  those files are no longer read. Left as the owner's.
+
 ## 2026-11-26, afternoon — letters held against the posting: v23 live on the owner's word, no subject line or company block, the role in bold, and reviewers that count the needs a letter answers
 
 The owner, reading the letter the site made them for a recruiter's "Software Engineer – Python & Infrastructure

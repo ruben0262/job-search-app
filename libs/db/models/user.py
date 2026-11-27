@@ -44,7 +44,10 @@ class User(Document):
     # And the switch for the daily email, which each alert has of its own since 2026-11-17 (`Alert.channels`).
     # And when the app was first opened from a home screen, which stopped every phone of theirs being asked to
     # install it: a deleted app was never asked for again (owner, 2026-11-18). A phone tells now.
-    RETIRED = ("profile_files_visible", "linkedin_next_run_at", "email_alerts", "app_opened_at")
+    # And when their name, links or search last changed, stamped so the setup agents' profile files could be
+    # found stale: those files left the tree on 2026-10-30 and nothing read the stamp after (2026-11-27).
+    RETIRED = ("profile_files_visible", "linkedin_next_run_at", "email_alerts", "app_opened_at",
+               "hard_data_changed_at")
 
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     email: str
@@ -81,7 +84,6 @@ class User(Document):
     profile: dict | None = None
     documents_changed_at: datetime | None = None
     processed_at: datetime | None = None
-    hard_data_changed_at: datetime | None = None
     # Green and red words suggested from their documents, with a reason each (`libs.suggestions`).
     suggestions: dict | None = None
     # What the fit score reads of them (`libs.fit.profile`), and when: made again from their documents the

@@ -85,13 +85,15 @@ else:  # Gemini CLI
 
 @pytest.fixture()
 def tools(tmp_path, monkeypatch):
-    """The three stand-ins, found the way the real tools are, by the variable naming each."""
+    """The three stand-ins, found the way the real tools are, by the variable naming each. They read a
+    whole line, so a code needs no moment to settle before Enter; and a look at an unfinished ChatGPT
+    sign-in ends when its login is there, its time being the longest it may take, not how long it does."""
     script = tmp_path / "faketool"
     script.write_text(FAKE)
     script.chmod(0o755)
     for variable in ("CLAUDE_CLI", "CODEX_CLI", "GEMINI_CLI"):
         monkeypatch.setenv(variable, str(script))
-    for name, value in (("PASTE_SETTLE_SEC", 0.1), ("SETTLE_SEC", 0.1), ("POLL_WAIT_SEC", 1.0)):
+    for name, value in (("PASTE_SETTLE_SEC", 0.0), ("SETTLE_SEC", 0.1), ("POLL_WAIT_SEC", 10.0)):
         monkeypatch.setattr(signin, name, value)
     yield script
     for key in list(signin._SESSIONS):
@@ -188,12 +190,15 @@ def test_googles_code_goes_in_as_a_plain_line_and_its_login_is_kept(tools):
 
 
 @posix
-def test_chatgpt_shows_its_code_here_and_is_waited_for_until_openai_has_it(tools):
+def test_chatgpt_shows_its_code_here_and_is_waited_for_until_openai_has_it(tools, monkeypatch):
     started = signin.start(USER, "codex_login")
     folder = signin._SESSIONS[started.session_id].home
 
     assert (started.url, started.code) == ("https://auth.openai.com/codex/device", "ABCD-EF12")
-    assert signin.finish(started.session_id, USER, None) is None, "not entered on OpenAI's page yet"
+    with monkeypatch.context() as nothing_coming:
+        # A look that finds no login lasts all of its time: a short one, as none is on its way.
+        nothing_coming.setattr(signin, "POLL_WAIT_SEC", 0.05)
+        assert signin.finish(started.session_id, USER, None) is None, "not entered on OpenAI's page yet"
     (folder / "entered").touch()
     done = signin.finish(started.session_id, USER, None)
 

@@ -44,6 +44,14 @@ Not "later", and not a test of how the code is arranged.
   results, not just the absence of errors.
 - A new test must fail against the code that made it necessary. If it passes both before and after,
   it is testing nothing.
+- **A test of wording or looks is not a test of the site** (owner, 2026-11-25: "we should be testing actual
+  parts of the site not unimportant parts"). Nothing pins marketing copy, a title, a colour or a shape. Where
+  a test only needs to know a page drew, it asks for the element, not its words.
+- **No test waits a fixed moment** for something it does not control. It waits on the thing itself (an event,
+  a row, the page saying so) or it is flaky by design, and a flaky test makes every run need a second one.
+- **A slow test has to be crucial** (owner, 2026-11-26): a regression that cost something, or a flow nothing
+  else walks. One that is neither goes; one that is gets made fast before it is kept slow. A grid of cases
+  holds the cases that differ in kind, not every combination.
 
 ## 3. Delete the thing you replaced
 
@@ -240,56 +248,75 @@ The tests that have paid for themselves here are the ones asserting a *relations
 (`test_schedules.py`, `test_limits_are_wired.py`, `test_columns_have_producers.py`), not the ones
 asserting a function returns what it returns.
 
-## 7. Green before it is pushed — locally, because that is the only gate now
+## 7. Green before it is committed, locally, because that is the only gate
 
-**GitHub Actions is unavailable to this project.** As of 2026-08-06 every job on every run fails at
-setup with `Failed to resolve action download info: Service Unavailable` — including jobs that do
-nothing but check import boundaries — and runs sit queued for quarter-hours before doing it. That is
-not a signal about the code and it must not be read as one.
+**GitHub Actions is switched off (owner, 2026-11-26).** `.github/workflows/ci.yml` starts only when somebody
+starts it by hand from the Actions tab, so it spends none of the account's minutes. It had failed at setup on
+every run since 2026-08-06, and by the time it was looked at again it asked for a Postgres and five services
+that had been gone for a month. It now runs the file the local gates are, so it has no list of its own to
+drift; to switch it back on, give its `on:` a `push` again.
 
-So the local gates are no longer a *prediction* of the check. **They are the check.** Nothing goes to
-the VPS that has not passed all six here first, and there is no backstop behind them.
+So the local gates are not a *prediction* of the check. **They are the check.** Nothing is committed that has
+not passed them here, and there is no backstop behind them.
 
-Before every push, locally, in this order:
+One command, which runs them in this order and stops at the first that fails:
+
+```
+scripts/gates.sh            # before a commit: every gate, and the tests the change can reach
+scripts/gates.sh --all      # every gate and every test
+```
+
+What it runs:
 
 ```
 lint-imports                       # services may not import each other; libs may not import services
 ruff check .
 python -m libs.db --prune          # the schema, on an empty database of a local mongod
-python web/scripts/dump_openapi.py && npx openapi-typescript openapi.json -o src/api-types.ts
-git diff --exit-code web/openapi.json web/src/api-types.ts   # the contract must already be current
-npm --prefix web run build         # the site has to compile — before pytest, which walks the build
-pytest tests/ -q -rs               # MONGODB_URI = a local mongod, never Atlas — read the skip count
+web/scripts/dump_openapi.py, openapi-typescript    # written again, the API's contract must not change
+npm --prefix web run build         # the site has to compile, before pytest, which walks the build
+pytest tests/ -q -rs -n 4 --dist worksteal [--affected]   # a local mongod, never Atlas; read the skip count
 ```
 
-The contract and build steps used to be CI's alone, and that is exactly why they are written out here: **a gate
-nobody runs is a gate that does not exist.** The contract check caught a real break the day it was
-added, and the two before it are what would have caught it earlier.
+**Before a commit, only the tests the change can reach (owner, 2026-11-26: "stop running the full suite all
+the time ... only run parts that can be affected").** `pytest --affected` (`tests/affected.py`) picks them off
+the code as it stands, with no recorded map to go stale: a changed file reaches every test file that imports
+it, through any number of modules, and every test that reads its part of the tree (`"web"`, `"deploy"`: how the
+relationship tests of §6 are picked). Checked against what each test file was seen to open while it ran:
+1,909 reads by 91 test files, none missed (CHANGELOG 2026-11-27).
 
-- **A skipped test is not a passing test.** Most of them skip silently without `MONGODB_URI`, and
-  the suite still prints green. Check the skip count, not just the colour.
-- **Say which gate you ran and what it said, with the numbers.** "Gates green" is a claim; "1,340
-  passed, 13 skipped, contracts 2 kept" is a report. Once CI stopped answering, the only thing
-  standing between a broken push and production is whether that report is honest.
+- **The line beside its counts is part of the report.** `affected: 14 of 92 test files` says how much ran, and
+  `no test reaches: <file>` names a changed file nothing covers. That file was not tested, whatever colour the
+  run is: say so, and say whether it needs a test.
+- **All of it (`--all`) when the change is wide.** The pick says so by itself for what it can see: the
+  fixtures, pytest's settings, the pinned versions, a Python file deleted or moved. It cannot see what is not
+  in the tree: a package installed or upgraded here, another Chromium, another MongoDB. After one of those,
+  all of it.
+- **Most changes still reach the browser walk**, which is most of the suite's time: anything under `web/`, and
+  anything the API imports: 131 of the 150 commits before this rule. That is the pick being right, not being
+  slow. So the suite itself is kept quick (all of it in under five minutes on a laptop on battery, from
+  10 min 55 s on mains; CHANGELOG 2026-11-27), and a test added to the walk has to earn its seconds (§2).
+- **A skipped test is not a passing test.** Most of them skip silently without `MONGODB_URI`, and the suite
+  still prints green. Check the skip count, not just the colour. The script refuses to start without a
+  Chromium, for the same reason: every browser test would skip.
+- **Say which gate you ran and what it said, with the numbers.** "Gates green" is a claim; "affected: 31 of
+  92, 742 passed, 6 skipped, contracts 2 kept" is a report. With CI off, the only thing standing between a
+  broken commit and production is whether that report is honest.
 - **A gate whose result depends on which machine ran it is not a gate.** Every tool that decides pass
   or fail is capped in `requirements-dev.txt`, for the reason ruff's rules are pinned in
-  `pyproject.toml`. Two instances of this defect, both of which reported green locally while the
-  build was broken: `alembic>=1.13` let CI take 1.19 while a laptop held 1.18.5, and 1.19
+  `pyproject.toml`. Three instances of this defect, each of which reported green locally while a clean
+  machine was broken: `alembic>=1.13` let CI take 1.19 while a laptop held 1.18.5, and 1.19
   double-applies the check-constraint naming convention, so the drift gate failed **every run for
-  four days** (ROADMAP 6al); and `dump_openapi.py` let Python choose the line ending, so a dump run
-  on Windows committed 4,642 CRLF lines that CI regenerated as LF — a whole-file diff in which not
-  one line had changed. Raise a cap deliberately, after running the gate against the new version.
-- If a gate cannot be run, **say which one and why in the response** — do not push and hope.
+  four days** (ROADMAP 6al); `dump_openapi.py` let Python choose the line ending, so a dump run
+  on Windows committed 4,642 CRLF lines that CI regenerated as LF, a whole-file diff in which not
+  one line had changed; and PyYAML, which three deploy tests import, was declared nowhere and present here
+  only by accident, so a machine with just `requirements-dev.txt` failed them (2026-11-26). Raise a cap
+  deliberately, after running the gate against the new version.
+- If a gate cannot be run, **say which one and why in the response**. Do not commit and hope.
 - **New behaviour nothing runs is not covered.** A test needing a live stack belongs behind an
   explicit skip *and* a note; a test needing nothing must not sit in a file that skips itself
   wholesale, or it silently never runs. That has already happened here.
-- **Batch commits and push once.** The reason used to be that Actions minutes are the owner's money —
-  90% of a month's allowance went by the 5th. It still holds for the VPS deploy, and a docs-only
-  change should ride with the next code change rather than travel alone.
-
-**If Actions is restored**, this section goes back to reading "the local gates predict CI, read the
-CI result, do not assume it" — and the six commands above stay, because they were always the ones
-that mattered and only two of them were ever run by habit.
+- **Batch commits and push once.** A push is a deploy to the VPS, and a docs-only change should ride with the
+  next code change and not travel alone.
 
 ## 8. Logs are the only view into a running system
 
@@ -326,7 +353,7 @@ a traceback would otherwise carry one.
 
 ## Practical
 
-- Full suite against a real MongoDB before pushing (`tests/README.md`) — see rule 7 for the gates and the skip trap.
+- `scripts/gates.sh` before a commit, against a local MongoDB (`tests/README.md`): rule 7 has the gates, when to run all of them, and the skip trap.
 - `.venv/Scripts/python.exe` on the Windows box; bare `python` has no dependencies.
 - `docs/saas/ROADMAP.md` is the plan and `CHANGELOG.md` is the history. A non-trivial change gets an
   entry in the second; a plan changes in the first.

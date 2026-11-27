@@ -693,10 +693,9 @@ def test_the_pdf_carries_no_browser_header_or_footer():
 
 
 @needs_chrome
-def test_one_browser_serves_every_document_and_a_dead_one_is_replaced(monkeypatch):
+def test_one_browser_serves_every_document_and_a_dead_one_is_replaced():
     """A browser launched per document was the cost this removes. One that died must not cost the
     next person their document."""
-    monkeypatch.setattr(pdf, "_chrome", None)
     pdf.render(PAGE)
     first = pdf.browser().process.pid
     pdf.render(PAGE)

@@ -98,39 +98,3 @@ def test_hybrid_location_keeps_the_city():
     """"Hybrid - Budapest" is a Budapest job."""
     assert content_key("Backend Engineer", "Acme", "Hybrid - Budapest") == "acme|backend engineer|budapest"
     assert content_key("Backend Engineer", "Acme", "Budapest (Hybrid)") == "acme|backend engineer|budapest"
-
-
-# ── Differential fuzz against the live reference ──────────────────────────────────────────────
-# The golden cases prove the inputs someone thought to write down.
-
-REFERENCE = Path(r"d:\Projects\job-search")
-_have_reference = (REFERENCE / "pipeline" / "lib" / "store.py").exists()
-
-
-@pytest.mark.skipif(not _have_reference, reason=f"reference instance not present at {REFERENCE}")
-def test_no_divergence_from_the_reference_on_random_input():
-    """40,000 random strings through both implementations."""
-    import random
-    import string
-    import sys
-
-    if str(REFERENCE) not in sys.path:
-        sys.path.insert(0, str(REFERENCE))
-    from pipeline.lib.store import canonical_url as ref_url
-    from pipeline.lib.store import content_key as ref_key
-
-    rng = random.Random(1234)
-    alphabet = string.ascii_letters + string.digits + " -_/().,|&+#?=%:éüа日"
-
-    def rnd(n: int) -> str:
-        return "".join(rng.choice(alphabet) for _ in range(rng.randint(0, n)))
-
-    prefixes = ["", "https://", "http://", "https://www.", "https://job-boards.greenhouse.io/"]
-    for _ in range(20_000):
-        u = rng.choice(prefixes) + rnd(30)
-        assert canonical_url(u) == ref_url(u), f"canonical_url diverged on {u!r}"
-
-    for _ in range(20_000):
-        t, c, loc = rnd(20), rnd(14), rnd(16)
-        assert content_key(t, c, loc) == ref_key(t, c, loc), \
-            f"content_key diverged on {(t, c, loc)!r}"

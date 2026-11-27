@@ -46,7 +46,7 @@ def test_every_page_is_whole_with_nothing_left_unfilled(api):
         text = body["markdown"]
         assert (body["title"], body["version"]) == (DOCUMENTS[name], LEGAL_VERSION)
         assert text.startswith(f"# {DOCUMENTS[name]}\n"), name
-        assert "> **The short version**" in text, name
+        assert re.search(r"^> - \S", text, re.M), f"{name}: no short version"
         assert "{" not in text and "}" not in text, f"{name}: a gap was left unfilled"
 
 

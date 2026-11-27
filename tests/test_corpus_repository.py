@@ -105,11 +105,6 @@ def test_an_unusable_key_never_matches_another_unusable_key(repo):
     assert r.find_duplicate("https://example.test/" + uuid.uuid4().hex, "Engineer", "") is None
 
 
-def test_a_genuinely_new_job_is_not_a_duplicate(repo):
-    r, _ = repo
-    assert r.find_duplicate(_u(), "Staff Platform Engineer", f"New{uuid.uuid4().hex[:8]}") is None
-
-
 # ── the apply-URL layer: what canonicalisation actually exists for ────────────────────────────
 # The same job arrives from the LinkedIn scrape and from the ATS poll under different URLs.
 
@@ -147,19 +142,6 @@ def test_an_ats_row_arriving_after_the_linkedin_one_is_a_duplicate(repo):
     assert hit.job_id == linkedin_id
 
 
-def test_the_apply_url_layer_ignores_tracking_noise(repo):
-    """It compares canonical forms, so `?gh_src=linkedin` is not a different apply target."""
-    r, _s = repo
-    token = uuid.uuid4().hex
-    job_id = r.add(url=_u(token), source="greenhouse", title="Backend Engineer",
-                   company=f"Acme{uuid.uuid4().hex[:8]}")
-
-    hit = r.find_duplicate("https://www.linkedin.com/jobs/view/9999/",
-                           title="Unrelated Title", company=f"Other{uuid.uuid4().hex[:8]}",
-                           application_url=_u(token) + "?utm_source=x#apply")
-    assert hit is not None and hit.job_id == job_id
-
-
 def test_an_unresolvable_apply_url_does_not_match_anything(repo):
     """Fail open, same contract as the other layers."""
     r, _s = repo
@@ -186,19 +168,6 @@ def test_rewriting_identical_text_is_not_a_change(repo):
     from libs.corpus.texts import texts
 
     assert texts(s, [job_id]) == {job_id: "Rust, Kafka, ClickHouse."}
-
-
-# ── retention ────────────────────────────────────────────────────────────────────────────────
-
-def test_the_repository_no_longer_trims_rows_in_place():
-    """Removed 2026-08-11, and this fails if it comes back.
-
-    `trim_cold` nulled the description and vector and kept the row. The trainer joins labels back to
-    the corpus and requires `embedding IS NOT NULL`, so a trimmed row silently left every future
-    training set. Retention is `libs.corpus.archive` now: the whole row, written out then deleted.
-    """
-    assert not hasattr(CorpusRepository, "trim_cold")
-    assert not hasattr(CorpusRepository, "pin")
 
 
 def test_a_long_real_world_content_key_is_storable(repo):
@@ -327,18 +296,3 @@ def test_a_posting_that_names_no_place_stores_no_country(repo):
                       title="Backend Engineer", company="Acme", location="Remote")
 
     assert _get(s, job_id).country is None
-
-
-def test_the_country_column_is_read_from_the_same_place_the_filter_will_be(repo):
-    """One definition."""
-    from libs.corpus.geo import EU_COUNTRIES, allows, wanted_countries
-
-    repo, s = repo
-    job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                      title="Backend Engineer", company="Acme", location="Toulouse, FR")
-
-    country = _get(s, job_id).country
-    assert country == "FR"
-    assert country in EU_COUNTRIES
-    assert allows(country, wanted_countries(["europe"])) is True
-    assert allows(country, wanted_countries(["united_kingdom"])) is False

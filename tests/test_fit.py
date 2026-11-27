@@ -321,11 +321,15 @@ def test_the_evaluation_set_is_whole():
     assert len(labelled) >= 490
 
 
-@pytest.mark.parametrize("name", sorted(json.loads((FIT / "people.json").read_text(encoding="utf-8")))[1:4])
-def test_a_panel_person_has_a_profile(name):
+def test_every_panel_person_has_a_profile():
+    """The people the score is judged on are read as the site reads anybody: each one `people.json` names has
+    documents in the panel, and a profile made of them. Made once for them all, not once for each asked."""
     from scripts.cvlab.fit.model import profiles
 
-    assert profiles()[name]["vector"], name
+    people = [name for name in json.loads((FIT / "people.json").read_text(encoding="utf-8"))
+              if not name.startswith("_")]
+    made = profiles()
+    assert people and not [name for name in people if not (made.get(name) or {}).get("vector")]
 
 
 # ── on the site: the Jobs page's cards and filter (owner, 2026-11-16: Starter and Member) ──────────────────

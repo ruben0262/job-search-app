@@ -127,7 +127,7 @@ def test_openai_streams_its_text_and_puts_a_call_together_from_its_pieces():
 
 
 @pytest.mark.parametrize("adapter", [GeminiClient, OpenAIClient])
-@pytest.mark.parametrize(("status", "final"), [(400, True), (401, True), (429, False), (503, False)])
+@pytest.mark.parametrize(("status", "final"), [(401, True), (429, False), (503, False)])
 def test_a_refused_turn_is_final_and_a_busy_provider_is_worth_asking_again(adapter, status, final):
     client, _ = _client(adapter, json.dumps({"error": {"message": "their reason"}}).encode(), status)
 

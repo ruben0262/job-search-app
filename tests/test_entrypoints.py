@@ -1,8 +1,9 @@
-"""Every deployable entrypoint imports, here and in the image that runs it."""
+"""Every deployable entrypoint finds what it imports in the image that runs it, and the API is put together
+whole. That each one imports here is `test_service_entrypoints.py`."""
 from __future__ import annotations
 
 import ast
-import importlib
+import functools
 import re
 import sys
 from importlib.metadata import PackageNotFoundError, packages_distributions, requires
@@ -18,26 +19,43 @@ IMAGES = {
     "services.api.app": ["services/api/requirements.txt"],
     "services.docgen.__main__": ["services/docgen/requirements.txt"],
     "services.harvester.__main__": ["services/harvester/requirements.txt"],
+    "services.harvester.describer": ["services/harvester/requirements.txt"],
     "services.notifier.__main__": ["services/notifier/requirements.txt"],
     "services.oauthbroker.__main__": ["services/oauthbroker/requirements.txt"],
 }
 
 
-@pytest.mark.parametrize("module", IMAGES)
-def test_the_entrypoint_imports(module):
-    importlib.import_module(module)
+def test_every_module_a_container_starts_is_one_checked_against_its_image():
+    """The list above is kept by hand, and the describer, which compose starts on the harvester's image with
+    an `entrypoint:` of its own, was not on it (found 2026-11-26): what it imports at start was checked
+    against no image. So the list is held to what the deploy files start, a module run with `-m` or served
+    by uvicorn, in a Dockerfile or in compose."""
+    deploy = ROOT / "deploy"
+    files = [deploy / "compose.yml", *sorted((deploy / "docker").glob("Dockerfile.*"))]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in files)
+    named = {*re.findall(r'"python", "-m", "([\w.]+)"', text), *re.findall(r'"uvicorn", "([\w.]+):', text)}
+    started = {name if _source(name).name != "__init__.py" else f"{name}.__main__" for name in named}
+    assert len(started) >= 6, f"the premise: the deploy files' entrypoints are read ({started})"
+    unlisted = started - set(IMAGES)
+    assert not unlisted, f"started by a container and checked against no image: {unlisted}"
+
+
+@pytest.fixture(scope="module")
+def by_module() -> dict[str, list[str]]:
+    """The installed package each importable name comes from. Read once: a fifth of a second every time."""
+    return packages_distributions()
 
 
 @pytest.mark.parametrize("module", IMAGES)
-def test_everything_an_entrypoint_imports_at_start_is_installed_in_its_image(module):
-    """The test above passes here, where every service's packages are installed at once: the sign-in
-    broker crashed on the server at start for want of httpx (2026-11-10), which `libs.llm`, newly reached
-    through `libs.signin`, imports. So the imports are followed from the entrypoint through `libs` and
-    `services`, as Python runs them at start (inside functions is not at start), and each package found
-    must be one the image's requirements install, or a package one of them needs."""
+def test_everything_an_entrypoint_imports_at_start_is_installed_in_its_image(module, by_module):
+    """Importing it passes here (`test_service_entrypoints.py`), where every service's packages are
+    installed at once: the sign-in broker crashed on the server at start for want of httpx (2026-11-10),
+    which `libs.llm`, newly reached through `libs.signin`, imports. So the imports are followed from the
+    entrypoint through `libs` and `services`, as Python runs them at start (inside functions is not at
+    start), and each package found must be one the image's requirements install, or a package one of them
+    needs."""
     needed = _imported_at_start(module)
     installed = _installed_by(IMAGES[module])
-    by_module = packages_distributions()
     missing = {top: where for top, where in needed.items()
                if not {_name(each) for each in by_module.get(top, [top])} & installed}
     assert not missing, f"imported at start but not in {IMAGES[module]}: {missing}"
@@ -66,9 +84,16 @@ def _installed_by(files: list[str]) -> set[str]:
     return installed
 
 
+@functools.cache
 def _source(module: str) -> Path | None:
     base = ROOT.joinpath(*module.split("."))
     return next((path for path in (base.with_suffix(".py"), base / "__init__.py") if path.is_file()), None)
+
+
+@functools.cache
+def _statements(module: str) -> list[ast.stmt]:
+    """A module's own statements. Kept: the five entrypoints reach most of `libs` each."""
+    return ast.parse(_source(module).read_text()).body
 
 
 def _imported_at_start(entry: str) -> dict[str, str]:
@@ -116,7 +141,7 @@ def _imported_at_start(entry: str) -> dict[str, str]:
             module = ".".join(parts[:depth])
             if module not in seen and _source(module):
                 seen.add(module)
-                visit(ast.parse(_source(module).read_text()).body, module, False)
+                visit(_statements(module), module, False)
     return found
 
 

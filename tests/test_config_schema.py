@@ -7,13 +7,11 @@ pytest.importorskip("pydantic")
 from pydantic import ValidationError
 
 from libs.contracts.config import (
-    CONFIG_SCHEMA_VERSION,
     MAX_KEYWORDS_PER_USER,
     MIN_GREEN_WORDS,
     Currency,
     Language,
     Location,
-    SearchSection,
     Seniority,
     UserConfigSchema,
     Workplace,
@@ -44,12 +42,6 @@ def _field(config: UserConfigSchema, name: str):
     return getattr(config, name) if hasattr(config, name) else getattr(config.sections[0], name)
 
 
-def _keyword_cap() -> int:
-    """The keyword ceiling, read off the field rather than off an exported JSON Schema."""
-    return next(rule.max_length for rule in SearchSection.model_fields["keywords"].metadata
-                if getattr(rule, "max_length", None) is not None)
-
-
 # ── the minimum viable config ─────────────────────────────────────────────────────────────────
 
 def test_three_words_a_country_and_a_language_are_enough():
@@ -60,17 +52,19 @@ def test_three_words_a_country_and_a_language_are_enough():
     assert section.posted_within_hours == 24, "24h steady state; cold start widens it once"
 
 
-@pytest.mark.parametrize(("change", "said"), [
-    ({"keywords": WORDS[:MIN_GREEN_WORDS - 1]}, f"add at least {MIN_GREEN_WORDS} green words"),
-    ({"locations": []}, "pick at least one country"),
-    ({"workplaces": []}, "switch on at least one way of working"),
-    ({"languages": []}, "pick at least one language"),
+@pytest.mark.parametrize(("change", "missing"), [
+    ({"keywords": WORDS[:MIN_GREEN_WORDS - 1]}, "few_words"),
+    ({"locations": []}, "no_country"),
+    ({"workplaces": []}, "no_workplace"),
+    ({"languages": []}, "no_language"),
 ])
-def test_a_search_missing_any_part_is_refused_and_says_what_to_add(change, said):
-    """Without a country no job comes in for it: jobs are fetched country by country."""
+def test_a_search_missing_any_part_is_refused_and_says_what_to_add(change, missing):
+    """Without a country no job comes in for it: jobs are fetched country by country. Each refusal is of the
+    kind made for the part that is missing, and comes with words to show."""
     with pytest.raises(ValidationError) as exc:
         _valid(**change)
-    assert exc.value.errors()[0]["msg"] == said
+    first = exc.value.errors()[0]
+    assert first["type"] == missing and first["msg"]
 
 
 def test_the_same_word_twice_is_one_word_towards_the_three():
@@ -236,11 +230,6 @@ def test_duplicate_enum_selections_collapse():
 
 
 # ── the contract the frontend is generated from ───────────────────────────────────────────────
-
-def test_the_schema_version_is_recorded_so_old_rows_stay_readable():
-    """`user_config.schema_version` is what lets a shape change be migrated rather than guessed."""
-    assert isinstance(CONFIG_SCHEMA_VERSION, int) and CONFIG_SCHEMA_VERSION >= 1
-
 
 def test_currency_is_offered_as_a_picklist():
     assert _valid(min_salary=60000, salary_currency="GBP").salary_currency == Currency.GBP

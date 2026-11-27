@@ -62,7 +62,7 @@ def test_each_public_page_says_which_it_is_and_every_other_address_is_for_no_ind
     home, terms = http.get("/", headers={"accept": "*/*"}), http.get("/terms", headers={"accept": "*/*"})
     assert home.status_code == terms.status_code == 200
     assert "<title>Mahoraga</title>" in home.text, "the landing page keeps the owner's title"
-    assert "<title>Terms of Service · Mahoraga</title>" in terms.text
+    assert f"<title>{DOCUMENTS['terms']} · Mahoraga</title>" in terms.text
     assert f'<link rel="canonical" href="{site_url("/")}" />' in _head(home)
     assert f'<link rel="canonical" href="{site_url("/terms")}" />' in _head(terms)
     assert f'<meta property="og:image" content="{site_url("/og-image.png")}" />' in _head(terms)
@@ -100,7 +100,7 @@ def test_a_crawler_is_given_the_page_as_drawn_and_a_browser_the_file(http, db, s
     assert "<h1>Terms of Service</h1>" in http.get("/terms", headers={"accept": "*/*"}).text
     browser = http.get("/terms", headers={"accept": "text/html", "sec-fetch-dest": "document"})
     assert "<h1>" not in browser.text, "a browser is given the file its code draws, as before"
-    assert "<title>Terms of Service · Mahoraga</title>" in browser.text
+    assert f"<title>{DOCUMENTS['terms']} · Mahoraga</title>" in browser.text
 
     pages.keep(db, "/terms", drawn.replace("index-abc123.js", "index-gone999.js"))
     assert "<h1>" not in http.get("/terms", headers={"accept": "*/*"}).text, \
@@ -170,13 +170,16 @@ def test_every_public_address_answers_head_as_it_answers_get(http):
 
 def test_a_link_to_a_public_page_shows_its_picture_whole_and_large(http):
     """A previewer told the picture's size draws the card the first time a link is shared; and a search
-    engine may show the picture large only when the page says it may."""
+    engine may show the picture large only when the page says it may. The size said is the picture's own."""
+    from services.api.page_routes import PREVIEW
+
+    width, height = struct.unpack(">II", (WEB / "public" / PREVIEW.lstrip("/")).read_bytes()[16:24])
     for path in ("/", "/terms"):
         head = _head(http.get(path, headers={"accept": "*/*"}))
         assert '<meta name="robots" content="max-image-preview:large" />' in head, path
-        assert '<meta property="og:image:width" content="1200" />' in head, path
-        assert '<meta property="og:image:height" content="630" />' in head, path
-        assert '<meta property="og:image:alt" content="Mahoraga" />' in head, path
+        assert f'<meta property="og:image:width" content="{width}" />' in head, path
+        assert f'<meta property="og:image:height" content="{height}" />' in head, path
+        assert re.search(r'<meta property="og:image:alt" content="[^"]+" />', head), path
 
 
 def test_every_file_the_pages_name_is_one_of_the_sites():

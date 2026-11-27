@@ -219,9 +219,7 @@ def put_identity(body: IdentitySchema, db: Database = Depends(get_db),
                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Store the name and links."""
     links = [link.model_dump() for link in body.links]
-    # Their name and links are hard data: typed, theirs, and read by the prompts the setup agents
-    # wrote. Stamped so those files can be found stale rather than silently describing an old you.
-    _stamp(db, user_id, full_name=body.full_name, links=links, hard_data_changed_at=now())
+    _stamp(db, user_id, full_name=body.full_name, links=links)
     audit(logger, "onboarding.identity", user=user_id, links=len(links))
     return {"status": "saved", "full_name": body.full_name, "links": links}
 
@@ -246,9 +244,7 @@ def save_config(db: Database, user_id: _uuid.UUID, body: UserConfigSchema) -> No
 
     TenantRepository(db).save_config(user_id, body.model_dump())
     learn(db, green_words(body.model_dump()))
-    # Same reason as identity: what they search for is hard data, and `label.md` and the role angles
-    # were written against the previous answer.
-    _stamp(db, user_id, hard_data_changed_at=now())
+    _stamp(db, user_id)
     suggestions.refresh(db, user_id)
     audit(logger, "onboarding.config", user=user_id,
           sections=len(body.sections),

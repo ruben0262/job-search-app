@@ -1,4 +1,4 @@
-"""Opportunity ranking and the eligibility filters."""
+"""The eligibility filters: which postings an account is never shown, asked of the database."""
 from __future__ import annotations
 
 import dataclasses
@@ -39,11 +39,10 @@ class Item:
     language: str | None = "en"
 
 
-def filters(*, applicant_cap: int | None = 200, max_age_hours: int = 24,
-            **overrides) -> UserFilters:
+def filters(*, applicant_cap: int | None = 200, **overrides) -> UserFilters:
     """The same account, as the *pre-score* filter sees it."""
     return UserFilters.from_config({"languages": ["en"], **overrides},
-                                   max_age_hours=max_age_hours, applicant_cap=applicant_cap)
+                                   max_age_hours=24, applicant_cap=applicant_cap)
 
 
 @pytest.fixture()
@@ -63,12 +62,6 @@ def drops(db):
     assert not dropped(Item()), "the posting every test starts from must be one this account receives"
     return dropped
 
-
-# ── the buckets ───────────────────────────────────────────────────────────────────────────────
-
-# ── the score ─────────────────────────────────────────────────────────────────────────────────
-
-# ── ordering, where score and opportunity disagree ────────────────────────────────────────────
 
 # ── the filters, and what they refuse to drop ─────────────────────────────────────────────────
 
@@ -186,71 +179,12 @@ def test_applicant_glut_needs_a_count_to_act_on(drops):
     assert not drops(Item(applicants=None))
 
 
-# ── the age window the user asked for ─────────────────────────────────────────────────────────
-
-def test_the_age_window_is_enforced_in_the_one_question_every_match_asks(drops):
-    """The harvester fetches at the widest window any account asked for."""
-    tight = filters(max_age_hours=6)
-    assert tight.max_age_hours == 6
-    assert drops(Item(posted_at=NOW - timedelta(hours=300)), tight)
-
-
-def test_a_posting_inside_the_window_is_kept(drops):
-    fresh = Item(posted_at=NOW - timedelta(hours=3))
-    assert not drops(fresh, filters(max_age_hours=24))
-
-
-def test_a_posting_with_no_dates_at_all_is_kept(drops):
-    """No date is judged on when it was found, and this one was found an hour ago."""
-    item = Item(posted_at=None)
-    assert not drops(item, filters(max_age_hours=6))
-
-
-def test_the_window_is_the_operators_and_is_never_defaulted_in_the_filter():
-    """A window nobody set is a window nobody can change; it comes from `job_max_age_hours`."""
-    from libs.settings import DEFAULTS
-
-    assert UserFilters.from_config({}, max_age_hours=48).max_age_hours == 48
-    assert "job_max_age_hours" in DEFAULTS
-
-
-def test_a_v1_config_keeps_its_window_and_its_exclusions():
-    """A v1 row is flat — `posted_within_hours` and `exclude_keywords` at the top level."""
-    rules = UserFilters.from_config({
-        "keywords": ["mechanical engineer"],
-        "exclude_keywords": ["recruitment agency"],
-        "languages": [],
-    }, max_age_hours=72)
-    assert rules.max_age_hours == 72
-    assert rules.exclude == ("recruitment agency",)
-
-
-def test_the_age_window_is_not_the_notification_interval():
-    """They are different questions and were being conflated."""
-    from libs.contracts.config import SearchSection
-
-    assert "posted_within_hours" in SearchSection.model_fields
-    assert "notify_interval_min" not in SearchSection.model_fields
-
-
 # ── the terms the user asked never to see ─────────────────────────────────────────────────────
 
 def test_an_excluded_keyword_is_a_hard_no_before_scoring(drops):
     """They were honoured only by the cold-start keyword scorer."""
     item = Item(title="Contract Backend Engineer")
     assert drops(item, filters(sections=[{"exclude_keywords": ["contract"]}]))
-
-
-def test_an_excluded_keyword_matches_the_company_too(drops):
-    item = Item(title="Backend Engineer", company="Hays Recruitment")
-    assert drops(item, filters(sections=[{"exclude_keywords": ["hays"]}]))
-
-
-def test_an_excluded_term_in_the_description_does_not_drop_the_job(drops):
-    """A posting that merely mentions the term in a benefits paragraph is not the job being excluded."""
-    item = Item(title="Backend Engineer",
-                description="We work with contract staff occasionally. " * 10)
-    assert not drops(item, filters(sections=[{"exclude_keywords": ["contract"]}]))
 
 
 def test_no_excluded_keywords_drops_nothing(drops):

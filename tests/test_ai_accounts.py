@@ -261,12 +261,17 @@ def test_accounts_linked_before_the_change_are_settled_once(db):
                           subscription_status="active"))
     rows = [{"user_id": alice.id, "kind": "gemini_api"}, {"user_id": alice.id, "kind": "claude_api"},
             {"user_id": bob.id, "kind": "claude_oauth"}, {"user_id": bob.id, "kind": "telegram_bot"}]
-    # As the old rules wrote them: no label, no switch, and a kind the new rules no longer allow.
+    # As the old rules wrote them: no label, no switch, and a kind the new rules no longer allow. The rules
+    # are put back once the rows are in, as the deploy's schema step puts them back after it has settled.
     db.command("collMod", UserSecret.COLLECTION, validationLevel="off")
-    db[UserSecret.COLLECTION].insert_many([
-        {**row, "ciphertext": b"x", "nonce": b"n", "updated_at": now()} for row in rows])
+    try:
+        db[UserSecret.COLLECTION].insert_many([
+            {**row, "ciphertext": b"x", "nonce": b"n", "updated_at": now()} for row in rows])
+        settled = settle(db)
+    finally:
+        db.command("collMod", UserSecret.COLLECTION, validationLevel="strict")
 
-    assert settle(db) == {"labelled": 2, "switched": 1, "removed": 1}
+    assert settled == {"labelled": 2, "switched": 1, "removed": 1}
     left = {row["kind"]: row for row in db[UserSecret.COLLECTION].find(
         {"user_id": {"$in": [alice.id, bob.id]}})}
     assert set(left) == {"gemini_api", "claude_api", "telegram_bot"}

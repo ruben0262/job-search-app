@@ -56,30 +56,28 @@ def declared_columns() -> dict[str, list[str]]:
 
 
 @pytest.fixture(scope="module")
-def bodies() -> str:
-    return "\n".join(path.read_text(encoding="utf-8") for path in source_files())
+def written() -> tuple[set[str], set[str]]:
+    """Every name the code assigns (`x.name =`, `name=`) and every name it writes as a key (`"name":`), in a
+    bulk update or an insert. The tree is searched once for all the columns: searched again for each of
+    them, some 270 times, it was nearly all of this file's three seconds."""
+    bodies = "\n".join(path.read_text(encoding="utf-8") for path in source_files())
+    return (set(re.findall(r"\b(\w+)\s*=(?=[^=])", bodies)),
+            set(re.findall(r"[\"'](\w+)[\"']\s*:", bodies)))
 
 
-def test_there_are_columns_to_check(bodies):
+def test_there_are_columns_to_check():
     """The guard on the guard."""
     columns = declared_columns()
     assert len(columns) >= 20, f"only found fields in {list(columns)} — MODELS has shrunk"
     assert sum(len(names) for names in columns.values()) > 150
 
 
-def test_every_column_is_written_by_something(bodies):
+def test_every_column_is_written_by_something(written):
     """**The check itself.** A column with no producer is a feature that is silently absent."""
-    unwritten: list[str] = []
-
-    for model_file, names in declared_columns().items():
-        for name in names:
-            if name in WRITTEN_ELSEWHERE or name in KNOWN_UNWRITTEN:
-                continue
-            # An assignment (`x.name =`, `name=`), a bulk update (`"name":`), or an insert value.
-            written = re.search(
-                rf"(\.{name}\s*=[^=]|\b{name}\s*=[^=]|[\"']{name}[\"']\s*:)", bodies)
-            if not written:
-                unwritten.append(f"{model_file}:{name}")
+    assigned, keyed = written
+    unwritten = [f"{collection}:{name}" for collection, names in declared_columns().items() for name in names
+                 if name not in WRITTEN_ELSEWHERE and name not in KNOWN_UNWRITTEN
+                 and name not in assigned and name not in keyed]
 
     assert not unwritten, (
         "these columns are declared and read but nothing ever writes them, which reads as NULL "
@@ -87,33 +85,31 @@ def test_every_column_is_written_by_something(bodies):
         + "\n\nEither write them, delete them, or add them to WRITTEN_ELSEWHERE with the reason.")
 
 
-def test_the_known_unwritten_columns_still_exist(bodies):
+def test_the_known_unwritten_columns_still_exist(written):
     """An exemption list that outlives what it exempts is a lie."""
+    assigned, _ = written
     declared = {name for names in declared_columns().values() for name in names}
 
     stale = [name for name in KNOWN_UNWRITTEN if name not in declared]
     assert not stale, f"these are exempted but no longer declared — remove them: {sorted(stale)}"
 
-    now_written = [name for name in KNOWN_UNWRITTEN
-                   if re.search(rf"(\.{name}\s*=[^=]|\b{name}\s*=[^=])", bodies)]
+    now_written = [name for name in KNOWN_UNWRITTEN if name in assigned]
     assert not now_written, (
         f"these now have a producer, so the exemption is out of date: {sorted(now_written)}")
 
 
-def test_the_check_can_tell_a_written_column_from_an_unwritten_one(bodies):
+def test_the_check_can_tell_a_written_column_from_an_unwritten_one(written):
     """Proof the assertion above can fail.
 
     Pinned to `telegram_webhook_secret`, the defect that motivated it, until that column retired with
-    the per-user bot (2026-10-28) — it is in `KNOWN_UNWRITTEN` now, which the test above holds to
-    having no producer. The positive half is the chat id the Telegram link writes: lose that and
-    nobody can be reached on Telegram. Since 2026-11-01 that is the Start pressed in their own bot.
+    the per-user bot (2026-10-28). The positive half is the chat id the Telegram link writes: lose that
+    and nobody can be reached on Telegram. Since 2026-11-01 that is the Start pressed in their own bot.
     """
-    assert re.search(r"\btelegram_chat_id\s*=\s*chat\b", bodies), (
-        "the Telegram setup no longer records the chat it connected")
+    assigned, keyed = written
+    assert "telegram_chat_id" in assigned, "the Telegram setup no longer records the chat it connected"
 
     # And the negative: a column name that exists nowhere must not appear written.
-    assert not re.search(r"(\.nonexistent_column_xyz\s*=[^=]|\bnonexistent_column_xyz\s*=[^=])",
-                         bodies)
+    assert "nonexistent_column_xyz" not in assigned | keyed
 
 
 # ── one name, one definition (ROADMAP 6at) ────────────────────────────────────────────────────

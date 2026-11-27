@@ -21,8 +21,10 @@ def _stub_telegram(monkeypatch, responses: list[int]) -> list[str]:
         return httpx.Response(status, json=body)
 
     monkeypatch.setattr(notifier.httpx, "post", post)
-    # Real waits would make this suite take minutes to prove something about control flow.
-    monkeypatch.setattr(notifier.time, "sleep", lambda _seconds: None)
+    # Real waits would make this suite take minutes to prove something about control flow. The waits are the
+    # module's own values, set to nothing: `time.sleep` itself is every thread's in the process.
+    monkeypatch.setattr(notifier, "SERVER_ERROR_BACKOFF_SEC", 0)
+    monkeypatch.setattr(notifier, "MAX_RATE_LIMIT_WAIT_SEC", 0)
     return calls
 
 
@@ -67,6 +69,8 @@ def test_rate_limits_and_outages_do_not_share_one_budget(monkeypatch):
 
 def test_a_flood_wait_still_obeys_telegrams_own_number(monkeypatch):
     """Unchanged behaviour, guarded because the retry loop was restructured around it."""
+    from types import SimpleNamespace
+
     import httpx
 
     from libs import telegram as notifier
@@ -81,7 +85,8 @@ def test_a_flood_wait_still_obeys_telegrams_own_number(monkeypatch):
         return httpx.Response(200, json={"ok": True})
 
     monkeypatch.setattr(notifier.httpx, "post", post)
-    monkeypatch.setattr(notifier.time, "sleep", waits.append)
+    # The module's own `time`, so the wait is read here and nobody else's sleep is taken.
+    monkeypatch.setattr(notifier, "time", SimpleNamespace(sleep=waits.append))
 
     notifier.send("token", "chat", "hello")
     assert waits == [7.0]

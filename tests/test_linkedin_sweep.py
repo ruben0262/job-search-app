@@ -167,22 +167,29 @@ def test_linkedin_is_read_a_page_at_once_from_each_of_the_proxys_addresses(db, s
     address, so a pass reads as many pages at once as the proxy has addresses (Admin → Settings). It read
     four whatever the proxy had, and the proxy went from four to six on 2026-11-05."""
     import threading
-    import time
 
     from libs.settings import put
 
     class AtOnce(LinkedIn):
-        """LinkedIn, counting the most pages it was asked for at the same time."""
+        """LinkedIn, counting the most pages it was asked for at the same time. The first jobs' pages are
+        held until as many are asked for at once as the proxy has addresses, then a moment in which one
+        more would have come in."""
 
         def __init__(self, listed):
             super().__init__(listed)
             self.lock, self.now, self.most = threading.Lock(), 0, 0
+            self.full, self.over, self.settled = threading.Event(), threading.Event(), threading.Event()
 
         def get(self, url, params=None, **kwargs):
             with self.lock:
                 self.now += 1
                 self.most = max(self.most, self.now)
-            time.sleep(0.02)
+                (self.over if self.now > addresses else self.full if self.now == addresses
+                 else threading.Event()).set()
+            if url != linkedin.SWEEP_URL and not self.settled.is_set():
+                self.full.wait(timeout=10)
+                self.over.wait(timeout=0.1)
+                self.settled.set()
             try:
                 return super().get(url, params, **kwargs)
             finally:
@@ -385,9 +392,9 @@ def test_a_pass_out_of_time_stores_what_it_read_and_the_next_run_reads_the_rest(
     """The run's unit is stopped at 14 minutes (`deploy/harvester.service`), and a sweep stores nothing until
     every country is read: a long one, after a stoppage, was stopped with nothing stored, and the next one,
     reaching further back, likewise. A pass stops reading when its time is spent and stores what it read."""
-    clock, per_page = [0.0], [60.0]
+    clock, per_page = [0.0], [linkedin.PASS_BUDGET_SECONDS // 3 + 1.0]
     monkeypatch.setattr(linkedin, "monotonic", lambda: clock[0], raising=False)
-    linkedin_site = site({"Germany": ["Nurse"] * 195})
+    linkedin_site = site({"Germany": ["Nurse"] * 45})
     listing = linkedin_site.get
 
     def slow(url, params=None, **kwargs):
@@ -399,14 +406,14 @@ def test_a_pass_out_of_time_stores_what_it_read_and_the_next_run_reads_the_rest(
 
     with caplog.at_level(logging.WARNING, logger=linkedin.logger.name):
         late = _pass(db)
-    read = linkedin.PASS_BUDGET_SECONDS // 60 * linkedin.SWEEP_PAGE
-    assert (late.swept, late.new_jobs) == (read, read), "a minute a page, until the pass's time was spent"
+    read = 3 * linkedin.SWEEP_PAGE
+    assert (late.swept, late.new_jobs) == (read, read), "a third of its time a page, until the time was spent"
     assert "ran out" in caplog.text
     assert db[SweptPlace.COLLECTION].count_documents({"_id": "Germany"}) == 0, "not read to its end"
 
     per_page[0] = 0
     _pass(db, now=NOW + timedelta(minutes=15))
-    assert db[CorpusJob.COLLECTION].count_documents({"source": "linkedin"}) == 195
+    assert db[CorpusJob.COLLECTION].count_documents({"source": "linkedin"}) == 45
     assert db[SweptPlace.COLLECTION].count_documents({"_id": "Germany"}) == 1
 
 

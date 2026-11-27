@@ -325,8 +325,11 @@ def _make(api, kind="cv") -> dict:
 
 
 def test_a_made_document_is_kept_to_download_again_and_shows_on_the_jobs_it_was_for(ready):
+    """After a refresh, from the Applied list, or from My documents: the same PDF, not a new one. The room
+    it is kept in is the catalogue's, for an account nobody set an allowance of its own for."""
+    from libs.limits import BY_KEY
+
     api = ready
-    """After a refresh, from the Applied list, or from My documents: the same PDF, not a new one."""
     made = _make(api)
     assert (made["state"], made["saved"]) == ("ready", True)
 
@@ -339,11 +342,10 @@ def test_a_made_document_is_kept_to_download_again_and_shows_on_the_jobs_it_was_
     kept = api.http.get("/saved").json()
     assert [(each["kind"], each["job_title"]) for each in kept["documents"]] == [("cv", "Backend Engineer")]
     assert kept["used_bytes"] == kept["documents"][0]["size"] > 0
-    assert kept["allowance_bytes"] == 5 * 1024 * 1024, "the catalogue default"
+    assert kept["allowance_bytes"] == BY_KEY["document_storage_mb"].default * 1024 * 1024
 
 
 def test_a_cover_letter_built_keeps_its_posting_and_every_document_its_ats_verdict(ready):
-    api = ready
     """Retention keeps a posting somebody wrote a cover letter for (`ACTED_ON`), but nothing said they
     had until 2026-11-03. And each document keeps whether it passed the ATS check, so outcomes can say
     whether passing it helps people hear back, and the wording and model that wrote it, so they can say
@@ -352,6 +354,7 @@ def test_a_cover_letter_built_keeps_its_posting_and_every_document_its_ats_verdi
     from libs.db import find_one
     from libs.db.models import BuiltDocument, UserJobState
 
+    api = ready
     _make(api)
     before = find_one(api.db, UserJobState, {"user_id": api.user.id, "job_id": api.job.id})
     assert before is None or before.cover_built is False, "a CV alone is not a cover letter"
@@ -376,13 +379,14 @@ def test_a_new_one_for_the_same_job_and_kind_replaces_the_old(ready):
 
 
 def test_a_full_storage_keeps_nothing_new_but_it_still_downloads_and_the_person_is_told(ready, monkeypatch):
-    api = ready
     """Their own allowance (`document_storage_mb`): what does not fit waits only for its download, as
     every document used to (D9), and deleting one makes room again."""
     from libs.db import now
     from libs.db.models import BuiltDocument
+    from libs.notify import STORAGE_FULL
     from services.docgen.__main__ import purge
 
+    api = ready
     _big_pdfs(api, monkeypatch)
     cv = _make(api)
     cover = _make(api, kind="cover")
@@ -390,7 +394,7 @@ def test_a_full_storage_keeps_nothing_new_but_it_still_downloads_and_the_person_
     assert cv["saved"] is True and cover["saved"] is False
     assert api.http.get(cover["download_url"]).status_code == 200, "made now, so it can be had now"
     told = api.http.get("/notifications").json()["notifications"]
-    assert any(each["title"] == "Your document storage is full" for each in told)
+    assert any(each["event"] == STORAGE_FULL.slug for each in told)
     assert [each["kind"] for each in api.http.get("/saved").json()["documents"]] == ["cv"]
 
     api.db[BuiltDocument.COLLECTION].update_many({}, {"$set": {"created_at": now() - timedelta(hours=2)}})
@@ -414,8 +418,8 @@ def test_clearing_all_empties_the_storage(ready, monkeypatch):
 
 
 def test_the_ones_picked_out_are_deleted_and_the_rest_kept(ready):
-    api = ready
     """My documents deletes what it shows: the older ones, or the ones a search found."""
+    api = ready
     cv, cover = _make(api), _make(api, kind="cover")
 
     left = api.http.delete("/saved", params={"ids": [cv["id"]]}).json()
@@ -463,10 +467,10 @@ def test_the_nightly_backup_does_not_keep_built_documents():
 
 
 def test_a_written_backup_holds_no_built_document(ready, tmp_path):
-    api = ready
     """The same rule, on the file the backup actually writes, with a built CV in the database."""
     from libs.db.models import BuiltDocument, User
 
+    api = ready
     backup = _backup()
     build_id = _ask(api).json()["id"]
     _work(api)
@@ -543,9 +547,9 @@ def test_without_an_account_of_their_own_they_are_told_so_and_nothing_is_made(ap
 
     refused = _ask(api, mode="ai")
 
-    assert refused.status_code == 409
-    assert refused.json()["detail"] == {"missing": ["account"],
-                                        "message": "To make your CV, first link your AI account in Settings."}
+    detail = refused.json()["detail"]
+    assert refused.status_code == 409 and detail["missing"] == ["account"]
+    assert "Settings" in detail["message"], "in words too, with where it is added"
     assert _ask(api, mode="instant").status_code == 422, "there is no other way to make one"
 
 
@@ -560,9 +564,8 @@ def test_a_cv_is_made_from_their_cv_and_a_cover_letter_from_a_cover_letter_of_th
     _own(api)
     cover = _ask(api, kind="cover")
 
-    assert both == {"missing": ["account", "cover_letter"],
-                    "message": "To make your cover letter, first link your AI account in Settings and "
-                               "upload a cover letter in My documents."}
+    assert both["missing"] == ["account", "cover_letter"]
+    assert "Settings" in both["message"] and "My documents" in both["message"], "where each is added"
     assert cover.status_code == 409 and cover.json()["detail"]["missing"] == ["cover_letter"]
     assert _ask(api, kind="cv").status_code == 202, "their CV is there"
 
@@ -572,18 +575,20 @@ def test_what_is_missing_reaches_the_bell_too_once_however_often_it_is_pressed(a
     (owner, 2026-11-10)."""
     from libs.db.models import UserDocument, UserNotification
 
-    _ask(api)
+    account = _ask(api).json()["detail"]["message"]
     _ask(api)
     _own(api)
     api.db[UserDocument.COLLECTION].delete_many({"user_id": api.user.id, "kind": "cover_letter"})
-    _ask(api, kind="cover")
+    upload = _ask(api, kind="cover").json()["detail"]["message"]
+    assert account and upload and account != upload, "the premise: the page was told each, in words"
 
-    bell = {row["event"]: row for row in api.db[UserNotification.COLLECTION].find({"user_id": api.user.id})}
-    assert len(bell) == 2
+    rows = list(api.db[UserNotification.COLLECTION].find({"user_id": api.user.id}))
+    assert len(rows) == 2, "one for each thing missing, though the first was pressed twice"
+    bell = {row["event"]: row for row in rows}
     assert (bell["document.needs_ai_account"]["url"], bell["document.needs_ai_account"]["body"]) == (
-        "/settings", "To make your CV, first link your AI account in Settings.")
+        "/settings", account)
     assert (bell["document.needs_upload"]["url"], bell["document.needs_upload"]["body"]) == (
-        "/documents", "To make your cover letter, first upload a cover letter in My documents.")
+        "/documents", upload)
 
 
 def test_a_cv_switched_off_is_said_as_one_to_switch_on(api):
@@ -595,8 +600,9 @@ def test_a_cv_switched_off_is_said_as_one_to_switch_on(api):
 
     refused = _ask(api)
 
-    assert refused.status_code == 409
-    assert refused.json()["detail"]["message"] == "To make your CV, first switch your CV on in My documents."
+    detail = refused.json()["detail"]
+    assert refused.status_code == 409 and detail["missing"] == ["cv"]
+    assert "switch" in detail["message"] and "upload" not in detail["message"]
 
 
 def test_a_cv_removed_after_it_was_asked_for_stops_the_build_before_any_text_leaves(ready):
@@ -633,7 +639,7 @@ def test_the_daily_ceiling_counts_every_document_where_they_are_asked_for(api):
     their own key does not lift it."""
     from libs.db import insert
     from libs.db.models import CorpusJob
-    from libs.limits import BY_KEY, set_limit
+    from libs.limits import set_limit
 
     _own(api)
     set_limit(api.db, api.user.id, "cv_builds_per_day", 2)
@@ -645,7 +651,6 @@ def test_the_daily_ceiling_counts_every_document_where_they_are_asked_for(api):
     refused = api.http.post("/documents/build", json={"job_id": other.id, "kind": "cv", "mode": "ai"})
     assert refused.status_code == 429
     assert "2 documents" in refused.json()["detail"]
-    assert BY_KEY["cv_builds_per_day"].default == 50
 
 
 def test_an_account_with_only_its_uploads_has_its_cv_written_from_them(api, monkeypatch):

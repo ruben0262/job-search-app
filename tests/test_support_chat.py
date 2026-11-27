@@ -28,17 +28,19 @@ CONFIG = {"sections": [{"platform": "all", "keywords": ["data engineer", "airflo
 
 class Scripted:
     """The runner the tests use: `complete_tools` as every provider has it, free, instant, offline.
-    Each turn is `(text, [(tool, input), ...])`; its text streams a word at a time, `delay` apart."""
+    Each turn is `(text, [(tool, input), ...])`; its text streams a word at a time, each word once `go` lets
+    it through when a test holds the pace, so what the page has is read between words and not off a clock."""
 
-    def __init__(self, *turns, delay: float = 0.0):
-        self.turns, self.delay, self.seen = list(turns), delay, []
+    def __init__(self, *turns, go: threading.Semaphore | None = None):
+        self.turns, self.go, self.seen = list(turns), go, []
 
     def complete_tools(self, *, model, system, messages, tools, max_tokens, on_text=None):
         self.seen.append({"model": model, "system": system, "messages": copy.deepcopy(messages),
                           "tools": [tool["name"] for tool in tools]})
         said, calls = self.turns.pop(0)
         for word in re.findall(r"\S+\s*", said):
-            time.sleep(self.delay)
+            if self.go is not None:
+                assert self.go.acquire(timeout=5), "the test never let this word through"
             on_text(word)
         uses = [{"type": "tool_use", "id": f"call-{len(self.seen)}-{n}", "name": name, "input": args}
                 for n, (name, args) in enumerate(calls)]
@@ -264,43 +266,61 @@ def live(db, monkeypatch):
     yield SimpleNamespace(db=db, user_id=user_id, started=started)
 
 
-def _stream(http, reply_id: int, since: float) -> list[tuple[str, dict, float]]:
-    """Every event of a reply's stream: its name, its data, and when it arrived."""
-    events, name = [], ""
+def _stream(http, reply_id: int):
+    """Each event of a reply's stream as it arrives: its name and its data."""
+    name = ""
     with http.stream("GET", f"/support/replies/{reply_id}/stream") as response:
         assert response.headers["content-type"].startswith("text/event-stream")
         for line in response.iter_lines():
             if line.startswith("event: "):
                 name = line[len("event: "):]
             elif line.startswith("data: "):
-                events.append((name, json.loads(line[len("data: "):]), time.monotonic() - since))
-    return events
+                yield name, json.loads(line[len("data: "):])
+
+
+def _until(holds, seconds: float = 5.0) -> bool:
+    """Whether `holds()` came true within `seconds`: asked over and over, never slept through."""
+    deadline = time.monotonic() + seconds
+    while not holds():
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.01)
+    return True
 
 
 def test_a_reply_streams_as_a_snapshot_then_deltas_and_steps_then_done(live, monkeypatch):
+    """The model writes on only when the page has what it wrote, so the order of things is the test's and no
+    clock's: its first word alone, the rest of that turn with its lookup, then the answer."""
+    opening = "Let me look at your words."
     answer = "Your green word is data engineer, and senior hides the jobs you do not want."
-    _answers(monkeypatch, Scripted(("Let me look at your words.", [("my_words", {})]), (answer, []),
-                                   delay=0.04))
+    go = threading.Semaphore(0)
+    _answers(monkeypatch, Scripted((opening, [("my_words", {})]), (answer, []), go=go))
 
     with live.started() as http:
-        asked = time.monotonic()
         reply_id = http.post("/support/messages", json={"text": "what are my words?"}).json()["reply_id"]
-        events = _stream(http, reply_id, asked)
+        stream = _stream(http, reply_id)
+        events = [next(stream)]
+        assert events[0][0] == "snapshot" and events[0][1]["text"] == "", "opened before a word was written"
+        go.release()
+        events.append(next(stream))
+        assert events[1] == ("delta", {"text": "Let "}), "the first word is on the page before a second is"
+        go.release(len(opening.split()) - 1)
+        while events[-1][0] not in ("step", "done"):
+            events.append(next(stream))
+        go.release(len(answer.split()))
+        events += stream
         kept = http.get("/support").json()["messages"][-1]
 
-    names = [name for name, _, _ in events]
-    assert names[0] == "snapshot" and names[-1] == "done" and names.count("done") == 1, names
+    names = [name for name, _ in events]
+    assert names[-1] == "done" and names.count("done") == 1, names
     assert names.count("delta") >= 3, f"the text arrives as it is written: {names}"
-    step = next(data["step"] for name, data, _ in events if name == "step")
+    step = next(data["step"] for name, data in events if name == "step")
     assert step["label"] == "Looked at your words" and "data engineer" in step["output"]
 
     done = events[-1][1]
-    whole = "Let me look at your words.\n\n" + answer
+    whole = f"{opening}\n\n{answer}"
     assert done["status"] == "done" and done["text"] == whole
-    assert events[0][1].get("text", "") + "".join(data["text"] for name, data, _ in events
-                                                  if name == "delta") == whole
-    first = next(at for name, data, at in events if data.get("text") and name != "done")
-    assert first < events[-1][2] - 0.3, "the first words are on screen well before the last"
+    assert "".join(data["text"] for name, data in events if name == "delta") == whole
     assert (kept["status"], kept["text"], kept["steps"][0]["label"]) == ("done", whole,
                                                                        "Looked at your words")
 
@@ -361,28 +381,36 @@ def test_a_reply_whose_writer_died_is_started_again_by_the_stream_once_its_lease
     """A writer that dies mid-reply still holds its lease when the API starts, so the start-up leaves
     it alone — it might be alive on another worker. The page watching it must not wait forever: the
     stream starts it again once the lease has run out, and not before."""
+    from libs import assistant
     from libs.db import get, insert, now
     from libs.db.models import SetupConversation, SetupMessage
 
     model = Scripted(*[("Your words are fine.", [])] * 2)
     _answers(monkeypatch, model)
+    # Each try at writing a reply, kept so it can be waited for: the stream makes one as it opens.
+    tries, start = [], assistant.start
+    monkeypatch.setattr(assistant, "start", lambda reply_id: tries.append(start(reply_id)))
     chat = insert(live.db, SetupConversation(user_id=live.user_id, title="Help"))
     insert(live.db, SetupMessage(user_id=live.user_id, conversation_id=chat.id, role="user",
                                  content="are my words ok?", agent="support"))
 
     with live.started() as http:
-        held_for = 1.0
         reply_id = insert(live.db, SetupMessage(
             user_id=live.user_id, conversation_id=chat.id, role="assistant", content="Your wor",
             agent="support", status="streaming", tool_calls={"payer": "platform", "steps": []},
-            lease_until=now() + timedelta(seconds=held_for))).id
-        opened = time.monotonic()
-        events = _stream(http, reply_id, opened)
+            lease_until=now() + assistant.LEASE)).id
+        stream = _stream(http, reply_id)
+        events = [next(stream)]
+        tries[0].result(5)
+        assert model.seen == [], "a live lease was taken: the writer might still have been alive"
+        # The lease runs out: moved into the past rather than waited for.
+        live.db[SetupMessage.COLLECTION].update_one(
+            {"_id": reply_id}, {"$set": {"lease_until": now() - timedelta(seconds=1)}})
+        events += stream
 
-    assert events[0][:2] == ("snapshot", {"text": "Your wor", "status": "streaming", "steps": []})
-    name, done, at = events[-1]
+    assert events[0] == ("snapshot", {"text": "Your wor", "status": "streaming", "steps": []})
+    name, done = events[-1]
     assert name == "done" and (done["status"], done["text"]) == ("done", "Your words are fine."), events
-    assert at >= held_for - 0.2, "a live lease was taken: the writer might still have been alive"
     assert len(model.seen) == 1, "written once, however often the stream looked"
     assert get(live.db, SetupMessage, reply_id).lease_until is None, "a finished reply holds no lease"
 
@@ -424,24 +452,33 @@ def test_a_live_writer_keeps_its_reply_through_a_model_call_longer_than_the_leas
     the longest a model call may take (it was 8 minutes). That is only safe because a live writer
     renews it while the model is silent: otherwise every slow answer would be written twice."""
     from libs import assistant
-    from libs.db import get
+    from libs.db import get, now
     from libs.db.models import SetupMessage
 
     assert assistant.LEASE.total_seconds() <= 30, "a cut-off reply waits this long to be written again"
-    monkeypatch.setattr(assistant, "LEASE", timedelta(seconds=0.6))
+    # A lease renewed many times a second, on a clock that moves when the test moves it.
+    lease, clock = timedelta(seconds=0.06), [now()]
+    monkeypatch.setattr(assistant, "LEASE", lease)
+    monkeypatch.setattr(assistant, "now", lambda: clock[0])
+    asked, answering = threading.Event(), threading.Event()
 
-    class Slow(Scripted):
+    class Silent(Scripted):
         def complete_tools(self, **kwargs):
-            time.sleep(1.8)  # three leases with not a word written
+            asked.set()
+            assert answering.wait(10)  # not a word written until the test lets it answer
             return super().complete_tools(**kwargs)
 
-    model = Slow(*[("Your words are fine.", [])] * 2)
+    model = Silent(*[("Your words are fine.", [])] * 2)
     _answers(monkeypatch, model)
     reply_id = _pending(live.db, live.user_id)
 
     writing = assistant.start(reply_id)
-    time.sleep(1.2)
+    assert asked.wait(5)
+    clock[0] += 3 * lease  # three leases with not a word written
+    assert _until(lambda: get(live.db, SetupMessage, reply_id).lease_until > clock[0]), (
+        "a live writer renews its lease while the model says nothing")
     assistant.run(live.db, reply_id)  # the page's stream, or a worker starting up, trying to take it
+    answering.set()
     writing.result(5)
 
     assert len(model.seen) == 1, "taken over from a writer that was alive"
@@ -477,10 +514,9 @@ def test_replies_beyond_the_writer_ceiling_wait_their_turn(live, monkeypatch):
     replies = [_pending(live.db, live.user_id, f"question {n}") for n in range(3)]
 
     writing = [assistant.start(reply_id) for reply_id in replies]
-    for _ in range(100):
-        if model.busy == 2:
-            break
-        time.sleep(0.05)
+    assert _until(lambda: model.busy == 2)
+    # Time for a third to start, were nothing holding it back: a wait for nothing to happen, which a slow
+    # machine cannot fail.
     time.sleep(0.2)
     assert (model.busy, get(live.db, SetupMessage, replies[2]).status) == (2, "pending")
 

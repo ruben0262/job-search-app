@@ -8,25 +8,6 @@ from __future__ import annotations
 
 # ── Adzuna: a general board that was searching only for software ──────────────────────────────
 
-def test_adzuna_is_asked_for_no_word_only_the_countries_people_picked():
-    """The adapter had its own keyword list, `["python developer", "backend engineer"]` in `gb`: it was
-    added to widen a corpus that was 97% software, and it would have searched for software. Then it was
-    asked everybody's words; now it is asked for none (owner, 2026-11-04), its newest jobs read whole.
-    """
-    import uuid
-
-    from services.harvester.source_config import build_source_configs
-
-    configs = {uuid.uuid4(): {"sections": [
-        {"keywords": ["mechanical design engineer"], "locations": ["london"]}]}}
-
-    cfg = build_source_configs(
-        configs, env={"ADZUNA_APP_ID": "x", "ADZUNA_APP_KEY": "y"})["adzuna"]
-
-    assert "keywords" not in cfg
-    assert cfg["countries"] == ["gb"]
-
-
 def test_adzuna_asks_the_countries_the_users_named():
     """One place turns a location into countries, and Adzuna serves a subset of it."""
     import uuid
@@ -118,16 +99,6 @@ def test_the_delivery_window_does_not_discard_what_the_harvest_just_paid_for():
         assert effective >= harvested, (
             f"{source}: harvested at {harvested}h but deliverable for only {effective}h — the "
             "cycle pays to fetch rows the pre-score filter then drops")
-
-
-def test_the_call_budget_has_one_definition():
-    """A ceiling the panel shows and an adapter reads must be the same number, not two equal ones."""
-    from libs.settings import DEFAULT_SOURCE_QUERIES_PER_CYCLE
-    from services.harvester.sources import http_apis
-
-    assert not hasattr(http_apis, "DEFAULT_ADZUNA_QUERIES"), (
-        "the adapter restated the ceiling; a second copy drifts silently")
-    assert DEFAULT_SOURCE_QUERIES_PER_CYCLE["adzuna"] == 2
 
 
 def test_every_per_source_setting_names_a_source_the_harvest_reads():

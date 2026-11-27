@@ -10,13 +10,13 @@ import pytest
 
 from libs.db import insert
 from libs.db.models import User
+from libs.settings import DEFAULT_SOCIALS, SOCIAL_NETWORKS
 
 ADMIN = "operator@example.com"
-DISCORD = "https://discord.gg/UR3FNC4gyT"
-# The owner's, in the order the foot shows them.
-OTHERS = [{"network": "facebook", "url": "https://www.facebook.com/profile.php?id=61596985945304"},
-          {"network": "tiktok", "url": "https://www.tiktok.com/@mahoraga.cc"},
-          {"network": "instagram", "url": "https://www.instagram.com/mahoraga.cc/"}]
+# The owner's links (`libs.settings`), the others in the order the foot shows them.
+DISCORD = DEFAULT_SOCIALS["discord"]
+OTHERS = [{"network": network, "url": DEFAULT_SOCIALS[network]}
+          for network in SOCIAL_NETWORKS if network != "discord"]
 
 
 @pytest.fixture()
@@ -63,7 +63,8 @@ def test_the_discord_is_there_for_anybody_and_the_admin_changes_or_hides_it(db, 
     _sign_in(http, admin)
     emptied = {"discord": "", "tiktok": ""}
     assert http.put("/admin/settings/socials", json={"value": emptied}).status_code == 200
-    assert http.get("/socials").json() == [OTHERS[0], OTHERS[2]], "emptied, it is not shown"
+    assert http.get("/socials").json() == [other for other in OTHERS if other["network"] != "tiktok"], \
+        "emptied, it is not shown"
 
 
 def test_a_network_added_after_the_links_were_saved_shows_all_the_same(db, http):

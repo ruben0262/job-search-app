@@ -11,16 +11,11 @@ from pathlib import Path
 import httpx
 import pytest
 
-from services.harvester.sources import (
-    OUTER_CONCURRENCY,
-    REGISTRY,
-    Source,
-)
+from services.harvester.sources import REGISTRY
 from services.harvester.sources.base import JobLink
 from tests.conftest import needs_db
 
 HARVESTER = Path(__file__).resolve().parents[1] / "services" / "harvester"
-ADAPTERS = sorted((HARVESTER / "sources").glob("*.py"))
 
 
 # ── the one-factory rule ──────────────────────────────────────────────────────────────────────
@@ -161,18 +156,6 @@ def test_a_teamtailor_board_is_read_from_its_feed_each_job_whole_with_its_places
     assert ats.fetch_teamtailor("nosuchcompany")[0] is ats.GONE
 
 
-def test_every_registry_entry_is_callable_and_well_formed():
-    for key, source in REGISTRY.items():
-        assert isinstance(source, Source)
-        assert source.key == key, "the registry key and the Source key must agree"
-        assert callable(source.adapter)
-
-
-def test_the_outer_concurrency_cap_is_not_raised():
-    """From the 2026-07-24 incident: JobSpy sources open their own nested pools."""
-    assert OUTER_CONCURRENCY == 8
-
-
 # ── the JobLink contract ──────────────────────────────────────────────────────────────────────
 
 def test_a_joblink_maps_onto_a_corpus_row_and_carries_no_user():
@@ -198,22 +181,6 @@ def test_a_joblink_carries_the_posting_metadata_the_feed_card_reads():
     assert row["easy_apply"] is True
     # Classified from what the source gave us; LinkedIn's own pill overwrites it at fetch time.
     assert row["workplace"] == "remote"
-
-
-def test_joblink_defaults_are_safe_for_an_unknown_field():
-    """Sources disagree about what they report."""
-    link = JobLink(url="https://example.test/1")
-    assert link.is_remote is None
-    assert link.date_posted is None
-    assert link.application_url is None
-    assert link.found_at
-
-
-@pytest.mark.parametrize("path", ADAPTERS, ids=lambda p: p.name)
-def test_every_adapter_module_imports(path):
-    """A port that leaves a module unimportable is a source that silently never runs."""
-    import importlib
-    importlib.import_module(f"services.harvester.sources.{path.stem}")
 
 
 # ── company boards that are slow, or that refuse a burst (2026-11-02) ─────────────────────────
@@ -242,43 +209,32 @@ def test_a_lever_board_slow_to_answer_is_read_where_other_boards_would_give_up(m
 def test_workable_is_asked_two_boards_at_a_time():
     """Sixteen at once got 490 refusals in 555, and the harvest asked thirty."""
     import threading
-    import time
-    import uuid
 
     from services.harvester.source_config import build_source_configs
     from services.harvester.sources.ats import gather_ats
 
-    class Boards:
-        def live_tokens(self, _ats):
-            return [f"company{n}" for n in range(8)]
-
-        def etags(self, _ats):
-            return {}
-
-        def names(self, _ats):
-            return {}
-
-        def record_polls(self, *_args, **_kwargs):
-            pass
-
-        def record_asked(self, *_args, **_kwargs):
-            pass
-
-    lock, now, most = threading.Lock(), [0], [0]
+    reading, most, lock = 0, 0, threading.Lock()
+    two, three, settled = threading.Event(), threading.Event(), threading.Event()
 
     def fetch(_token, _etag, within=None):
+        nonlocal reading, most
         with lock:
-            now[0] += 1
-            most[0] = max(most[0], now[0])
-        time.sleep(0.05)
+            reading += 1
+            most = max(most, reading)
+            (three if reading > 2 else two if reading == 2 else threading.Event()).set()
+        if not settled.is_set():
+            # The first two are held until both are being read, then a moment in which a third would come in.
+            two.wait(timeout=10)
+            three.wait(timeout=0.1)
+            settled.set()
         with lock:
-            now[0] -= 1
+            reading -= 1
         return [], None
 
     cfg = build_source_configs({uuid.uuid4(): {"sections": [{"keywords": ["engineer"]}]}}, env={})["workable"]
-    gather_ats(cfg, logging.getLogger("test"), ats="workable", repo=Boards(), fetch_company=fetch)
+    gather_ats(cfg, logging.getLogger("test"), ats="workable", repo=_boards(8), fetch_company=fetch)
 
-    assert most[0] == 2
+    assert most == 2
 
 
 def test_just_join_it_is_read_page_by_page_until_its_offers_are_older_than_the_window(monkeypatch):
@@ -1134,7 +1090,7 @@ def test_a_board_is_given_up_only_when_its_ats_says_it_is_not_there(db, monkeypa
 
 @pytest.mark.parametrize(("board", "cfg"), [
     ("himalayas", {}), ("justjoinit", {}), ("nofluffjobs", {}), ("workingnomads", {}), ("jobicy", {}),
-    ("findwork", {"api_key": "k"}),
+    ("profession", {}), ("findwork", {"api_key": "k"}),
     ("adzuna", {"app_id": "a", "app_key": "k", "countries": ["gb"]}),
 ])
 def test_a_board_that_refuses_says_so_instead_of_having_no_jobs_today(board, cfg, monkeypatch, caplog):

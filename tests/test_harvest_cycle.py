@@ -349,7 +349,9 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering():
 
 def test_no_board_is_handed_anybodys_words_to_ask_for_or_to_keep_jobs_by():
     """Every board is read whole and the words matched on what is stored (owner, 2026-11-04). Hiring Cafe
-    could only be asked for words, and was removed with the query set on 2026-11-06."""
+    could only be asked for words, and was removed with the query set on 2026-11-06. Handed everybody's
+    words to keep jobs by, boards threw away what they were sent: six hours of zero ingestion from eleven
+    sources."""
     from services.harvester.source_config import build_source_configs
 
     built = build_source_configs(
@@ -374,39 +376,6 @@ def test_a_source_whose_window_an_operator_narrowed_actually_narrows():
     assert narrowed["greenhouse"]["posted_within_hours"] == 3
     # One source only. Narrowing Greenhouse must not quietly narrow everything else.
     assert narrowed["ashby"]["max_age_hours"] == default["ashby"]["max_age_hours"]
-
-
-def test_an_operators_window_reaches_a_source_under_every_key_it_reads():
-    """Setting the window in three places was not enough, because a fourth exists."""
-    from services.harvester.source_config import build_source_configs
-
-    built = build_source_configs({}, env={}, freshness={"himalayas": 48, "greenhouse": 3})
-
-    assert built["himalayas"]["max_age_hours"] == 48
-    # `ats.JobFilter` reads `posted_within_hours` first, and the platform default sat there.
-    assert (built["greenhouse"]["max_age_hours"], built["greenhouse"]["posted_within_hours"]) == (3, 3)
-
-
-def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent():
-    """Six hours of zero ingestion from eleven sources."""
-    from services.harvester.source_config import build_source_configs
-
-    built = build_source_configs(
-        {uuid.uuid4(): {"sections": [{"keywords": ["golang"], "locations": ["europe"]}]}},
-        env={})
-
-    for source in ("greenhouse", "ashby", "lever", "workday"):
-        assert "keywords" not in built[source], f"{source} would drop rows on title alone"
-        assert "location_keywords" not in built[source], f"{source} would drop rows on a slug"
-
-
-def test_with_no_users_at_all_sources_stay_enabled_and_unfiltered():
-    """Cold start."""
-    from services.harvester.source_config import build_source_configs
-
-    built = build_source_configs({}, env={})
-    assert built, "sources must still run"
-    assert "keywords" not in built["greenhouse"], "unfiltered rather than filtered to nothing"
 
 
 def test_key_gated_sources_stay_off_without_their_credential():
@@ -618,24 +587,7 @@ def test_workday_walks_the_number_of_pages_it_was_given():
     assert seen == [0, 20]
 
 
-# ── no embedder, and no proxy (ROADMAP Phase 8) ─────────────────────────────────────────────
-
-def test_a_harvest_runs_without_an_embedder(ctx, monkeypatch):
-    """Nothing embeds any more. A missing `EMBEDDER_URL` used to refuse the whole cycle with exit 2."""
-    from services.harvester import __main__ as entry
-
-    monkeypatch.delenv("EMBEDDER_URL", raising=False)
-    monkeypatch.setattr(entry, "database", lambda: ctx)
-    monkeypatch.setattr(entry, "ensure_schema", lambda *a: None)
-    monkeypatch.setattr(entry, "_configure_logging", lambda verbose: None)
-    monkeypatch.setattr(entry, "_run_linkedin_pass", lambda: None)
-    ran = []
-    monkeypatch.setattr(entry, "run_cycle", lambda db, **kwargs: (
-        ran.append(kwargs) or cycle.CycleReport()))
-
-    assert entry.main([]) == 0
-    assert ran, "the cycle itself ran, not just the entry point"
-
+# ── LinkedIn beside the boards, and no proxy (ROADMAP Phase 8) ──────────────────────────────
 
 def test_linkedin_is_read_beside_the_boards_and_the_words_found_after_both(ctx, monkeypatch):
     """LinkedIn goes out through the site proxy and the boards go direct: read one after the other, a

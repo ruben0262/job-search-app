@@ -58,11 +58,16 @@ def test_the_timers_name_no_one_servers_layout():
 
 def test_no_running_code_or_config_reads_settings_from_deploy():
     """They live in certificates/ (owner, 2026-11-03). The README's steps for the old VPS name its
-    `deploy/.env` on purpose: that box still has one."""
-    code = [path for base in ("libs", "services", "deploy", "scripts", "web/scripts")
-            for path in (ROOT / base).rglob("*")
-            if path.suffix in {".py", ".sh", ".yml", ".service", ".timer"}
-            and "__pycache__" not in path.parts]
+    `deploy/.env` on purpose: that box still has one. Asked of the files git keeps or would keep: what it
+    ignores is no part of what runs, and the bench's output (`scripts/cvlab/out`, 1,900 scripts of its own
+    on this machine) was nine in ten of the files read here."""
+    import subprocess
+
+    kept = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--",  # noqa: S607
+                           "libs", "services", "deploy", "scripts", "web/scripts"],
+                          cwd=ROOT, capture_output=True, text=True, check=True).stdout.splitlines()
+    code = [ROOT / name for name in kept
+            if Path(name).suffix in {".py", ".sh", ".yml", ".service", ".timer"} and (ROOT / name).is_file()]
     assert len(code) > 100, "hardly any files: the folders above have moved"
     offenders = [path.relative_to(ROOT).as_posix() for path in [*code, ROOT / "pyproject.toml"]
                  if "deploy/.env" in path.read_text(encoding="utf-8")]
@@ -101,7 +106,8 @@ def _site(health: dict | None):
             pass
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Health)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    # `shutdown` waits for the loop's next look, half a second apart unless told: each test's whole time.
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     return server
 
 
@@ -267,7 +273,8 @@ def test_the_images_install_the_versions_the_gates_ran_on():
             assert here == version, f"{name} is {here} here and {version} in the list"
         except metadata.PackageNotFoundError:
             continue  # not on this machine (another system's package): nothing here to disagree with it
-    asked = [name for name in pin.required() if name not in pin.pins()[1]]
+    absent = pin.pins()[1]  # once: it walks every installed package
+    asked = [name for name in pin.required() if name not in absent]
     assert asked and not [name for name in asked if name not in pinned]
 
     for service in pin.SERVICES:

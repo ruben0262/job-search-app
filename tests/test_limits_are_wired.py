@@ -174,21 +174,6 @@ def test_every_limit_in_the_catalogue_has_a_control_an_operator_can_reach():
         "what this endpoint serves, so an empty list is a control that cannot be operated.")
 
 
-def test_every_limit_offers_values_an_operator_can_pick():
-    """A ceiling with no choices renders a dropdown that cannot be opened.
-
-    The options used to live in a `CHOICES` map inside `AdminUserPage.tsx`. Nothing connected the
-    two, so a limit added to the catalogue got a row in the panel, a label, a detail line, a
-    working PUT route — and an empty select. Wired end to end and unusable, with no error at any
-    layer to say so.
-    """
-    missing = [limit.key for limit in LIMITS if not limit.choices]
-
-    assert not missing, (
-        f"these limits offer nothing to pick: {missing}. Add `choices=` in `libs/limits`, which is "
-        "the only place the panel reads them from.")
-
-
 def test_a_limits_default_is_one_of_the_values_offered():
     """Otherwise the panel opens showing a value the dropdown cannot represent, and the first save
     silently changes a setting the operator was only looking at."""

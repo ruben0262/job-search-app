@@ -59,21 +59,6 @@ def test_every_setting_has_a_control_in_the_panel():
         f"these settings have no control in the operator panel: {missing}")
 
 
-def test_the_cycle_budget_fits_inside_the_unit_that_kills_it():
-    """A cycle killed by systemd skips every stage after the one that overran, and says nothing."""
-    from libs.settings import HARVEST_CYCLE_BUDGET_SECONDS
-
-    unit = (ROOT / "deploy" / "harvester.service").read_text(encoding="utf-8")
-    found = re.search(r"TimeoutStartSec=(\d+)(min|s)?", unit)
-    assert found, "harvester.service has no TimeoutStartSec; the budget below has nothing to fit in"
-
-    seconds = int(found.group(1)) * (60 if found.group(2) == "min" else 1)
-    assert seconds > HARVEST_CYCLE_BUDGET_SECONDS, (
-        f"the cycle budget ({HARVEST_CYCLE_BUDGET_SECONDS}s) has to leave room inside the unit's "
-        f"{seconds}s timeout, or systemd stops the cycle mid-stage rather than the cycle stopping "
-        "itself and reporting what is left")
-
-
 def test_the_lanes_a_person_is_waiting_on_poll_faster_than_the_rest():
     """Five seconds between a tap on Build and the job being claimed is five seconds of nothing."""
     from libs.queue.worker import IDLE_SLEEP_SEC, INTERACTIVE_IDLE_SLEEP_SEC

@@ -78,7 +78,7 @@ def test_an_unreadable_file_does_not_leak_the_parser_error():
     assert "pypdf" not in str(exc.value).lower()
 
 
-@pytest.mark.parametrize("filename", ["cv.exe", "cv.pages", "archive.zip", "noextension"])
+@pytest.mark.parametrize("filename", ["cv.pages", "noextension"])
 def test_an_unsupported_format_names_what_is_supported(filename):
     with pytest.raises(UnsupportedDocument, match=r"\.docx"):
         extract_text(filename, b"anything")

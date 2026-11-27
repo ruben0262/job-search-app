@@ -501,6 +501,7 @@ def gather_profession(cfg: dict[str, Any], logger) -> list[JobLink]:
     try:
         with make_shared_client(headers=feed, follow_redirects=True) as client:
             resp = client.get(feed_url)
+            resp.raise_for_status()  # a refusal's page parses as a feed with nothing in it
     except Exception as exc:
         logger.warning("profession feed failed: %s", exc)
         return out

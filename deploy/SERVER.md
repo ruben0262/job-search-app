@@ -136,7 +136,7 @@ Each setting says in the file what it is and how to make it. In short:
 |---|---|
 | `MONGODB_URI` | The Atlas address from your laptop's `certificates/mongodb.env`, in single quotes |
 | `MONGODB_DB` | `mahoraga` |
-| `SECRETS_KEK` | **The old server's value**, if you are bringing its accounts (step 9): their saved keys open with it and nothing else. Otherwise a new one: `.venv/bin/python -c "from libs.secrets import generate_key; print('k0:' + generate_key())"`. Keep a copy in your password manager too |
+| `SECRETS_KEK` | A new one: `.venv/bin/python -c "from libs.secrets import generate_key; print('k0:' + generate_key())"`. Keep a copy in your password manager too |
 | `ACCESS_TOKEN_SECRET` | `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `PUBLIC_URL` | The address people open the site at (`https://mahoraga.example.com` in these steps): every sign-up, reset and alert link starts with it. The deploy checks it reaches this server (`deploy/reach.sh`) |
 | `ADMIN_EMAILS` | Your own address, or several, comma-separated: those accounts are the site's admins |
@@ -213,8 +213,8 @@ systemctl list-timers harvester.timer health.timer backup.timer
 
 Then sign up on the site with the `ADMIN_EMAILS` address: Admin appears in the bar.
 
-**`deploy.sh` starts the notifier, which messages real people.** With accounts brought from the old
-server (step 9), their alerts begin at once. To start without them, deploy the rest first, then the
+**`deploy.sh` starts the notifier, which messages real people.** On a database that already holds
+accounts, their alerts begin at once. To start without them, deploy the rest first, then the
 notifier when you mean to:
 
 ```bash
@@ -237,13 +237,7 @@ Harvesting, alerts and CVs being made carry on meanwhile, and a CV asked for wai
 
 To undo a bad change: revert the commit on your laptop, push, then `deploy/deploy.sh <the service>`.
 
-## 9. The accounts on the old server (once, optional)
-
-The old VPS still holds the accounts, in Postgres. [`README.md`](README.md), *Moving the accounts off
-the old VPS*, copies them into Atlas. Do it before step 7, and use the old server's `SECRETS_KEK`
-here, or the copied credentials cannot be opened.
-
-## 10. Stripe: the membership
+## 9. Stripe: the membership
 
 Seven days free, then £4.99 a month, billed automatically (owner, 2026-11-11). Without one an account is on
 the free plan: the whole site, each job a week after members see it, and no CVs, cover letters or alerts

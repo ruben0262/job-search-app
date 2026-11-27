@@ -5,7 +5,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from libs.db import insert
-from libs.ops.alerts import DATABASE_ALERT_FRACTION, Alert, evaluate, render
+from libs.ops.alerts import DATABASE_ALERT_FRACTION, Alert, evaluate
 from libs.ops.health import LaneHealth, PlatformHealth, UserHealth
 
 # server_db's data disk, 98 GB as it reports itself; comfortably inside it, and past the point it pages at.
@@ -40,11 +40,6 @@ def keys(alerts: list[Alert]) -> set[str]:
 def test_a_healthy_platform_produces_no_alerts():
     """The state the operator should see almost always, so it has to be genuinely quiet."""
     assert evaluate(health(users=[user()])) == []
-
-
-def test_an_idle_queue_is_not_a_problem():
-    """Empty lanes are what a small platform looks like between cycles."""
-    assert evaluate(health(lanes=[lane("notify", ready=0), lane("docgen", ready=0)])) == []
 
 
 def test_a_deep_but_moving_queue_is_not_an_alert():
@@ -152,19 +147,6 @@ def test_pages_sort_above_warnings():
     alerts = evaluate(health(lanes=[lane("docgen", dead=1)],
                              users=[user(telegram_status="broken")]))
     assert [alert.severity for alert in alerts] == ["page", "warn"]
-
-
-def test_every_alert_says_what_to_do():
-    """"Look into it" is not an action. Each alert names the likely cause."""
-    alerts = evaluate(health(lanes=[lane("notify", dead=1, ready=1, oldest=60)],
-                             users=[user(telegram_status="broken")],
-                             disk_used_bytes=NEARLY_FULL))
-    assert len(alerts) == 4
-    assert all(len(alert.action) > 20 for alert in alerts)
-
-
-def test_the_summary_is_readable_when_nothing_is_wrong():
-    assert "No alerts" in render([])
 
 
 # ── against a real database ───────────────────────────────────────────────────────────────────

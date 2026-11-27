@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import logging
+import re
 
 import pytest
 
 pytest.importorskip("cryptography")
 
 from libs.obs import audit, configure
-from libs.obs.logs import LOG_FORMAT
 from libs.secrets import redacting
 
 TOKEN = "sk-ant-api03-" + "Zx9" * 20
@@ -83,10 +83,15 @@ def test_audit_writes_one_greppable_line(tmp_path):
     assert "model.published user=abc123 version=2" in line
 
 
-def test_the_format_carries_level_service_and_module():
-    """Asserted on the constant rather than on output."""
-    for field in ("%(levelname)", "%(service)s", "%(name)s", "%(asctime)s", "%(message)s"):
-        assert field in LOG_FORMAT
+def test_the_line_says_when_and_how_bad(tmp_path):
+    """A level means something only on the line, and a line without its time cannot be placed in an
+    incident. Read off the line as it is written, not off the format it is written by."""
+    path = configure("api", log_dir=tmp_path, console=False)
+    logging.getLogger("services.api.auth_routes").warning("sign-in refused")
+
+    [line] = path.read_text(encoding="utf-8").splitlines()
+    assert re.match(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", line), line
+    assert "WARNING" in line
 
 
 def path_lines(path, needle: str) -> int:

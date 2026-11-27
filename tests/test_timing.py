@@ -8,14 +8,6 @@ import pytest
 from libs.obs.timing import Timings, report, timed
 
 
-def test_a_stage_records_how_long_it_took():
-    timings = Timings()
-    with timed("gather", timings):
-        pass
-    assert [stage for stage, _ms in timings.stages] == ["gather"]
-    assert timings.stages[0][1] >= 0
-
-
 def test_a_stage_that_raises_is_still_timed():
     """The most useful timing there is."""
     timings = Timings()

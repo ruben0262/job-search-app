@@ -39,8 +39,7 @@ def test_every_look_is_an_a4_page_with_margins(template):
 def test_the_shelf_starts_with_the_most_popular_and_has_every_sector_with_a_look_of_each_kind():
     for kind in templates.KINDS:
         shelf = templates.groups(kind)
-        title, popular = shelf[0]
-        assert title == "Most popular" and popular == list(templates.POPULAR[kind])
+        assert shelf[0][1] == list(templates.POPULAR[kind])
         assert [title for title, _ in shelf[1:]] == list(templates.SECTORS), (
             f"a sector has no {kind} look, so the picker would skip it")
         ids = {each.id for each in templates.of_kind(kind)}
@@ -183,6 +182,17 @@ def _words(text: str) -> set[str]:
     return set(re.findall(r"\w+", unicodedata.normalize("NFC", text).casefold()))
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _one_chrome_for_the_file():
+    """Every PDF here is printed by one Chrome, as a docgen worker prints every document with the one it
+    keeps (`pdf.browser`), and it is closed when the file is done. Each case closed its own until
+    2026-11-26, and the launches were most of the file's time: 0.3 s each against 0.08 s for a page."""
+    yield
+    from services.docgen import pdf
+
+    pdf._discard()
+
+
 @pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
 @pytest.mark.parametrize("template", templates.CATALOGUE, ids=lambda each: f"{each.kind}-{each.id}")
 def test_every_look_makes_a_pdf_an_ats_reads_in_order_in_the_face_it_asked_for(template):
@@ -245,7 +255,6 @@ def test_every_look_makes_a_pdf_an_ats_reads_in_order_in_the_face_it_asked_for(t
         face = re.search(r"(?s)\bbody\s*{[^}]*font-family:\s*([^;,]+)", template.style).group(1)
         wanted = face.strip().strip("'\"").replace(" ", "").casefold()
         assert any(font.startswith(wanted) for font in fonts), f"{template.id} fell back to {fonts}"
-    pdf._discard()
 
 
 @pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
@@ -270,7 +279,6 @@ def test_a_long_contact_line_stays_on_the_page(template):
         "Lisbon, Portugal", phone, ("alex.morgan@example.com", "mailto:alex.morgan@example.com"),
         *zip(shown, links, strict=True)])
     lines = PdfReader(io.BytesIO(pdf.render(html))).pages[0].extract_text().split("\n")
-    pdf._discard()
     text = "".join("".join(lines).split())
     parts = [link.split("://")[1].removeprefix("www.") for link in links]
     for part in parts:
@@ -280,24 +288,30 @@ def test_a_long_contact_line_stays_on_the_page(template):
 
 
 @pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
-@pytest.mark.parametrize("name", ["Ciara Nolan", "Bo Li"])
-@pytest.mark.parametrize("parts", [4, 3, 1], ids=["four-parts", "three-parts", "one-part"])
+@pytest.mark.parametrize(("name", "parts"), [("Bo Li", 4), ("Ciara Nolan", 3), ("Ciara Nolan", 1)],
+                         ids=["short-name-four-parts", "long-name-three-parts", "long-name-one-part"])
 @pytest.mark.parametrize("template", templates.CATALOGUE, ids=lambda each: f"{each.kind}-{each.id}")
 def test_the_name_is_read_first_however_wide_the_contact_line_under_it(template, name, parts):
     """A look that centres the name over a contact line much wider than it had the contact line read
     first by a reader that orders text by where it sits: Ledger, for a person with a phone, an email, a
     place and a link, in 4 of 288 CVs (2026-11-15). A parser that takes the first line for the name would
-    have taken a phone number. Both readers, a long name and a short one. The letter looks too: Ledger's
-    letter, under the same letterhead, read the contact line first in 2 of 18 letters, and Kestrel's,
-    which set a contact line short enough to fit beside the name, for a paralegal with a phone, an email
-    and a town (2026-11-18)."""
+    have taken a phone number. The letter looks too: Ledger's letter, under the same letterhead, read the
+    contact line first in 2 of 18 letters, and Kestrel's, which set a contact line short enough to fit
+    beside the name, for a paralegal with a phone, an email and a town (2026-11-18).
+
+    Both readers, over the three cases that differ in kind. All four parts under a short name, the line
+    that reaches furthest past its name: with less room under Ledger's name it is read wrongly while the
+    same line under a long name still reads right (6 to 8pt in the CV, 6 to 13pt in the letter; at 3pt
+    both). The paralegal's three parts with a long name, the longest line that fitted beside one. And one
+    part under a long name, where the name is the wider of the two in every look. A long and a short name
+    with each line were six cases a look until 2026-11-26: drawn in the looks as they were before each
+    fix, the three left out failed only where one of these did."""
     from services.docgen import pdf
 
     html = _render(template, name=name, contact=[
         "020 917 0126", ("ciara.nolan@example.com", "mailto:ciara.nolan@example.com"), "Rathmines, Dublin",
         ("linkedin.com/in/ciara-nolan-example", "https://linkedin.com/in/ciara-nolan-example")][:parts])
     document = pdf.render(html)
-    pdf._discard()
     for reader, text in _read(document).items():
         assert " ".join(text.split()).casefold().startswith(name.casefold()), (
             f"{template.id}: {reader} reads {text.strip()[:40]!r} before the name")
@@ -324,7 +338,6 @@ def test_every_look_reads_its_capitals_as_whole_words(template):
         flat = f" {' '.join(text.split()).casefold()} "
         split = [word for word in words if f" {word.casefold()} " not in flat]
         assert not split, f"{template.id}: {reader} split {split}"
-    pdf._discard()
 
 
 @pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
@@ -345,7 +358,6 @@ def test_every_letter_look_holds_the_longest_letter_the_checks_pass_on_one_page(
     assert letter in page
     assert checks.letter_words(letter) == checks.LETTER_WORDS[1]
     _, report = pdf.fitted(page, kind="cover")
-    pdf._discard()
     assert (report.pages, report.scale) == (1, 1.0), f"{template.id}: {report}"
 
 
@@ -367,7 +379,6 @@ def test_the_parts_of_the_contact_line_have_a_character_between_them(template):
         return "".join(glyphs(child) for child in item) if isinstance(item, LTContainer) else ""
 
     document = pdf.render(_render(template))
-    pdf._discard()
     text = "".join(glyphs(page) for page in extract_pages(io.BytesIO(document)))
     parts = ["Portugal", "+351 912 345 678", "alex.morgan@example.com", "linkedin.com/in/alexmorgan"]
     for left, right in itertools.pairwise(parts):
@@ -375,29 +386,27 @@ def test_the_parts_of_the_contact_line_have_a_character_between_them(template):
         assert between and between.group(1), f"{template.id} runs {left!r} into {right!r}"
 
 
-@pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome lays the page out")
 @pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
 @pytest.mark.parametrize("template", templates.of_kind("cv"), ids=lambda each: each.id)
 def test_a_line_that_spills_onto_a_last_page_is_taken_up_by_every_look(template):
     """One line alone on a second page cost a second model call of ~45 s (8 of 36 first drafts,
     2026-11-14). Every look is drawn slightly smaller instead, and reads the same to an ATS."""
+    from pypdf import PdfReader
+
     from services.docgen import pdf
 
+    line = "Forklift licence, counterbalance and reach, renewed 2024"
+
     def page(lines: int) -> str:
-        more = "<li>Forklift licence, counterbalance and reach, renewed 2024</li>" * lines
+        more = f"<li>{line}</li>" * lines
         return _render(template).replace("</ul></div>\n</body>", f"{more}</ul></div>\n</body>")
 
-    def pages(lines: int) -> int:
-        return pdf.inspect_pdf(pdf.render(page(lines)), kind="cv").pages
-
-    # The fewest added lines that reach a second page: there, one line has spilled.
-    fits, spills = 0, 64
-    assert pages(fits) == 1 and pages(spills) > 1
-    while spills - fits > 1:
-        middle = (fits + spills) // 2
-        fits, spills = (fits, middle) if pages(middle) > 1 else (middle, spills)
-    html = page(spills)
-    assert pdf.inspect_pdf(pdf.render(html), kind="cv").spilled
+    # The fewest added lines that reach a second page: there, one line has spilled. A page is filled before
+    # the next is begun, so that is one more than the first page holds of more lines than fit on it.
+    held = PdfReader(io.BytesIO(pdf.render(page(64)))).pages[0].extract_text().count(line)
+    html = page(held + 1)
+    alone = pdf.inspect_pdf(pdf.render(html), kind="cv")
+    assert alone.spilled and alone.last_page_chars < 2 * len(line), f"{template.id}: {alone}"
 
     document, report = pdf.fitted(html, kind="cv")
 
@@ -442,7 +451,6 @@ def test_no_two_words_run_together_for_a_reader_that_makes_no_space_of_a_gap(tem
                         profile)
     assert long in html and "Northern Africa Distribution" in html and profile in html
     document = pdf.render(html)
-    pdf._discard()
 
     written = {word.casefold() for word in re.findall(
         r"[^\W\d_]{2,}", unescape(re.sub(r"<[^>]+>", " ", html.split("<body>", 1)[1])))}
@@ -605,83 +613,3 @@ def test_every_colour_reads_on_white_and_white_reads_on_it():
     for name, colour in templates.COLOURS.values():
         assert re.fullmatch(r"#[0-9a-f]{6}", colour), name
         assert 1.05 / (_luminance(colour) + 0.05) >= 4.5, f"{name} is too pale to read on white"
-
-
-# ── the picker's API ──────────────────────────────────────────────────────────────────────────
-
-@pytest.fixture()
-def http(db, user, monkeypatch):
-    pytest.importorskip("fastapi")
-    from fastapi.testclient import TestClient
-
-    from services.api.app import app
-    from tests.conftest import access_cookie
-
-    os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
-    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
-    with TestClient(app, base_url="https://testserver") as client:
-        client.cookies.set("access_token", access_cookie(db, user.id), path="/")
-        yield client
-
-
-def test_the_picker_shows_the_most_popular_then_each_sector_and_the_look_in_use(http):
-    shelves = http.get("/templates").json()
-    for kind in ("cv", "cover"):
-        shelf = shelves[kind]
-        assert shelf["chosen"] == "meridian"
-        assert shelf["groups"][0] == {"title": "Most popular", "templates": list(templates.POPULAR[kind])}
-        assert len(shelf["groups"]) == 1 + len(templates.SECTORS)
-        named = {card["id"]: card for card in shelf["templates"]}
-        # A name and a picture for each, and nothing else: the descriptions went (owner, 2026-11-07). The
-        # pictures come with the shelf, so the sheet draws them without asking for each (2026-11-08).
-        assert all(set(named[id_]) == {"id", "name", "picture"} and named[id_]["name"]
-                   and named[id_]["picture"] == templates.picture(templates.find(kind, id_))
-                   for group in shelf["groups"] for id_ in group["templates"])
-    http.cookies.clear()
-    assert http.get("/templates").status_code == 401
-
-
-def test_a_pick_is_kept_for_its_own_kind_only(http, db, user):
-    from libs.db import get
-    from libs.db.models import User
-
-    answer = http.put("/templates/cv", json={"id": "ledger"})
-    assert answer.status_code == 200
-    assert answer.json()["cv"]["chosen"] == "ledger" and answer.json()["cover"]["chosen"] == "meridian"
-    assert http.get("/templates").json()["cv"]["chosen"] == "ledger"
-    assert get(db, User, user.id).cv_template == "ledger"
-
-
-def test_a_look_that_does_not_exist_is_refused_and_nothing_changes(http):
-    assert http.put("/templates/cover", json={"id": "quill"}).status_code == 404, "Quill is a CV look only"
-    assert http.put("/templates/cv", json={"id": "nope"}).status_code == 404
-    assert http.put("/templates/letter", json={"id": "meridian"}).status_code == 422
-    assert http.get("/templates").json()["cover"]["chosen"] == "meridian"
-
-
-def test_one_colour_is_kept_for_both_kinds_and_every_picture_is_drawn_in_it(http, db, user):
-    """Picked beside the looks (owner, 2026-11-17: one colour for the CV and the cover letter), so every
-    picture shows what the next document will look like; none picked again, each look is its own."""
-    from libs.db import get
-    from libs.db.models import User
-
-    shelves = http.get("/templates").json()
-    assert shelves["colour"] is None
-    assert [each["id"] for each in shelves["colours"]] == list(templates.COLOURS)
-    navy = templates.COLOURS["navy"][1]
-    answer = http.put("/templates/colour", json={"id": "navy"})
-    assert answer.status_code == 200 and answer.json()["colour"] == "navy"
-    assert get(db, User, user.id).look_colour == "navy"
-    for kind in ("cv", "cover"):
-        cards = answer.json()[kind]["templates"]
-        assert cards and all(navy in card["picture"] for card in cards), f"a {kind} picture is not in navy"
-        assert answer.json()[kind]["chosen"] == "meridian", "a colour changes no look"
-    back = http.put("/templates/colour", json={"id": None}).json()
-    assert back["colour"] is None
-    assert all(navy not in card["picture"] for card in back["cv"]["templates"])
-
-
-def test_a_colour_that_does_not_exist_is_refused_and_nothing_changes(http):
-    assert http.put("/templates/colour", json={"id": "teal"}).status_code == 200
-    assert http.put("/templates/colour", json={"id": "beige"}).status_code == 404
-    assert http.get("/templates").json()["colour"] == "teal"

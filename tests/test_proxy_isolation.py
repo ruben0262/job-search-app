@@ -8,12 +8,7 @@ from __future__ import annotations
 
 import httpx
 
-from services.harvester.fetch import (
-    PROXIED_HOSTS,
-    is_proxied,
-    make_shared_client,
-    make_site_client,
-)
+from services.harvester.fetch import make_shared_client, make_site_client
 
 SITE_PROXY = "http://site:secret@proxy.example:8080"
 
@@ -54,7 +49,8 @@ def test_every_proxied_request_is_a_new_connection_so_a_new_address():
                 self.request.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
 
     with socketserver.ThreadingTCPServer(("127.0.0.1", 0), Proxy) as server:
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        # Its stop is noticed between looks for a connection, half a second apart unless said.
+        threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
         with make_site_client(f"http://127.0.0.1:{server.server_address[1]}") as client:
             for _ in range(3):
                 assert client.get("http://www.linkedin.com/jobs/view/1").text == "ok"
@@ -68,23 +64,6 @@ def test_linkedin_subdomains_are_proxied_too():
         base = _transport_for(client, "https://linkedin.com/x")
         assert _transport_for(client, "https://www.linkedin.com/x") is base
         assert _transport_for(client, "https://uk.linkedin.com/x") is base
-
-
-def test_a_redirect_out_of_linkedin_is_not_proxied():
-    """Per-host mounts resolve per request URL, so a redirect to an ATS board goes direct."""
-    with make_site_client(SITE_PROXY) as client:
-        proxied = _transport_for(client, "https://www.linkedin.com/jobs/view/1")
-        assert _transport_for(client, "https://boards.greenhouse.io/acme/jobs/1") is not proxied
-
-
-def test_is_proxied_agrees_with_the_routing_it_describes():
-    """A helper that disagreed with the mounts would make cost estimates confidently wrong."""
-    with make_site_client(SITE_PROXY) as client:
-        for url in ("https://www.linkedin.com/jobs/view/1", "https://linkedin.com/x",
-                    "https://boards.greenhouse.io/a", "https://example.test/x"):
-            routed_via_proxy = _transport_for(client, url) is _transport_for(
-                client, f"https://{PROXIED_HOSTS[0]}/probe")
-            assert is_proxied(url) == routed_via_proxy, url
 
 
 def test_ambient_proxy_environment_variables_are_ignored(monkeypatch):

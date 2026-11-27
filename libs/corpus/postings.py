@@ -252,16 +252,6 @@ def parse_accepting(html_text: str) -> bool:
     return not bool(_CLOSED.search(html_text))
 
 
-def parse_easy_apply(html_text: str) -> bool | None:
-    """Whether the application stays on LinkedIn."""
-    low = html_text.lower()
-    if "apply-link-offsite" in low or "apply on company website" in low:
-        return False
-    if "apply-link-onsite" in low or "easy apply" in low or "easyapply" in low:
-        return True
-    return None
-
-
 # ── the apply target ──────────────────────────────────────────────────────────────────────────
 
 def extract_ats_url(html_text: str) -> str | None:

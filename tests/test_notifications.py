@@ -143,9 +143,9 @@ def test_the_card_says_which_board_to_apply_on_by_its_name():
 
     job = CorpusJob(id=1, url="https://www.linkedin.com/jobs/view/1", source="linkedin", title="Engineer",
                     company="Acme")
-    [[apply, cv]] = keyboard(job)["inline_keyboard"]
+    [[apply, see]] = keyboard(job)["inline_keyboard"]
     assert (apply["text"], apply["url"]) == ("Apply on LinkedIn", job.url)
-    assert cv["text"] == "See it on the site"
+    assert see["url"].endswith("/jobs?job=1"), "the other opens the job on the site"
     assert "Acme · LinkedIn" in render(job, ("engineer",)), "the board as people write it, not its key"
 
     added = CorpusJob(id=2, url="https://careers.example.com/42", source="link", title="Engineer")

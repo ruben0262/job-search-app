@@ -189,8 +189,8 @@ def test_a_new_match_reaches_telegram_and_every_browser_once(db):
     assert f"Senior {word}" in text and f"Matches: {word}" in text
     # Plain links, so a tap opens something rather than waiting on a webhook.
     page = site_url(f"/jobs?job={match.id}")
-    assert [(b["text"], b["url"]) for b in keyboard["inline_keyboard"][0]] == [
-        ("Apply on Test", match.url), ("See it on the site", page)]
+    apply, see = keyboard["inline_keyboard"][0]
+    assert (apply["text"], apply["url"], see["url"]) == ("Apply on Test", match.url, page)
     assert [payload["url"] for _, payload in outbox.browsers] == [page, page]
     assert all(payload["body"].startswith("My search · ") for _, payload in outbox.browsers)
     assert _notified(db, user) == {match.id}
@@ -732,8 +732,6 @@ def test_a_run_that_fails_partway_sends_nothing_twice(db):
 
 @needs_db
 def test_a_run_stops_before_its_claim_expires_and_queues_the_rest(db, monkeypatch):
-    import time
-
     from libs import limits
     from libs.db.models import QueueJob
     from libs.notify import owed
@@ -743,12 +741,14 @@ def test_a_run_stops_before_its_claim_expires_and_queues_the_rest(db, monkeypatc
     limits.set_limit(db, user.id, "items_per_run", 50)
     for index in range(10):
         _posting(db, word, minutes_ago=30 - index)
-    monkeypatch.setattr(deliver_module, "SEND_BUDGET_SECONDS", 0.05)
+    # The run's own clock, moved by each send rather than slept through.
+    clock = [0.0]
+    monkeypatch.setattr(deliver_module, "monotonic", lambda: clock[0])
     outbox = Outbox()
 
     def slow(chat, text, keyboard):
         outbox.tg(chat, text, keyboard)
-        time.sleep(0.04)
+        clock[0] += deliver_module.SEND_BUDGET_SECONDS / 3
 
     sent = run(db, user, outbox, telegram=slow)
 

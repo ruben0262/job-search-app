@@ -83,56 +83,6 @@ set -a && . certificates/server.env && set +a
 .venv/bin/python deploy/scripts/export_account.py person@example.com > mahoraga-data.json
 ```
 
-## Moving the accounts off the old VPS (once)
-
-The old VPS (`169.56.16.241`, unverified) still runs the pre-MongoDB stack, with the accounts
-in Postgres. This copies the **accounts only** into Atlas (owner, 2026-10-30): people, logins,
-settings, words, documents, profile files, credentials, browsers, and the operator's settings,
-keywords and company boards. Postings are collected again within hours; applied and hidden marks, and
-sessions, are not copied. Do it before the new server's first `deploy.sh`. On the **old** VPS:
-
-1. **On the old code, back up and finish the Postgres schema.** The copy reads exactly one schema
-   (the old checkout keeps its settings in `deploy/.env`):
-   ```bash
-   git fetch && git checkout model-on-postgres
-   set -a && . deploy/.env && set +a
-   export DATABASE_URL="postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch"
-   ./.venv/bin/python deploy/scripts/backup.py --out ~/backups      # pg_dump, verified
-   ./.venv/bin/alembic upgrade head                                 # to 3c7d1e9a5b20
-   ```
-2. **Stop everything that writes**: `sudo systemctl stop harvester.timer backup.timer health.timer`,
-   then `docker compose -f deploy/compose.yml --profile full --profile ml stop`. Postgres keeps
-   running for the copy.
-3. **Atlas**: allow the old VPS's public address under Network Access too, for the copy.
-4. **The new code, and the copy.** A dry run first; it reads and converts everything and writes
-   nothing:
-   ```bash
-   git checkout main
-   ./.venv/bin/pip install -r requirements-dev.txt "psycopg[binary]"
-   set -a && . deploy/.env && set +a                                 # POSTGRES_PASSWORD, SECRETS_KEK
-   export MONGODB_URI='<the Atlas address>' MONGODB_DB=mahoraga
-   export POSTGRES_URL="postgresql://jobsearch:${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch"
-   ./.venv/bin/python deploy/scripts/copy_accounts.py --dry-run
-   ./.venv/bin/python deploy/scripts/copy_accounts.py
-   ./.venv/bin/python deploy/scripts/show_accounts.py               # the same people, in MongoDB
-   ```
-5. **Carry the key across**: the old `deploy/.env`'s `SECRETS_KEK` goes into the new server's
-   `certificates/server.env`, exactly. The copied credentials are sealed with it and open with nothing
-   else.
-6. **Start the new server** ([`SERVER.md`](SERVER.md), steps 7 and 6.4). Then stop the old stack,
-   keeping Postgres's data: `docker compose -f deploy/compose.yml --profile full --profile ml down`.
-   Remove the old VPS's address from Atlas.
-7. **Tell the existing accounts** three things:
-   - sign in once more (sessions were not copied);
-   - connect their Telegram bot again in Settings if they had one (its token was not copied);
-   - agree once more before an AI document: the disclosure now names Google and OpenAI.
-8. **After two quiet weeks**, delete the old database on the old VPS:
-   `docker rm job-search-platform-postgres-1 && docker volume rm job-search-platform_pgdata`.
-
-**The way back**, while that volume exists: on the old VPS, `git checkout model-on-postgres`,
-`docker start job-search-platform-postgres-1`, its own `deploy/deploy.sh`, and the old tunnel's
-hostname back. Anything written to Atlas meanwhile stays there.
-
 ## Telegram, browser notifications and email
 
 **Telegram** is each person's own bot (owner's decision, 2026-11-01), so there is nothing to set up

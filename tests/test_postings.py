@@ -64,8 +64,10 @@ class FakeClient:
 
 @pytest.fixture(autouse=True)
 def _no_backoff(monkeypatch):
-    """The retry sleep is real seconds and there are six of them per failed fetch."""
-    monkeypatch.setattr(postings.time, "sleep", lambda _seconds: None)
+    """The retry sleep is real seconds and there are six of them per failed fetch. Its own wait is set to
+    nothing, not `time.sleep` made to do nothing: that is the whole process's, and a database client's
+    threads, which wait with it, then spin for as long as the test runs."""
+    monkeypatch.setattr(postings, "LI_BACKOFF", 0)
 
 
 # ── what comes off a LinkedIn page ────────────────────────────────────────────────────────────
@@ -455,13 +457,6 @@ def test_an_apply_link_that_bounces_back_to_linkedin_is_dropped():
     assert postings.resolve_apply_url("https://acme.com/careers/1", client) is None
 
 
-def test_the_easy_apply_signal_is_read_from_where_the_application_happens():
-    """Not from the button text: the logged-out page rarely says "Easy Apply"."""
-    assert postings.parse_easy_apply('<a class="apply-link-onsite">Apply</a>') is True
-    assert postings.parse_easy_apply('<a class="apply-link-offsite">Apply</a>') is False
-    assert postings.parse_easy_apply("<div>a job</div>") is None
-
-
 def test_the_apply_signal_ranks_the_top_card_button_above_any_link_saying_apply():
     html = ('<a href="/help">How to apply</a>'
             '<a class="topcard__button" href="/jobs/apply?url=https%3A%2F%2Facme.com%2Fjob">'
@@ -560,22 +555,3 @@ def test_an_ordinary_transport_failure_is_still_retried():
     postings.fetch_job("https://www.linkedin.com/jobs/view/1", client=Flaky(), snippet="teaser",
                        stats=stats)
     assert stats["li_error"] == postings.LI_RETRIES
-
-
-def test_a_missing_repost_marker_is_unknown_not_a_denial():
-    """The word appears on no page a logged-out fetch can reach."""
-    from libs.corpus import postings
-
-    assert postings.parse_reposted('<span class="posted-time-ago__text">Posted 3 days ago</span>') \
-        is None
-    assert postings.parse_reposted('<span class="posted-time-ago__text">Reposted 2 days ago</span>') \
-        is True
-    assert postings.parse_reposted("<div>no caption here</div>") is None
-
-
-def test_the_easy_apply_fetch_is_gone():
-    """It streamed 96 KB of a user's paid proxy per posting to read one boolean that is not on the page."""
-    from libs.corpus import postings
-
-    assert not hasattr(postings, "fetch_easy_apply")
-    assert hasattr(postings, "parse_easy_apply")

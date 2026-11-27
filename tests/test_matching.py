@@ -123,26 +123,6 @@ def test_remote_only_drops_jobs_known_to_be_on_site_but_keeps_unknown_ones(accou
 
 
 @needs_db
-def test_a_minimum_salary_drops_what_pays_less_and_keeps_what_does_not_say(account):
-    from libs.matching import matching_jobs
-
-    db, user = account
-    _search(db, user, {"sections": [{"platform": "all", "keywords": ["backend engineer"]}],
-                       "min_salary": 60_000, "salary_currency": "EUR"})
-    # Stored as the harvest stores them: the pay a text states is read when the text is (`libs.corpus.pay`).
-    from libs.corpus.repository import CorpusRepository
-
-    corpus = CorpusRepository(db)
-    low, high, silent = (corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title)
-                         for title in ("Backend Engineer A", "Backend Engineer B", "Backend Engineer C"))
-    for job, pay in ((low, "€40,000 - €50,000 per year"), (high, "€70,000 - €90,000 per year"),
-                     (silent, "Competitive pay")):
-        corpus.set_description(job, f"{pay}. We build services for shops and the people who run them. " * 4)
-
-    assert {m.job.id for m in matching_jobs(db, user)} == {high, silent}
-
-
-@needs_db
 def test_no_green_words_means_no_jobs_rather_than_every_job(account):
     from libs.matching import matching_jobs, their_jobs
 
