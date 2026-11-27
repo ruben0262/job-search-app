@@ -180,6 +180,18 @@ def test_a_job_title_in_bold_is_counted_as_the_words_it_is():
     assert build.text_of(letter).count("Backend Engineer, remote, role") == 1
 
 
+def test_a_letters_writer_is_given_what_the_company_says_of_itself_or_told_nothing_more_is_known():
+    """Owner, 2026-11-27: a letter is a motivation letter, and why this employer needs something true about
+    it. What the platform gathered about the company (`libs.corpus.companies`) reaches the prompt's own
+    place for it; a company it knows nothing more of is said to be so, and never left as a bare slot."""
+    wording = "Write the letter. {{job}} <about_the_company>{{company}}</about_the_company> <letter></letter>"
+
+    known = _request("cover", template=wording, company="Northwind sells wind to forty towns.")
+    assert "<about_the_company>Northwind sells wind to forty towns.</about_the_company>" in known.prompt
+    unknown = _request("cover", template=wording)
+    assert f"<about_the_company>{build.NOTHING_MORE}</about_the_company>" in unknown.prompt
+
+
 def test_a_letter_begins_at_its_greeting_with_no_block_for_the_company_above_it():
     """Owner, 2026-11-26: without the company and its place above it the letter "would look smoother". Code
     wrote that block from the board's fields as they came, so a letter for a recruiter's client was headed
@@ -909,14 +921,22 @@ def test_a_letter_is_sent_back_for_what_gives_a_generated_one_away():
     assert "does not name Northwind" in found and "colon" in found and "I've" in found
 
 
-def test_a_letter_that_closes_on_applying_is_sent_back_and_one_quoting_the_posting_is_not():
-    """Every letter the first wording wrote closed on "I would welcome a conversation", and "a proactive
-    assistant" was A1's own product, in A1's own posting (2026-11-11)."""
-    welcome = GOOD_LETTER.replace("Quiet nights are the measure I care about most.",
-                                  "I would welcome a conversation about the role.")
+def test_a_close_that_asks_to_talk_is_the_letters_own_and_a_stock_close_is_sent_back():
+    """Owner, 2026-11-27: "the close can happen that's appropriate and guidance expects it". A plain line
+    asking to talk was sent back with every other close about applying ("I would welcome a conversation",
+    2026-11-11); now only the stock forms are. "A proactive assistant" was A1's own product, in A1's own
+    posting, and is theirs to quote."""
+    def closing(line: str) -> list[str]:
+        return checks.letter(GOOD_LETTER.replace("Quiet nights are the measure I care about most.", line),
+                             company="Northwind")
+
+    for asks in ("I would welcome a conversation about the role.", "I would be glad to talk it through.",
+                 "I look forward to talking about it.", "I would like to discuss it with you."):
+        assert closing(asks) == [], asks
+    assert any("thank you for your consideration" in fault for fault in closing(
+        "Thank you for your consideration."))
     quoting = GOOD_LETTER.replace("payments platform", "proactive payments platform")
 
-    assert any("i would welcome" in fault for fault in checks.letter(welcome, company="Northwind"))
     assert checks.letter(quoting, company="Northwind", posting="We run a proactive payments platform.") == []
     assert checks.letter(quoting, company="Northwind"), "the same word, not the posting's, is a cliché"
 
@@ -1054,13 +1074,14 @@ def test_a_closing_paragraph_marked_as_the_sign_off_is_still_read_and_counted():
     check and the bench."""
     close = ("I would like to bring the same habits to your payments platform, starting with the parts that "
              "wake people at night. Quiet nights are the measure I care about most.")
-    last = ("I would like to bring the same habits to your payments platform. I look forward to hearing "
-            "from you.")
+    last = ("I would like to bring the same habits to your payments platform. Thank you for your "
+            "consideration.")
     marked = GOOD_LETTER.replace(f"<p>{close}</p>", f'<p class="closing">{last}</p>')
     shorter_by = len(close.split()) - len(last.split())
 
     assert marked != GOOD_LETTER
-    assert any("i look forward to" in fault for fault in checks.letter(marked, company="Northwind"))
+    assert any("thank you for your consideration" in fault
+               for fault in checks.letter(marked, company="Northwind"))
     assert checks.letter_words(marked) == checks.letter_words(GOOD_LETTER) - shorter_by
     # Greeting, sign-off and name are not the letter's length.
     assert checks.letter_words(GOOD_LETTER) == sum(len(each.split()) for each in re.findall(

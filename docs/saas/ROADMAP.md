@@ -3782,6 +3782,13 @@ work, or opening and closing sessions faster, would help):
       reviewer, GPT's readers), then `variants/cover/v23.md` and `v32.md` go. (2) The model for letters, the only
       lever measured larger than any wording (2026-11-21). (3) Whether wording rounds go on at all: these sets cannot
       see under about a mark.
+    - **2026-11-27, evening: a motivation letter** (CHANGELOG). The owner: a letter says why this employer, why
+      this work and why them, and the CV carries the proof; the reason may be reasoned out; the close may ask to
+      talk; judged by reading a few profiles. Built: what a company says of itself, gathered from its postings and
+      kept once a company (`libs/corpus/companies.py`), in a slot of the prompt; **v37 live** on the owner's word,
+      read on 8 profiles on both writers (no first draft sent back, ATS 100 in six looks). **Waiting:** (1) A
+      company's own site or LinkedIn page as a second source: a search key or the proxy's budget. (2) A measured
+      round, if one is wanted, with a reader built for a motivation letter, and the trap.
 
 54. **Plans and the landing page: what waits for the owner** (2026-11-16, CHANGELOG).
     - At Stripe, live: a Starter product with a recurring monthly price of £2.99; its id as

@@ -173,7 +173,8 @@ when it holds on every gate below. A gate that was not run is reported as not ru
    used), no part of a list as all of it, nothing the posting asks for claimed as theirs. Counted from both
    reviewers' lines not theirs (`not_theirs`), each read by a person, and on the trap: a developer with Python and
    no Go, for two postings that ask for Go (`backend-dev`). A change with more of them is worse, whatever else it
-   raises.
+   raises. This is about facts. Why they want the job may be reasoned out (owner, 2026-11-27: "a logical and
+   calculated inference", the reason "that sells the user best"): a reason, never a fact about their past.
 
 Then §3a's rules: paired by person and posting, ± one standard error, what did not move, the numbers in
 `CHANGELOG.md`; a wording not made live kept in `libs/scaffolds/history/` with its README row.

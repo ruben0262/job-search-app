@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 from libs import prompts, templates
+from libs.corpus import companies
 from libs.corpus.texts import with_texts
 from libs.db import get
 from libs.db.models import CorpusJob, User
@@ -69,7 +70,8 @@ def run_ai(db, user_id: _uuid.UUID, job_id: int, *, client, model: str, kind: st
             raise NotBuildable(str(exc)) from exc
 
     request = build.prepare(kind, user=user, job=job, documents=documents_of(db, user_id),
-                            look=templates.chosen(user, kind), languages=_languages(db, user_id))
+                            look=templates.chosen(user, kind), languages=_languages(db, user_id),
+                            company=_company(db, job) if kind == "cover" else "")
     # Where the time goes and what each call used, said with the document (`_done`).
     seconds: dict[str, float] = {"write": 0.0, "render": 0.0}
     with _timed(seconds, "write"):
@@ -157,6 +159,18 @@ def _load(db, user_id: _uuid.UUID, job_id: int) -> tuple[User, CorpusJob]:
     if job is None:
         raise NotBuildable(f"job {job_id} is no longer in the corpus")
     return user, with_texts(db, [job])[0]
+
+
+def _company(db, job) -> str:
+    """What the employer says of itself, for a letter's reason for wanting it (`companies.about`). A letter is
+    written from the posting alone when it cannot be gathered: said in the log, and never waited on."""
+    try:
+        return companies.about(db, job.company)
+    except Exception:
+        # The letter is worth more than what its employer says of itself.
+        logger.warning("docgen: nothing gathered about %r for job %s; the letter is written from the posting "
+                       "alone", job.company, job.id, exc_info=True)
+        return ""
 
 
 def _languages(db, user_id: _uuid.UUID) -> tuple[str, ...]:

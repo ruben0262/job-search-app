@@ -6,6 +6,7 @@ from libs.db.models.alert import CHANNELS, Alert, AlertCursor
 from libs.db.models.ats import AtsEtag, AtsToken, CompanyLookup
 from libs.db.models.auth import MAIL_PURPOSES, TOKEN_PURPOSES, AuthToken, MailSend, RateCount, UserSession
 from libs.db.models.built import BuiltDocument
+from libs.db.models.company import Company
 from libs.db.models.contact import ContactMessage
 from libs.db.models.corpus import WORKPLACES, CorpusJob, CorpusText, CountryCount, SweptPlace, Word
 from libs.db.models.document import DOCUMENT_KINDS, UploadedFile, UserDocument
@@ -39,14 +40,15 @@ MODELS = (User, UserConfig, UserSecret, UserSession, AuthToken, MailSend, Corpus
           UserDocument, UserProfileFile, PlatformSetting, AiRequest, AtsToken, AtsEtag,
           BuiltDocument, LanePause, Lock, ContactMessage, Word, SweptPlace,
           CountryCount, CompanyLookup, UploadedFile, FitScore, Alert, AlertCursor, VapidKey, RateCount,
-          DrawnPage)
+          DrawnPage, Company)
 
 __all__ = [
     "CHANNELS", "CLAIM_TIMEOUT_MIN", "DEFAULT_TITLE", "DOCUMENT_KINDS", "JOB_STATES", "LANES",
     "MAIL_PURPOSES",
     "MAX_ATTEMPTS", "MESSAGE_STATUSES", "MODELS", "PROFILE_FILE_KINDS", "SECRET_KINDS",
     "TELEGRAM_STATUSES", "TOKEN_PURPOSES", "USER_STATUSES", "WORKPLACES",
-    "AiRequest", "Alert", "AlertCursor", "AtsEtag", "AtsToken", "AuthToken", "BuiltDocument", "CompanyLookup",
+    "AiRequest", "Alert", "AlertCursor", "AtsEtag", "AtsToken", "AuthToken", "BuiltDocument", "Company",
+    "CompanyLookup",
     "ContactMessage",
     "CorpusJob", "CorpusText", "CountryCount", "DrawnPage", "FitScore",
     "LanePause", "Lock",

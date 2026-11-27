@@ -69,6 +69,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from libs import templates  # noqa: E402
+from libs.corpus import companies  # noqa: E402
 from libs.documents.needs import BASE  # noqa: E402
 from libs.llm import cli, client_for, rest  # noqa: E402
 from libs.settings import CV_MODEL, DEFAULT_DOCUMENT_MODELS  # noqa: E402
@@ -89,10 +90,9 @@ LETTER_JUDGE_SYSTEM = "You review cover letters the way the hiring manager for t
 # cover letter as a hiring manager would want to see it"): what the posting needs most, the best case the
 # person's record makes for it, every claim against that record, and the chance of an interview.
 HIRE_JUDGE_PROMPT = HERE / "eval_hire.md"
-# What is known about each posting's company, a file a posting (`company/<slug>.txt`): a `{{company}}` slot
-# in a letter's wording is filled with it, and the letters' reviewer is shown it whatever wrote the letter.
+# What is known about each posting's company, a file a posting (`company/<slug>.txt`): the writer is given
+# it as production gives what it gathered (`request_for`), and the letters' reviewer is shown it.
 COMPANY_FACTS = HERE / "company"
-COMPANY_SLOT = "{{company}}"
 # The person's own CV, unchanged: the baseline every written CV is measured against.
 UPLOADED = "uploaded"
 
@@ -215,13 +215,13 @@ def request_for(candidate: Candidate, posting: Posting, template: str | None, ki
                 look: str = templates.DEFAULT):
     """What production would send for this person and posting, in the look everyone has by default or in
     `look`."""
-    if template and COMPANY_SLOT in template:
-        # A wording that reads what is known about the company (`company/<slug>.txt`), or that nothing is:
-        # filled here, since production's slots (`build.prepare`) do not have it.
-        template = template.replace(
-            COMPANY_SLOT, posting.company_facts or "Nothing is known about the company beyond the posting.")
+    # What the company says of itself, as production gathers it from the company's postings
+    # (`companies.about`): here from what was read about it for the bench (`company/<slug>.txt`), else from
+    # this posting's own part about it.
+    company = posting.company_facts or companies.about_in(posting.description, posting.company)
     return build.prepare(kind, user=candidate.user, job=posting, documents=candidate.documents,
-                         look=templates.find(kind, look), languages=candidate.languages, template=template)
+                         look=templates.find(kind, look), languages=candidate.languages, template=template,
+                         company=company if kind == "cover" else "")
 
 
 def write_one(client, candidate: Candidate, posting: Posting, *, template: str, model: str,

@@ -887,7 +887,12 @@ def test_a_wording_reads_what_is_known_about_the_company_or_that_nothing_is():
     assert "<company>Acme makes bicycles in Leeds.</company>" in bench.request_for(
         candidate, posting, wording, "cover").prompt
     posting.company_facts = ""
-    assert "<company>Nothing is known about the company beyond the posting.</company>" in bench.request_for(
+    assert f"<company>{bench.build.NOTHING_MORE}</company>" in bench.request_for(
+        candidate, posting, wording, "cover").prompt
+    # Nothing read about it for the bench: what the posting itself says under "About us", as production
+    # gathers it from the company's postings.
+    posting.description = "About us\nAcme mends bicycles.\n\nThe role\nYou count stock."
+    assert "<company>Acme mends bicycles.</company>" in bench.request_for(
         candidate, posting, wording, "cover").prompt
     assert "{{company}}" not in bench.request_for(candidate, posting, None, "cover").prompt
 

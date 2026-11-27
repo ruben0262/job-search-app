@@ -14,6 +14,101 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-27, evening — a cover letter is a motivation letter: v37 live on the owner's word, what a company says of itself kept once a company, a close that asks to talk
+
+The owner, on the live letter: "it only talks about the necessary skills for the jobs, which is not what a cover
+letter does. That's what a cv does ... A cover letter is supposed to be like a motivation letter ... to sell ones self
+to the employer, and answer questions such as why the user wants to work at the company, perhaps why them". Research
+first, then the gap, then the work, for every trade, through every filter. Then: the 21 November rule goes for
+motivation (it may come from their letter, CV or About you, "or assume it ... a logical and calculated inference",
+the reason "that sells the user best"); company knowledge is built and kept ("saving it in db so we can access it
+anytime without further prompt tokens being spent on it"); the close may ask to talk; and "even better would be if
+evaluation falls on you only with a couple of profile examples ... the manual reviewer might have faults, old logic".
+
+**What the research says** (read in full: the UK's National Careers Service, Prospects, the German Federal
+Employment Agency twice; Ask a Manager, The Muse and two university guides refused or were missing, and a survey of
+hiring managers timed out, so no figure is cited). A letter answers what a CV cannot: why this employer, why this work,
+why this person, the last as two or three chosen things they would bring and never the CV again. The reason for the
+employer is particular to it ("remove the employer's name; if the letter would fit another company, it is not
+tailored"), the tone personal and not over-keen, the close restates interest and asks to talk; one page.
+
+**Where the prompt stood.** v32 opened on the person's strongest work, spent most of its words answering the posting's
+needs with proof, gave motivation two or three late sentences from their own words only, said nothing of the company
+but what the posting said and was told not to say that back, and could not ask to talk (`checks.LETTER_PHRASES` sent
+"I would welcome" and "I look forward to" back).
+
+**What was built.**
+
+- **What a company says of itself, once a company** (`libs/corpus/companies.py`, the `companies` collection). Measured
+  first: 2% of 6,000 stored postings link to a page on their employer's own site, so reading a company's site from its
+  posting would reach almost nobody, and finding a site by name needs a search service the platform does not have.
+  The source built is the one already held and the company's own: its postings. The part under the heading that
+  names it ("About us", "Who we are", the company's name, in seven languages) of its eight newest postings, else the
+  paragraph they share; gathered by rule the first time a letter is made for it, kept, and gathered again after 30
+  days. A posting that says nothing of its employer, or was put up by somebody else, is then given what the company's
+  other postings say. `build.prepare` hands it to the prompt in a place of its own (`{{company}}`), the worker
+  gathers it (`run._company`) and writes the letter from the posting alone, with a line in the log, when it cannot.
+- **A close that asks to talk** is the letter's own: "I look forward to", "I would welcome" and "I would like to
+  discuss" are no longer sent back. "Thank you for your consideration" still is.
+- **The wording, v32 → v35**, then refined to v37 (below): the letter says why they want this job with
+  this employer and what they would bring; the reason comes first; where they gave none it is reasoned out from
+  their record and the posting, the one or two reasons most believable for them and that a hiring manager most wants
+  to hear, never a fact about their past; one or two true things about the employer are part of it; what they would
+  bring is two or three things, each shown, with at most two tools named; no gap is named and no wish the job cannot
+  meet or for another job is stated; a move is said for this job; the close asks to talk in their own way; at least
+  half the letter is why and what they would bring.
+
+**How it was judged** (the owner's choice: by reading, on a few profiles, not by the reviewers). Eight people, a care
+worker, a housekeeper, a plumber, an HR advisor, a payroll clerk, a site manager and two developers on the owner's
+own recruiter's posting, on Haiku and on Sol. Against the targets and the mistakes of before:
+
+| | live v32, Haiku | v35, Haiku | v35, Sol |
+|---|---|---|---|
+| opens on what they want (by a pattern) | 4 of 8 | 8 of 8 | 8 of 8 |
+| letters that name a gap ("I have not yet", "new to me") | 2 of 8 | 0 of 8 | 0 of 8 |
+| asks to talk | 1 of 8 | 8 of 8 | 8 of 8 |
+| the job placed at the recruiter (3 recruiter letters) | 0 | 0 | 0 |
+| one page | 8 | 8 | 8 |
+| ATS in all six looks | 96.4 | 98.2 | 100 |
+| AI-language list | 0 | 0 | 0 |
+| first drafts sent back by the production checks | 2 | 3 | 0 |
+| passes the /no-ai-language checker, the posting's words allowed | 5 of 8 | 6 of 8 | 5 of 8 |
+| tokens out, seconds | 6,556, 29 | 6,303, 28 | 374, 13 |
+
+What reading found (every v34 letter whole, three v35 letters whole, and every v35 letter's close and its
+paragraph before the close): a reason tied to the work there or to the employer in the paragraph before the close of
+13 of the 16 v35 letters, and elsewhere in the other three; Sol's letters the better ones (a care worker "because
+there is room in the day to spend time with residents, not just help them get ready"; closes that ask a real
+question); Haiku's closes falling back on one form ("I would welcome the chance to talk about the role", 5 of 8),
+one Haiku letter saying the posting's list of duties back as its reason, and one still naming a wish to be a
+supervisor; Haiku's part on what they would bring still two paragraphs of their work where one would do. The three drafts sent
+back are two colons and one employer named by its brand ("LEGOLAND Windsor Resort" for Merlin Entertainments), as
+before. The /no-ai-language checker's misses are the person's own or the trade's words ("unmatched" payments, "at
+the end of the day", "take pride in"): it needs their documents allowed before it is a gate.
+
+**After the owner's yes** ("make v35 live and commit and if you can further refine weaknesses do so"). v36: the
+close asks about one particular thing in the work there; no "what I am looking for", which brought colons; no duties
+said back as the reason; a wish for another job only where the posting names that step; what they would bring in one
+paragraph. v37: the company named as well as a workplace with a name of its own ("Rushcliffe Care's Beaumanor
+home"). On the same eight profiles, v37 on Haiku and on Sol: first drafts sent back **0 of 8 and 0 of 8** (the live
+prompt 2, v35 3); ATS in all six looks **100 and 100**; one page 16 of 16; AI-language list 0; every close about a
+different thing ("how the payroll review for 3,000 employees is organised before each pay run"); the
+/no-ai-language checker 5 of 8 and 7 of 8, its misses the person's own words. On Haiku a letter takes 8,198 tokens
+out and 35 s against 6,556 and 29 s, and no second call. **v37 is live** (`libs/prompts/write_cover.md`,
+`15cecd5667f4`); v32 is kept as `libs/scaffolds/history/write_cover.2026-11-27.pre-v37.md`, and v33 to v36 are in
+history with their rows. `scripts/cvlab/variants/cover/` is empty again.
+
+**Not run, and said so.** Neither of the bench's reviewers and no GPT reader read v35, v36 or v37: the owner chose reading over
+them, and their marks were built for the letter this one replaces. Eight profiles is a look, not a measurement: the
+day's own lesson is that a difference on eight or thirty letters can be luck. The trap (a job that asks for Go) was
+not written on v37.
+
+**Raised** (`CLAUDE.md` §5). `companies.ABOUT_MAX`, `GATHERED_FOR` and `POSTINGS` are constants an operator may want;
+left in code until somebody needs them different. The corpus has no index on `company`: gathering reads it once a
+company a month, and is not on a page's path. A company's own site, or its LinkedIn page, would say more than its
+postings: it needs a search key or the proxy's budget, and is the owner's to choose. `CLAUDE.md` §3b gate 10 now says
+that a reason may be reasoned out and a fact may not.
+
 ## 2026-11-27, afternoon — the letter prompt tested until a difference could be told from luck: no content wording beats v23, one line for recruiters' postings is live (v32), and the bench can run on its own machine's Claude
 
 The owner: "we have usage remaining now so we can run multiple tests and quickly evolve our cover letter prompt", then

@@ -32,11 +32,12 @@ _END_TO_END = re.compile(r"(?i)\bend-to-end\b(?!\s+(?:test|tests|testing|tested|
 _DYNAMIC = re.compile(r"(?i)\bdynamic\b(?!\s+(?:remarketing|retargeting|pricing|ads?|creatives?|content)\b)")
 
 # How a cover letter gives itself away in its first and last lines (`tailor_cover.md`, failures 1 and 7):
-# every close about applying rather than the work ("I would welcome a conversation", 2026-11-11).
+# every stock close ("Thank you for your consideration"). A plain line that asks to talk is a letter's own
+# since 2026-11-27 (owner: "the close can happen that's appropriate and guidance expects it"), so "I look
+# forward to", "I would welcome" and "I would like to discuss" are no longer sent back.
 LETTER_PHRASES = ("i am writing to", "i'm writing to", "i\u2019m writing to", "i am excited to",
-                  "i believe i would be a great fit", "i look forward to", "thank you for your consideration",
-                  "i would welcome", "i would like to discuss", "how i can contribute",
-                  "how i could contribute", "thrilled", "the jd", "job description",
+                  "i believe i would be a great fit", "thank you for your consideration",
+                  "how i can contribute", "how i could contribute", "thrilled", "the jd", "job description",
                   "as stated in the posting")
 
 # What reads as written by AI (owner, 2026-11-19: "make sure it passes without using any AI language"): the

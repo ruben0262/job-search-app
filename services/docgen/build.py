@@ -83,6 +83,10 @@ OTHER_KINDS = {"linkedin": "LinkedIn profile", "reference": "Reference", "achiev
 _SLOT = re.compile(r"\{\{(\w+)\}\}")
 
 
+# What the writer is told of a company the platform knows no more about than its posting says.
+NOTHING_MORE = "Nothing more is known about the company than the posting says."
+
+
 class BuildFailed(RuntimeError):
     """The model did not return a usable document. Retryable; the worker decides."""
 
@@ -108,10 +112,11 @@ class Request:
 
 def prepare(kind: str, *, user, job, documents: dict[str, list[str]], look: Template,
             languages: tuple[str, ...] = (), template: str | None = None,
-            today: datetime | None = None) -> Request:
+            today: datetime | None = None, company: str = "") -> Request:
     """The request for `kind` ("cv" or "cover"): `documents` are their switched-on texts by kind
     (`libs.suggestions.documents_of`), `languages` the job languages their search accepts, and `template`
-    a prompt to try in place of the live one (the CV bench's variants)."""
+    a prompt to try in place of the live one (the CV bench's variants). `company` is what the employer says
+    of itself beyond this posting (`libs.corpus.companies.about`), for a letter's reason for wanting it."""
     facts = read(documents)
     name, header = _header(facts, {"full_name": user.full_name, "links": user.links or []})
     spoken = [f"From their CV: {', '.join(_names(facts.languages))}."] if facts.languages else []
@@ -119,6 +124,7 @@ def prepare(kind: str, *, user, job, documents: dict[str, list[str]], look: Temp
         spoken.append(f"The jobs they are looking for are in: {', '.join(_names(languages))}.")
     values = {
         "job": _job(job),
+        "company": company.strip() or NOTHING_MORE,
         "cvs": _each(texts(documents, "cv"), "CV"),
         "letters": _each(texts(documents, "cover_letter"), "Cover letter"),
         "about": "\n\n".join(texts(documents, "history")) or "(nothing)",
