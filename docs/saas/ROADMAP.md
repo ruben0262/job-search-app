@@ -3806,6 +3806,15 @@ work, or opening and closing sessions faster, would help):
       certificate at a paragraph's end, the employer told what it does, "appeals to me because"), if another
       step is wanted. (2) Haiku's cost: about 30% more tokens a letter than v41. (3) The reviewers' rubrics
       rewritten for a motivation letter. (4) A second source of company knowledge. (5) A look for the CV.
+    - **2026-11-28, evening: the first and last paragraphs, v57 live** (CHANGELOG). The owner's round after v48:
+      an opening that begins with the person and then the job, no label for a recruiter's client, a reason for
+      this employer with no figure about it, certificates inside a sentence, and their close (a recap, a request
+      to meet, thanks). v49 to v57; a blind reader put v57 first in 29 of 38 sets against v48 (Haiku 11, Sol 18
+      of 19); every filter clean on 76 letters. A letter with no close is now sent back in code. **Waiting:**
+      (1) Haiku still now and then treats a recruiter as the employer; code could count it, if wanted.
+      (2) Haiku's cost: about 10% more tokens a letter than v48, the prompt 4,501 words from 3,496. (3) Sol
+      opens "I like…" for most people. (4) The reviewers' rubrics rewritten for a motivation letter. (5) A
+      second source of company knowledge. (6) A look for the CV.
 
 54. **Plans and the landing page: what waits for the owner** (2026-11-16, CHANGELOG).
     - At Stripe, live: a Starter product with a recurring monthly price of £2.99; its id as

@@ -31,14 +31,25 @@ _END_TO_END = re.compile(r"(?i)\bend-to-end\b(?!\s+(?:test|tests|testing|tested|
 # in 2 of her 4 CVs (2026-11-14).
 _DYNAMIC = re.compile(r"(?i)\bdynamic\b(?!\s+(?:remarketing|retargeting|pricing|ads?|creatives?|content)\b)")
 
-# How a cover letter gives itself away in its first and last lines (`tailor_cover.md`, failures 1 and 7):
-# every stock close ("Thank you for your consideration"). A plain line that asks to talk is a letter's own
-# since 2026-11-27 (owner: "the close can happen that's appropriate and guidance expects it"), so "I look
-# forward to", "I would welcome" and "I would like to discuss" are no longer sent back.
+# How a cover letter gives itself away in its first lines (`tailor_cover.md`, failure 1). A plain line that
+# asks to talk is a letter's own since 2026-11-27 (owner: "the close can happen that's appropriate and
+# guidance expects it"), and since 2026-11-28 so are thanks and an offer to help (owner: "Call to Action:
+# Request a conversation ... 'I would welcome the opportunity to discuss...' Gratitude: Thank the hiring
+# manager for their time and consideration"), so "thank you for your consideration" and "how I can
+# contribute" are no longer sent back.
 LETTER_PHRASES = ("i am writing to", "i'm writing to", "i\u2019m writing to", "i am excited to",
-                  "i believe i would be a great fit", "thank you for your consideration",
-                  "how i can contribute", "how i could contribute", "thrilled", "the jd", "job description",
+                  "i believe i would be a great fit", "thrilled", "the jd", "job description",
                   "as stated in the posting")
+# A close that asks to meet (owner, 2026-11-28: the last paragraph is one of the two a skimming reader reads).
+# Claude Haiku 5.5 now and then ends a letter on its third paragraph and goes straight to "Kind regards": 6 of
+# the 568 letters written on the wordings since v37 that ask for a close, and none of the others, had no ask
+# in their last two paragraphs (the second for a "Thank you" put on a line of its own).
+_ASKS_TO_MEET = re.compile(
+    r"(?i)\b(?:welcome|glad|happy|like|love|keen|pleased|delighted|eager)\b[^.?!]{0,80}"
+    r"\b(?:talk|meet|discuss|conversation|speak|chat|call|interview|hear)"
+    r"|\blook(?:ing)? forward to\b[^.?!]{0,60}\b(?:talk|meet|discuss|hearing|speak|conversation)"
+    r"|\b(?:could|can|shall|may) we\b[^.?!]{0,30}\b(?:talk|meet|discuss|speak)\b"
+    r"|\b(?:talk|meet|discuss|speak|conversation|chat)\b[^.!]{0,80}\?")
 
 # What reads as written by AI (owner, 2026-11-19: "make sure it passes without using any AI language"): the
 # turns current models write many times as often as people do, by what was measured (CHANGELOG 2026-11-19,
@@ -293,6 +304,9 @@ def letter(body: str, *, company: str, posting: str = "") -> list[str]:
     if said := ai_language(flat, but=posting):
         found.append(f"It says {', '.join(repr(each) for each in said)}, which reads as written by AI. "
                      "Say it the plain way this person would.")
+    if prose and not any(_ASKS_TO_MEET.search(part) for part in prose[-2:]):
+        found.append("The letter has no closing paragraph that asks to meet. End it with one, before the "
+                     "sign-off.")
     return found
 
 

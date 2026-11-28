@@ -17,21 +17,25 @@ and close by asking to talk. They are short, sound like one person, and leave th
 
 ## Targets (read every letter against each)
 
-1. The opening says why they want this job, in a way no other job would fit, then one fact about them.
-   The company as people say it, the job's title in bold, as it reads in a sentence, named inside the
-   sentence that gives the reason or in one that says what the job would let them do. Not every letter
-   begins "I want".
+1. The opening (owner, 2026-11-28: readers skim to the first paragraph and the last, so those two carry the
+   letter) begins with the person, what they like in the work or where their work has been going, in their
+   own words; then the job and the company and what they would do there for this employer; then who they
+   are, with the one licence the job requires most. Never the posting's duties said back as their wish, never
+   a label for a recruiter's client ("we already know that"), the job's title in bold, the company named from
+   the job's "Company:" line.
 2. One paragraph that makes their case: ONE idea, said first in their own words ("I like finding out why a
    service is slow before deciding what to change"), shown by one or two pieces of work, then one particular
    thing they would do in this job. Two tools at most in the whole letter.
-3. A paragraph of its own on why this job, here: one or two true things about the employer (from the
-   posting or the company note), each joined to what they want or where their work has been heading.
-4. A close on what they want to do there, then one plain line asking to talk about one named thing.
+3. A paragraph of its own on why this job, here, at least one reason about the employer itself (from the
+   posting or the company note), each said as what the person wants, never the employer told about itself and
+   never a figure about it.
+4. The close in the owner's shape (2026-11-28): their strongest proof tied to what the job needs, as what they
+   are sure they could do there; a confident, general line asking to meet; thanks for the reader's time.
 5. It reads as one piece (owner, 2026-11-28: "reads like a top cover letter written by human and it flows
    properly"): one line of thought from why, through what they did, to what they would do; each paragraph
    led in from the one before; no fact standing alone; the practical things (a move, a licence, shifts)
-   closing the paragraph they belong to. In this person's own words for their work, contractions only as
-   their own writing has them. 220 to 280 words, one page.
+   inside the sentence they belong with, never a sentence or a line of their own. In this person's own
+   words for their work, contractions only as their own writing has them. 220 to 280 words, one page.
 6. Every fact about them exactly as strong as their record. The reason for wanting the job may be reasoned
    out ("a logical and calculated inference", the one "that sells the user best"); a fact may not.
 
@@ -59,6 +63,11 @@ and close by asking to talk. They are short, sound like one person, and leave th
 | the reader told what their own job is ("This role is a backend job inside…", "Your posting says…") | v41 to v45 | the why-here rule; the look's count |
 | a paragraph of certificates or the move on its own before the close | v43 to v45 (a sentence that asked for them "together") | "a sentence that closes the paragraph they belong to … never a paragraph of their own" |
 | the job placed at the recruiter in the close ("At Adecco I want to…") | v44 | "here or anywhere else in the letter" |
+| a label for a recruiter's client ("at a financial services organisation") | v48 (the owner) | the opening rule: no label anywhere |
+| the employer's size or reach as the reason ("hundreds of institutions in 40 countries") | every version, Haiku | "no figure about the employer at all" |
+| a letter with no close (three paragraphs, then "Kind regards,") | v43, v46, v52, v54, Haiku | `checks._ASKS_TO_MEET` sends it back; the close said last in the prompt |
+| the opening as the posting's first duty with "I want to" in front | v49 to v53 (a blind reader: "restates the programme") | the opening begins with the person (v54) |
+| "N years of X is what I would bring" in every close | v50 (Haiku, 10 of 11) | "I'm confident that…", never a thing handed over |
 
 ## What was learned about judging letters
 
@@ -91,19 +100,24 @@ and close by asking to talk. They are short, sound like one person, and leave th
 - **A person's own words can harm them.** "Their own words where those are plain and true" pulled in a
   payroll clerk's honest line about slow phone calls in English, for a job in English. True is not enough:
   the letter says what they bring.
+- **Where an instruction sits matters to Haiku.** It dropped the close or left the company unnamed in about
+  1 letter of 11 whatever the middle of the prompt said (v49 to v56), and in none of 19 once those two were
+  the last lines before the answer (v57). A rule a model must never miss goes last.
+- **One reader's marks drift.** Three blind readers marked the same live letters' closes 5.11, 5.89 and 5.79.
+  A split near 10 of 19 is inside one reader's noise; read the reasons, and trust a split like 18 of 19.
 - **The company note** (`libs/corpus/companies.py`) holds what a company says of itself in its own postings,
   kept thirty days. Where it is empty the letter has only the posting, and its "why here" is thinner. A
   second source (a search key, or the company's LinkedIn page on the proxy budget) is an open question for
   the owner.
 
-## Known and left, as of v48 (live 2026-11-28, `c1fe6856c64a`)
+## Known and left, as of v57 (live 2026-11-28, `d885402c2e45`)
 
-- What the last blind reader still saw in the letters it ranked first: a certificate or a move at the end of a
-  paragraph it does not belong to (about 13 of 38), the employer told what it does (about 9), a stock link
-  ("appeals to me because", about 8).
-- Phrases shared across people: the ask "Could we talk about how…" (Sol 11 of 15 people), Sol opening "I like…"
-  (7 of 15). Each letter goes to a different employer, but applicants to one job through this site share them.
-- Haiku writes about 9,400 tokens out a letter (thinking included) and takes about 40 s, 30% more than v41;
-  Sol about 390 and 12 s. Two Haiku letters of 19 ran over 280 words.
-- A colon before a list is a comma in code (`build._colon_as_comma`); one before a sentence is still sent back.
-  A letter that comes without its `<letter>` tags is kept (`build._BARE_LETTER`).
+- Haiku now and then treats a recruiter as the employer ("take it with Dara People", "Adecco offers both"),
+  opens "I am applying for…" (1 of 19), gives a reason about its own life ("Monday to Friday hours suit my
+  family"). No check counts these yet.
+- Sol opens "I like…" for most people (6 of 8 on the look; v48 7 of 15). The close is the owner's conventional
+  one by design, so "Thank you for your time" and "how I could help" are in every letter.
+- Haiku writes about 10,000 tokens out a letter and takes about 42 s, 10% more than v48; the prompt is 4,501
+  words. Sol about 380 and 12.5 s.
+- A letter with no close is sent back in code (`checks._ASKS_TO_MEET`). A colon before a list is a comma
+  (`build._colon_as_comma`); a letter without its `<letter>` tags is kept (`build._BARE_LETTER`).

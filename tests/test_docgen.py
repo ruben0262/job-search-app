@@ -806,7 +806,7 @@ GOOD_LETTER = _letter(
     "Your posting describes a small team that runs what it builds and is on call for it. That is how I have "
     "worked for four years, and it is why this role appeals to me.",
     "I would like to bring the same habits to your payments platform, starting with the parts that wake "
-    "people at night. Quiet nights are the measure I care about most.")
+    "people at night. Quiet nights are the measure I care about most. I would be glad to talk it through.")
 
 
 def test_a_cv_that_talks_about_applying_or_rates_itself_is_sent_back_saying_so():
@@ -971,24 +971,45 @@ def test_a_colon_before_a_list_or_a_phrase_is_a_comma_and_one_before_a_sentence_
     assert any("colon" in fault for fault in checks.letter(clause, company="Northwind GmbH"))
 
 
-def test_a_close_that_asks_to_talk_is_the_letters_own_and_a_stock_close_is_sent_back():
-    """Owner, 2026-11-27: "the close can happen that's appropriate and guidance expects it". A plain line
-    asking to talk was sent back with every other close about applying ("I would welcome a conversation",
-    2026-11-11); now only the stock forms are. "A proactive assistant" was A1's own product, in A1's own
-    posting, and is theirs to quote."""
+def test_a_close_that_asks_to_talk_and_thanks_the_reader_is_the_letters_own_and_a_stock_line_is_sent_back():
+    """Owner, 2026-11-27: "the close can happen that's appropriate and guidance expects it", and 2026-11-28:
+    "Call to Action: Request a conversation ... Gratitude: Thank the hiring manager for their time and
+    consideration". A plain line asking to talk was sent back with every other close about applying ("I would
+    welcome a conversation", 2026-11-11), and thanks until 2026-11-28; now only the stock lines are. "A
+    proactive assistant" was A1's own product, in A1's own posting, and is theirs to quote."""
     def closing(line: str) -> list[str]:
         return checks.letter(GOOD_LETTER.replace("Quiet nights are the measure I care about most.", line),
                              company="Northwind")
 
     for asks in ("I would welcome a conversation about the role.", "I would be glad to talk it through.",
-                 "I look forward to talking about it.", "I would like to discuss it with you."):
+                 "I look forward to talking about it.", "I would like to discuss it with you.",
+                 "I would welcome the chance to discuss how I can contribute.",
+                 "Thank you for your consideration.",
+                 "Thank you for your time and consideration."):
         assert closing(asks) == [], asks
-    assert any("thank you for your consideration" in fault for fault in closing(
-        "Thank you for your consideration."))
+    assert any("great fit" in fault for fault in closing("I believe I would be a great fit."))
     quoting = GOOD_LETTER.replace("payments platform", "proactive payments platform")
 
     assert checks.letter(quoting, company="Northwind", posting="We run a proactive payments platform.") == []
     assert checks.letter(quoting, company="Northwind"), "the same word, not the posting's, is a cliché"
+
+
+
+def test_a_letter_that_ends_without_asking_to_meet_is_sent_back_and_a_thank_you_on_its_own_line_is_not():
+    """Owner, 2026-11-28: the last paragraph is one of the two a skimming reader reads. Claude Haiku 5.5 now
+    and then ends on its third paragraph and goes straight to "Kind regards" (6 of 568 letters on the
+    wordings since v37), and nothing sent it back."""
+    close = ("I would like to bring the same habits to your payments platform, starting with the parts "
+             "that wake people at night. Quiet nights are the measure I care about most. I would be glad "
+             "to talk it through.")
+    assert f"<p>{close}</p>" in GOOD_LETTER, "the premise: the fixture ends on its close"
+    without = GOOD_LETTER.replace(f"<p>{close}</p>", "")
+    thanks_apart = GOOD_LETTER.replace(f"<p>{close}</p>", f"<p>{close}</p><p>Thank you for your time.</p>")
+
+    assert any("no closing paragraph" in fault for fault in checks.letter(without, company="Northwind"))
+    assert not any("no closing paragraph" in fault
+                   for fault in checks.letter(thanks_apart, company="Northwind"))
+    assert checks.letter(GOOD_LETTER, company="Northwind") == []
 
 
 def test_a_letter_in_ai_language_is_sent_back_naming_it_and_a_persons_own_words_are_not():
@@ -1122,16 +1143,16 @@ def test_a_closing_paragraph_marked_as_the_sign_off_is_still_read_and_counted():
     skipped it: 32 words uncounted, and whatever it said unread, which is where "I look forward to…" is
     written (1 of 54 letters, 2026-11-18). The sign-off is the last paragraph so marked; one length for the
     check and the bench."""
-    close = ("I would like to bring the same habits to your payments platform, starting with the parts that "
-             "wake people at night. Quiet nights are the measure I care about most.")
-    last = ("I would like to bring the same habits to your payments platform. Thank you for your "
-            "consideration.")
+    close = ("I would like to bring the same habits to your payments platform, starting with the parts "
+             "that wake people at night. Quiet nights are the measure I care about most. I would be glad "
+             "to talk it through.")
+    last = ("I am excited to bring the same habits to your payments platform. I would be glad to talk it "
+            "through.")
     marked = GOOD_LETTER.replace(f"<p>{close}</p>", f'<p class="closing">{last}</p>')
     shorter_by = len(close.split()) - len(last.split())
 
     assert marked != GOOD_LETTER
-    assert any("thank you for your consideration" in fault
-               for fault in checks.letter(marked, company="Northwind"))
+    assert any("i am excited to" in fault for fault in checks.letter(marked, company="Northwind"))
     assert checks.letter_words(marked) == checks.letter_words(GOOD_LETTER) - shorter_by
     # Greeting, sign-off and name are not the letter's length.
     assert checks.letter_words(GOOD_LETTER) == sum(len(each.split()) for each in re.findall(

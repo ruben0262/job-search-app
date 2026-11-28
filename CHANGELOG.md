@@ -14,6 +14,99 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-28, evening — the first and last paragraphs: v57 live on the owner's word, a close that recaps, asks to meet and thanks; a letter with no close sent back
+
+The owner read v48 and asked for one more round. The certificate lines and the employer told what it does (the last
+blind reader's two biggest faults) fixed. "I want to move my work from research code into production infrastructure,
+and the … role that Radley James is recruiting for, at a financial services organisation, would let me do that on a
+large scale" is not how a person writes: "you would not just state that its a financial organisation, … we already
+know that". What they want in the role tied to what the posting needs, "why we want to work at the company" written,
+and "the first paragraph … extremely strong and so is the last paragraph too", because readers skim to those two. The
+close general and strong, in their shape: a short recap of the strongest point, a request to meet ("I would welcome the
+opportunity to discuss…"), thanks for the reader's time and consideration, a formal sign-off. Mid-round: "the
+benchmark cannot be manual since you do it better" and "we don't need to necessarily reuse the same words from the
+job". Offered v54, the owner answered "fix the issues on haiku and make sure we are getting perfect or near perfect
+scores on all the filters you apply".
+
+**The wording, v49 to v57**, each the one before plus a named change. v57 is live (`libs/prompts/write_cover.md`,
+version `d885402c2e45`, was `c1fe6856c64a`), on the owner's "Make v57 live". v48 and the drafts v49 to v56 are in
+`libs/scaffolds/history/` with a row each.
+
+- **The opening** begins with the person, what they like in the work or where their work has been going, in their own
+  words and never a stock line from their own letter; then the job and the company and what they would do there, the
+  part the employer needs most, never the posting's duties said back as their wish; then who they are, with the one
+  licence the job requires most. No sentence with the job, the employer or the posting as its subject. A recruiter's
+  client gets no label at all; the recruiter is named as the one hiring.
+- **Why here** has at least one reason about the employer itself, said as what this person wants, never a sentence
+  telling the employer about itself and never a figure about it (no count of customers, countries, sites, staff or
+  years).
+- **Certificates and a move** inside the sentence they belong with, never "I hold …" or a line at a paragraph's end.
+- **The close** in the owner's shape, three sentences: their strongest proof tied to what the job needs, said as what
+  they are sure they could do there ("I'm confident that…"), never "… is what I would bring"; one confident, general
+  line asking to meet and talk; thanks for the reader's time.
+- **Said last**, just before the answer: the opening names the company from the job's "Company:" line, and the letter
+  ends with the close as its own paragraph. Haiku missed one or the other in about 1 letter of 11 whatever the middle
+  of the prompt said, and in none once it was the last thing it read.
+
+**How it was judged**: by the session's reading of every letter, both writers as production calls them, on the 11
+look pairs, the six people it was never changed for and the owner's own profile twice, and then by one fresh blind
+reader against the live wording, with the opening and the close each marked (`unblind` reports them). Three blind
+reads this round, the same 38 pairs each:
+
+| against live v48 | Haiku first places | Sol first places | close (Haiku, Sol; live in brackets) | opening | the owner's 4 |
+|---|---|---|---|---|---|
+| v53 | 10 of 19 | 8 of 19 | 6.79 (5.11), 6.89 (5.37) | 6.05 (6.68), 6.21 (6.74) | live 4 |
+| v54 | 7 of 19 | 12 of 19 | 5.74 (5.89), 6.74 (6.53) | 6.16 (6.26), 6.84 (6.53) | 2 each |
+| **v57** | **11 of 19** | **18 of 19** | **7.11 (5.79), 7.84 (6.05)** | **6.32 (6.21), 7.21 (6.68)** | 2 each |
+
+v53's openings "restate the programme from the posting"; v54's begin with the person and fixed that. v57's flow is
+7.42 against 7.11 on Sol and 5.79 against 6.11 on Haiku: the one mark that went the wrong way. The owner's two Haiku
+letters were ranked below live (one a run of tools, one with no line on who he is); their two Sol letters above it. The
+readers mark the same live letters differently (Haiku's close 5.11, 5.89, 5.79), so a split near 10 of 19 is inside one
+reader's noise; 18 of 19 is not.
+
+**v57 through every filter**, 38 letters a writer (11 look, 6 held out, 2 of the owner's, on each):
+
+| | Haiku 5.5 | Sol, lean |
+|---|---|---|
+| first drafts sent back by production's checks | 0 of 19 | 0 of 19 |
+| AI-language list | 0 | 0 |
+| every ATS check in all six looks, one page | 19 of 19 | 19 of 19 |
+| a number not in the record, posting or company note | 0 | 0 |
+| runs of four words from the posting, a letter (look / held / owner; live in brackets) | 1.9 / 2.0 / 0.5 (3.0 / 3.0 / 2.0) | 0.5 / 1.5 / 0.0 (0.9 / 1.5 / 0.5) |
+| tokens in, out, seconds a letter (live in brackets) | 10,757, 10,065, 42.3 s (9,219, 9,175, 39.8 s) | 12,179, 382, 12.5 s (10,974, 390, 12.2 s) |
+
+The `/no-ai-language` checker's hard hits are each the person's own words, traced: "I take pride in doing a job
+properly first time" (the plumber), "unmatched items" (a reconciliation job), "at the end of the day" (the care
+worker). The prompt is 4,501 words, from 3,496: about 1,300 more tokens read a letter, and Haiku's letters cost about
+10% more.
+
+**In code, for every writer.**
+
+- **A letter with no close is sent back** (`checks._ASKS_TO_MEET`, read over the last two paragraphs so a "Thank you"
+  on its own line passes). Measured over the 568 letters the bench kept on the wordings since v37 that ask for a close:
+  it finds exactly the six with none (v43 1, v46 2, v52 2, v54 1) and no other.
+- **Thanks and an offer to help are a letter's own**: "thank you for your consideration" and "how I can contribute"
+  left `checks.LETTER_PHRASES`, since the owner's close asks for both.
+
+**Tools.** A count of the runs of four words a letter shares with its posting (kept in the session's working folder, not in the tree); the look's counts for the client labelled, the employer or job
+as the subject, certificates listed, thanks given; `unblind` reports the opening and close marks; the reader's brief
+(`references/blind-read.md`) weighs the first and last paragraphs, counts a label, the posting said back and the
+employer told about itself against a letter, and no longer counts the owner's close as stock.
+
+**Not run.** The reviewers of §3b gates 2 and 9 (their rubrics still reward the old letter). More than one sample a
+pair, except the owner's two. Letters in other languages.
+
+**Left.** Haiku now and then still treats a recruiter as the employer ("take it with Dara People", "Adecco offers
+both"), opens with "I am applying for…" once in 19, and drifts to a reason about its own life once ("Monday to Friday
+hours suit my family"). Sol opens "I like…" for most people (6 of 8 on the look; live 7 of 15).
+
+**Tests.** A letter that ends without asking to meet is sent back and a thank-you on its own line is not; a close that
+asks to talk and thanks the reader is the letter's own and a stock line is still sent back; a reader's opening marks
+come back by wording. Each fails before this change.
+
+---
+
 ## 2026-11-28 — a posting's match features kept beside it: a posting a sixth the size in the database's memory
 
 A stored posting was ~2,910 bytes, and 2,080 of them were its match features (`fit`: a hundred word positions

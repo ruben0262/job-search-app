@@ -55,19 +55,27 @@ and tell it what to ignore. Do not tell it what you hope to find. For cover lett
 > 2. NATURALNESS. Would a person really write this sentence? Count against it any sentence that reads as
 >    artificial, stiff, formulaic or machine-made: one that only announces the application or points back
 >    ("That is what draws me to…"), a hedge ("I would want to"), a stock bridge ("I would bring the same
->    care to…"), a list of tools, the reader told what their own job is.
-> 3. CONFIDENCE AND WARMTH. Sure, plain and interested in the work, neither stiff nor chatty. A flat close
->    that only describes a process is weaker than one that says what they want to do.
-> 4. Whether it makes you want to meet the person.
+>    care to…"), a list of tools or certificates, the reader told what their own job is or what their own
+>    company does, a label for an employer the reader already knows ("at a financial services
+>    organisation"), the posting's own phrases said back.
+> 3. THE FIRST AND LAST PARAGRAPHS. Many readers skim to these two, so they weigh most. A strong opening
+>    tells you what this person would do for you in this job, why they want to do it here and who they are.
+>    A strong close ties their strongest point to what the job needs in a sentence, asks confidently to
+>    meet, and thanks you: that shape is what this employer expects and is not counted against as stock.
+>    A close that retells the letter, or trails off, is weaker.
+> 4. CONFIDENCE AND WARMTH. Sure, plain and interested in the work, neither stiff nor chatty.
+> 5. Whether it makes you want to meet the person.
 >
 > Do not reward length. Do not penalise contractions as such; judge whether the register is consistent and
 > suits a letter to an employer. Be strict and use the same standard for every set. Read every letter fully.
 >
 > Write your answers as JSON and nothing else to `<path to answers.json>`: a list with one object a set, in
-> order: `{"set": 1, "ranking": ["B", "A", "C"], "flow": {"A": 7, "B": 8, "C": 5}, "clear": true,
-> "why": "one sentence on what separates best from worst", "weakest_sentence_of_best": "copied exactly",
-> "worst_fault_of_worst": "a few words"}`. "ranking" lists every letter of the set, best first; "flow" marks
-> every letter from 1 to 10; "clear" is true when the best is clearly better than the second.
+> order: `{"set": 1, "ranking": ["B", "A", "C"], "flow": {"A": 7, "B": 8, "C": 5}, "opening": {"A": 6,
+> "B": 8, "C": 5}, "close": {"A": 7, "B": 7, "C": 4}, "clear": true, "why": "one sentence on what
+> separates best from worst", "weakest_sentence_of_best": "copied exactly", "worst_fault_of_worst": "a few
+> words"}`. "ranking" lists every letter of the set, best first; "flow", "opening" and "close" mark every
+> letter from 1 to 10 (the first paragraph and the last, each read alone as a skimmer would); "clear" is
+> true when the best is clearly better than the second.
 >
 > When the file is written, reply with only: how many sets you judged, and the three faults you saw most
 > often in the letters you ranked first, one line each with one copied example.

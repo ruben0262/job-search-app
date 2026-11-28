@@ -170,29 +170,34 @@ def blind(out: pathlib.Path, versions: dict[str, str], sets: pathlib.Path, key: 
 
 def unblind(answers: pathlib.Path, key: pathlib.Path) -> dict[str, dict[str, dict[str, float]]]:
     """What a reader's rankings say of each wording, by writer: how many sets it was ranked first in, its mean
-    place and its mean mark for flow. Printed with a line a set; returned for the caller."""
+    place and its mean mark for flow, and for the opening and the close where the reader marked them (the
+    two paragraphs a skimming reader reads, owner 2026-11-28). Printed with a line a set; returned for the
+    caller."""
     coded = json.loads(key.read_text(encoding="utf-8"))
     places: dict[str, dict[str, list[int]]] = {}
-    flows: dict[str, dict[str, list[float]]] = {}
+    marked: dict[tuple[str, str, str], list[float]] = {}
     for answer in json.loads(answers.read_text(encoding="utf-8")):
         case = coded[str(answer["set"])]
         ranked = [case[label] for label in answer["ranking"]]
         for place, name in enumerate(ranked, start=1):
             places.setdefault(case["writer"], {}).setdefault(name, []).append(place)
-        for label, mark in (answer.get("flow") or {}).items():
-            flows.setdefault(case["writer"], {}).setdefault(case[label], []).append(mark)
+        for part in ("flow", "opening", "close"):
+            for label, mark in (answer.get(part) or {}).items():
+                marked.setdefault((case["writer"], case[label], part), []).append(mark)
         gap = "clear" if answer.get("clear") else "close"
         print(f"{answer['set']:>3} | {case['writer']} | {case['person']} | {case['job'][:28]} | "
               f"{' > '.join(ranked)} | {gap} | {answer.get('why', '')}")
     found: dict[str, dict[str, dict[str, float]]] = {}
     for writer, by_name in sorted(places.items()):
         for name, got in sorted(by_name.items()):
-            marks = flows.get(writer, {}).get(name) or [0]
+            means = {part: round(statistics.mean(marked.get((writer, name, part)) or [0]), 2)
+                     for part in ("flow", "opening", "close")
+                     if part == "flow" or (writer, name, part) in marked}
             found.setdefault(writer, {})[name] = {"first": got.count(1), "of": len(got),
-                                                  "place": round(statistics.mean(got), 2),
-                                                  "flow": round(statistics.mean(marks), 2)}
+                                                  "place": round(statistics.mean(got), 2), **means}
             print(f"{writer} | {name} | first in {got.count(1)} of {len(got)} | mean place "
-                  f"{statistics.mean(got):.2f} | flow {statistics.mean(marks):.2f}")
+                  f"{statistics.mean(got):.2f} | "
+                  + " | ".join(f"{part} {mean:.2f}" for part, mean in means.items()))
     return found
 
 

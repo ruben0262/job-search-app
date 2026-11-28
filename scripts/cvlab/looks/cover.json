@@ -88,7 +88,31 @@
       "name": "announces or points back",
       "in": "all",
       "good": "none",
-      "pattern": "(?i)\\bI(?:'m| am) applying\\b|\\bthat(?:'s| is) (?:why|what) (?:I(?:'m| am) interested|draws me|interests me)\\b|\\bwhat draws me\\b"
+      "pattern": "(?i)\\bI(?:'m| am) applying\\b|\\bthat(?:'s| is) (?:why|what) (?:I(?:'m| am) interested|draws me|interests me)\\b|\\bwhat draws me\\b|\\bappeals to me\\b"
+    },
+    {
+      "name": "the client labelled",
+      "in": "first",
+      "good": "none",
+      "pattern": "(?i)\\b(?:at|for|with) an? (?:[\\w-]+ ){0,4}(?:organisation|organization|client|provider)\\b"
+    },
+    {
+      "name": "the employer or job as subject",
+      "in": "all",
+      "good": "none",
+      "pattern": "(?:^|(?<=[.!?] ))(?:Your [a-z]+|The (?:company|firm|team|role|job|position|posting|programme|business)|This (?:role|job|position|posting|programme))\\b"
+    },
+    {
+      "name": "certificates listed",
+      "in": "all",
+      "good": "none",
+      "pattern": "(?i)\\bI (?:also )?hold\\b"
+    },
+    {
+      "name": "thanks the reader",
+      "in": "last",
+      "good": "some",
+      "pattern": "(?i)\\bthank you\\b"
     },
     {
       "name": "the same care carried over",

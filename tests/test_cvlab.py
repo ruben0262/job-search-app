@@ -1301,13 +1301,16 @@ def test_two_wordings_are_set_side_by_side_unnamed_and_a_readers_ranking_is_give
             written = sets.split(f"### Letter {number}{label}\n")[1].split("###")[0]
             assert f"The {case[label]} wording wrote this for the {case['person']}." in written
 
-    # The reader ranks "next" first in both sets, whatever letter it was given.
+    # The reader ranks "next" first in both sets, whatever letter it was given, and marks the opening, the
+    # part a skimming reader reads, in one of them.
     answers = [{"set": int(number), "clear": True,
                 "ranking": sorted("AB", key=lambda label, case=case: case[label] != "next"),
                 "flow": {label: 8 if case[label] == "next" else 5 for label in "AB"}}
                for number, case in key.items()]
+    first = key[str(answers[0]["set"])]
+    answers[0]["opening"] = {label: 9 if first[label] == "next" else 3 for label in "AB"}
     (tmp_path / "answers.json").write_text(json.dumps(answers), encoding="utf-8")
     found = look.unblind(tmp_path / "answers.json", tmp_path / "key.json")["some-model@medium"]
-    assert found["next"] == {"first": 2, "of": 2, "place": 1.0, "flow": 8.0}
-    assert found["live"] == {"first": 0, "of": 2, "place": 2.0, "flow": 5.0}
+    assert found["next"] == {"first": 2, "of": 2, "place": 1.0, "flow": 8.0, "opening": 9.0}
+    assert found["live"] == {"first": 0, "of": 2, "place": 2.0, "flow": 5.0, "opening": 3.0}
     assert "next > live" in capsys.readouterr().out
