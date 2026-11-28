@@ -185,6 +185,33 @@ The bench writes the first one alone and stops if it took far more than those ke
 read that line and the first minutes of every stream before leaving a run. What a record or folder says about
 how a document was made comes from the call that made it, never from a second rule beside it.
 
+## 3c. How a prompt is worked on (owner, 2026-11-27)
+
+The owner: "carry on the testing and developing on any prompt in the future the same way, where we perform
+research on how everything should work, what models should be used for testing, and spot how we can get there
+from where we are, then make sure evaluation is here rather than to make any manual testing facility, and make
+sure that we run it through all the filters as well".
+
+The method is the `prompt-lab` skill (`.claude/skills/prompt-lab/`), for the letter, the CV and any prompt
+after them. Its order is the rule:
+
+1. **What the document is for, first.** Researched, turned into targets and a list of mistakes that must not
+   come back, and agreed with the owner before any wording. Six letter wordings were tuned, carefully, against
+   the wrong idea of what a cover letter is for.
+2. **The gap, and whose it is**: the shape the prompt asks for, an input it never gets, something code can do
+   (§0), or a check that sends back what is now wanted. Every check and reviewer is read against the targets
+   before anything is tested.
+3. **Judged by the session reading it**: every document of a look (`scripts/cvlab/look.sh`, the sets in
+   `scripts/cvlab/looks/`), a few people in different trades and the trap, written by both writers of gate 6 as
+   production calls them, each fact traced to the person's record. The reviewers of gates 2 and 9 are run when
+   the owner asks for the paired bench, their rubrics checked against the targets first; otherwise they are
+   reported as not run.
+4. **Every filter before it is offered**: gates 3, 4, 5, 7 and 10, and the `/no-ai-language` checker where the
+   machine has it.
+5. **Read on people it was never changed for** before it goes live, and the report says whether it was.
+
+§3a still decides what goes live: the owner's yes to a named version.
+
 ## 4. Measure before changing, and after
 
 The roadmap's own rule, generalised: no optimisation, filter or removal ships without the number it

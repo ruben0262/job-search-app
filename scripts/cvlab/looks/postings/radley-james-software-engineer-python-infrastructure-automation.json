@@ -1,0 +1,15 @@
+{
+  "id": null,
+  "url": "",
+  "source": "linkedin",
+  "title": "Software Engineer – Python & Infrastructure Automation (Contract)",
+  "company": "Radley James",
+  "location": "Vilnius, Vilniaus, Lithuania",
+  "description": "Software Engineer – Python & Infrastructure Automation (Contract)\n\nLocation: Vilnius, Lithuania\n\nContract: 6 months rolling\n\nHourly rate: Up to €45 per hour\n\nI'm currently partnering with a leading international financial services organisation looking for an experienced Software Engineer to join its infrastructure and automation engineering team.\n\nYou will be responsible for developing scalable backend services, modernising workflow orchestration platforms and building secure automation solutions across enterprise networking and hybrid cloud environments.\n\nResponsibilities:\nDesign, develop and maintain Python-based backend applications and REST APIs.\nBuild scalable workflow orchestration and infrastructure automation solutions.\nDevelop self-service tooling for enterprise infrastructure and network operations.\nBuild security-critical automation services covering certificate management, firewalls and threat mitigation.\nOwn software delivery from API design and testing through to CI/CD and production monitoring.\nSupport the expansion of hybrid and multi-cloud infrastructure.\nCollaborate with engineering teams to improve system reliability, scalability and performance.\nRequirements:\nStrong commercial experience with Python backend development.\nExperience with Django REST Framework, FastAPI or similar frameworks.\nExperience with workflow orchestration technologies such as Temporal.io, or a willingness to learn.\nStrong experience with enterprise infrastructure automation.\nExperience with AWS, Terraform and CI/CD pipelines.\nExperience with Docker, Kubernetes, OpenShift or EKS.\nUnderstanding of REST APIs and modern software architecture.\nFamiliarity with networking technologies, including firewalls, load balancers and DNS.\nStrong understanding of secure software development practices.\nThis is an excellent opportunity to contribute to a large-scale infrastructure modernisation programme, working with modern technologies in a complex enterprise environment.\n\nIf you're interested in discussing the opportunity, please apply or contact me directly.",
+  "workplace": null,
+  "applicants": null,
+  "is_remote": null,
+  "candidate": "",
+  "group": "radley-james-software-engineer-python-infrastructure-automation",
+  "slug": "radley-james-software-engineer-python-infrastructure-automation"
+}

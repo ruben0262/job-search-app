@@ -191,7 +191,13 @@ def names_title(text: str, title: str) -> bool:
     between two of them, each word as it is or in a form of it ("Mitarbeiterin" for "Mitarbeiter"): all of a
     title of up to three words, three in five of a longer one ("Mitarbeiterin im Kundenservice für
     Krankenkassen" for "... Krankenkassen und weitere Themen"). It is cut at "m/f/d" too, as at a dash: what
-    follows says where or with what ("Elektriker / Elektroniker (m/w/d) im Bereich Gebäudetechnik")."""
+    follows says where or with what ("Elektriker / Elektroniker (m/w/d) im Bereich Gebäudetechnik"). Where a
+    board strung keywords into the title with bars ("Golang | Go Developer | Python | Cloud | IoT"), the job
+    is the piece that reads as a name, of two words or more: a letter says "Go Developer" (v38, 2026-11-27),
+    and the first keyword is no title."""
+    pieces = re.split(r"\s+\|\s+", title)
+    if len(pieces) > 2 and (named := [piece for piece in pieces if len(piece.split()) > 1]):
+        title = named[0]
     line = re.split(r"\s+[-\u2013|]\s+|[,(]", _WHO_MAY_APPLY.sub(",", title), maxsplit=1)[0]
     line = re.sub(r"\s*/\s*", "/", _CONTRACT_FIRST.sub("", line).casefold())
     own = [options for options in ({word for part in token.split("/") for word in re.findall(r"[^\W_]+", part)

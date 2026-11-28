@@ -169,6 +169,23 @@ def test_a_subject_line_the_model_still_writes_is_left_out_of_the_letter():
     assert build.answer(addressed, "cover") == written
 
 
+def test_a_job_title_is_written_as_it_reads_in_a_sentence_without_the_boards_punctuation():
+    """Owner, 2026-11-27: "take the punctuation out of the title", the dash in it for one. A board strings a
+    title's parts with a dash or a bar and an ampersand, and the letter set it in bold as the board had it.
+    Code decides it (CLAUDE.md §0), whatever the model wrote; a hyphen or an ampersand inside a word stays."""
+    def written(title: str) -> str:
+        letter = ('<div class="letter"><p>Dear Hiring Manager,</p>'
+                  f"<p>I want the <strong>{title}</strong> role.</p></div>")
+        answered = build.answer(f"<letter>{letter}</letter>", "cover")
+        return re.search(r"<strong>(.*?)</strong>", answered).group(1)
+
+    assert written("Software Engineer \u2013 Python & Infrastructure Automation") == (
+        "Software Engineer, Python and Infrastructure Automation")
+    assert written("Housekeeping - Room Attendant") == "Housekeeping, Room Attendant"
+    assert written("Go Developer | Python | Cloud") == "Go Developer, Python, Cloud"
+    assert written("Part-time R&D Engineer") == "Part-time R&amp;D Engineer"
+
+
 def test_a_job_title_in_bold_is_counted_as_the_words_it_is():
     """A letter sets its job title in bold (owner, 2026-11-26: "bold the role wherever it will appear"). Read
     with a space where each tag was, "<strong>Backend Engineer</strong>," gave its comma away as a word of
@@ -910,15 +927,18 @@ def test_a_letter_in_another_language_is_measured_by_its_length_on_the_page():
 
 
 def test_a_letter_is_sent_back_for_what_gives_a_generated_one_away():
-    """A colon in a sentence, a contraction, an opening that never names the company: what the owner's own
-    review caught every time (`libs/scaffolds/tailor_cover.md`, failures 1, 4 and 5)."""
+    """A colon in a sentence, an opening that never names the company: what the owner's own review caught
+    every time (`libs/scaffolds/tailor_cover.md`, failures 1 and 4). A contraction was the third, and is the
+    person's own since 2026-11-27 (the owner, with a reader's word on the letters: "written too correctly or
+    not realistic"): people write "I've", and a letter that never does reads as nobody's."""
     bad = (GOOD_LETTER.replace("At Northwind I cut", "In my last role I cut")
            .replace("I rebuilt", "I've rebuilt")
            .replace("so that refunds", "so that one thing held: refunds"))
 
     assert checks.letter(GOOD_LETTER, company="Northwind GmbH") == []
+    assert checks.letter(GOOD_LETTER.replace("I rebuilt", "I've rebuilt"), company="Northwind GmbH") == []
     found = " ".join(checks.letter(bad, company="Northwind GmbH"))
-    assert "does not name Northwind" in found and "colon" in found and "I've" in found
+    assert "does not name Northwind" in found and "colon" in found
 
 
 def test_a_close_that_asks_to_talk_is_the_letters_own_and_a_stock_close_is_sent_back():

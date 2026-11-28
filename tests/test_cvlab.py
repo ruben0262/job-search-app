@@ -951,7 +951,10 @@ def test_a_letter_names_the_job_roughly_as_the_posting_does():
              "Elektriker / Elektroniker (m/w/d) im Bereich Gebäudetechnik"),
             ("als Pflegefachassistentin bei Alloheim", "Pflegefachassistenz (m/w/d)"),
             ("az Accounts Receivable Coordinator pozícióra", "Accounts Receivable Coordinator"),
-            ("Subject: Staff Nurse specialising in theatres", "Bank Staff Nurse/ODP")):
+            ("Subject: Staff Nurse specialising in theatres", "Bank Staff Nurse/ODP"),
+            # A board's run of keywords: the letter names the job, not the first keyword (2026-11-27).
+            ("the Go Developer role that 1dea is recruiting for",
+             "Golang | Go Developer | Python | Cloud | IoT | security")):
         assert names_title(text, title), title
     # Another job, the title's words apart, a shorter or a longer word, or a translation, do not name it.
     for text, title in (
@@ -959,6 +962,8 @@ def test_a_letter_names_the_job_roughly_as_the_posting_does():
             ("the Vehicle Technician role", "Vehicle Mechanic"),
             ("I supported residents as a care worker", "Support Worker - Beaumanor"),
             ("I worked at the reception of a hotel", "Receptionist"),
+            ("I have written Python for four years",
+             "Golang | Go Developer | Python | Cloud | IoT | security"),
             ("I ran office management", "Office Manager - FTC 12 Months"),
             ("as an accredited checking technician", "Accuracy Checking Pharmacy Technician (Full-time)"),
             ("a kintlévőség-kezelési koordinátori munkakör", "Accounts Receivable Coordinator")):
@@ -1201,3 +1206,65 @@ def test_a_phrase_one_model_writes_for_many_people_is_its_formula_and_one_person
 
     # The longest form, once; one person's two letters are one person; the greeting is asked for.
     assert found == {"what draws me to you is its": 4}
+
+
+def test_every_look_names_people_and_postings_the_bench_has_and_one_posting_reads_for_two(tmp_path):
+    """Owner, 2026-11-27: a wording is judged by the session reading a few people's documents. The look is
+    that set, kept in the tree: a pair naming a person or a posting that is not there is a document nobody
+    reads, and one posting has to be writable for two people (the recruiter's, for both developers)."""
+    from scripts.cvlab import look, run
+
+    names = [path.stem for path in look.LOOKS.glob("*.json")]
+    assert "cover" in names
+    for name in names:
+        spec = look.look(name)
+        written = look.jobs(name, tmp_path / name)
+        assert len(written) == len(spec["pairs"]) == len({path.name for path in written}) > 0
+        for person in {person for person, _ in spec["pairs"]}:
+            assert (look.PANEL / person / "candidate.json").exists(), person
+            if spec["kind"] == "cover":
+                assert any((look.PANEL / "letters" / person).glob("*.txt")), f"{person} has no weak letter"
+            theirs = run.load_postings(tmp_path / name, person, None)
+            assert len(theirs) == sum(who == person for who, _ in spec["pairs"])
+            assert all(posting.description.strip() for posting in theirs)
+    shared = [slug for _, slug in look.look("cover")["pairs"]]
+    assert len(shared) > len(set(shared)), "the cover look reads one posting for two people"
+
+
+def test_a_look_prints_each_document_whole_and_marks_what_a_reader_should_see_first(tmp_path, capsys):
+    """The counts are a reading aid: a letter with the board's dash in its bold title, a sentence that begins
+    with the prompt's own name for a paragraph and no line asking to talk is marked on each, and the letter
+    that has none of them is not. Both are printed whole, because the reading is the judgement."""
+    from scripts.cvlab import look
+
+    def page(*paragraphs: str) -> str:
+        inner = "".join(f"<p>{each}</p>" for each in ("Dear Hiring Manager,", *paragraphs))
+        return (f'<html><body><div class="letter">{inner}<p class="closing">Kind regards,</p>'
+                '<p class="signature">Sam Doe</p></div></body></html>')
+
+    good = page("I want to keep boilers going, and the <strong>Heating Engineer</strong> job at Northwind "
+                "is that work.", "I've done six calls a day for years.",
+                "I'd like to get to people whose heating has failed. Could we talk about your rota?")
+    bad = page("The <strong>Heating Engineer \N{EN DASH} Domestic &amp; Commercial</strong> job is open.",
+               "What I'd bring is forty years in the trade.", "Thank you for reading this.")
+    slug = look.look("cover")["pairs"][0][1]
+    rows = []
+    for person, text in (("plumber", good), ("care-worker", bad)):
+        rows.append({"variant": "v9", "candidate": person, "job": slug, "sample": 1, "model": "some-model",
+                     "prompt_version": "abc", "fault_list": [], "ai_language": 0, "pages": 1})
+        kept = tmp_path / "some-model@medium" / "abc" / f"{person}__v9__{slug}__1.cover.html"
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        kept.write_text(text, encoding="utf-8")
+    (tmp_path / "results.json").write_text(json.dumps(rows), encoding="utf-8")
+
+    assert look.read("cover", tmp_path / "results.json", "v9", tmp_path) == 2
+    printed = capsys.readouterr().out
+    lines = printed.splitlines()[:3]
+    head, bad_line, good_line = ([cell.strip() for cell in line.split("|")] for line in lines)
+    marks = dict(zip(head, zip(bad_line, good_line, strict=True), strict=True))
+
+    for count in ("opens on why", "asks to talk", "board punctuation in it", "the prompt's part names"):
+        bad_cell, good_cell = marks[count]
+        assert "!" in bad_cell and "!" not in good_cell, count
+    assert "Could we talk about your rota?" in printed and "What I'd bring is forty years" in printed
+    assert "**Heating Engineer**" in printed, "the bold title is shown as bold"

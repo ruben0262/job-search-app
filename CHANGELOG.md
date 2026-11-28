@@ -14,6 +14,102 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-27, night — letters that read as a person wrote them: v41 live on the owner's word; a title without the board's punctuation in code, a contraction no longer sent back, and the method kept as a skill
+
+The owner, on v37: "This looks much much better, it sounds amazing too". Then what was left: "take the punctuation
+out of the title 'Software Engineer – Python & Infrastructure Automation' ... so '–' is not there for example, but
+there could also appear other flaws as well", and a reader's word passed on: "it needs to read more human ... still
+written too correctly or not realistic". And for every prompt after this one: "carry on the testing and developing on
+any prompt in the future the same way, where we perform research on how everything should work, what models should be
+used for testing, and spot how we can get there from where we are, then make sure evaluation is here rather than to
+make any manual testing facility, and make sure that we run it through all the filters as well".
+
+**In code, for every writer.**
+
+- **A job's title as it reads in a sentence** (`build.in_a_sentence`, applied to the bold title in `build.answer`):
+  a board's dash or bar becomes a comma and its "&" an "and" ("Software Engineer, Python and Infrastructure
+  Automation"). The wording asks for it too (v38) and both writers do it; the code holds when one forgets (§0).
+- **A contraction is the person's own**: `checks.letter` no longer sends "I've" back. It had since 2026-11-11, and a
+  letter with none is what the reader called written too correctly. A colon in a sentence and the stock phrases are
+  still sent back.
+- **The bench's title check takes the job's name out of a board's run of keywords** (`checkers.names_title`): for
+  "Golang | Go Developer | Python | Cloud | IoT | security" it looked for "Golang", the first keyword, and failed
+  every letter that said "Go Developer", which is what the wording asks for. A check that punishes what is wanted.
+
+**The wording, one step at a time.** Each is the one before plus the change named. **v41 is live** (`libs/prompts/write_cover.md`, version `3fdee8a2cdb4`, was `15cecd5667f4`) on the owner's word after the read below ("Make v41 live"); v37 and the drafts v38 to v40 are in `libs/scaffolds/history/` with their rows.
+
+| | what it adds | what the read found (11 pairs, both writers) |
+|---|---|---|
+| v38 | the title without the board's punctuation; where they live, what they hold and whether they would move never in the opening; the prompt's names for the letter's parts never in the letter | titles clean; 1 of 22 first drafts sent back; reads "too correctly" (the reader) |
+| v39 | voice: as this person wrote it in half an hour, their own words, uneven sentences, contractions as people write them, no balanced sentence, no threes; "read it aloud" in the final check; "formal register" gone | reads as a person talking; Sol opens "What draws me to…" for 5 of 8 people (v38: none); Haiku 9,305 tokens out from 8,399 |
+| v40 | never a want told by what it is not, never "what draws me to" | Sol's formula gone; Haiku starts sentences with the prompt's part names in 6 of 11 ("What I'd bring is…"); one letter repeats a weakness the person told us ("phone calls take me longer") |
+| v41 | the part names with their contracted forms and "begin with the thing itself"; never what they find hard | part names 2 of 11, milder ("Speed is the first thing I'd bring"); no weakness named; below |
+
+**v41, read whole by the session: 34 letters.** The look (11 pairs: eight people in different trades with weak letters
+of their own, a recruiter's posting for two developers, the trap) and six people the wording was never changed for
+(paralegal, nurse, warehouse, driver, pharmacy technician, chef), each written by Claude Haiku 5.5 at medium
+(`--own-claude`) and by ChatGPT's Sol, lean. Every number, employer, certificate and move in them was looked up in the
+person's record, the posting or the company note.
+
+| | Haiku, look (11) | Sol, look (11) | Haiku, held out (6) | Sol, held out (6) |
+|---|---|---|---|---|
+| first drafts sent back by production's checks | 2 (a colon; the resort named, not Merlin) | 0 | 1 (a colon) | 0 |
+| hits on the AI-language list | 0 | 0 | 0 | 0 |
+| hard hits, `/no-ai-language` checker | 0 | 0 | 0 | 0 |
+| one page | 11 | 11 | 6 | 6 |
+| every ATS check in all six looks | 10 (the letter sent back for Merlin) | 11 | 6 | 6 |
+| a fact not in the record, posting or company note | 0 | 0 | 0 | 0 |
+| something the posting asks for claimed as theirs | 0 | 0 | 0 | 0 |
+| a gap or weakness named | 0 | 0 | 0 | 0 |
+| the title in bold, no board punctuation | 11 | 11 | 6 | 6 |
+| tokens out, seconds a letter | 7,219, 31.7 s | 357, 11.1 s | 7,174, 31.6 s | 387, 12.1 s |
+
+Live v37 on its eight pairs: Haiku 8,198 tokens out and 35.3 s, Sol 368 and 12.9 s, no first draft sent back.
+
+**What did not move, and what got worse.**
+
+- **Haiku's first drafts sent back**: 3 of 17 on v41, against 0 of 8 on v37 (v35 3 of 8, v38 1 of 11, v39 1 of 11, v40 0 of 11);
+  Sol none in 50. Four of the five were a colon in a sentence. Sets this small cannot tell the versions apart; each
+  one sent back is a second call on the person's plan. v39 and v41 each put a sentence with a colon of its own into
+  the prompt. Whether that teaches it was not tested.
+- **Most letters open "I want to…"**: Sol for 6 of 8 people on v41 (8 of 8 on v40, 5 on v38), Haiku for 7. It is
+  plain and it is the design, and it is one phrase in most people's letters.
+- One Haiku letter of 17 names five tools (the rule is two), two say "Your posting says" or "describes", one opens
+  "I'm applying for … because". Two give a reason a hiring manager may not warm to, each the person's own and true of
+  the job: the plumber wants his days "on the jobs, not chasing money or quotes", the pharmacy technician wants
+  "Monday to Friday work now my son's started school". One Haiku call in about fifty returned no complete letter
+  (v39); the cause was not found.
+
+**Not run.** The reviewers of §3b's gates 2 and 9: their rubrics count the posting's needs answered and would mark a
+motivation letter down, so they wait to be rewritten against the targets. More than one sample a pair. Letters in
+other languages. The judgement is the session's reading (owner, 2026-11-27).
+
+**The method, kept.**
+
+- **`.claude/skills/prompt-lab/`**: the order a prompt is worked on (what the document is for; the gap and whose it
+  is; the judging fixed before anything is tested; the writers a person writes with; one change a variant; judged by
+  reading; decided on what recurs or harms; then the owner's yes), how a look is read, the filters, what a few
+  documents cannot tell, how the plans are spent, and going live. `references/cover-letter.md` holds the letter's
+  targets, the mistakes that must not come back and what stops each now. `CLAUDE.md` §3c makes its order the rule.
+  Made with the skill-creator's guidance; its with-and-without benchmark was not run (it would spend the plans on
+  writing letters a second time), which is said here and not passed off as done.
+- **A look in the tree** (`scripts/cvlab/looks/cover.json`, `look.py`, `look.sh`): the pairs, and counts that mark
+  which letter to read first (no line asking to talk, a board's dash in the bold title, a sentence that begins with
+  the prompt's own name for a paragraph). `look.sh cover v41 haiku` writes and prints them; a count is a reading aid,
+  never a mark. The posting the owner brought (a recruiter's, for a client) is `looks/postings/`, read for both
+  developers.
+
+**Tests.** `test_a_job_title_is_written_as_it_reads_in_a_sentence_without_the_boards_punctuation`; a contraction
+alone sends nothing back (`test_a_letter_is_sent_back_for_what_gives_a_generated_one_away`); every look names people
+and postings the bench has, and one posting is written for two; a look marks the letter with the faults and not the
+one without, and prints both whole; the job's name from a keyword title (`names_title`).
+
+**Raised (§5).** `look.py` reads the owner's `/no-ai-language` checker from `~/.claude/skills/`, which is not in the
+repository: where it is missing the column says "not run". `look.sh` takes the AI tools from
+`~/.local/share/job-search-app/ai-tools` unless `CLAUDE_CLI` and `CODEX_CLI` say otherwise.
+
+---
+
 ## 2026-11-27, evening — a cover letter is a motivation letter: v37 live on the owner's word, what a company says of itself kept once a company, a close that asks to talk
 
 The owner, on the live letter: "it only talks about the necessary skills for the jobs, which is not what a cover
@@ -810,6 +906,92 @@ it as kept).
   windows. A reader two standard errors down on the mark or on accuracy takes it out.
 - **The reviewers' cost** (above) makes "a reviewer on each platform" a two-day read for one wording. Fewer letters a
   read, or GPT's reviewer on the hiring manager's read alone, would be the owner's choice.
+
+## 2026-11-26 — robots.txt and the sitemap answer HEAD as they answer GET
+
+Search Console kept saying "Couldn't fetch" for the sitemap after the owner's live test of it had passed. Asked as
+Googlebot, `/sitemap.xml` answers 200 with valid XML of the five public pages, compressed or not, and `robots.txt`
+allows everything and names it. But both routes took only GET, so a HEAD fell through to the static files: the live
+sitemap answered it with a 404, and `robots.txt` with a 405 locally. Pages were given HEAD on 2026-11-25; these two
+were missed (`68f7222`). Whether Google's sitemap reader asks with HEAD is not known, so this may not be the cause:
+the same status is commonly shown for a new site's sitemap that Google has not read yet. The owner's next steps:
+deploy, add `sitemap.xml?v=2` as a new sitemap, request indexing of the five pages, and after a week look for
+Googlebot in Cloudflare's Security → Events. The full pytest run was skipped at the owner's request; the page and
+guard tests pass (39), and the new case fails on the commit before.
+
+## 2026-11-26 — the link preview's picture centred, so a square crop keeps the name and the line
+
+The owner: "install uharfbuzz and centre the preview image". `branding/build.py`'s `banner()` takes `centred`:
+the name and the tagline in the middle, the tagline on two lines, the large faint wheel behind them. Only the
+link preview uses it (1200 x 630); the profile banner stays as it was and drew byte for byte the same. A square
+cut from the middle, as some apps show a link's picture, now keeps all of it: the name 65 px and the tagline
+90 px inside the square's edges, where the left-hand layout lost half of each (SEO re-audit, 2026-11-25).
+uharfbuzz and brotli are installed in the dev `.venv`, as `branding/README.md` says.
+
+## 2026-11-25 — the site as search engines read it: every page to every client, each page saying which it is, the public pages drawn for crawlers, and the headline there from the first frame
+
+The owner, after the SEO audit (`mahoraga.cc-audit/`, health 47/100): "do the first week fixes, homepage title remains
+what it is now ... ats is official checks indeed so resolve that, crossed out prices also work so its resolved already,
+fix headline animation, i don't think we need to build any new pages ... the layout and the one page landing page
+remains as it is ... Lets do all changes we need to to up the seo of the site and follow the full audit report and
+plan please." Search Console, Bing Webmaster Tools and the Cloudflare redirects (http and www to https://mahoraga.cc,
+301, checked) are the owner's, done the same day.
+
+- **Every page reaches every client** (`guard.page_asked`). A page was given only to a request whose `Accept` said
+  `text/html`; bingbot sends `*/*` (third-party logs from Microsoft's ranges), and got a JSON 404 for every page but
+  `/`. Now any address that is none of the API's GET routes is a page whatever is asked; the API's own addresses stay
+  data for a client that does not ask for HTML, so `deploy/reach.sh` still reads `/health` with curl's `*/*`. Read off
+  the same contract as before, in both servers (`web/vite.config.ts`). Three new cases fail on the last commit.
+- **Each public page says which it is** (`services/api/page_routes.py`). The shell is given its head per address:
+  a legal page its own title ("Terms of Service · Mahoraga") and no copy of the landing page's description; every
+  public page a canonical address, Open Graph and a large link-preview card; the landing page who the site is
+  (Organization and WebSite JSON-LD, `sameAs` from the `socials` setting). Every other address answers
+  `X-Robots-Tag: noindex`. `/robots.txt` and `/sitemap.xml` are written from the one list of public pages
+  (`libs.pages.PUBLIC`: `/` and `libs.legal`'s documents) at the site's own address (`PUBLIC_URL`). The landing
+  page's title stays "Mahoraga" (owner), its description 180 to 151 characters, which a result shows whole.
+- **Crawlers read the pages as a visitor sees them.** docgen, the one image with Chrome, draws one public page in
+  each pass of its sweep (never drawn or of an older deploy first, then older than `PLATFORM_TICK_MIN`), through the
+  API on the compose network (`SITE_INSIDE_URL`); the copy is kept in `drawn_pages` (not backed up) and served to a
+  request that is not a browser going to a page (`Sec-Fetch-Dest: document`), only while it names this deploy's code.
+  What a client without JavaScript reads, against 0 words at every page in the audit: `/` 1,296 words with its
+  heading, `/terms` 3,779, `/privacy` 2,665, `/cookies` 821, `/data` 1,520. Browsers get the same file as before.
+- **The headline is there from the first frame.** Its words rise into place one after another, without the fade
+  and blur from nothing that held the largest paint 1.2 s past the first: 5,396 to 4,200 ms, medians of 5 runs on
+  a throttled phone (4x CPU, 1.6 Mbit/s, 150 ms), with the largest paint now the first.
+- **The "?" buttons are named after their line**, not eleven times "What this means" (`Explain`'s `about`).
+- **The link preview's picture** is the brand kit's `og-image.png`, written into `web/public` by `branding/build.py`.
+- **After the deploy, the same evening** (owner: "making sure we have proper short descriptions, and images of
+  the site if we link it anywhere or on the web"; re-audit in `mahoraga.cc-audit/`): each legal page is described
+  in its own words, the start of its "short version", as much of it as a result shows whole (`DESCRIBED_IN`,
+  160), in its description and its link preview alike; every public page says a search engine may show its
+  picture large (`max-image-preview:large`) and gives a previewer the picture's size, read from the file, and
+  its alt; `/favicon.ico` is served (the brand kit's, which `branding/build.py` writes); a page answers HEAD as
+  it answers GET (a link checker's and an uptime monitor's: a JSON 404 before); and nothing under
+  `/.well-known/` is a page. Also from the re-audit: the WebSite's second name is the site's address
+  (`mahoraga.cc`, for Google's site name when "Mahoraga" is taken); the price parts are spaced for whatever
+  reads text ("€19.9985% off€2.99" before), with nothing changed on screen; the demos' made-up jobs are
+  `data-nosnippet`; the sitemap dates the legal pages by `LEGAL_VERSION`; and a crawler given the empty file,
+  for want of a drawn copy, is logged once a page and deploy, as is docgen starting with no address to draw
+  from. Re-audit, live, before these: 72/100 (47 in the morning).
+- Owner's decisions, recorded: the title "Mahoraga"; "official ATS checks" stays and the legal pages are unchanged;
+  the crossed-out prices stand; no new pages; the landing page's layout as it is.
+- Not done, and why: an answer block and new pages (owner); a footer on the legal pages (owner, 2026-11-18: plain
+  documents, only the way back); the logos at 96 px (128 is held by `test_board_logos.py`, and they load after the
+  largest paint); `Permissions-Policy`, `security.txt` and the two signed-out 401s (no effect on search; the last
+  touches sign-in); HSTS `includeSubDomains`, a week after the redirects (from 2026-12-02). The one input the agent
+  check calls unlabelled is the demo's picture of the search box, `aria-hidden`.
+- `test_the_landing_page_shows_every_source...` failed on `8afa13d` alone, before this change: that commit took
+  "No card needed." out of the hero, which the test expected. Settled by the owner the same evening: tests no
+  longer pin the page's words (below).
+- Docs: `docs/saas/MESSAGING.md` §7 (title, description, preview), `docs/saas/CODE_STRUCTURE.md` §5 (docgen draws
+  the public pages).
+- **Tests, the same evening** (owner: "we should be testing actual parts of the site not unimportant parts ...
+  same with the flaky look test, that should not even be a test"): the browser tests no longer pin the landing
+  page's wording (the hero's lines and "No card needed.", section and tile titles, the forbidden-words list, the
+  footer's links, the demo card's message) or which way the sources strip drifts. Two tests that wait a fixed
+  moment for an answer they do not control are gone: the look picked during a held read, and every tab drawn at
+  once. What a page does stays tested: every source from `/stats`, nothing off a phone's screen, the bar's links,
+  no sample review, sign-in and sign-up by address, the contact form reaching the inbox.
 
 ## 2026-11-24, evening — a posting's text kept beside it, one write a run for the company boards, and connections closed when idle
 

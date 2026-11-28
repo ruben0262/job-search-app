@@ -1,0 +1,100 @@
+{
+  "kind": "cover",
+  "why": "Eight people in different trades with weak letters of their own, one posting each; one posting a recruiter wrote for a client, for two developers; and the trap: a developer with Python and no Go, for postings that ask for Go.",
+  "pairs": [
+    [
+      "care-worker",
+      "rushcliffe-care-limited-support-worker-beaumanor-beaumanor-c"
+    ],
+    [
+      "housekeeper",
+      "merlin-entertainments-housekeeping-room-attendant"
+    ],
+    [
+      "plumber",
+      "sureserve-heating-engineer"
+    ],
+    [
+      "hr-advisor",
+      "mediq-uk-hr-resourcing-advisor"
+    ],
+    [
+      "payroll",
+      "adecco-payroll-administrator-f-m"
+    ],
+    [
+      "site-manager",
+      "dara-people-ltd-construction-manager"
+    ],
+    [
+      "polyglot-dev",
+      "alpaca-senior-software-engineer-polyglot-dev"
+    ],
+    [
+      "polyglot-dev",
+      "radley-james-software-engineer-python-infrastructure-automation"
+    ],
+    [
+      "backend-dev",
+      "radley-james-software-engineer-python-infrastructure-automation"
+    ],
+    [
+      "backend-dev",
+      "alpaca-senior-software-engineer-agent-developer-platform"
+    ],
+    [
+      "backend-dev",
+      "1dea-golang-go-developer-backend-dev"
+    ]
+  ],
+  "counts": [
+    {
+      "name": "opens on why",
+      "in": "first",
+      "good": "some",
+      "pattern": "(?i)\\bI(?: would|'d)? (?:want|like)\\b|\\bI(?: am|'m) looking for\\b|\\bwhy\\b|\\bappeals to me\\b"
+    },
+    {
+      "name": "asks to talk",
+      "in": "last",
+      "good": "some",
+      "pattern": "(?i)\\b(?:talk|conversation|discuss|meet|speak|call)\\b"
+    },
+    {
+      "name": "names a gap",
+      "in": "all",
+      "good": "none",
+      "pattern": "(?i)\\bI (?:have|'ve) (?:not|never)\\b|\\bI (?:do not|don't) (?:yet )?(?:hold|have)\\b|\\bnot yet\\b|\\bnew to me\\b|\\bI lack\\b"
+    },
+    {
+      "name": "title in bold",
+      "in": "all",
+      "good": "some",
+      "pattern": "\\*\\*[^*]+\\*\\*"
+    },
+    {
+      "name": "board punctuation in it",
+      "in": "all",
+      "good": "none",
+      "pattern": "\\*\\*[^*]*(?:[\\u2013\\u2014|&]| - )[^*]*\\*\\*"
+    },
+    {
+      "name": "the prompt's part names",
+      "in": "all",
+      "good": "none",
+      "pattern": "(?i)\\bwhat I(?: would|'d) (?:bring|want to do(?: there| first)?) is\\b|\\bI(?: would|'d) bring (?:first )?is\\b|\\bthe first thing I(?: would|'d) bring\\b|\\bthe one result that best\\b"
+    },
+    {
+      "name": "learned tics",
+      "in": "all",
+      "good": "none",
+      "pattern": "(?i)\\bnot just\\b|\\bdr(?:aws|ew) me to\\b|\\bexactly (?:that|what)\\b"
+    },
+    {
+      "name": "contractions",
+      "in": "all",
+      "good": "any",
+      "pattern": "\\b\\w+['\\u2019](?:m|ve|d|ll|re|t)\\b"
+    }
+  ]
+}

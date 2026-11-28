@@ -3789,6 +3789,16 @@ work, or opening and closing sessions faster, would help):
       read on 8 profiles on both writers (no first draft sent back, ATS 100 in six looks). **Waiting:** (1) A
       company's own site or LinkedIn page as a second source: a search key or the proxy's budget. (2) A measured
       round, if one is wanted, with a reader built for a motivation letter, and the trap.
+    - **2026-11-27, night: letters that read as a person wrote them, and the method kept** (CHANGELOG). A
+      title's board punctuation is taken out in code (`build.in_a_sentence`); a contraction is no longer sent
+      back; v38 to v41 each one step, **v41 live** on the owner's word: read whole on 17 pairs by both writers, six of them people
+      it was never changed for (Sol 0 of 17 first drafts sent back, Haiku 3; AI list 0; one page; every fact
+      traced). The method is the `prompt-lab` skill and `CLAUDE.md` §3c, with a look in the tree
+      (`scripts/cvlab/look.sh`). **Waiting:** (1) Most letters open "I want to…": the opening said each
+      person's own way is the next step, if one is wanted. (2) Whether the colons in the prompt's own new
+      sentences teach Haiku the colon that is sent back. (3) The reviewers' rubrics rewritten for a motivation
+      letter, before the paired bench is used again. (4) A look for the CV (`looks/cv.json`) before the CV
+      prompt is worked on this way.
 
 54. **Plans and the landing page: what waits for the owner** (2026-11-16, CHANGELOG).
     - At Stripe, live: a Starter product with a recurring monthly price of £2.99; its id as
@@ -4009,6 +4019,19 @@ work, or opening and closing sessions faster, would help):
       search left in Bookmarks would hide bookmarks the next day. Keeping them would be a field each on the user.
     - **The deploy reads every stored posting's place again, once** (`python -m libs.db`): 37,389 of 47,268
       postings changed on a copy of the dev database, in 2.2 s.
+
+58. **Search engines and the site** (owner, 2026-11-25, after the SEO audit in `mahoraga.cc-audit/`: "Lets do all
+    changes we need to to up the seo of the site and follow the full audit report and plan"). Built the same day
+    (CHANGELOG 2026-11-25). For the owner:
+    - **HSTS `includeSubDomains`, from 2026-12-02**: a week after the redirects to `https://mahoraga.cc` went live,
+      once nothing under the domain is reached over plain HTTP. One line in `HEADERS` (`services/api/guard.py`).
+      `preload` only if wanted: the browsers' list is slow to leave.
+    - **After the deploy**: submit `https://mahoraga.cc/sitemap.xml` in Search Console and Bing Webmaster Tools,
+      and run Bing's URL Inspection on `/terms`: it should now show the terms, where it had a 404. Read the served
+      `/robots.txt` too: Cloudflare may still put its own comment text in front of the site's.
+    - **The legal details** (Phase 12, item 1) read "[not filled in yet]" on the live Terms and Privacy, and the
+      copies drawn for crawlers repeat whatever those pages say, within 15 minutes of a change.
+    - **Whether crawlers may train on the site**: `robots.txt` says nothing either way (`Content-Signal`).
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

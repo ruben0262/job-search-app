@@ -180,8 +180,23 @@ def answer(reply: str | None, kind: str) -> str | None:
         # A letter is its greeting to its signature and nothing above them: a subject line or an address a
         # model still writes from habit is left out here, whatever the prompt asked (CLAUDE.md §0).
         body = body[body.index(_LETTER_OPENS):] if _LETTER_OPENS in body else body
+        body = _BOLD.sub(lambda title: f"<strong>{in_a_sentence(title.group(1))}</strong>", body)
         return _undated(checks.paragraphs_split(_EMDASH.sub(", ", body)))
     return _one_profile(strip_prose_emdashes(body))
+
+
+# A letter sets one thing in bold, the job's title (`write_cover.md`).
+_BOLD = re.compile(r"(?s)<strong>(.*?)</strong>")
+_BOARD_DASH = re.compile(r"\s+(?:[\u2013\u2014|]|-)\s+")
+_BOARD_AND = re.compile(r"\s+(?:&amp;|&)\s+")
+
+
+def in_a_sentence(title: str) -> str:
+    """A job's title as it reads in a sentence (owner, 2026-11-27: "take the punctuation out of the title"): a
+    board's dash or bar between its parts is a comma and its "&" an "and", so "Software Engineer – Python &
+    Infrastructure Automation" is "Software Engineer, Python and Infrastructure Automation". A hyphen or an
+    ampersand inside a word stays ("Part-time", "R&D")."""
+    return _BOARD_AND.sub(" and ", _BOARD_DASH.sub(", ", title))
 
 
 def assemble(request: Request, body: str) -> str:

@@ -110,9 +110,6 @@ _POSSESSIVE = re.compile(rf"(?<![\w{_Q}])(?:I[{_Q}](?:m|ve|d|ll)|my|me|mine)(?![
 _BARE_I = re.compile(rf"(?<![\w{_Q}])I(?![\w{_Q}/])")
 _TITLE_NUMERAL = re.compile(r"[A-Z][a-z]+\s+$")
 
-# Contractions in an English letter (`tailor_cover.md`, failure 5). A possessive "'s" is not one.
-_CONTRACTION = re.compile(rf"(?i)\b(?:\w+n[{_Q}]t|i[{_Q}]m|\w+[{_Q}](?:re|ve|ll|d)|"
-                          rf"(?:it|that|there|here|what|let|who)[{_Q}]s)\b")
 # A colon in a sentence, the claim-colon-elaboration habit (`tailor_cover.md`, failure 4).
 _PROSE_COLON = re.compile(r"[^\W\d_]\s*:\s+\S")
 
@@ -293,8 +290,6 @@ def letter(body: str, *, company: str, posting: str = "") -> list[str]:
     if phrases := [p for p in LETTER_PHRASES if p in flat.lower()]:
         found.append(f"It says {', '.join(repr(p) for p in phrases)}, which could end anybody's letter. Say "
                      "something only they could.")
-    if contractions := sorted({m.group(0) for m in _CONTRACTION.finditer(flat)}):
-        found.append(f"It uses contractions ({', '.join(contractions)}). Write them out in full.")
     if said := ai_language(flat, but=posting):
         found.append(f"It says {', '.join(repr(each) for each in said)}, which reads as written by AI. "
                      "Say it the plain way this person would.")
