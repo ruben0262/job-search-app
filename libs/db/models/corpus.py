@@ -46,8 +46,12 @@ class CorpusJob(Document):
                IndexModel("application_canonical_url", name="application_canonical_url"),
                IndexModel([("source", 1), ("first_seen_at", 1)], name="source_first_seen"),
                # The oldest first, for the archive pass (`libs.corpus.archive`): without it, finding 1,000
-               # postings to move read all 397,000 and sorted them, 2 s a run at 400,000 (2026-11-05).
-               IndexModel([("first_seen_at", 1)], name="first_seen"),
+               # postings to move read all 397,000 and sorted them, 2 s a run at 400,000 (2026-11-05). With
+               # the source and whether it has its text, the counts by source of the admin's corpus and
+               # pipeline pages read this alone: they read every posting of their window, 1.84 million and
+               # 40 s a look, through the database's memory (server_db, 2026-11-28).
+               IndexModel([("first_seen_at", 1), ("source", 1), ("described_at", 1)],
+                          name="first_seen_source"),
                # The jobs still without their text, newest first: the describer's queue and every count of
                # it (`repository.awaiting_description_conditions`), the admin's live view once a second.
                IndexModel([("described_at", 1), ("first_seen_at", DESCENDING)], name="text_queue"),

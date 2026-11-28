@@ -14,6 +14,24 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-28 — the counts by source read an index, and the text's move is gone: less of server_db's memory
+
+server_db held 2.8 GB of its 3.5 GB cache, 2.7 GB of it the corpus, and read 121 GB of the corpus into memory in
+71 hours: what it keeps is thrown out and read again. Its slow-query log over those hours named two causes that
+need no change to what a page shows.
+
+- **The counts by source** of the admin's corpus page (thirty days) and pipeline page (a day) read every posting
+  of their window to count it: 1,840,299 postings and 40 s a look, 16 GB over six looks. `first_seen`
+  (`first_seen_at`) becomes `first_seen_source` (`first_seen_at`, `source`, `described_at`): both counts read
+  the index alone, and the archive pass, its first reader, reads it as before. The deploy's prune drops
+  `first_seen` once the new one is built.
+- **`libs.corpus.texts.move_once`** (2026-11-24) ran at every deploy and read the whole corpus for a text still
+  inside a posting: four deploys, 1.9 million postings and 34 to 99 s each, none found. Every text is beside its
+  posting; it is deleted, with its test.
+
+What it leaves: a posting is ~2,900 bytes, 2,080 of them its match features (`fit`), and the cache holds whole
+postings. Moving `fit` beside the posting, as its text was, is the next measurement.
+
 ## 2026-11-28 — letters that flow: v48 live on the owner's word, judged beside the letter it replaces by a reader who did not know which was which
 
 The owner read their own letter from the live v41 beside the one v37 had written for the same posting: "the v37 read

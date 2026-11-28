@@ -584,6 +584,32 @@ def test_the_corpus_browser_reports_what_is_actually_in_there(api):
     assert all("Mechanical" in job["title"] for job in searched["jobs"])
 
 
+def test_the_counts_by_source_read_the_index_and_not_the_postings(api):
+    """The corpus browser's thirty days by source, and the pipeline's day, read every posting of the window:
+    1.84 million and 40 s a look on server_db, each through the database's memory (2026-11-28)."""
+    from libs.db.models import CorpusJob
+
+    http, db, operator, _ordinary, sign_in = api
+    sign_in(http, operator)
+    for i in range(3):
+        insert(db, CorpusJob(title="Engineer", source="greenhouse", url=f"https://example.com/{i}",
+                             first_seen_at=now(), described_at=now() if i else None))
+    db.command("profile", 2)
+    try:
+        assert http.get("/admin/corpus").json()["sources"] == [{"source": "greenhouse", "count": 3}]
+        found = {row["source"]: row for row in http.get("/admin/pipeline/sources").json()["sources"]}
+        db.command("profile", 0)
+        counts = [op for op in db["system.profile"].find({"command.aggregate": CorpusJob.COLLECTION})
+                  if list(op["command"]["pipeline"][0].get("$match", {})) == ["first_seen_at"]
+                  and op["command"]["pipeline"][1].get("$group", {}).get("_id") == "$source"]
+    finally:
+        db.command("profile", 0)
+        db.drop_collection("system.profile")  # the database refuses the next test's emptying of it
+    assert (found["greenhouse"]["found"], found["greenhouse"]["with_text"]) == (3, 2)
+    assert len(counts) == 2, "one count from each page"
+    assert [op["docsExamined"] for op in counts] == [0, 0], "it read the postings to count them"
+
+
 def test_the_corpus_browser_lists_the_newest_first_and_says_which_have_their_text(api):
     """A job has its text when the platform says so (`described_at`), the one rule its Jobs pages go by. The
     browser had a rule of its own, 400 characters, so a job on people's lists read as waiting for its text."""
