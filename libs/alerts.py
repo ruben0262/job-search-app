@@ -260,7 +260,7 @@ def _scores(db: Database, users: list[User], jobs_of: dict[_uuid.UUID, list[int]
     for user in users:
         if (made := fit.profile(db, user)) is not None:
             facets[str(user.id)] = [
-                {"$match": {"_id": {"$in": jobs_of[user.id]}, "fit_version": fit.VERSION}},
+                {"$match": {"_id": {"$in": jobs_of[user.id]}, "fit_version": fit.VERSION}}, *fit.JOINED,
                 {"$project": {"s": fit.expression(made)}}]
     if not facets:
         return {}

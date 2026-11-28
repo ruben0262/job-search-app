@@ -8,7 +8,7 @@ from libs.db.models.auth import MAIL_PURPOSES, TOKEN_PURPOSES, AuthToken, MailSe
 from libs.db.models.built import BuiltDocument
 from libs.db.models.company import Company
 from libs.db.models.contact import ContactMessage
-from libs.db.models.corpus import WORKPLACES, CorpusJob, CorpusText, CountryCount, SweptPlace, Word
+from libs.db.models.corpus import WORKPLACES, CorpusFit, CorpusJob, CorpusText, CountryCount, SweptPlace, Word
 from libs.db.models.document import DOCUMENT_KINDS, UploadedFile, UserDocument
 from libs.db.models.fit import FitScore
 from libs.db.models.notification import PushSubscription, UserNotification, VapidKey
@@ -35,7 +35,8 @@ from libs.db.models.user import (
     UserSecret,
 )
 
-MODELS = (User, UserConfig, UserSecret, UserSession, AuthToken, MailSend, CorpusJob, CorpusText, QueueJob,
+MODELS = (User, UserConfig, UserSecret, UserSession, AuthToken, MailSend, CorpusJob, CorpusText, CorpusFit,
+          QueueJob,
           UserJobState, SetupConversation, SetupMessage, UserNotification, PushSubscription,
           UserDocument, UserProfileFile, PlatformSetting, AiRequest, AtsToken, AtsEtag,
           BuiltDocument, LanePause, Lock, ContactMessage, Word, SweptPlace,
@@ -50,7 +51,7 @@ __all__ = [
     "AiRequest", "Alert", "AlertCursor", "AtsEtag", "AtsToken", "AuthToken", "BuiltDocument", "Company",
     "CompanyLookup",
     "ContactMessage",
-    "CorpusJob", "CorpusText", "CountryCount", "DrawnPage", "FitScore",
+    "CorpusFit", "CorpusJob", "CorpusText", "CountryCount", "DrawnPage", "FitScore",
     "LanePause", "Lock",
     "MailSend", "PlatformSetting", "PushSubscription", "QueueJob", "RateCount",
     "SetupConversation", "SetupMessage", "SweptPlace", "UploadedFile", "User", "UserConfig", "UserDocument",

@@ -15,7 +15,8 @@ alert of an account that had paused them all is switched off, once ever (`libs.a
 the pause having gone. And every company board given up before a failed poll was told from a missing board is
 asked again, once ever (`libs.corpus.ats.revive_all_once`). And every stored posting's country and town is
 read again, once ever, by the reader that knows every town of 5,000 people (`libs.corpus.repository
-.read_places_once`).
+.read_places_once`). And every posting's match features still inside it are moved beside it
+(`libs.fit.move_once`), found by their version, so a deploy after the move reads one index key for it.
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ from libs.corpus.ats import revive_all_once
 from libs.corpus.repository import read_places_once
 from libs.db import database, ensure_schema
 from libs.db.models import MODELS
+from libs.fit import move_once
 from libs.llm.accounts import settle
 from libs.membership import free_for_existing
 from libs.ops.countries import split_by_source
@@ -46,6 +48,8 @@ def main() -> int:
         print(f"ats_tokens: {revived} board(s) given up before 2026-11-20 are asked again")
     if placed := read_places_once(db):
         print(f"corpus: {placed} posting(s) given their town, or their country, by the reader of every town")
+    if moved := move_once(db):
+        print(f"corpus: {moved} posting(s) gave their match features to corpus_fit")
     ensure_schema(db, prune="--prune" in sys.argv[1:])
     for model in MODELS:
         indexes = len(list(db[model.COLLECTION].list_indexes()))

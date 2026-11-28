@@ -31,9 +31,24 @@ class CorpusText(Document):
 
 
 @dataclass(kw_only=True)
+class CorpusFit(Document):
+    """What the fit score reads of a posting (`libs.fit.job`), kept beside it under its id rather than in it
+    (`libs.fit.JOINED`). It was 71% of a stored posting, 2,080 bytes of 2,910, which only a score reads and
+    the database kept in memory with every posting it did read (server_db, 2026-11-28)."""
+
+    COLLECTION = "corpus_fit"
+    BACKED_UP = False
+    OWNER = None
+
+    id: int
+    fit: dict
+
+
+@dataclass(kw_only=True)
 class CorpusJob(Document):
     """One public posting. Its integer id is what the site, the alerts and Telegram's buttons carry. Its text,
-    `description`, is carried with it in this process and stored beside it (`CorpusText`), never in it."""
+    `description`, and what the fit score reads of it, `fit`, are carried with it in this process and stored
+    beside it (`CorpusText`, `CorpusFit`), never in it."""
 
     COLLECTION = "corpus"
     BACKED_UP = False
@@ -101,8 +116,9 @@ class CorpusJob(Document):
     terms: list[str] = field(default_factory=list)
     title_terms: list[str] = field(default_factory=list)
     terms_at: datetime | None = None
-    # What the fit score reads of it (`libs.fit.job`), written with its text, and by which `libs.fit.VERSION`:
-    # one stored before, or by an older version, is given them by `libs.fit.catch_up`.
+    # What the fit score reads of it (`libs.fit.job`), written with its text and kept beside it (`CorpusFit`),
+    # and by which `libs.fit.VERSION`: one stored before, or by an older version, is given them by
+    # `libs.fit.catch_up`.
     fit: dict | None = None
     fit_version: int | None = None
     discovered_via: str | None = None
@@ -124,10 +140,12 @@ class CorpusJob(Document):
     def to_doc(self) -> dict:
         data = super().to_doc()
         data.pop("description")
+        data.pop("fit")
         return data
 
     def beside(self) -> list[Document]:
-        return [CorpusText(id=self.id, description=self.description)] if self.description else []
+        return [*([CorpusText(id=self.id, description=self.description)] if self.description else []),
+                *([CorpusFit(id=self.id, fit=self.fit)] if self.fit else [])]
 
 
 @dataclass(kw_only=True)

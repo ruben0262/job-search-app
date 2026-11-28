@@ -249,8 +249,8 @@ class CorpusRepository:
                    "language": language,
                    "salary_top_eur": pay.top_eur(description),
                    **terms_of(row["title"], description, vocabulary), "terms_at": now(),
-                   # What the fit score reads of it (`libs.fit`), with the text it is read from.
-                   "fit": fit.job(row["title"], description, language), "fit_version": fit.VERSION}
+                   # What the fit score reads of it (`libs.fit`), read from the text and kept beside it.
+                   "fit_version": fit.VERSION}
         if len(description) >= MIN_DESCRIPTION and not row.get("described_at"):
             # A whole job from now: alerts wait for this, not for the posting to be found.
             changes["described_at"] = now()
@@ -258,9 +258,11 @@ class CorpusRepository:
         if row["workplace"] is None:
             changes["workplace"] = workfilter.classify(
                 row["title"], row["location"] or "", description, row["is_remote"])
-        # The text first: a posting that reads as described has its text to read (`libs.corpus.texts`).
+        # The text and features first: a posting that reads as described has them to read
+        # (`libs.corpus.texts`, `libs.fit.store`).
         store(self._db, job_id, description)
-        self._corpus.update_one({"_id": job_id}, {"$set": changes})
+        fit.store(self._db, job_id, fit.job(row["title"], description, language))
+        self._corpus.update_one({"_id": job_id}, {"$set": changes, "$unset": {"fit": ""}})
         # A word that joined the vocabulary while this was written: `terms.catch_up` looks for a new word only
         # in postings that already have their words, and this one may not have had them yet when it looked.
         if late := sorted(set(self._vocabulary()) - set(vocabulary)):

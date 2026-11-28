@@ -25,6 +25,7 @@ from libs.db import find
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState, Word
 from libs.db.models.corpus import WORDS_INDEX
 from libs.db.models.user import LIGHT
+from libs.fit import JOINED as FEATURES
 from libs.membership import FREE, MEMBER, STARTER, jobs_as_of, members, starters, wait_hours
 from libs.tenant.filters import UserFilters, candidate_conditions, filters_for
 from libs.tenant.repository import TenantRepository
@@ -207,8 +208,9 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
     newest = [{"$sort": {"first_seen_at": -1, "_id": -1}}, {"$limit": scan}]
     # Its words found, and the text they were read in let go: a posting's text is kept beside it (`libs.corpus
     # .texts`) and brought in only where a word is read in it, a posting not searched yet or a word still
-    # pending. What the fit score reads of a posting leaves too, unless the caller scores the page it shows.
-    left = ["description", *([] if fit else ["fit"])]
+    # pending. What the fit score reads of a posting is kept beside it too (`libs.fit.JOINED`), and brought to
+    # the list only for a caller that filters it by score (`fit`); one a deploy left inside a posting leaves.
+    left = ["description", "fit"]
     found_there = [_words(mine, pending), {"$match": {"words.0": {"$exists": True}}}, {"$unset": left}]
     searches = [[{"$match": {"$and": [*where, {"terms_at": None}]}}, *JOINED, {"$match": has_any(mine)},
                  *newest, *found_there]]
@@ -231,7 +233,7 @@ def _read(db: Database, user: User, *, described_since: datetime | None = None,
     joined = [{"$unionWith": {"coll": CorpusJob.COLLECTION, "pipeline": each}} for each in rest]
     # A posting two of the questions found is one posting.
     once = [{"$group": {"_id": "$_id", "row": {"$first": "$$ROOT"}}}, {"$replaceRoot": {"newRoot": "$row"}}]
-    return [*first, *joined, *(once if rest else []), *newest,
+    return [*first, *joined, *(once if rest else []), *newest, *(FEATURES if fit else []),
             {"$addFields": {"nwords": {"$size": "$words"}, "ntitle": {"$size": "$in_title"},
                             "when": {"$ifNull": ["$posted_at", "$first_seen_at"]}}}], how
 
@@ -328,11 +330,13 @@ def page(db: Database, user: User, *, since: datetime | None, scan: int, wanted:
     of it did: 1,025 ms at 15,554 jobs (2026-11-15).
 
     `fit` scores the page's jobs for this person, after the page is cut (`libs.fit.scored`); `unkept` counts
-    the jobs of the list with no score kept for them (`live`). `only` makes the list one job, if it is theirs
-    (`_read`): 4 ms where finding it in the whole list took 380 (2026-11-20). `counts` asks for how many there
-    are and nothing else: no page, and none of what the filters offer."""
+    the jobs of the list with no score kept for them (`live`), and comes with a filter by score in `wanted`
+    (`libs.fit.at_least`), which works out a score there and then for each of them: so with it, every job of
+    the list is given its features (`libs.fit.JOINED`), and without it none is. `only` makes the list one
+    job, if it is theirs (`_read`): 4 ms where finding it in the whole list took 380 (2026-11-20). `counts`
+    asks for how many there are and nothing else: no page, and none of what the filters offer."""
     skipped, applied = marks(db, user.id)
-    read = _read(db, user, since=since, scan=scan, fit=fit is not None, skip=skipped | set(applied),
+    read = _read(db, user, since=since, scan=scan, fit=unkept is not None, skip=skipped | set(applied),
                  only=only, delay=delay, windows=windows)
     if read is None:
         return Page([], 0, None if found_after is None else 0, [], [], [], [], cut=False)

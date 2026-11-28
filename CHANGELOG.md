@@ -14,6 +14,36 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-28 — a posting's match features kept beside it: a posting a sixth the size in the database's memory
+
+A stored posting was ~2,910 bytes, and 2,080 of them were its match features (`fit`: a hundred word positions
+and a hundred weights, which zstd barely shrinks). The database holds whole postings in memory whatever a
+question asks for, so every list, count and harvest check carried them, and only a score reads them. With
+server_db's cache cut from 3.5 GB to 1.5 GB to spare the Proxmox host's memory (owner, 2026-11-28), they are kept
+beside the posting, as its text was on 2026-11-24 (`CorpusFit`, `corpus_fit`), and brought to it
+(`libs.fit.JOINED`) only where a score is worked out:
+
+- a page's cards (`scored`): the 25 jobs of the page, after it is cut;
+- a filter by score (`at_least`): the whole list, only while the filter is on (`libs.matching.page`, with
+  `unkept`); the counts beside it now see the scores too, where they read none before;
+- keeping a list's scores (`fill`): the jobs with none kept, after they are picked;
+- an alert's minimum score (`libs.alerts._scores`): the jobs caught.
+
+`fit` stays declared on `CorpusJob`, carried in this process and stored beside it by `insert`, as `description`
+is; the archive keeps it with the rest. `fit_version` stays on the posting, so `fit_queue`, `unkept` and the
+alerts read what they read.
+
+**`VERSION` 4.** The version now also says where the features are. The deploy moves every posting at 3 beside
+itself and marks it 4 (`libs.fit.move_once`), found by `fit_queue`, so every deploy after reads one index key
+(tested on what it asks). One written inside a posting by version 3 while a deploy runs is read again by
+`catch_up`, which takes the inside copy away. The cost: every kept score's key names the version, so each
+person's list is kept again (`fill`) after their next page.
+
+Measured on 200,000 postings like server_db's (laptop, 0.5 GB cache): the move took 52 s and left a posting at
+480 bytes from 2,639; asked again, 1 ms. A server-side `$merge` took 34 s, not enough faster for two more
+pipelines; at 1.96 million the deploy's move is expected at 10 to 20 minutes, once, during which the services
+still running show fewer scores.
+
 ## 2026-11-28 — the counts by source read an index, and the text's move is gone: less of server_db's memory
 
 server_db held 2.8 GB of its 3.5 GB cache, 2.7 GB of it the corpus, and read 121 GB of the corpus into memory in

@@ -14,7 +14,8 @@ nothing was fitted to, it orders a list better than the Jobs page's own order fo
 2026-11-16, evening); on 24, the number is 0.12 nearer the readers' than without the last two (2026-11-16,
 night).
 
-**Where it runs.** A job's features are worked out once, with its text (`job`); a person's profile once after
+**Where it runs.** A job's features are worked out once, with its text (`job`), and kept beside the posting
+(`CorpusFit`), brought to it only where a score is worked out (`JOINED`); a person's profile once after
 their documents change (`profile`); the score is the database comparing the two (`expression`), so the site
 runs what the bench measures. A page's cards are scored with the page (`scored`). A filter over a whole list
 reads the scores kept for their profile (`fit_scores`, `kept`), and works out the rest there and then
@@ -31,19 +32,19 @@ import re
 import uuid as _uuid
 import zlib
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from functools import cache
 from threading import Lock
 from time import monotonic
 
-from pymongo import UpdateOne
+from pymongo import ReplaceOne, UpdateOne
 from pymongo.database import Database
 
 from libs.corpus.langfilter import detect_language
 from libs.corpus.texts import texts
 from libs.db import now
-from libs.db.models import CorpusJob, FitScore, User
+from libs.db.models import CorpusFit, CorpusJob, FitScore, User
 from libs.documents.read import fold, read
 from libs.fit import requirements
 from libs.fit.roles import role_phrases
@@ -65,10 +66,12 @@ logger = logging.getLogger(__name__)
 # What a job's features and a person's profile are made by: a change to how either is read moves it, and every
 # posting is read again (`catch_up`) and every profile on its next use (`profile`). 2: roles read from role
 # phrases, and what a posting requires (2026-11-16, night). 3: a pharmacist's registration apart from a
-# technician's, and the credentials the third held-out set found missing (2026-11-17).
-VERSION = 3
-# Postings written per round trip by `catch_up`.
+# technician's, and the credentials the third held-out set found missing (2026-11-17). 4: kept beside the
+# posting (`CorpusFit`) rather than in it, read the same (2026-11-28); 3's are moved there by `move_once`.
+VERSION = 4
+# Postings written per round trip by `catch_up`, and moved per round trip by `move_once`.
 _BATCH = 500
+_MOVED_AT_ONCE = 2_000
 # The positions a word can take in the arrays a request sends: 8,192 measured the same as exact words (0.673
 # against 0.677 on the evaluation set) and 2,048 lost 0.04 (2026-11-16).
 POSITIONS = 8192
@@ -115,8 +118,8 @@ def position(word: str) -> int:
 # ── a job ──────────────────────────────────────────────────────────────────────────────────────
 
 def job(title: str, description: str | None, language: str | None) -> dict:
-    """What the score reads of a posting, stored on it with its text. Positions and weights in arrays of their
-    own, so the database reads one weight by index rather than one word by name."""
+    """What the score reads of a posting, stored beside it with its text (`store`). Positions and weights in
+    arrays of their own, so the database reads one weight by index rather than one word by name."""
     head = [word for word in dict.fromkeys(words(core_title(title))) if word not in NOISE]
     counts = Counter(words(working_text(description)))
     for word in words(title):
@@ -146,8 +149,12 @@ def catch_up(db: Database, *, deadline: float) -> int:
             break
         text = texts(db, (row["_id"] for row in rows))
         made = {row["_id"]: job(row["title"], text.get(row["_id"]), row.get("language")) for row in rows}
-        corpus.bulk_write([UpdateOne({"_id": key}, {"$set": {"fit": features, "fit_version": VERSION}})
-                           for key, features in made.items()], ordered=False)
+        # The features first, then the version that says they are there. One written inside the posting by a
+        # `VERSION` 3 still running during a deploy leaves with it.
+        db[CorpusFit.COLLECTION].bulk_write([ReplaceOne({"_id": key}, {"fit": features}, upsert=True)
+                                             for key, features in made.items()], ordered=False)
+        corpus.bulk_write([UpdateOne({"_id": key}, {"$set": {"fit_version": VERSION}, "$unset": {"fit": ""}})
+                           for key in made], ordered=False)
         given += len(rows)
         asked.update(name for features in made.values() for group in features["req"] for name in group)
     if given:
@@ -156,6 +163,56 @@ def catch_up(db: Database, *, deadline: float) -> int:
         logger.info("fit: %d posting(s) given their features; credentials required %s", given,
                     dict(asked.most_common()))
     return given
+
+
+# Stages that bring a posting's features into an aggregation over postings, as `fit`, where a score is worked
+# out (`scored`, `fill`, a filter by score in `libs.matching.page`): one lookup by id a posting, on those it
+# reaches. A posting with none has no `fit`, and no score (`expression`).
+JOINED: list[dict] = [
+    {"$lookup": {"from": CorpusFit.COLLECTION, "localField": "_id", "foreignField": "_id", "as": "_fit"}},
+    {"$set": {"fit": {"$first": "$_fit.fit"}}},
+    {"$unset": "_fit"},
+]
+
+
+def features(db: Database, ids: Iterable[int]) -> dict[int, dict]:
+    """The features of each of these postings that has them, by id."""
+    if not (ids := list(dict.fromkeys(ids))):
+        return {}
+    return {row["_id"]: row["fit"] for row in db[CorpusFit.COLLECTION].find({"_id": {"$in": ids}})}
+
+
+def store(db: Database, job_id: int, features: dict) -> None:
+    """A posting's features, replacing what it had."""
+    db[CorpusFit.COLLECTION].replace_one({"_id": job_id}, {"fit": features}, upsert=True)
+
+
+def forget(db: Database, ids: Iterable[int]) -> None:
+    """The features of postings that are gone (`libs.corpus.archive`)."""
+    if ids := list(ids):
+        db[CorpusFit.COLLECTION].delete_many({"_id": {"$in": ids}})
+
+
+def move_once(db: Database) -> int:
+    """Every posting's features stored inside it by `VERSION` 3, moved beside it and marked `VERSION`, a
+    batch at a time; how many postings. Found by their version (`fit_queue`), so once none is left the
+    question reads one index key, not the corpus. A posting gives up its features only once they are stored
+    beside it; one marked 3 with none is left to `catch_up`. The deploy runs it (`python -m libs.db`)."""
+    corpus, moved, started = db[CorpusJob.COLLECTION], 0, monotonic()
+    while rows := list(corpus.find({"fit_version": 3}, {"fit": 1}).limit(_MOVED_AT_ONCE)):
+        held = {row["_id"]: row["fit"] for row in rows if row.get("fit")}
+        if held:
+            db[CorpusFit.COLLECTION].bulk_write([ReplaceOne({"_id": key}, {"fit": features}, upsert=True)
+                                                 for key, features in held.items()], ordered=False)
+            corpus.update_many({"_id": {"$in": list(held)}, "fit_version": 3},
+                               {"$set": {"fit_version": VERSION}, "$unset": {"fit": ""}})
+        if empty := [row["_id"] for row in rows if not row.get("fit")]:
+            corpus.update_many({"_id": {"$in": empty}, "fit_version": 3}, {"$unset": {"fit_version": ""}})
+        moved += len(rows)
+    if moved:
+        logger.info("fit: %d posting(s) gave their features to %s in %.1f s", moved, CorpusFit.COLLECTION,
+                    monotonic() - started)
+    return moved
 
 
 # ── a person ───────────────────────────────────────────────────────────────────────────────────
@@ -284,14 +341,16 @@ def any_kept(db: Database, user_id: _uuid.UUID, made: dict) -> bool:
 
 def scored(made: dict) -> list[dict]:
     """Stages that give the postings of a page their score for this person, `fit_score`, worked out there and
-    then: 25 jobs, about 11 ms, whatever the list holds (2026-11-16). Their features leave with them."""
-    return [{"$addFields": {"fit_score": expression(made)}}, {"$unset": "fit"}]
+    then: 25 jobs, about 11 ms, whatever the list holds (2026-11-16). Their features are brought to them
+    (`JOINED`) and leave with them."""
+    return [*JOINED, {"$addFields": {"fit_score": expression(made)}}, {"$unset": "fit"}]
 
 
 def at_least(made: dict, kept_: dict[int, float], shown_: int) -> dict:
     """A condition on a posting: its score for this person shows as `shown_` or more. Read from `kept_`
     (`kept`) where it holds one, as a list of jobs the database looks up by their number; worked out there and
-    then for the rest. Kept or not, the answer is the same; keeping makes it quick over a whole list."""
+    then for the rest, from the features the list is given for it (`libs.matching.page`, with `unkept`). Kept
+    or not, the answer is the same; keeping makes it quick over a whole list."""
     floor = shown_ - 0.5
     return {"$or": [{"_id": {"$in": sorted(job for job, score in kept_.items() if score >= floor)}},
                     {"_id": {"$nin": sorted(kept_)}, "$expr": {"$gte": [expression(made), floor]}}]}
@@ -328,8 +387,7 @@ def fill(db: Database, user_id: _uuid.UUID) -> None:
         made = None if user is None else profile(db, user)
         skipped, applied = marks(db, user_id)
         _, longest = shelf_life(platform_windows(db))
-        read = None if made is None else _read(db, user, scan=scan_for(longest), fit=True,
-                                               skip=skipped | set(applied))
+        read = None if made is None else _read(db, user, scan=scan_for(longest), skip=skipped | set(applied))
         if read is None:
             return
         stages, how = read
@@ -337,7 +395,7 @@ def fill(db: Database, user_id: _uuid.UUID) -> None:
         kept_for = corpus_retention_days(db) * 86_400_000  # in milliseconds, as dates are added
         db[CorpusJob.COLLECTION].aggregate([
             # A posting whose features are older than `VERSION` is kept once `catch_up` has read it again.
-            *stages, {"$match": {"fit_version": VERSION, "_id": {"$nin": have}}},
+            *stages, {"$match": {"fit_version": VERSION, "_id": {"$nin": have}}}, *JOINED,
             {"$project": {"_id": 0, "user_id": {"$literal": user_id}, "job_id": "$_id",
                           "fit": expression(made), "key": {"$literal": key(made)},
                           # Archived when it was found that long ago (`libs.corpus.archive._due`).

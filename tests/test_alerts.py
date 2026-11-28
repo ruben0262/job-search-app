@@ -422,8 +422,8 @@ def test_a_match_score_needs_the_documents_it_is_made_from(db, monkeypatch):
     user, word = _person(db, alert=False)
     alert = _alert(db, user, name="Good fits", keywords=[word], min_fit=1)
     job = _posting(db, f"Python {word} developer", description="Build Python APIs. " * 30)
-    db[CorpusJob.COLLECTION].update_one({"_id": job.id}, {"$set": {
-        "fit": fit.job(job.title, job.description, "en"), "fit_version": fit.VERSION}})
+    fit.store(db, job.id, fit.job(job.title, job.description, "en"))
+    db[CorpusJob.COLLECTION].update_one({"_id": job.id}, {"$set": {"fit_version": fit.VERSION}})
 
     monkeypatch.setattr(fit, "profile", lambda _db, _user: None)
     _catch(db)

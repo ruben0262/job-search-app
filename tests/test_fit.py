@@ -398,6 +398,8 @@ def _shown(http) -> dict[int, int | None]:
 
 @needs_db
 def test_a_posting_gets_its_features_with_its_text_and_older_ones_from_the_catch_up(site):
+    """Kept beside the posting, which holds none of them: inside, they were 2,080 of its 2,910 bytes, held in
+    the database's memory with every posting a list read (server_db, 2026-11-28)."""
     from time import monotonic
 
     from libs.db import insert, now
@@ -405,11 +407,50 @@ def test_a_posting_gets_its_features_with_its_text_and_older_ones_from_the_catch
 
     _, db, _, jobs = site
     stored = db[CorpusJob.COLLECTION].find_one({"_id": jobs["backend"]})
-    assert stored["fit"]["th"] and stored["fit"]["vh"] and stored["fit_version"] == fit.VERSION
+    beside = fit.features(db, [jobs["backend"]])[jobs["backend"]]
+    assert beside["th"] and beside["vh"] and stored["fit_version"] == fit.VERSION
+    assert "fit" not in stored, "the posting holds its features itself"
     older = insert(db, CorpusJob(url="https://example.com/older", source="test", title="Backend Engineer",
-                                 description=BACKEND_JOB[1], described_at=now()))
+                                 description=BACKEND_JOB[1], described_at=now(),
+                                 fit={"th": [1], "tw": [1.0], "vh": [1], "vw": [1.0]}, fit_version=3))
+    db[CorpusJob.COLLECTION].update_one({"_id": older.id}, {"$set": {"fit": {"vh": [1]}}})  # as 3 stored them
     assert fit.catch_up(db, deadline=monotonic() + 10) >= 1
-    assert db[CorpusJob.COLLECTION].find_one({"_id": older.id})["fit"]["vh"]
+    assert fit.features(db, [older.id])[older.id]["vh"] != [1], "read again by this version"
+    assert "fit" not in db[CorpusJob.COLLECTION].find_one({"_id": older.id})
+
+
+@needs_db
+def test_the_deploy_moves_the_features_still_inside_postings_once_and_then_reads_none(db):
+    """Postings given their features by `VERSION` 3 held them inside: the deploy moves them beside each, and
+    asks again at every deploy after, so asking again has to read no posting at all."""
+    from libs.db import insert
+    from libs.db.models import CorpusJob
+
+    features = fit.job("Backend Engineer", BACKEND_JOB[1], "en")
+    old = [insert(db, CorpusJob(url=f"https://example.com/old-{n}", source="test", title="Engineer")).id
+           for n in range(3)]
+    for job_id in old:
+        db[CorpusJob.COLLECTION].update_one({"_id": job_id}, {"$set": {"fit": features, "fit_version": 3}})
+    without = insert(db, CorpusJob(url="https://example.com/without", source="test", title="Engineer")).id
+    db[CorpusJob.COLLECTION].update_one({"_id": without}, {"$set": {"fit_version": 3}})
+
+    assert fit.move_once(db) == 4
+    assert fit.features(db, [*old, without]) == dict.fromkeys(old, features)
+    stored = {row["_id"]: row for row in db[CorpusJob.COLLECTION].find({"_id": {"$in": [*old, without]}})}
+    assert all("fit" not in row and row["fit_version"] == fit.VERSION for job_id, row in stored.items()
+               if job_id in old)
+    assert "fit_version" not in stored[without], "with none to move, it is left to catch_up"
+
+    db.command("profile", 2)
+    try:
+        assert fit.move_once(db) == 0
+        db.command("profile", 0)
+        asked = list(db["system.profile"].find({"op": "query", "ns": f"{db.name}.{CorpusJob.COLLECTION}"}))
+    finally:
+        db.command("profile", 0)
+        db.drop_collection("system.profile")  # the database refuses the next test's emptying of it
+    assert asked, "it asked nothing"
+    assert [op["docsExamined"] for op in asked] == [0] * len(asked), "it read postings to find none to move"
 
 
 @needs_db

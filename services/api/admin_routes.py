@@ -838,8 +838,8 @@ def corpus(db: Database = Depends(get_db), admin: User = Depends(require_admin),
     total = db[CorpusJob.COLLECTION].count_documents(where)
     # Newest first by the number each was stored under, the order they were found in, which the database
     # keeps. By when each was found and then its number, no index gave the order: every posting of the
-    # thirty days was sorted to show fifty, 115 ms of 42,377 (2026-11-20). And without their text.
-    rows = find(db, CorpusJob, where, projection={"fit": 0}, sort=[("_id", -1)],
+    # thirty days was sorted to show fifty, 115 ms of 42,377 (2026-11-20). Not their text, nor features.
+    rows = find(db, CorpusJob, where, sort=[("_id", -1)],
                 skip=max(offset, 0), limit=CORPUS_PAGE)
     by_source = [(row["_id"], row["count"]) for row in db[CorpusJob.COLLECTION].aggregate([
         {"$match": {"first_seen_at": {"$gte": window}}},
