@@ -18,14 +18,20 @@ and close by asking to talk. They are short, sound like one person, and leave th
 ## Targets (read every letter against each)
 
 1. The opening says why they want this job, in a way no other job would fit, then one fact about them.
-   The company as people say it, the job's title in bold, as it reads in a sentence.
-2. One paragraph on what they would bring: two or three things, each shown by one thing they did. Two tools
-   at most in the whole letter.
+   The company as people say it, the job's title in bold, as it reads in a sentence, named inside the
+   sentence that gives the reason or in one that says what the job would let them do. Not every letter
+   begins "I want".
+2. One paragraph that makes their case: ONE idea, said first in their own words ("I like finding out why a
+   service is slow before deciding what to change"), shown by one or two pieces of work, then one particular
+   thing they would do in this job. Two tools at most in the whole letter.
 3. A paragraph of its own on why this job, here: one or two true things about the employer (from the
    posting or the company note), each joined to what they want or where their work has been heading.
 4. A close on what they want to do there, then one plain line asking to talk about one named thing.
-5. It reads as this person wrote it in half an hour: their own phrases, contractions where they would use
-   them, uneven sentences. 220 to 280 words, one page.
+5. It reads as one piece (owner, 2026-11-28: "reads like a top cover letter written by human and it flows
+   properly"): one line of thought from why, through what they did, to what they would do; each paragraph
+   led in from the one before; no fact standing alone; the practical things (a move, a licence, shifts)
+   closing the paragraph they belong to. In this person's own words for their work, contractions only as
+   their own writing has them. 220 to 280 words, one page.
 6. Every fact about them exactly as strong as their record. The reason for wanting the job may be reasoned
    out ("a logical and calculated inference", the one "that sells the user best"); a fact may not.
 
@@ -45,8 +51,30 @@ and close by asking to talk. They are short, sound like one person, and leave th
 | "written too correctly": no contractions, balanced sentences, threes | v37, v38 (a reader's word) | the Voice rule; `checks.letter` no longer sends a contraction back |
 | one writer's phrase in most people's letters ("What draws me to…", Sol) | 2026-11-19, again v39 | the never-list; `formulas.py` on every look |
 | a close with no ask, because the checks sent "I would welcome a conversation" back | until v37 | `checks.LETTER_PHRASES` keeps only the stock forms |
+| choppy: short unrelated sentences, a stray fact ("I'm also on call one week in six.") | v39 to v41 ("uneven sentences", "a short one after a long one") | the Flow rule; that wording is gone |
+| three results in a row, a stack listed ("on PostgreSQL, Redis and Kafka"): a CV in sentences | v41, worst for developers | "their case is one idea … three results in a row are a CV"; tools counted in the final check |
+| a sentence that only announces or points back ("I'm applying for the role that…", "That is what draws me to…") | v37 to v45 | the job named inside the reason; the look's "announces or points back" count |
+| the stock bridge "I would bring that same care / attention / approach to…" | 38 of 46 letters of v37 and v41 | "one particular thing they intend to do there … never as 'the same care'" |
+| hedged wants ("I'd want to", "I would want to") | v41, with contractions | the Voice rule and the final check |
+| the reader told what their own job is ("This role is a backend job inside…", "Your posting says…") | v41 to v45 | the why-here rule; the look's count |
+| a paragraph of certificates or the move on its own before the close | v43 to v45 (a sentence that asked for them "together") | "a sentence that closes the paragraph they belong to … never a paragraph of their own" |
+| the job placed at the recruiter in the close ("At Adecco I want to…") | v44 | "here or anywhere else in the letter" |
 
 ## What was learned about judging letters
+
+- **A letter is read beside the one it replaces.** v41 met every target above when read alone. The owner
+  read their own v41 letter beside their v37 one: "the v37 read much better", and "I'm applying for the role
+  that Radley James is recruiting for at a leading international financial services organisation" was "an
+  artificial statement". A fresh reader, blind, agreed on that pair (flow 8 against 4), and across 22 others
+  found v41 better for the trades and worse for the developers. `references/blind-read.md`.
+- **"More human" is not "less polished".** The feedback "written too correctly or not realistic" was
+  answered with contractions, uneven sentences and "as if written in half an hour". The trades' letters
+  gained a voice; the developers' letters fell apart into stray facts. What the owner wanted was a letter
+  that flows.
+- **The model repeats the prompt's own names.** "What they would bring" came back as "What I would bring
+  is…" and "what they want to do there" as "What I want to do there is…", past explicit bans, quoted
+  examples included. Renaming the parts in the prompt ("their case", "the work they mean to do in this
+  job") stopped it; the new name then showed in Haiku's closes ("In this role I would work on…").
 
 - **The reviewers reward what they were written for.** `eval_cover.md` and `eval_hire.md` count the
   posting's needs answered. They marked the skills-proof letters high and would mark a motivation letter
@@ -68,12 +96,14 @@ and close by asking to talk. They are short, sound like one person, and leave th
   second source (a search key, or the company's LinkedIn page on the proxy budget) is an open question for
   the owner.
 
-## Known and left, as of v41 (live 2026-11-27, `3fdee8a2cdb4`)
+## Known and left, as of v48 (live 2026-11-28, `c1fe6856c64a`)
 
-- Most letters open "I want to…" (Sol 6 to 8 of 8 people, Haiku 5 to 6). It is plain and it is the
-  design, and it is one writer's phrase at the scale of a site. The next wording step, if the owner wants
-  one, is the opening said the way each person would start it.
-- Haiku writes 7,000 to 9,000 tokens out a letter (thinking included) and takes 30 to 40 s; Sol 360 and 11 s.
-- Haiku's first drafts are sent back for a colon in a sentence about one time in ten (v35 to v41). v39 and v41
-  each put a sentence with a colon of its own into the prompt; whether that teaches it has not been tested.
-- One Haiku call in about fifty returned no complete letter. Production retries; the cause was not found.
+- What the last blind reader still saw in the letters it ranked first: a certificate or a move at the end of a
+  paragraph it does not belong to (about 13 of 38), the employer told what it does (about 9), a stock link
+  ("appeals to me because", about 8).
+- Phrases shared across people: the ask "Could we talk about how…" (Sol 11 of 15 people), Sol opening "I like…"
+  (7 of 15). Each letter goes to a different employer, but applicants to one job through this site share them.
+- Haiku writes about 9,400 tokens out a letter (thinking included) and takes about 40 s, 30% more than v41;
+  Sol about 390 and 12 s. Two Haiku letters of 19 ran over 280 words.
+- A colon before a list is a comma in code (`build._colon_as_comma`); one before a sentence is still sent back.
+  A letter that comes without its `<letter>` tags is kept (`build._BARE_LETTER`).

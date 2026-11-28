@@ -941,6 +941,36 @@ def test_a_letter_is_sent_back_for_what_gives_a_generated_one_away():
     assert "does not name Northwind" in found and "colon" in found
 
 
+def test_a_whole_letter_without_its_tags_is_the_letter_and_one_cut_short_is_not():
+    """Three calls of some 280 answered with the letter's body and no `<letter>` tags round it (the log of
+    2026-11-28: "<letter> missing, </letter> missing, its body there"). Each was thrown away and written
+    again. A body that runs from its opening to its signature is the letter; one that stops before the
+    signature is not, tags or no tags."""
+    assert build.answer(GOOD_LETTER, "cover") == build.answer(f"<letter>{GOOD_LETTER}</letter>", "cover")
+    assert "Kind regards" in build.answer(f"Here is the letter.\n{GOOD_LETTER}\nI hope it helps.", "cover")
+    cut = GOOD_LETTER[:GOOD_LETTER.index('<p class="signature">')]
+    assert build.answer(cut, "cover") is None
+
+
+def test_a_colon_before_a_list_or_a_phrase_is_a_comma_and_one_before_a_sentence_is_still_sent_back():
+    """Haiku's first drafts were sent back for a colon more than for anything else (9 of 13 over v38 to v44),
+    each a second call on the person's plan. Before a list or a phrase a comma says the same, so the letter
+    is kept as written with one; before a sentence of its own a comma would join two sentences, and that
+    draft still goes back to be written again."""
+    def written(sentence: str) -> str:
+        letter = GOOD_LETTER.replace("so that refunds", f"{sentence} And so that refunds")
+        assert sentence in letter, "the premise: the sentence is in the letter"
+        return build.answer(f"<letter>{letter}</letter>", "cover")
+
+    listed = written("My aim is simple: turn up, do the job properly and leave each home warm.")
+    assert "My aim is simple, turn up, do the job properly" in listed
+    assert not any("colon" in fault for fault in checks.letter(listed, company="Northwind GmbH"))
+
+    clause = written("The role asks for that directly: you ship the first version yourself.")
+    assert "directly: you ship" in clause
+    assert any("colon" in fault for fault in checks.letter(clause, company="Northwind GmbH"))
+
+
 def test_a_close_that_asks_to_talk_is_the_letters_own_and_a_stock_close_is_sent_back():
     """Owner, 2026-11-27: "the close can happen that's appropriate and guidance expects it". A plain line
     asking to talk was sent back with every other close about applying ("I would welcome a conversation",

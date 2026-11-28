@@ -159,8 +159,11 @@ def draft(client, request: Request, *, model: str, revision: tuple[str, str] | N
     body = answer(reply, request.kind)
     if body is None:
         # Never log the reply: it is the person's CV.
-        logger.error("docgen: the %s call returned %d chars with no complete <%s> in it", request.kind,
-                     len(reply or ""), TAGS[request.kind])
+        tag, said = TAGS[request.kind], reply or ""
+        opened, closed, whole = (("there" if part in said else "missing")
+                                 for part in (f"<{tag}>", f"</{tag}>", WHOLE[request.kind]))
+        logger.error("docgen: the %s call returned %d chars with no complete <%s> in it (<%s> %s, </%s> %s, "
+                     "its body %s)", request.kind, len(said), tag, tag, opened, tag, closed, whole)
         raise BuildFailed(f"the model did not return a complete {'CV' if request.kind == 'cv' else 'letter'}")
     return reply, body
 
@@ -173,6 +176,10 @@ def answer(reply: str | None, kind: str) -> str | None:
     tag = TAGS[kind]
     found = [body for body in map(clean, re.findall(rf"(?is)<{tag}>(.*?)</{tag}>", reply or ""))
              if WHOLE[kind] in body]
+    if not found and kind == "cover" and (bare := _BARE_LETTER.search(reply or "")):
+        # A letter written whole and without its <letter> tags (three of some 280 calls over 2026-11-27 and
+        # 28, both writers): it is the letter, and sending it back was a second call for nothing.
+        found = [clean(bare.group(0))]
     if not found:
         return None
     body = found[-1]
@@ -181,8 +188,23 @@ def answer(reply: str | None, kind: str) -> str | None:
         # model still writes from habit is left out here, whatever the prompt asked (CLAUDE.md §0).
         body = body[body.index(_LETTER_OPENS):] if _LETTER_OPENS in body else body
         body = _BOLD.sub(lambda title: f"<strong>{in_a_sentence(title.group(1))}</strong>", body)
-        return _undated(checks.paragraphs_split(_EMDASH.sub(", ", body)))
+        return _undated(checks.paragraphs_split(_colon_as_comma(_EMDASH.sub(", ", body))))
     return _one_profile(strip_prose_emdashes(body))
+
+
+# A colon in a sentence of a letter, which `checks.letter` sends back, and what follows it when that is a
+# sentence of its own ("…asks for that: you ship the first version"). Before a list or a phrase a comma says
+# the same ("My aim is simple, turn up and do the job properly"): 34 of the 39 colons in 929 letters kept by
+# the bench read right that way, and each was a second call on the person's plan (2026-11-28). The other
+# five are left for the check, because a comma there joins two sentences.
+_COLON = re.compile(r"(?<=[^\W\d_])\s*:\s+(?=\S)")
+_CLAUSE = re.compile(r"(?i)(?:I|you|we|they|it|he|she|there|this|that|these|those)\b|"
+                     r"(?:the|a|an|my|our|your|their)\s+\w+(?:\s+\w+)?\s+"
+                     r"(?:is|are|was|were|will|would|can|could|has|have|had|owns?|needs?|does|do|must|should)\b")
+
+
+def _colon_as_comma(body: str) -> str:
+    return _COLON.sub(lambda colon: colon.group(0) if _CLAUSE.match(body, colon.end()) else ", ", body)
 
 
 # A letter sets one thing in bold, the job's title (`write_cover.md`).
@@ -325,6 +347,8 @@ _CLASSES = frozenset({"profile", "section", "competencies", "section-title", "en
                       "entry-title", "entry-date", "entry-desc", "plain-list", "letter", "closing",
                       "signature"})
 _LETTER_OPENS = '<div class="letter">'
+# A letter's body from its opening to the end of the block its signature is in: whole without the tags.
+_BARE_LETTER = re.compile(rf'(?is){re.escape(_LETTER_OPENS)}.*class="signature".*?</div>')
 # Gone with everything inside them.
 _DROPPED = frozenset({"script", "style", "head", "title", "template", "noscript", "svg", "math", "iframe",
                       "object", "header", "footer", "nav"})

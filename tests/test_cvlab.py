@@ -1268,3 +1268,46 @@ def test_a_look_prints_each_document_whole_and_marks_what_a_reader_should_see_fi
         assert "!" in bad_cell and "!" not in good_cell, count
     assert "Could we talk about your rota?" in printed and "What I'd bring is forty years" in printed
     assert "**Heating Engineer**" in printed, "the bold title is shown as bold"
+
+
+def test_two_wordings_are_set_side_by_side_unnamed_and_a_readers_ranking_is_given_back_by_wording(
+        tmp_path, capsys):
+    """Owner, 2026-11-28, of the wording made live the night before: "the v37 read much better". It had been
+    read letter by letter against a list and never beside the letter it replaced. So the documents two
+    wordings wrote for the same person and posting are set side by side for a fresh reader, with nothing in
+    them saying which is which, and that reader's ranking comes back as each wording's place."""
+    from scripts.cvlab import look
+
+    def page(body: str) -> str:
+        return (f'<html><body><div class="letter"><p>Dear Hiring Manager,</p><p>{body}</p>'
+                '<p class="closing">Kind regards,</p><p class="signature">Sam Doe</p></div></body></html>')
+
+    versions = {"live": "aaa111", "next": "bbb222"}
+    for name, version in versions.items():
+        for person in ("plumber", "nurse"):
+            kept = tmp_path / "some-model@medium" / version / f"{person}__{name}__a-job__1.cover.html"
+            kept.parent.mkdir(parents=True, exist_ok=True)
+            kept.write_text(page(f"The {name} wording wrote this for the {person}."), encoding="utf-8")
+    # A document only one wording wrote has nothing to be read beside.
+    (tmp_path / "some-model@medium" / "aaa111" / "chef__live__a-job__1.cover.html").write_text(
+        page("Nobody to compare."), encoding="utf-8")
+
+    assert look.blind(tmp_path, versions, tmp_path / "sets.md", tmp_path / "key.json", seed=3) == 2
+    sets, key = (tmp_path / "sets.md").read_text(), json.loads((tmp_path / "key.json").read_text())
+    assert "Nobody to compare" not in sets and "aaa111" not in sets and "bbb222" not in sets
+    assert {case["person"] for case in key.values()} == {"plumber", "nurse"}
+    for number, case in key.items():
+        for label in "AB":
+            written = sets.split(f"### Letter {number}{label}\n")[1].split("###")[0]
+            assert f"The {case[label]} wording wrote this for the {case['person']}." in written
+
+    # The reader ranks "next" first in both sets, whatever letter it was given.
+    answers = [{"set": int(number), "clear": True,
+                "ranking": sorted("AB", key=lambda label, case=case: case[label] != "next"),
+                "flow": {label: 8 if case[label] == "next" else 5 for label in "AB"}}
+               for number, case in key.items()]
+    (tmp_path / "answers.json").write_text(json.dumps(answers), encoding="utf-8")
+    found = look.unblind(tmp_path / "answers.json", tmp_path / "key.json")["some-model@medium"]
+    assert found["next"] == {"first": 2, "of": 2, "place": 1.0, "flow": 8.0}
+    assert found["live"] == {"first": 0, "of": 2, "place": 2.0, "flow": 5.0}
+    assert "next > live" in capsys.readouterr().out

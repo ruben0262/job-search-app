@@ -10,10 +10,13 @@ shows up as a worse letter, weeks later, as a job somebody did not get. So a wor
 this file says, and **nothing reaches `libs/prompts/` without the owner's yes to the result** (`CLAUDE.md`
 §3a; leave to try a wording is not leave to ship it).
 
-The method below is what worked on the cover letter on 2026-11-26 and 27, after a day of what did not: six
-wordings tuned and measured carefully against the wrong idea of what a cover letter is for. Read
-`references/cover-letter.md` for that case in full, including the targets and the mistakes list a letter is
-still read against. For the CV or any other prompt the steps are the same and the lists are written anew.
+The method below is what worked on the cover letter on 2026-11-26 to 28, after two things that did not: six
+wordings tuned and measured carefully against the wrong idea of what a cover letter is for, and then a
+wording (v41) that passed every target when its letters were read one by one, went live, and read worse than
+the one it replaced when the owner set their own two letters side by side. Read `references/cover-letter.md`
+for that case in full, including the targets and the mistakes list a letter is still read against, and
+`references/blind-read.md` before any decision between two wordings. For the CV or any other prompt the
+steps are the same and the lists are written anew.
 
 ## The order, and why it is this order
 
@@ -51,17 +54,26 @@ still read against. For the CV or any other prompt the steps are the same and th
    - `scripts/cvlab/look.sh <look> <variant> sol` uses the linked ChatGPT sign-in (needs the local mongod).
    - Other models (Sonnet, Opus, Haiku at high effort) only when the question is which model writes best.
 
-5. **One change at a time, as a variant.** A candidate is `scripts/cvlab/variants/<kind>/vN.md`: the
+5. **One change at a time, as a variant, and a phrase taken out before a ban is added.** A model repeats
+   the prompt's own words: a paragraph the prompt called "what they would bring" came back as "What I would
+   bring is…", past three bans of the phrase, and stopped when the part was renamed. Look for the cause in
+   the wording before writing "never". A candidate is `scripts/cvlab/variants/<kind>/vN.md`: the
    previous one plus one named change, a sentence or two. Log each in a `progress` file in the working
    folder (what changed, why, what the read found), because a session's context is summarised and the log
    is what survives. Prefer replacing a sentence to adding one: every candidate so far got longer, and long
    prompts are followed less evenly.
 
-6. **Judge by reading, here, in the session.** This is the evaluation (owner, 2026-11-27: "evaluation falls
-   on you only with a couple of profile examples"). No reviewer model, no scoring rig, unless the owner asks
-   for the full gates. See "Reading a look" below.
+6. **Judge by reading, here, in the session, and always beside the wording it would replace.** This is the
+   evaluation (owner, 2026-11-27: "evaluation falls on you only with a couple of profile examples"). No
+   reviewer model, no scoring rig, unless the owner asks for the full gates. Two reads, both needed:
+   - **yours, against the targets and the record** ("Reading a look" below): the facts, the trap, harm;
+   - **a fresh reader's, blind, side by side** (`references/blind-read.md`): which wording's letter for the
+     same person reads better. You wrote the candidate and know which letter is which, so the choice between
+     two wordings is not yours to make by eye. One agent, one brief, the sets coded by `look.py blind`.
 
-7. **Decide on what recurs or harms.** Model output varies run to run. A flaw in one letter of twenty-two
+7. **Decide on what recurs or harms, and on the blind ranking.** A candidate is offered only when the fresh
+   reader ranks it at or above the live wording in most sets on **both** writers, and above it on any pair
+   the owner complained about. Model output varies run to run. A flaw in one letter of twenty-two
    is noise unless it harms the person (a weakness named, a fact not theirs). A flaw in three of eleven is
    the prompt. Change the prompt for the second kind and for harm; leave the rest. And say what got worse:
    each change so far fixed its target and moved something else (stopping "What draws me to" made every Sol
@@ -91,8 +103,14 @@ Then read **every** document, start to finish, as the person it is sent to would
   are in the person's own language, so search in it ("telefon", not "phone").
 - **The trap.** Nothing the posting asks for is claimed as theirs. Read the trap's letters first.
 - **Harm.** A weakness named, a gap raised, a wish the job cannot meet, a complaint about an employer.
-- **Voice.** Would this person have written it? Read it aloud. Too correct is a fault (a reader's word,
-  2026-11-27: "written too correctly"): balanced sentences, threes, no contractions, nobody's phrases.
+- **Flow.** Does each sentence follow from the one before, does each paragraph have one idea and say it
+  first, does the letter read as one piece? Three results in a row are a CV. A fact standing alone, a
+  sentence that only announces the application or points back at the role, a paragraph of certificates
+  before the close: each is a break a reader feels before they can name it.
+- **Voice.** Would this person have written it? It follows the person: contractions where their own writing
+  has them, words in full where it does not. "Written too correctly" (a reader's word, 2026-11-27) was
+  answered with uneven sentences and "as if written in half an hour", and that made letters choppy without
+  making them anyone's. What makes a letter theirs is their own words for their work and for what they want.
 - **The same words in different people's letters**: `python scripts/cvlab/formulas.py <writer folder>`.
   A phrase one writer gives five of eight people is the model's, and a recruiter learns it.
 
@@ -112,13 +130,18 @@ The filters every candidate passes before it is offered to the owner:
 | ATS, every look | `look.sh <look> <variant> <writer> --dry-run --every-look` | every check in all six looks |
 | facts | the trace above | nothing the record does not hold, nothing bigger than it says |
 | cost | tokens out and seconds against the live wording's | no more, or it says what the extra bought |
+| beside the live wording | `look.py blind`, one fresh reader, `look.py unblind` | at or above the live wording in most sets, on each writer |
 | both writers | all of the above on haiku and on sol | both |
 
 ## What a few documents cannot tell you
 
-- **A small difference.** Eleven letters can show that a habit is there or gone. They cannot rank two
-  wordings that both read well. If that question matters, it needs the paired bench (`run.py` with
-  `--judge`, both reviewers, several samples), and the reviewers' rubrics checked against the targets first.
+- **A small difference.** Eleven letters can show that a habit is there or gone, and a blind ranking of
+  twenty-five sets can tell a wording that reads better in most of them. Neither can rank two wordings that
+  are close (v44 and v45: 11 sets to 14). If that question matters, it needs the paired bench (`run.py`
+  with `--judge`, both reviewers, several samples), and the reviewers' rubrics checked against the targets
+  first.
+- **Your own eye on your own wording.** It found v41 good, and v44 better than v45 on Sol. The owner and
+  the blind reader found otherwise both times.
 - **People it was tuned on.** A wording picked because it read best on these pairs will read worse on
   others: v27 scored +2.8 ± 1.0 on the 30 pairs it was picked on and −0.5 ± 1.3 on 27 it had never seen.
   Before going live, read a few people the wording was never changed for (`--candidates` with others from

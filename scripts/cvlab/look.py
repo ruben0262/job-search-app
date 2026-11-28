@@ -6,6 +6,14 @@ say which to read first. `CLAUDE.md` §3c; the method is the `prompt-lab` skill.
     scripts/cvlab/look.sh cover live haiku                    # write the look with one writer, then read it
     python scripts/cvlab/look.py jobs cover <folder>          # the look's postings, as the bench's --jobs-dir
     python scripts/cvlab/look.py read cover <results.json> <variant> --out <the bench's --out> [--quiet]
+    python scripts/cvlab/look.py blind <sets.md> <key.json> live=<version> v42=<version> --out <bench --out>
+    python scripts/cvlab/look.py unblind <answers.json> <key.json>
+
+`blind` sets two or more wordings' documents for the same person and posting side by side, in an order
+shuffled set by set and with nothing that says which wording wrote which, for a fresh reader to rank (the
+skill's `references/blind-read.md` is what that reader is asked); `unblind` says how each wording was ranked.
+A wording is read beside the one it would replace, never alone: v41 passed every target read alone and read
+worse than v37 beside it (the owner, 2026-11-28).
 
 A look is `looks/<name>.json`: its pairs of a panel person and a posting fixture (`jobs/`, or
 `looks/postings/` for one that is in no other set), and its counts: a pattern, where it is looked for (the
@@ -17,7 +25,9 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import random
 import re
+import statistics
 import subprocess
 import sys
 
@@ -129,14 +139,82 @@ def read(name: str, results: pathlib.Path, variant: str, out: pathlib.Path, *, q
     return len(documents)
 
 
+def blind(out: pathlib.Path, versions: dict[str, str], sets: pathlib.Path, key: pathlib.Path, *,
+          seed: int = 0, people: tuple[str, ...] = ()) -> int:
+    """Write the sets and their key: every document kept under `out` for the same writer, person, posting and
+    sample by each of `versions` (a name to the prompt version its documents are kept under), as plain text
+    under letters A, B, … in an order of its own; `people` keeps it to those. Returns how many sets."""
+    shuffled, lines, coded = random.Random(seed), [], {}  # noqa: S311 - an order, not a secret
+    for writer in sorted(folder for folder in out.iterdir() if folder.is_dir()):
+        kept: dict[tuple[str, ...], dict[str, str]] = {}
+        for name, version in versions.items():
+            for page in sorted((writer / version).glob("*.cover.html")):
+                person, _, job, sample = page.name.removesuffix(".cover.html").split("__")
+                text = run.letter_text(page.read_text(encoding="utf-8"))
+                kept.setdefault((person, job, sample), {})[name] = text
+        for (person, job, sample), written in sorted(kept.items()):
+            if len(written) < len(versions) or (people and person not in people):
+                continue
+            order = shuffled.sample(sorted(written), len(written))
+            number = len(coded) + 1
+            coded[str(number)] = {"writer": writer.name, "person": person, "job": job, "sample": sample,
+                                  **dict(zip("ABCDEF", order, strict=False))}
+            lines.append(f"\n\n## Set {number} ({len(order)} letters)\n")
+            for label, name in zip("ABCDEF", order, strict=False):
+                # The signature is the person's name, which says nothing of the wording and is theirs to keep.
+                lines.append(f"\n### Letter {number}{label}\n\n{written[name]}\n")
+    sets.write_text("".join(lines), encoding="utf-8")
+    key.write_text(json.dumps(coded, indent=1), encoding="utf-8")
+    return len(coded)
+
+
+def unblind(answers: pathlib.Path, key: pathlib.Path) -> dict[str, dict[str, dict[str, float]]]:
+    """What a reader's rankings say of each wording, by writer: how many sets it was ranked first in, its mean
+    place and its mean mark for flow. Printed with a line a set; returned for the caller."""
+    coded = json.loads(key.read_text(encoding="utf-8"))
+    places: dict[str, dict[str, list[int]]] = {}
+    flows: dict[str, dict[str, list[float]]] = {}
+    for answer in json.loads(answers.read_text(encoding="utf-8")):
+        case = coded[str(answer["set"])]
+        ranked = [case[label] for label in answer["ranking"]]
+        for place, name in enumerate(ranked, start=1):
+            places.setdefault(case["writer"], {}).setdefault(name, []).append(place)
+        for label, mark in (answer.get("flow") or {}).items():
+            flows.setdefault(case["writer"], {}).setdefault(case[label], []).append(mark)
+        gap = "clear" if answer.get("clear") else "close"
+        print(f"{answer['set']:>3} | {case['writer']} | {case['person']} | {case['job'][:28]} | "
+              f"{' > '.join(ranked)} | {gap} | {answer.get('why', '')}")
+    found: dict[str, dict[str, dict[str, float]]] = {}
+    for writer, by_name in sorted(places.items()):
+        for name, got in sorted(by_name.items()):
+            marks = flows.get(writer, {}).get(name) or [0]
+            found.setdefault(writer, {})[name] = {"first": got.count(1), "of": len(got),
+                                                  "place": round(statistics.mean(got), 2),
+                                                  "flow": round(statistics.mean(marks), 2)}
+            print(f"{writer} | {name} | first in {got.count(1)} of {len(got)} | mean place "
+                  f"{statistics.mean(got):.2f} | flow {statistics.mean(marks):.2f}")
+    return found
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("action", choices=("jobs", "people", "read"))
-    parser.add_argument("look")
-    parser.add_argument("rest", nargs="*", help="jobs: <folder>; read: <results.json> <variant>")
+    parser.add_argument("action", choices=("jobs", "people", "read", "blind", "unblind"))
+    parser.add_argument("look", help="the look's name; for blind and unblind, the first of their two files")
+    parser.add_argument("rest", nargs="*", help="jobs: <folder>; read: <results.json> <variant>; "
+                                                "blind: <key.json> name=version ...; unblind: <key.json>")
     parser.add_argument("--out", default=str(ROOT / "out" / "look"), help="the bench's --out")
     parser.add_argument("--quiet", action="store_true", help="the lines only, no documents")
+    parser.add_argument("--people", default="", help="blind: only these people, comma-separated")
     args = parser.parse_args()
+    if args.action == "blind":
+        versions = dict(each.split("=", 1) for each in args.rest[1:])
+        made = blind(pathlib.Path(args.out), versions, pathlib.Path(args.look), pathlib.Path(args.rest[0]),
+                     people=tuple(filter(None, args.people.split(","))))
+        print(f"{made} set(s) of {len(versions)} in {args.look}")
+        return
+    if args.action == "unblind":
+        unblind(pathlib.Path(args.look), pathlib.Path(args.rest[0]))
+        return
     if args.action == "people":
         print(",".join(dict.fromkeys(person for person, _ in look(args.look)["pairs"])))
         return

@@ -14,6 +14,105 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-28 — letters that flow: v48 live on the owner's word, judged beside the letter it replaces by a reader who did not know which was which
+
+The owner read their own letter from the live v41 beside the one v37 had written for the same posting: "the v37 read
+much better". "I'm applying for the role that Radley James is recruiting for at a leading international financial
+services organisation" was "an artificial statement", and v41 "doesn't read as smoothly". They asked for every open
+item closed and "a top cover letter written by human" that "flows properly", finished this session.
+
+**What went wrong with v41.** It was judged by reading each letter against a list of targets, and every letter met
+them. Nobody read a v41 letter beside the v37 letter for the same person. The reader's word "written too correctly"
+had been answered with uneven sentences, contractions and "as if written in half an hour": the trades' letters gained
+a voice, and the developers' letters fell apart into stray facts and runs of results.
+
+**How it was judged this time.** Beside the live wording, by one fresh agent that was not told which letter came from
+which wording (`scripts/cvlab/look.py blind`, `unblind`; the skill's `references/blind-read.md`). Its first read
+agreed with the owner on the owner's pair (v37 clearly, flow 8 against 4), so its other answers were used.
+
+| read | sets | what it found |
+|---|---|---|
+| v37 against v41 | 23 | the owner's pair v37; the panel split (Haiku v41 6, v37 5; Sol v41 7, v37 3, 1 tie). In both: "I would bring that same care/attention/approach to…" in about 38 of 46 letters, a sentence that only announces or points back, a stray fact |
+| v41, v44, v45 (v37 too in the owner's 4) | 25 | first places Haiku v44 6, v45 4, v41 2 of 12; Sol v45 9, v44 2, v41 2 of 13. On the owner's 4 sets v41 and v37 were the last two every time |
+| v41 (live), v47, v48 | 38 | below |
+
+The last read: 22 look pairs, the six people the wording was never changed for, and the owner's own profile twice on
+each writer.
+
+| | v48 above live | first places (live / v47 / v48) | mean place (live / v47 / v48) | flow, of 10 (live / v47 / v48) |
+|---|---|---|---|---|
+| Haiku, 19 sets | 16 | 2 / 7 / 10 | 2.47 / 1.95 / 1.58 | 5.05 / 6.05 / 6.42 |
+| Sol, 19 sets | 19 | 0 / 9 / 10 | 2.95 / 1.58 / 1.47 | 5.58 / 7.26 / 7.47 |
+| of which held out, 12 | 12 | 0 / 4 / 8 | | |
+| of which the owner's, 4 | 4 | 0 / 3 / 1 | | |
+
+Live came first in two Haiku sets (the Go posting, and the plumber, whose v41 letter "sounds like the engineer
+himself").
+
+**The wording, v42 to v48**, each the one before plus the change named, all from v37's structure. v48 is live
+(`libs/prompts/write_cover.md`, version `c1fe6856c64a`, was `3fdee8a2cdb4`), on the owner's "Make v48 live". v41 and
+the drafts v42 to v47 are in `libs/scaffolds/history/` with a row each.
+
+- One line of thought, from why they want the job, through what they did, to the result they want there. Each
+  paragraph led in from the last, each sentence following from the one before, no fact standing alone.
+- The job and the company named inside the sentence that gives the reason, never in a sentence that only says they
+  are applying or points back ("That is what interests me about…"). The client of a recruiter in a few plain words.
+- Their case is one idea, said first in their own words, shown by one or two pieces of work ("three results in a row
+  are a CV"), then one particular thing they would do there, never "the same care" carried over.
+- Never the reader told what their own job or company is. The practical things (a move, a licence, shifts) close the
+  paragraph they belong to.
+- Contractions as this person writes them. "Formal register" became a careful letter to someone they have not met.
+- The prompt's own names for the letter's parts were taken out ("what they would bring" became "their case"): the
+  model repeated them as "What I would bring is…" past three bans, and stopped when they were renamed.
+- A close that begins "I want" and names a result ("I want the tenants I visit to have heat before I leave"), then
+  one line asking to talk.
+
+**v48 through every filter**, 38 letters a writer (11 look, 6 held out, 2 of the owner's, on each):
+
+| | Haiku 5.5 | Sol, lean |
+|---|---|---|
+| first drafts sent back by production's checks | 0 of 19 (live v41: 2 of 17) | 0 of 19 |
+| AI-language list | 0 | 0 |
+| every ATS check in all six looks | 19 of 19 | 19 of 19 |
+| one page | 19 | 19 |
+| a fact not in the record, posting or company note | 0 (each number and name traced) | 0 |
+| tokens out, seconds a letter (look) | 9,449, 40.7 s (live 7,219, 31.7 s) | 387, 12.1 s (live 357, 11.1 s) |
+| tokens in (look) | 8,799 (live 7,950) | 10,742 (live 10,076) |
+
+The prompt is 3,496 words, from 2,934. Haiku writes about 30% more tokens a letter (its thinking) and takes 9 s
+longer: that is what the ranking above cost.
+
+**In code, for every writer.**
+
+- **A colon before a list or a phrase becomes a comma** (`build._colon_as_comma`): "My aim is simple, turn up and do
+  the job properly". 34 of the 39 colons in the 929 letters the bench has kept read right that way, and each had been
+  a second paid call. A colon before a sentence of its own is left for the check, which sends that draft back.
+- **A letter written whole without its `<letter>` tags is kept** (`build._BARE_LETTER`): three calls in about 280
+  answered that way and were thrown away. The log line for an unusable reply now says which part was missing.
+
+**Tools.** `look.py blind` and `unblind` (and `--people`), the look's counts for what was found ("announces or
+points back", "the same care carried over", "hedged", "tells the reader their job"), `references/blind-read.md` with
+the reader's brief, the skill's method and `CLAUDE.md` §3c (a candidate is offered only where a blind reader ranks it
+at or above the live wording on both writers).
+
+**Not run.** The reviewers of §3b gates 2 and 9 (their rubrics still reward the letter that proves skills). More than
+one sample a pair, except the owner's two. Letters in other languages.
+
+**Left, as the last reader saw it in the letters it ranked first.** A certificate or a move at the end of a paragraph
+it does not belong to (about 13 of 38). The employer told what it does (about 9). A stock link ("appeals to me
+because", about 8). The ask "Could we talk about how…" in 11 of 15 people's Sol letters, and Sol opening "I like…" for
+7. Two Haiku letters over 280 words (293, 304).
+
+**Tests.** A colon before a list is a comma and one before a sentence is still sent back; a whole letter without its
+tags is the letter and one cut short is not; two wordings are set side by side unnamed and a ranking comes back by
+wording. Each fails on `8e94742`.
+
+**The browser test that failed once on 2026-11-28 at midnight** (`test_a_new_person_goes_from_sign_up_to_their_jobs`):
+the page still said "Finding your jobs…" when its 5 s wait ran out, with the bench writing letters on the same machine.
+It passed alone and in two full runs since. Not changed.
+
+---
+
 ## 2026-11-27, night — letters that read as a person wrote them: v41 live on the owner's word; a title without the board's punctuation in code, a contraction no longer sent back, and the method kept as a skill
 
 The owner, on v37: "This looks much much better, it sounds amazing too". Then what was left: "take the punctuation

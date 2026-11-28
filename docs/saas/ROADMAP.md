@@ -3799,6 +3799,13 @@ work, or opening and closing sessions faster, would help):
       sentences teach Haiku the colon that is sent back. (3) The reviewers' rubrics rewritten for a motivation
       letter, before the paired bench is used again. (4) A look for the CV (`looks/cv.json`) before the CV
       prompt is worked on this way.
+    - **2026-11-28: letters that flow, v48 live** (CHANGELOG). The owner read their v41 letter beside their v37 one
+      ("the v37 read much better"). v42 to v48 from v37's structure, judged beside the live wording by a blind
+      reader: v48 above v41 in 35 of 38 sets; 0 of 38 first drafts sent back. A colon before a list is a comma
+      in code; a letter without its tags is kept. **Waiting:** (1) the faults the last reader still saw (a
+      certificate at a paragraph's end, the employer told what it does, "appeals to me because"), if another
+      step is wanted. (2) Haiku's cost: about 30% more tokens a letter than v41. (3) The reviewers' rubrics
+      rewritten for a motivation letter. (4) A second source of company knowledge. (5) A look for the CV.
 
 54. **Plans and the landing page: what waits for the owner** (2026-11-16, CHANGELOG).
     - At Stripe, live: a Starter product with a recurring monthly price of £2.99; its id as

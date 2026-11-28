@@ -82,13 +82,37 @@
       "name": "the prompt's part names",
       "in": "all",
       "good": "none",
-      "pattern": "(?i)\\bwhat I(?: would|'d) (?:bring|want to do(?: there| first)?) is\\b|\\bI(?: would|'d) bring (?:first )?is\\b|\\bthe first thing I(?: would|'d) bring\\b|\\bthe one result that best\\b"
+      "pattern": "(?i)\\bwhat I(?: would|'d)? (?:bring|want(?: to do(?: there| first)?| now| most)?) is\\b|\\bI(?: would|'d) bring (?:first |most )?is\\b|\\bthe first thing I(?: would|'d) bring\\b|\\b(?:the|that) (?:habit|part|strength)[^.]{0,30}I(?: would|'d) bring\\b|\\bthe one result that best\\b"
+    },
+    {
+      "name": "announces or points back",
+      "in": "all",
+      "good": "none",
+      "pattern": "(?i)\\bI(?:'m| am) applying\\b|\\bthat(?:'s| is) (?:why|what) (?:I(?:'m| am) interested|draws me|interests me)\\b|\\bwhat draws me\\b"
+    },
+    {
+      "name": "the same care carried over",
+      "in": "all",
+      "good": "none",
+      "pattern": "(?i)\\b(?:the|that) same (?:care|attention|approach|habit|standard)\\b"
+    },
+    {
+      "name": "hedged",
+      "in": "all",
+      "good": "none",
+      "pattern": "(?i)\\bI(?:'d| would) (?:want|hope) to\\b"
+    },
+    {
+      "name": "tells the reader their job",
+      "in": "all",
+      "good": "none",
+      "pattern": "(?i)\\bthis (?:role|job) (?:is|runs|asks|includes|involves|describes|covers)\\b|\\b(?:the|your) posting (?:says|describes|asks)\\b"
     },
     {
       "name": "learned tics",
       "in": "all",
       "good": "none",
-      "pattern": "(?i)\\bnot just\\b|\\bdr(?:aws|ew) me to\\b|\\bexactly (?:that|what)\\b"
+      "pattern": "(?i)\\bnot (?:just|only)\\b|\\bexactly (?:that|what)\\b|\\bis familiar to me\\b"
     },
     {
       "name": "contractions",

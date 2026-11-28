@@ -206,9 +206,14 @@ after them. Its order is the rule:
    production calls them, each fact traced to the person's record. The reviewers of gates 2 and 9 are run when
    the owner asks for the paired bench, their rubrics checked against the targets first; otherwise they are
    reported as not run.
-4. **Every filter before it is offered**: gates 3, 4, 5, 7 and 10, and the `/no-ai-language` checker where the
+4. **And beside the wording it would replace, by a reader who does not know which is which** (owner,
+   2026-11-28, of v41, made live the night before on a read of its letters alone: "the v37 read much better").
+   `scripts/cvlab/look.py blind` sets the two wordings' documents for the same person side by side, coded; one
+   fresh agent ranks them (`references/blind-read.md` in the skill); `look.py unblind` says which won. A
+   candidate is offered only where it is ranked at or above the live wording on both writers.
+5. **Every filter before it is offered**: gates 3, 4, 5, 7 and 10, and the `/no-ai-language` checker where the
    machine has it.
-5. **Read on people it was never changed for** before it goes live, and the report says whether it was.
+6. **Read on people it was never changed for** before it goes live, and the report says whether it was.
 
 §3a still decides what goes live: the owner's yes to a named version.
 
