@@ -13,6 +13,7 @@ import time
 import uuid as _uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from libs import prompts, templates
 from libs.corpus import companies
@@ -71,7 +72,7 @@ def run_ai(db, user_id: _uuid.UUID, job_id: int, *, client, model: str, kind: st
 
     request = build.prepare(kind, user=user, job=job, documents=documents_of(db, user_id),
                             look=templates.chosen(user, kind), languages=_languages(db, user_id),
-                            company=_company(db, job) if kind == "cover" else "")
+                            company=_company(db, job, client=client, model=model) if kind == "cover" else "")
     # Where the time goes and what each call used, said with the document (`_done`).
     seconds: dict[str, float] = {"write": 0.0, "render": 0.0}
     with _timed(seconds, "write"):
@@ -161,11 +162,26 @@ def _load(db, user_id: _uuid.UUID, job_id: int) -> tuple[User, CorpusJob]:
     return user, with_texts(db, [job])[0]
 
 
-def _company(db, job) -> str:
-    """What the employer says of itself, for a letter's reason for wanting it (`companies.about`). A letter is
-    written from the posting alone when it cannot be gathered: said in the log, and never waited on."""
+def _company(db, job, *, client=None, model: str | None = None) -> str:
+    """What the employer says of itself, for a letter's reason for wanting it (`companies.about`): from its
+    postings, else, the first time anybody makes a letter for it, from its own website, read by this letter's
+    model and kept for every letter after (`build.look_up`, `companies.learned`; owner, 2026-11-28). A letter
+    is written from the posting alone when neither says anything: said in the log, and never waited on
+    beyond the one look."""
     try:
-        return companies.about(db, job.company)
+        said = companies.about(db, job.company)
+        if said or client is None or not getattr(client, "searches", False) \
+                or not companies.to_look_up(db, job.company):
+            return said
+        started = time.monotonic()
+        note, source = build.look_up(client, job, model=model or "")
+        kept = companies.learned(db, job.company, note, source)
+        host = urlparse(source).hostname or "no page"
+        outcome = (f"kept {len(kept)} characters from {host}" if kept else
+                   f"not kept, {host} is not its own site" if note else "found nothing")
+        logger.info("docgen: looked up %r on its own website for job %s in %.1f s: %s", job.company, job.id,
+                    time.monotonic() - started, outcome)
+        return kept
     except Exception:
         # The letter is worth more than what its employer says of itself.
         logger.warning("docgen: nothing gathered about %r for job %s; the letter is written from the posting "

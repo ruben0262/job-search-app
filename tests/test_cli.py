@@ -123,6 +123,29 @@ def test_claude_searches_the_web_only_when_the_bench_asks_and_never_fetches_a_pa
     assert "WebFetch" not in " ".join(told)
 
 
+def test_a_call_that_asks_to_search_is_given_the_providers_search_alone_and_others_are_not(tools):
+    """Owner, 2026-11-28: an employer nothing is known of is looked up on its own website by the letter's
+    model. That one call gets the web searched by its provider, Claude's WebSearch and Codex's live search,
+    and never a fetch from this server; the letters themselves still go out with no tools."""
+    def told(kind: str, **asked) -> list[str]:
+        client = cli.CliClient(kind, _blob(kind), [].append)
+        return json.loads(client.complete_text(model="m", system="Find the employer.", max_tokens=4000,
+                                               messages=[{"role": "user", "content": "Acme Ltd."}],
+                                               **asked))["args"]
+
+    claude, codex = told("claude_login", search=True), told("codex_login", search=True, lean=True)
+    assert claude[claude.index("--tools") + 1] == "WebSearch"
+    assert claude[claude.index("--allowedTools") + 1] == "WebSearch" and "WebFetch" not in " ".join(claude)
+    settings = [codex[at + 1] for at, arg in enumerate(codex) if arg == "-c"]
+    live, disabled = settings.index('web_search="live"'), settings.index('web_search="disabled"')
+    assert live > disabled, "the last one counts"
+    assert settings.index("features.code_mode_host=true") > settings.index("features.code_mode_host=false")
+    assert {"features.shell_tool=false", "features.unified_exec=false"} <= set(settings), "no other tool"
+
+    plain_claude, plain_codex = told("claude_login"), told("codex_login", lean=True)
+    assert plain_claude[plain_claude.index("--tools") + 1] == "" and 'web_search="live"' not in plain_codex
+
+
 def test_claude_runs_with_no_tools_and_gemini_trusted_and_read_only(tools):
     claude = _write("claude_login", _blob("claude_login"))["args"]
     gemini = _write("gemini_login", _blob("gemini_login"))["args"]

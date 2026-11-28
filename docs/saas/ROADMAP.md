@@ -3815,6 +3815,12 @@ work, or opening and closing sessions faster, would help):
       (2) Haiku's cost: about 10% more tokens a letter than v48, the prompt 4,501 words from 3,496. (3) Sol
       opens "I like…" for most people. (4) The reviewers' rubrics rewritten for a motivation letter. (5) A
       second source of company knowledge. (6) A look for the CV.
+    - **2026-11-28, night: company knowledge kept for good and read from the company's own website** (CHANGELOG).
+      The owner's design: where a company's postings say nothing of it, the first letter for it asks its own model
+      to find the employer's own site (provider's web search), and the note is kept for every letter after. Haiku
+      found one for 38 of 58 employers, Sol 11 of 16; recruiters answered with nothing. **Waiting:** (1) letters
+      with a looked-up note measured on the bench against letters from the posting alone. (2) Whether to look up
+      the companies people apply to most ahead of time, so no first letter waits the ~14 s.
 
 54. **Plans and the landing page: what waits for the owner** (2026-11-16, CHANGELOG).
     - At Stripe, live: a Starter product with a recurring monthly price of £2.99; its id as

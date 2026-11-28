@@ -752,14 +752,14 @@ class _OwnClaude(cli.CliClient):
         cli.environment = _own_environment
 
     def complete_text(self, *, model: str, system: str, messages: list[dict], max_tokens: int,
-                      effort: str | None = None, lean: bool | None = None) -> str:
+                      effort: str | None = None, lean: bool | None = None, search: bool = False) -> str:
         del max_tokens
         prompt = "\n\n".join(str(message["content"]) for message in messages)
         self.WORK.mkdir(mode=0o700, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="ai-") as folder:
             (pathlib.Path(folder) / "system.md").write_text(system)
             return self._run(model, pathlib.Path.home(), self.WORK, pathlib.Path(folder), prompt,
-                             effort=effort, lean=lean)
+                             effort=effort, lean=lean, search=search)
 
 
 _stored_environment = cli.environment

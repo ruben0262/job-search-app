@@ -105,10 +105,12 @@ and close by asking to talk. They are short, sound like one person, and leave th
   the last lines before the answer (v57). A rule a model must never miss goes last.
 - **One reader's marks drift.** Three blind readers marked the same live letters' closes 5.11, 5.89 and 5.79.
   A split near 10 of 19 is inside one reader's noise; read the reasons, and trust a split like 18 of 19.
-- **The company note** (`libs/corpus/companies.py`) holds what a company says of itself in its own postings,
-  kept thirty days. Where it is empty the letter has only the posting, and its "why here" is thinner. A
-  second source (a search key, or the company's LinkedIn page on the proxy budget) is an open question for
-  the owner.
+- **The company note** (`libs/corpus/companies.py`) holds what a company says of itself, kept for good once
+  found (owner, 2026-11-28): from its own postings by rule, else, the first time anybody makes a letter for
+  it, from its own website, looked up by that letter's model with the provider's web search
+  (`libs/prompts/find_company.md`, `build.look_up`) and kept only from a site named for the company, with no
+  first-person remark and nothing shaped like a key (`companies.learned`). Where neither says anything the
+  letter has only the posting. The bench passes `company/<slug>.txt` instead.
 
 ## Known and left, as of v57 (live 2026-11-28, `d885402c2e45`)
 

@@ -37,6 +37,11 @@ from services.docgen import checks
 logger = logging.getLogger(__name__)
 
 PROMPTS = {"cv": "write_cv.md", "cover": "write_cover.md"}
+# The call that reads an employer's own website where nothing is known of it (`look_up`).
+LOOK_UP = "find_company.md"
+LOOK_UP_SYSTEM = "You find out what an employer says about itself on its own website, and report only that."
+# A plain read, not a piece of writing: Claude thinks little for it.
+LOOK_UP_EFFORT = "low"
 # What the model's answer is wrapped in: anything around it, its working or a word of its own, is dropped.
 TAGS = {"cv": "cv", "cover": "letter"}
 # What a whole document has, in the markup: a CV a section, a letter its body. A line of one quoted
@@ -142,6 +147,26 @@ def prepare(kind: str, *, user, job, documents: dict[str, list[str]], look: Temp
     sources = "\n".join([theirs, job.title or "", company, place, job.description or ""])
     return Request(kind=kind, prompt=text, name=name, header=header, look=look, sources=sources,
                    theirs=theirs, company=company, posting=job.description or "")
+
+
+_NOTE = re.compile(r'(?is)<company_note\s+source\s*=\s*"([^"]*)"\s*>(.*?)</company_note>')
+
+
+def look_up(client, job, *, model: str) -> tuple[str, str]:
+    """What the employer of `job` says of itself on its own website, read by the person's own model with the
+    web searched by its provider (owner, 2026-11-28: "we fetch that companies context as well via from their
+    own website ... where we can store it"), and the page it was read from: ("", "") where it found nothing
+    or the reply has no `<company_note>`. Only a client that `searches` is asked. Whether it is kept is
+    `libs.corpus.companies.learned`'s to decide."""
+    if not getattr(client, "searches", False):
+        return "", ""
+    prompt = _SLOT.sub(lambda slot: {"job": _job(job)}.get(slot.group(1), slot.group(0)),
+                       prompts.load(LOOK_UP))
+    reply = client.complete_text(model=model, system=LOOK_UP_SYSTEM,
+                                 messages=[{"role": "user", "content": prompt}], max_tokens=MAX_TOKENS,
+                                 effort=LOOK_UP_EFFORT, lean=True, search=True)
+    found = _NOTE.findall(str(reply or ""))
+    return (found[-1][1].strip(), found[-1][0].strip()) if found else ("", "")
 
 
 def draft(client, request: Request, *, model: str, revision: tuple[str, str] | None = None,

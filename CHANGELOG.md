@@ -14,6 +14,59 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-28, night — what a company says of itself: kept for good, and read from its own website where its postings say nothing
+
+The owner: "lets keep company data always, even if its 30 days or older, we don't need to update it", and where our
+lookup has nothing, "when a user clicks the make cover, we fetch that companies context as well via from their own
+website ... where we can store it, and if another user then requests it, its an easy lookup in our db".
+
+**Kept for good.** `companies.about` reads a company's row whenever it has one, whatever its age; the thirty-day
+regathering (`GATHERED_FOR`) is gone. The `companies` collection is now backed up, since what is read from a website
+cost somebody's call to learn.
+
+**Read from its own website, once a company.** Where a company's postings say nothing of it, the first letter for it
+asks that letter's own model, on the person's own sign-in, to find the employer's own website and say what it says of
+itself (`libs/prompts/find_company.md`, `build.look_up`), before the letter is written. The note is kept, and every
+letter after reads it from the row; the company is marked as looked up whatever was found, so nobody's letter asks
+twice (`companies.to_look_up`, `learned`).
+
+- **A separate small call, not a part of the letter's prompt.** The letter's wording (v57, measured) is unchanged, and
+  nothing read on a website reaches a letter until code has checked it.
+- **Search, never a fetch from this server.** Claude gets its WebSearch and Codex its live search, both run by the
+  provider; WebFetch stays off, since a posting's words could point it at a private address. Codex 0.167 runs its
+  search through its code-mode host, which the call that searches has back; with its shell and exec tools still off
+  it reads no file (asked to read one in its folder, it answered that it could not).
+- **Kept only when code agrees** (`companies.learned`): from a page on a site named for the company, by a word of its
+  name or its initials ("hager.com", "bcuhb.nhs.wales", "jrs.de"), never a board, a network or Wikipedia; at least
+  twelve words; no sentence in the first person (Haiku once added "Note: I could only see this page through
+  search-result excerpts"); nothing shaped like a key or a token. Else nothing is kept.
+- **Not for an API key**, which cannot search here: those letters are written from the posting, as before. A failed
+  lookup is logged and the letter is written without it.
+
+**Measured on real employers**, the call as production makes it:
+
+| | Haiku 5.5 (low effort) | Sol, lean |
+|---|---|---|
+| a note kept, of 58 employers of the bench's postings | 38 (66%) | not run on all 58 |
+| a note kept, of the 16 of the look, the held-out people and four recruiters | 10 | 11 |
+| recruiters (Radley James, Adecco, DARA People, A1 Personnel, Hays) answered with nothing | all | all four asked |
+| seconds a lookup, median (most) | 13.8 (22.8) | 14.0 (18.9) |
+| tokens a lookup, in and out | about 17,000 and 1,000 | about 41,000 (70% cached) and 250 |
+
+Every kept note read: from the company's own site and as it describes itself (Hager "a solution partner for
+electrifying buildings ... based in Telford", Prezzo "Home of the Italian Classics", Beaumanor "a purpose-built home
+for up to 53 residents ... with gardens overlooking the canal"). The one refused by the site rule was a parent group's
+site (Grace Gaming), rightly. A first letter for an unknown company takes those seconds longer, once.
+
+**Not run.** Letters written with a looked-up note against letters written from the posting alone, on the bench.
+
+**Tests.** A kept note is read a year on; an employer its postings say nothing of is looked up once and kept for every
+letter after, a page on another site is not kept and not asked for again, a note with a model's remark or a key in it
+is cut or refused, an API key is never asked; a site named for the company is its own and a board's is not; the call
+that asks to search gets the provider's search alone. Each fails before this change.
+
+---
+
 ## 2026-11-28, evening — the first and last paragraphs: v57 live on the owner's word, a close that recaps, asks to meet and thanks; a letter with no close sent back
 
 The owner read v48 and asked for one more round. The certificate lines and the employer told what it does (the last

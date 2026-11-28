@@ -152,9 +152,16 @@ _CODEX_LEAN_SETTINGS = ('web_search="disabled"', "include_permissions_instructio
 _CODEX_LEAN_ARGS = tuple(arg for setting in _CODEX_LEAN_SETTINGS for arg in ("-c", setting))
 # Whether Claude Code may search the web while it writes: off, so a sign-in writes from what it is given, as
 # an API key does. Only the bench turns it on (`scripts/cvlab/run.py --research`), to measure the AI looking a
-# company up itself against facts read by rules (owner, 2026-11-16). Search only: WebFetch would fetch pages
-# from this server, where a posting's words could point it at a private address.
+# company up itself against facts read by rules (owner, 2026-11-16). A call that looks a company's website
+# up asks for search alone (`complete_text(search=True)`, owner 2026-11-28). Search only, here and there:
+# WebFetch would fetch pages from this server, where a posting's words could point it at a private address; a
+# search is run by the provider, on its own machines.
 WEB_SEARCH = False
+# Codex's search, run by OpenAI: "live" reads the web as it is now, for the call that asked for it. Codex
+# 0.167 calls its search through its code-mode host, which lean turns off with the rest ("code-mode host is
+# disabled", 2026-11-28), so the call that searches has it back; with the shell and exec tools still off it
+# reads no file (asked to read one in its folder, it answered that it could not).
+_CODEX_SEARCH = ("-c", 'web_search="live"', "-c", "features.code_mode_host=true")
 
 
 # How long a session must still have for a call to run beside others: longer than any call takes, and than
@@ -192,10 +199,16 @@ class CliClient:
         # The calls running now, and whether one of them is running alone because it may renew.
         self._turns, self._running, self._alone = threading.Condition(), 0, False
 
+    # A signed-in tool can search the web for a call that asks (`complete_text(search=True)`); an API key
+    # cannot here.
+    searches = True
+
     def complete_text(self, *, model: str, system: str, messages: list[dict],
-                      max_tokens: int, effort: str | None = None, lean: bool | None = None) -> str:
+                      max_tokens: int, effort: str | None = None, lean: bool | None = None,
+                      search: bool = False) -> str:
         """One answer. `max_tokens` is the tool's own to decide; `effort` is passed to Claude Code, so a
-        sign-in thinks as hard as an API key does. `lean`, for this call alone (`CODEX_LEAN`)."""
+        sign-in thinks as hard as an API key does. `lean`, for this call alone (`CODEX_LEAN`); `search`, the
+        web searched by the provider for this call alone (`WEB_SEARCH`)."""
         del max_tokens
         prompt = "\n\n".join(str(message["content"]) for message in messages)
         with self._turn(), tempfile.TemporaryDirectory(prefix="ai-") as folder:
@@ -207,7 +220,8 @@ class CliClient:
             unpack(self._kind, started, home)
             (Path(folder) / "system.md").write_text(system)
             try:
-                return self._run(model, home, work, Path(folder), prompt, effort=effort, lean=lean)
+                return self._run(model, home, work, Path(folder), prompt, effort=effort, lean=lean,
+                                 search=search)
             finally:
                 # Against the copy this call started from: one that renewed nothing never writes it back
                 # over a newer one.
@@ -238,15 +252,16 @@ class CliClient:
         raise LlmError("a signed-in account writes documents only")
 
     def _run(self, model: str, home: Path, work: Path, folder: Path, prompt: str, *,
-             effort: str | None = None, lean: bool | None = None) -> str:
+             effort: str | None = None, lean: bool | None = None, search: bool = False) -> str:
         binary, system = TOOLS[self._kind].path(), str(folder / "system.md")
         env = environment(self._kind, home)
         answer = folder / "answer.txt"
         if self._kind == "claude_login":
-            tools = "WebSearch" if WEB_SEARCH else ""
+            searching = WEB_SEARCH or search
+            tools = "WebSearch" if searching else ""
             argv = [binary, "-p", "--output-format", "json", "--system-prompt-file", system, "--tools", tools,
                     "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config"]
-            argv += ["--allowedTools", "WebSearch"] if WEB_SEARCH else []
+            argv += ["--allowedTools", "WebSearch"] if searching else []
             argv += ["--model", model] if model else []
             argv += ["--effort", effort] if effort else []
             stdin = prompt
@@ -264,6 +279,8 @@ class CliClient:
             else:
                 # Codex keeps its own instructions; what this platform asks comes first in the prompt.
                 stdin = f"{(folder / 'system.md').read_text()}\n\n---\n\n{prompt}"
+            # After the lean settings, whose `web_search="disabled"` it overrides for this call alone.
+            argv += [*_CODEX_SEARCH] if search else []
             argv += ["-"]
         else:
             # Trusted, or Gemini CLI quietly drops the read-only mode in a folder it has not seen.
